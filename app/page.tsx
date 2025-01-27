@@ -1,101 +1,221 @@
-import Image from "next/image";
+'use client';
+
+import { Line } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+import { motion } from 'framer-motion';
+import Header from './components/Header';
+import Footer from './components/Footer';
+
+// Register Chart.js components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+);
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  // Dummy Data for Transaction Trends Chart
+  const transactionData = {
+    labels: ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7'],
+    datasets: [
+      {
+        label: 'Transactions',
+        data: [200, 250, 300, 400, 350, 500, 450],
+        borderColor: '#0052FF',
+        backgroundColor: 'rgba(0, 82, 255, 0.3)',
+        fill: true,
+      },
+    ],
+  };
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+  // Dummy Data for Gas Usage Trends Chart
+  const gasUsageData = {
+    labels: ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7'],
+    datasets: [
+      {
+        label: 'Gas Usage (Gwei)',
+        data: [50, 70, 65, 80, 75, 90, 85],
+        borderColor: '#FF5722',
+        backgroundColor: 'rgba(255, 87, 34, 0.3)',
+        fill: true,
+      },
+    ],
+  };
+
+  const chartOptions = {
+    responsive: true,
+    plugins: {
+      legend: {
+        position: 'top',
+      },
+      title: {
+        display: true,
+      },
+    },
+  };
+
+  return (
+    <div className="flex flex-col min-h-screen bg-white text-black">
+      {/* Header */}
+      <Header />
+
+      {/* Hero Section */}
+      <header className="text-center py-12 bg-gradient-to-r from-primaryBlue to-blue-500 text-white">
+        <h1 className="text-4xl font-extrabold mb-2">Welcome to Homebase</h1>
+        <p>Your one-stop platform for Base chain analytics and insights.</p>
+      </header>
+
+      {/* Stats Section */}
+      <main className="flex-grow container mx-auto py-12 px-4">
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+          <motion.div
+            whileHover={{ scale: 1.05 }}
+            className="p-4 bg-white/70 backdrop-blur-md shadow-lg rounded-lg"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            <h2 className="text-2xl font-bold text-primaryBlue">24-Hour Volume</h2>
+            <p className="text-xl font-semibold">$12,345,678</p>
+          </motion.div>
+          <motion.div
+            whileHover={{ scale: 1.05 }}
+            className="p-4 bg-white/70 backdrop-blur-md shadow-lg rounded-lg"
           >
-            Read our docs
-          </a>
-        </div>
+            <h2 className="text-2xl font-bold text-primaryBlue">Total Transactions</h2>
+            <p className="text-xl font-semibold">1,234,567</p>
+          </motion.div>
+          <motion.div
+            whileHover={{ scale: 1.05 }}
+            className="p-4 bg-white/70 backdrop-blur-md shadow-lg rounded-lg"
+          >
+            <h2 className="text-2xl font-bold text-primaryBlue">Active Users</h2>
+            <p className="text-xl font-semibold">56,789</p>
+          </motion.div>
+        </section>
+
+        {/* Call-to-Action Section */}
+        <section className="mt-12 text-center">
+          <h2 className="text-2xl font-bold mb-4">Ready to explore Base chain analytics?</h2>
+          <button className="px-6 py-2 bg-primaryBlue text-white rounded-md shadow-lg hover:shadow-xl hover:bg-blue-700 transition-all transform hover:scale-105">
+            Get Started Now
+          </button>
+        </section>
+
+        {/* Graphs Section */}
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8 }}
+          className="container mx-auto py-12"
+        >
+          <h2 className="text-3xl font-extrabold mb-6 text-center">Analytics Overview</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Transaction Trends Chart */}
+            <div className="p-4 shadow-md border rounded-lg">
+              <h3 className="text-xl font-bold text-primaryBlue text-center mb-4">Transaction Trends</h3>
+              <Line data={transactionData} options={{ ...chartOptions, plugins: { ...chartOptions.plugins, title: { text: '7-Day Transaction Trends', display: true } } }} />
+            </div>
+
+            {/* Gas Usage Trends Chart */}
+            <div className="p-4 shadow-md border rounded-lg">
+              <h3 className="text-xl font-bold text-orange-600 text-center mb-4">Gas Usage Trends</h3>
+              <Line data={gasUsageData} options={{ ...chartOptions, plugins: { ...chartOptions.plugins, title: { text: '7-Day Gas Usage Trends', display: true } } }} />
+            </div>
+          </div>
+        </motion.section>
+
+        {/* News/Updates Section */}
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8 }}
+          className="container mx-auto py-12"
+        >
+          <h2 className="text-3xl font-extrabold mb-6 text-center">Latest News</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* News Item 1 */}
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              className="p-4 shadow-md border rounded-lg bg-white/70 backdrop-blur-md"
+            >
+              <h3 className="text-xl font-bold text-primaryBlue">Base Chain Upgrade Announced</h3>
+              <p className="text-sm mt-2">
+                The Base chain team has announced a major upgrade to improve transaction speeds.
+              </p>
+              <a
+                href="#"
+                className="text-primaryBlue mt-4 inline-block hover:underline"
+              >
+                Read more
+              </a>
+            </motion.div>
+
+            {/* News Item 2 */}
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              className="p-4 shadow-md border rounded-lg bg-white/70 backdrop-blur-md"
+            >
+              <h3 className="text-xl font-bold text-primaryBlue">New dApps Launched</h3>
+              <p className="text-sm mt-2">
+                Several new decentralized applications (dApps) are now live on the Base chain.
+              </p>
+              <a
+                href="#"
+                className="text-primaryBlue mt-4 inline-block hover:underline"
+              >
+                Read more
+              </a>
+            </motion.div>
+
+            {/* News Item 3 */}
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              className="p-4 shadow-md border rounded-lg bg-white/70 backdrop-blur-md"
+            >
+              <h3 className="text-xl font-bold text-primaryBlue">Record Transaction Volume</h3>
+              <p className="text-sm mt-2">
+                The Base chain hit a record transaction volume of 1.2 million in 24 hours.
+              </p>
+              <a
+                href="#"
+                className="text-primaryBlue mt-4 inline-block hover:underline"
+              >
+                Read more
+              </a>
+            </motion.div>
+          </div>
+        </motion.section>
       </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
+      {/* Footer */}
+      <Footer />
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
