@@ -5,3 +5,12 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  images: {
+    domains: ['i.imgur.com', 'upload.wikimedia.org', 'img.icons8.com'],
+  },
+};
+
+module.exports = nextConfig;
+

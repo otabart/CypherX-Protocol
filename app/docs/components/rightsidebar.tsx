@@ -1,16 +1,8 @@
-'use client';
+"use client";
 
 export default function RightSidebar() {
   return (
-    <aside className="
-      hidden 
-      lg:block 
-      w-64 
-      bg-black 
-      border-l 
-      border-gray-700 
-      p-4
-    ">
+    <aside className="w-64 bg-black p-4 h-full">
       <h3 className="text-lg font-bold mb-4">Docs Info</h3>
       <div className="mb-4">
         <span className="font-bold">Last Global Update:</span>
@@ -42,10 +34,3 @@ export default function RightSidebar() {
     </aside>
   );
 }
-
-
-
-
-
-
-

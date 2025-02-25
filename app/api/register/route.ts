@@ -1,42 +1,40 @@
-import { NextResponse } from 'next/server';
-import { connectToDatabase } from '@/lib/mongodb';
-import User from '@/lib/db/models/User';
-import bcrypt from 'bcryptjs';
+import { NextResponse } from "next/server";
+import clientPromise from "@/lib/mongodb";
+import bcrypt from "bcryptjs";
 
 export async function POST(req: Request) {
   try {
-    // ✅ Ensure JSON parsing doesn't break
-    let data;
-    try {
-      data = await req.json();
-    } catch (err) {
-      console.error("🚨 Invalid JSON received:", err);
-      return NextResponse.json({ error: "Invalid request format" }, { status: 400 });
-    }
+    const { username, email, password } = await req.json();
+    console.log("Attempting signup for:", email);
 
-    const { username, email, password } = data;
+    const client = await clientPromise;
+    const db = client.db(); // or client.db("HomebaseDB")
+    const users = db.collection("users");
 
-    console.log("Received Data:", { username, email, password });
+    // Check if user already exists
+    const existingUser = await users.findOne({ email });
+    console.log("Existing user:", existingUser);
 
-    if (!username || !email || !password) {
-      return NextResponse.json({ error: 'All fields are required' }, { status: 400 });
-    }
-
-    await connectToDatabase();
-
-    const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return NextResponse.json({ error: 'User already exists' }, { status: 400 });
+      return NextResponse.json({ error: "User already exists" }, { status: 400 });
     }
 
+    // Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = await User.create({ username, email, password: hashedPassword });
 
-    console.log("✅ New user created:", newUser);
-    return NextResponse.json({ message: 'Account created successfully' }, { status: 201 });
+    await users.insertOne({
+      username,
+      email,
+      password: hashedPassword,
+      createdAt: new Date(),
+    });
 
-  } catch (error) {
-    console.error("🚨 Error in register route:", error);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return NextResponse.json({ message: "User created successfully" });
+  } catch (error: any) {
+    console.error("Signup error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+
+

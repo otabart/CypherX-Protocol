@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import CountUp from "react-countup";
 import Link from "next/link";
+import RoadmapSection from "./components/RoadmapSection"; // adjust path as necessary
 
 // Import your custom components (adjust paths as needed)
 import ScrollingTokenBanner from "./components/ScrollingTokenBanner";
@@ -21,17 +22,17 @@ function CoinIcon() {
     <svg
       width="40"
       height="40"
-      viewBox="0 0 24 24"
+      viewBox="0 0 256 417"
       fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="text-primaryBlue mx-auto mb-2"
+      xmlns="http://www.w3.org/2000/svg"
+      className="mx-auto mb-2"
     >
-      <circle cx="12" cy="12" r="8" />
-      <path d="M10 8h4a2 2 0 010 4h-4a2 2 0 000 4h4" />
-      <path d="M12 6v2m0 8v2" />
+      <path fill="#2563EB" d="M127.9,0L124.7,11.2V274.6l3.2,3.3l127.9-68.8L127.9,0z" />
+      <path fill="#3B82F6" d="M127.9,0L0,209.1l127.9,68.8V0z" />
+      <path fill="#60A5FA" d="M127.9,311.3l-2.3,2.3V414.8l2.3,2.2l128.1-76.1L127.9,311.3z" />
+      <path fill="#3B82F6" d="M127.9,414.8V311.3L256,239.7L127.9,414.8z" />
+      <path fill="#1D4ED8" d="M127.9,277.9l127.9-68.8l-127.9-59.6V277.9z" />
+      <path fill="#2563EB" d="M0,209.1l127.9,68.8V218.3L0,209.1z" />
     </svg>
   );
 }
@@ -413,8 +414,8 @@ function HomePage() {
           See Forward with Homebase Analytics
         </h1>
         <p className="text-lg mb-10 max-w-2xl mx-auto leading-relaxed">
-          Discover insights that drive the crypto markets. Get live ETH pricing,
-          24h volume data, and on-chain analytics—all in one place.
+          Discover insights that drive Base Chain Markets. Get helpful trading tools,
+          professional insights, and on-chain analytics—all in one place.
         </p>
         <div className="flex justify-center space-x-4">
           <Link href="/tools">
@@ -498,7 +499,7 @@ function HomePage() {
               <span className="text-primaryBlue">Base?</span>
             </h2>
             <p className="text-gray-700 max-w-2xl mx-auto mb-10 text-lg leading-relaxed">
-              Base is a next-generation Layer 2 network built on Optimism's OP Stack, designed for faster and cheaper transactions while unlocking new possibilities for Web3.
+              Base is a next-generation Layer 2 network, designed for faster and cheaper transactions while unlocking new possibilities for Web3.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               <motion.div
@@ -597,35 +598,8 @@ function HomePage() {
           </div>
         </motion.section>
 
-        {/* Markets Section */}
-        <motion.section
-          className="w-full py-16 bg-gray-100 text-center"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-        >
-          <h2 className="text-3xl md:text-4xl font-extrabold mb-6 text-black leading-tight">
-            Markets move fast. Homebase keeps you ahead.
-          </h2>
-          <p className="max-w-xl mx-auto text-gray-700 mb-10 text-lg leading-relaxed">
-            Stay updated on ETH pricing, 24h trading volume, and network activity with our real-time data feeds.
-          </p>
-          <div className="flex flex-col items-center space-y-6">
-            <motion.div whileHover={{ scale: 1.05 }} className="flex items-center">
-              <TrendIcon />
-              <p>Track price trends accurately</p>
-            </motion.div>
-            <motion.div whileHover={{ scale: 1.05 }} className="flex items-center">
-              <FlowIcon />
-              <p>Monitor capital flows effortlessly</p>
-            </motion.div>
-            <motion.div whileHover={{ scale: 1.05 }} className="flex items-center">
-              <SentimentIcon />
-              <p>Assess market sentiment in real time</p>
-            </motion.div>
-          </div>
-        </motion.section>
+        {/* Roadmap Section */}
+        <RoadmapSection />
 
         {/* Latest News Section (Dynamic) */}
         <LatestNewsSection />
@@ -642,6 +616,8 @@ function HomePage() {
 export default function HomePageWrapper() {
   return <HomePage />;
 }
+
+
 
 
 

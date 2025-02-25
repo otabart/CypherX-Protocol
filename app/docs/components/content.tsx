@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { Lightbulb } from 'lucide-react';
+import { Lightbulb } from "lucide-react";
 
 interface ContentProps {
   activeSection: string;
@@ -17,9 +17,9 @@ interface SectionData {
 const contentData: Record<string, SectionData> = {
   // Example sections with more text
   products: {
-    title: 'Products Overview',
-    lastUpdated: 'February 15, 2025',
-    breadcrumb: ['Home', 'Docs', 'Products'],
+    title: "Products Overview",
+    lastUpdated: "February 15, 2025",
+    breadcrumb: ["Home", "Docs", "Products"],
     content: `
 Homebase provides a range of tools for exploring the Base chain effectively:
 • Analytics Dashboard for real-time data
@@ -30,9 +30,9 @@ Homebase provides a range of tools for exploring the Base chain effectively:
   },
 
   analytics: {
-    title: 'Trading Tools',
-    lastUpdated: 'February 15, 2025',
-    breadcrumb: ['Home', 'Docs', 'Products', 'Analytics'],
+    title: "Trading Tools",
+    lastUpdated: "February 15, 2025",
+    breadcrumb: ["Home", "Docs", "Products", "Analytics"],
     content: `
 Trading Tools
 
@@ -49,13 +49,13 @@ Avoid scams and protect your investments with our Honeypot Tracker. This tool sc
 
 Homebase equips you with the best tools to trade smarter, safer, and faster. Whether you're a seasoned trader or just starting, our platform gives you the insights you need to make informed decisions in the ever-evolving crypto space.
     `,
-    callout: `Pro Tip: Our Whale Watchers Tool Provides insights on speciifc tokens not all on-chain transactions`,
+    callout: `Pro Tip: Our Whale Watchers Tool Provides insights on specific tokens not all on-chain transactions`,
   },
 
   insights: {
-    title: 'Market Insights',
-    lastUpdated: 'February 15, 2025',
-    breadcrumb: ['Home', 'Docs', 'Products', 'Market Insights'],
+    title: "Market Insights",
+    lastUpdated: "February 15, 2025",
+    breadcrumb: ["Home", "Docs", "Products", "Market Insights"],
     content: `
 Market Insights
 
@@ -65,21 +65,20 @@ News Terminal
 The crypto market moves fast, and having the right information at the right time is critical. Our News Terminal aggregates real-time updates from top sources, tracking breaking news, regulatory changes, and market shifts. With curated insights and AI-powered filtering, you get only the most relevant updates—allowing you to make informed decisions without the noise.
 
 Launch Calendar
-Timing is everything in crypto. Our Launch Calendar keeps you ahead of the game by tracking upcoming token launches, major airdrops, protocol upgrades, and other key events. Whether you're looking for early investment opportunities or preparing for major ecosystem changes, our calendar ensures you’re always one step ahead.
+Timing is everything in crypto. Our Launch Calendar keeps you ahead of the game by tracking upcoming token launches, major airdrops, protocol upgrades, and other key events. Whether you’re looking for early investment opportunities or preparing for major ecosystem changes, our calendar ensures you’re always one step ahead.
 
 Analysts
 Deep analysis matters. Our Analysts section features expert breakdowns of market trends, trading strategies, and high-potential projects. From on-chain data insights to macroeconomic analysis, our team provides actionable intelligence to help you navigate the crypto landscape with confidence.
 
 With Homebase, you get more than just data—you get the insights and tools needed to act decisively in the ever-evolving world of Web3.
-
-`,
+    `,
     callout: `Heads Up: Our News Terminal is re-written content from our AI that fetches news and data across the web.`,
   },
 
   forum: {
-    title: 'Community Forum',
-    lastUpdated: 'February 15, 2025',
-    breadcrumb: ['Home', 'Docs', 'Products', 'Forum'],
+    title: "Community Forum",
+    lastUpdated: "February 15, 2025",
+    breadcrumb: ["Home", "Docs", "Products", "Forum"],
     content: `
 Community Forum
 
@@ -109,9 +108,9 @@ The Homebase Community Forum isn’t just a place to talk—it’s a place to bu
   },
 
   launch: {
-    title: 'When Do We Launch?',
-    lastUpdated: 'February 15, 2025',
-    breadcrumb: ['Home', 'Docs', 'Launch'],
+    title: "When Do We Launch?",
+    lastUpdated: "February 15, 2025",
+    breadcrumb: ["Home", "Docs", "Launch"],
     content: `
 Homebase Launch – Set for early March
 
@@ -135,10 +134,10 @@ By leveraging the culture, speed, and meme energy of Clank.Fun, we’re ensuring
     callout: `Early adopters often receive exclusive perks. Keep an eye on announcements to avoid missing out on potential airdrops or promos!`,
   },
 
-  'past-news': {
-    title: 'Past News',
-    lastUpdated: 'February 15, 2025',
-    breadcrumb: ['Home', 'Docs', 'Past News'],
+  "past-news": {
+    title: "Past News",
+    lastUpdated: "February 15, 2025",
+    breadcrumb: ["Home", "Docs", "Past News"],
     content: `
 Homebase Company News & Updates
 
@@ -154,7 +153,7 @@ Market Insights Features Launched
 
 2/21 - News Terminal – Aggregates top crypto news and Base chain updates in real-time.
 
-2/21 -Launch Calendar – Tracks upcoming token launches, airdrops, and ecosystem events.
+2/21 - Launch Calendar – Tracks upcoming token launches, airdrops, and ecosystem events.
 
 Analyst Reports – In-depth research and analysis on trending tokens and Base chain developments.
 
@@ -173,20 +172,20 @@ Homebase is rapidly evolving, with new tools, insights, and community features r
     callout: `Check our X / Twitter for monthly retrospectives highlighting major development milestones and upcoming ideas.`,
   },
 
-  'company-updates': {
-    title: 'Company Updates',
-    lastUpdated: 'February 15, 2025',
-    breadcrumb: ['Home', 'Docs', 'Company Updates'],
+  "company-updates": {
+    title: "Company Updates",
+    lastUpdated: "February 15, 2025",
+    breadcrumb: ["Home", "Docs", "Company Updates"],
     content: `
 Stay tuned for behind-the-scenes updates at Homebase. We frequently share roadmap adjustments, team expansions, and newly secured funding for further growth.
     `,
     callout: `Got suggestions? We rely heavily on community insight to steer our development priorities.`,
   },
 
-  'getting-started': {
-    title: 'Getting Started',
-    lastUpdated: 'February 15, 2025',
-    breadcrumb: ['Home', 'Docs', 'Getting Started'],
+  "getting-started": {
+    title: "Getting Started",
+    lastUpdated: "February 15, 2025",
+    breadcrumb: ["Home", "Docs", "Getting Started"],
     content: `
 Getting Started with Homebase
 
@@ -225,15 +224,14 @@ We’re launching our token on Clank.Fun, the premier Base chain launchpad. Clan
 
 Ready to Get Started?
 Homebase is built for traders who want smarter insights, better tools, and a stronger community. Whether you're a seasoned investor or just starting in crypto, we’ve got everything you need to navigate the Base ecosystem with confidence.
-
     `,
     callout: `If you have any trouble, our support team is ready to help. Ask in the forum or send an email to support@homebase.com.`,
   },
 
-  'api-docs': {
-    title: 'API Documentation',
-    lastUpdated: 'February 15, 2025',
-    breadcrumb: ['Home', 'Docs', 'API Documentation'],
+  "api-docs": {
+    title: "API Documentation",
+    lastUpdated: "February 15, 2025",
+    breadcrumb: ["Home", "Docs", "API Documentation"],
     content: `
 Developers can integrate real-time data from the Base chain into their own apps via our simple RESTful API. Gain direct access to transaction details, wallet info, and market metrics.
     `,
@@ -241,9 +239,9 @@ Developers can integrate real-time data from the Base chain into their own apps 
   },
 
   faqs: {
-    title: 'Frequently Asked Questions',
-    lastUpdated: 'February 15, 2025',
-    breadcrumb: ['Home', 'Docs', 'FAQs'],
+    title: "Frequently Asked Questions",
+    lastUpdated: "February 15, 2025",
+    breadcrumb: ["Home", "Docs", "FAQs"],
     content: `
 Frequently Asked Questions (FAQs)
 
@@ -260,9 +258,10 @@ Connect your wallet (MetaMask, Coinbase Wallet, WalletConnect, etc.).
 Explore our trading tools (Whale Watchers, Token Screener, Honeypot Tracker).
 Check out Market Insights (News Terminal, Launch Calendar, Analyst Reports).
 Join the Community Forum (Launching late March!).
+
  Trading Tools & Features
 
- 4. What tools does Homebase offer?
+4. What tools does Homebase offer?
 
 Whale Watchers – Tracks large wallet movements and liquidity shifts.
 Token Screener – Helps filter and analyze Base chain tokens.
@@ -304,39 +303,50 @@ No. Homebase is a non-custodial platform, meaning we do not store private keys o
 
 ❓ Need More Help?
 If you have any other questions, feel free to join our Community Forum (coming soon!) or follow our social channels for updates.
-
-
-
-
     `,
     callout: `If your question isn't listed here, jump into the Forum or open a GitHub Issue. Community-driven Q&A speeds up resolution!`,
   },
+
+  // Default fallback
+  default: {
+    title: "Welcome to Homebase Docs",
+    lastUpdated: "N/A",
+    breadcrumb: ["Home", "Docs"],
+    content: "Select a section from the sidebar to explore our features.",
+    callout: "",
+  },
 };
 
-export default function Content({ activeSection }: ContentProps) {
-  const section = contentData[activeSection] || {
-    title: 'Welcome to Homebase Docs',
-    lastUpdated: 'N/A',
-    breadcrumb: ['Home', 'Docs'],
-    content: 'Select a section from the sidebar to explore our features.',
-    callout: '',
-  };
+/* --------------------------------------------------------------------------
+   HELPER: Convert crumb -> route
+   -------------------------------------------------------------------------- */
+function crumbToRoute(crumb: string): string {
+  if (crumb === "Home") return "/";
+  if (crumb === "Docs") return "/docs";
+  return `/docs/${crumb.toLowerCase().replace(/\s+/g, "-")}`;
+}
 
-  // Build breadcrumb display
+export default function Content({ activeSection }: ContentProps) {
+  const section = contentData[activeSection] || contentData.default;
+
+  // Build breadcrumb
   const breadcrumbElements = section.breadcrumb.map((crumb, idx) => {
     const isLast = idx === section.breadcrumb.length - 1;
+    const route = crumbToRoute(crumb);
+
     return (
       <div key={crumb} className="flex items-center space-x-1">
-        <a
-          href="#"
-          className={`${
-            isLast ? 'text-gray-300 cursor-default' : 'text-blue-400 hover:underline'
-          } text-xs truncate`}
-          style={{ maxWidth: '60px' }}
-          title={crumb} // show full on hover
-        >
-          {crumb}
-        </a>
+        {isLast ? (
+          <span className="text-xs text-gray-300">{crumb}</span>
+        ) : (
+          <a
+            href={route}
+            className="text-xs text-blue-400 hover:underline truncate"
+            title={crumb}
+          >
+            {crumb}
+          </a>
+        )}
         {!isLast && <span className="text-xs">/</span>}
       </div>
     );
@@ -344,51 +354,46 @@ export default function Content({ activeSection }: ContentProps) {
 
   return (
     <div className="flex-grow p-4 md:p-6 bg-black">
-      {/* Top row: Breadcrumb + Date in one line, no wrap */}
-      <div className="flex items-center justify-between whitespace-nowrap overflow-x-auto">
-        {/* Breadcrumb Navigation */}
-        <div className="flex items-center text-gray-400 space-x-2">
+      {/*
+        On mobile, we effectively have two lines:
+        1) Breadcrumb
+        2) Last Updated
+        On md+ screens, they are side by side.
+      */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-y-2 mb-2">
+        {/* Breadcrumb */}
+        <div className="flex flex-wrap gap-x-2 items-center text-gray-400">
           {breadcrumbElements}
         </div>
-        {/* Date Updated */}
+
+        {/* Last Updated */}
         <span className="text-xs text-gray-400">
           Last Updated: {section.lastUpdated}
         </span>
       </div>
 
       {/* Title */}
-      <h2 className="text-xl md:text-2xl font-bold text-blue-500 mb-2 mt-2">
+      <h2 className="text-xl md:text-2xl font-bold text-blue-500 mb-2">
         {section.title}
       </h2>
 
-      {/* Main Content */}
+      {/* Main Content Box */}
       <div className="bg-black p-4 md:p-6 rounded-md shadow border border-gray-700">
         <p className="text-sm md:text-base text-gray-300 whitespace-pre-line">
           {section.content}
         </p>
 
-        {/* Lightblue/darkblue callout with a lightbulb */}
-        <div className="mt-4 p-4 bg-blue-800 border-l-4 border-blue-500 rounded-md flex items-start space-x-3">
-          <Lightbulb className="text-blue-100 mt-1" />
-          <p className="text-sm md:text-base text-blue-100">
-            {section.callout}
-          </p>
-        </div>
+        {section.callout && (
+          <div className="mt-4 p-4 bg-blue-800 border-l-4 border-blue-500 rounded-md flex items-start space-x-3">
+            <Lightbulb className="text-blue-100 mt-1" />
+            <p className="text-sm md:text-base text-blue-100">
+              {section.callout}
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 

@@ -1,26 +1,28 @@
-import mongoose from 'mongoose';
+// lib/mongodb.ts
+import { MongoClient } from "mongodb";
 
-const MONGODB_URI: string = process.env.MONGODB_URI ?? "";
-
-if (!MONGODB_URI) {
-  throw new Error('Please define MONGODB_URI in your .env.local file');
+const uri = process.env.MONGODB_URI;
+if (!uri) {
+  throw new Error("Please add your MONGODB_URI to .env.local");
 }
 
-let cached = (global as any).mongoose || { conn: null, promise: null };
+const client = new MongoClient(uri);
+let clientPromise: Promise<MongoClient>;
 
-export async function connectToDatabase() {
-  if (cached.conn) return cached.conn;
-
-  if (!cached.promise) {
-    cached.promise = mongoose.connect(MONGODB_URI, {
-      dbName: 'homebase_forum',
-      bufferCommands: false,
-    }).then((mongoose) => mongoose);
+if (process.env.NODE_ENV === "development") {
+  // Use a global variable so that the value
+  // is preserved across module reloads in dev
+  if (!(global as any)._mongoClientPromise) {
+    (global as any)._mongoClientPromise = client.connect();
   }
-
-  cached.conn = await cached.promise;
-  return cached.conn;
+  clientPromise = (global as any)._mongoClientPromise;
+} else {
+  // In production mode, it's okay to just connect once
+  clientPromise = client.connect();
 }
+
+export default clientPromise;
+
 
 
 

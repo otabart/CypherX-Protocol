@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 interface SidebarProps {
   activeSection: string;
@@ -12,20 +12,20 @@ interface SidebarProps {
 
 const sections = [
   {
-    id: 'products',
-    title: 'Products',
+    id: "products",
+    title: "Products",
     subSections: [
-      { id: 'analytics', title: 'Trading Tools' },
-      { id: 'insights', title: 'Market Insights' },
-      { id: 'forum', title: 'Community Forum' },
+      { id: "analytics", title: "Trading Tools" },
+      { id: "insights", title: "Market Insights" },
+      { id: "forum", title: "Community Forum" },
     ],
   },
-  { id: 'launch', title: 'When Do We Launch?' },
-  { id: 'past-news', title: 'Past News' },
-  { id: 'company-updates', title: 'Company Updates' },
-  { id: 'getting-started', title: 'Getting Started' },
-  { id: 'api-docs', title: 'API Documentation' },
-  { id: 'faqs', title: 'FAQs' },
+  { id: "launch", title: "When Do We Launch?" },
+  { id: "past-news", title: "Past News" },
+  { id: "company-updates", title: "Company Updates" },
+  { id: "getting-started", title: "Getting Started" },
+  { id: "api-docs", title: "API Documentation" },
+  { id: "faqs", title: "FAQs" },
 ];
 
 export default function Sidebar({
@@ -34,7 +34,6 @@ export default function Sidebar({
   isSidebarOpen,
   setIsSidebarOpen,
 }: SidebarProps) {
-  // Tracks which dropdown is open
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
   return (
@@ -49,13 +48,13 @@ export default function Sidebar({
         w-64
         bg-black
         border-r border-gray-700
-        pt-16 lg:pt-4
         px-4
         pb-4
+        pt-20 lg:pt-1     /* Extra padding so "Documentation" is lower */
         transform
         transition-transform
         overflow-y-auto
-        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}
         lg:translate-x-0
       `}
     >
@@ -67,7 +66,8 @@ export default function Sidebar({
         ✖
       </button>
 
-      <h2 className="text-lg font-bold mb-4">Documentation</h2>
+      {/* Lowered "Documentation" text so it's not too close to the top */}
+      <h2 className="text-lg font-bold mb-4 mt-2">Documentation</h2>
 
       {/* Search Field */}
       <input
@@ -79,6 +79,7 @@ export default function Sidebar({
       <ul className="space-y-4">
         {sections.map((section) => (
           <li key={section.id}>
+            {/* If there's a subSections array, we show a dropdown */}
             {section.subSections ? (
               <div>
                 <button
@@ -96,6 +97,7 @@ export default function Sidebar({
                     <ChevronRight size={18} />
                   )}
                 </button>
+
                 {openDropdown === section.id && (
                   <ul className="pl-4 space-y-2 mt-1">
                     {section.subSections.map((sub) => (
@@ -107,8 +109,8 @@ export default function Sidebar({
                           }}
                           className={`block w-full text-left px-4 py-2 rounded-md transition-all ${
                             activeSection === sub.id
-                              ? 'bg-blue-600 text-white font-bold'
-                              : 'hover:bg-gray-700'
+                              ? "bg-blue-600 text-white font-bold"
+                              : "hover:bg-gray-700"
                           }`}
                         >
                           {sub.title}
@@ -119,6 +121,7 @@ export default function Sidebar({
                 )}
               </div>
             ) : (
+              // No subSections => direct link
               <button
                 onClick={() => {
                   setActiveSection(section.id);
@@ -126,8 +129,8 @@ export default function Sidebar({
                 }}
                 className={`w-full text-left px-4 py-2 rounded-md transition-all ${
                   activeSection === section.id
-                    ? 'bg-blue-600 text-white font-bold'
-                    : 'hover:bg-gray-800'
+                    ? "bg-blue-600 text-white font-bold"
+                    : "hover:bg-gray-800"
                 }`}
               >
                 {section.title}
@@ -139,6 +142,7 @@ export default function Sidebar({
     </aside>
   );
 }
+
 
 
 

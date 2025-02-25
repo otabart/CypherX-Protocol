@@ -1,10 +1,11 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import Sidebar from './components/sidebar';
-import Content from './components/content';
-import RightSidebar from './components/rightsidebar';
-import { motion } from 'framer-motion';
+import { useState } from "react";
+import Link from "next/link";   // <-- Import Next.js Link if you're using Next.js
+import Sidebar from "./components/sidebar";
+import Content from "./components/content";
+import RightSidebar from "./components/rightsidebar";
+import { motion } from "framer-motion";
 
 // Parent container to stagger child animations
 const containerVariants = {
@@ -33,7 +34,7 @@ const rightSidebarVariants = {
 };
 
 export default function DocsPage() {
-  const [activeSection, setActiveSection] = useState('products');
+  const [activeSection, setActiveSection] = useState("products");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
@@ -45,14 +46,22 @@ export default function DocsPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        {/* Left: Logo + Title */}
+        {/* Left: Clickable Logo + Clickable Title */}
         <div className="flex items-center space-x-3">
-          <img
-            src="https://i.imgur.com/7L1Xsfa.png"
-            alt="Homebase Logo"
-            className="w-8 h-8 object-contain"
-          />
-          <h1 className="text-2xl font-bold whitespace-nowrap">Docs</h1>
+          {/* LOGO Link */}
+          <Link href="/">
+            <img
+              src="https://i.imgur.com/7L1Xsfa.png"
+              alt="Homebase Logo"
+              className="w-8 h-8 object-contain cursor-pointer"
+            />
+          </Link>
+          {/* TITLE Link */}
+          <Link href="/">
+            <h1 className="text-2xl font-bold whitespace-nowrap cursor-pointer">
+              Docs
+            </h1>
+          </Link>
         </div>
 
         {/* Hamburger icon for mobile */}
@@ -66,12 +75,12 @@ export default function DocsPage() {
 
       {/* MAIN BODY */}
       <motion.div
-        className="flex flex-grow overflow-hidden"
+        className="flex flex-1 items-stretch"
         initial="hidden"
         animate="visible"
         variants={containerVariants}
       >
-        {/* Sidebar */}
+        {/* Left Sidebar */}
         <motion.div variants={sidebarVariants} className="flex-shrink-0">
           <Sidebar
             activeSection={activeSection}
@@ -81,15 +90,15 @@ export default function DocsPage() {
           />
         </motion.div>
 
-        {/* Content */}
+        {/* Main Content */}
         <motion.div variants={contentVariants} className="flex-1">
           <Content activeSection={activeSection} />
         </motion.div>
 
-        {/* Right Sidebar with full-height separator */}
+        {/* Right Sidebar */}
         <motion.div
           variants={rightSidebarVariants}
-          className="flex-shrink-0 w-64 border-l border-gray-700 h-full"
+          className="hidden lg:block flex-shrink-0 w-64 border-l border-gray-700"
         >
           <RightSidebar />
         </motion.div>
@@ -97,12 +106,4 @@ export default function DocsPage() {
     </div>
   );
 }
-
-
-
-
-
-
-
-
 

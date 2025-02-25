@@ -1,5 +1,3 @@
-// app/content/articles.ts
-
 export type NewsArticle = {
   id: string;
   title: string;
@@ -12,7 +10,7 @@ export type NewsArticle = {
 
 //
 // Below are 15 real-event-based, full-length articles about Base Chain,
-// each published within the last 3 days relative to 2025-02-21.
+// each published within the last 3 days relative to February 21, 2025.
 // Articles blend actual historical data from Base’s 2023 launch
 // with plausible future developments.
 //
@@ -20,13 +18,13 @@ export const articles: NewsArticle[] = [
   {
     id: "1",
     title: "Base Chain Daily Transactions Surpass Major Milestone",
-    publishedAt: new Date("2025-02-21T12:00:00Z").toISOString(),
-    source: "Crypto Metrics",
+    publishedAt: new Date("2025-02-24T12:23:00Z").toISOString(),
+    source: "Base News",
     author: "Homebase AI",
     url: "#",
-    content: ` Base Chain Daily Transactions Hit Record High, Cementing Status as Top Layer 2
+    content: `Base Chain Daily Transactions Hit Record High, Cementing Status as Top Layer 2
 
-February 21, 2025 Base Chain, the Layer 2 network incubated by Coinbase, has shattered its previous daily transaction record by surpassing **2.1 million** confirmed transactions in a single 24-hour period. This achievement places Base on par with—or even above—other popular Layer 2 solutions like Arbitrum and Optimism, highlighting the network’s growing prominence in the Ethereum ecosystem.
+  Base Chain, the Layer 2 network incubated by Coinbase, has shattered its previous daily transaction record by surpassing **2.1 million** confirmed transactions in a single 24-hour period. This achievement places Base on par with—or even above—other popular Layer 2 solutions like Arbitrum and Optimism, highlighting the network’s growing prominence in the Ethereum ecosystem.
 
 ## Historical Growth
 Base initially launched in August 2023, drawing considerable attention due to Coinbase’s backing and its promise of low fees. During its first few weeks, Base recorded an average of 200,000 daily transactions, driven largely by meme tokens and NFT minting frenzies. By the end of 2023, on-chain analytics from L2Beat indicated that Base was consistently handling **over 1 million** daily transactions, fueled by DeFi protocols, gaming dApps, and the viral success of social platforms like Friend.tech.
@@ -44,13 +42,13 @@ The network’s rapid ascent underscores the demand for scalable, user-friendly 
   {
     id: "2",
     title: "Bridging Volume to Base Chain Hits $500 Million in Three Days",
-    publishedAt: new Date("2025-02-21T10:45:00Z").toISOString(),
-    source: "DeFi Watch",
+    publishedAt: new Date("2025-02-24T10:48:00Z").toISOString(),
+    source: "Base News",
     author: "Homebase AI",
     url: "#",
     content: ` Cross-Chain Surge: $500M Flows Into Base Chain in Just 72 Hours
 
-February 21, 2025  In a remarkable show of confidence, over $500 million in assets has been bridged to Base Chain within the past three days. This massive inflow underscores Base’s growing reputation for speed, security, and low transaction costs—key factors that are attracting both retail users and institutional players.
+  In a remarkable show of confidence, over **$500 million** in assets has been bridged to Base Chain within the past three days. This massive inflow underscores Base’s growing reputation for speed, security, and low transaction costs—key factors that are attracting both retail users and institutional players.
 
 ## Rapid Expansion of Bridge Solutions
 Several major bridging protocols, including **Wormhole** and **LayerZero**, have reported record volumes as traders move stablecoins, ETH, and other tokens onto Base. Analysts attribute the influx to:
@@ -69,13 +67,13 @@ As more bridges become compatible with Base, bridging fees are likely to decreas
   {
     id: "3",
     title: "Security Spotlight: Base Chain Successfully Deflects Exploit Attempt",
-    publishedAt: new Date("2025-02-21T09:15:00Z").toISOString(),
-    source: "Security Ledger",
+    publishedAt: new Date("2025-02-24T09:15:00Z").toISOString(),
+    source: "Base News",
     author: "Homebase AI",
     url: "#",
     content: ` Base Chain Foils Coordinated Exploit, Highlighting Robust Security Measures
 
-    February 21, 2025  Security teams working on Base Chain, the Layer 2 solution backed by Coinbase, announced that they successfully thwarted an advanced exploit attempt targeting the network’s cross-chain bridge infrastructure. The attack, which occurred late last night, involved malicious smart contracts designed to drain liquidity from unsuspecting users.
+  Security teams working on Base Chain, the Layer 2 solution backed by Coinbase, announced that they successfully thwarted an advanced exploit attempt targeting the network’s cross-chain bridge infrastructure. The attack, which occurred late last night, involved malicious smart contracts designed to drain liquidity from unsuspecting users.
 
 ## The Attack Vector
 According to forensic reports, the attackers deployed **phishing-like** smart contracts that mimicked legitimate bridge transactions. By exploiting older cross-chain protocols, the hackers aimed to reroute tokens to their own addresses.
@@ -95,13 +93,13 @@ Security analysts commend Base’s quick reaction, noting that this incident und
   {
     id: "4",
     title: "Friend.tech Surge: Social dApp Revives Activity on Base Chain",
-    publishedAt: new Date("2025-02-21T08:30:00Z").toISOString(),
-    source: "DApp Daily",
+    publishedAt: new Date("2025-02-24T08:30:00Z").toISOString(),
+    source: "Base News",
     author: "Homebase AI",
     url: "#",
     content: `# Friend.tech Sees Second Renaissance on Base, Driving New Wave of Social Trading
 
-**February 21, 2025 —** Friend.tech, a social trading platform originally launched on Base Chain in mid-2023, is once again the talk of the crypto sphere. Over the last 72 hours, daily active users have more than doubled, and the platform’s total trading volume reached a new peak—sending ripples across Base’s entire DeFi ecosystem.
+  Friend.tech, a social trading platform originally launched on Base Chain in mid-2023, is once again the talk of the crypto sphere. Over the last 72 hours, daily active users have more than doubled, and the platform’s total trading volume reached a new peak—sending ripples across Base’s entire DeFi ecosystem.
 
 ## What Is Friend.tech?
 Friend.tech allows users to tokenize their social presence, enabling them to buy and sell “shares” of each other’s online personas. Profits are shared proportionally, creating a unique blend of social media engagement and speculative trading. During its initial debut in 2023, the app attracted influencers and early adopters but eventually cooled off.
@@ -118,12 +116,12 @@ The resurgence of Friend.tech has translated into higher overall transaction cou
     id: "5",
     title: "Base Chain DeFi: Total Value Locked (TVL) Crosses $600 Million",
     publishedAt: new Date("2025-02-20T19:50:00Z").toISOString(),
-    source: "DeFi Pulse Report",
+    source: "Base News",
     author: "Homebase AI",
     url: "#",
     content: `# Base Chain’s DeFi Boom: TVL Exceeds $600M, Setting a New Benchmark
 
-**February 20, 2025 —** Base Chain has hit another significant milestone, as Total Value Locked (TVL) across its DeFi protocols surpassed **$600 million** this week. The latest DeFi Pulse Report attributes this surge to a mix of yield-farming incentives, cross-chain liquidity inflows, and new user-friendly dApps.
+**February 20, 2025** — Base Chain has hit another significant milestone, as Total Value Locked (TVL) across its DeFi protocols surpassed **$600 million** this week. The latest DeFi Pulse Report attributes this surge to a mix of yield-farming incentives, cross-chain liquidity inflows, and new user-friendly dApps.
 
 ## Key Drivers Behind the Growth
 1. **Yield-Farming Incentives:** Several major DeFi platforms have launched specialized reward programs on Base, offering higher APYs for liquidity providers who migrate from Ethereum mainnet or other Layer 2s.
@@ -147,7 +145,7 @@ While $600 million in TVL is an impressive feat, analysts believe Base is only s
     url: "#",
     content: `# Coinbase Ramps Up Developer Resources for Base Chain, Accelerating dApp Growth
 
-**February 20, 2025 —** Coinbase has announced a new wave of investments in developer tooling for Base Chain, aiming to attract more projects to its Layer 2 solution. The initiative features expanded documentation, robust software development kits (SDKs), and generous grant programs to encourage innovation.
+**February 20, 2025** — Coinbase has announced a new wave of investments in developer tooling for Base Chain, aiming to attract more projects to its Layer 2 solution. The initiative features expanded documentation, robust software development kits (SDKs), and generous grant programs to encourage innovation.
 
 ## Streamlined Onboarding
 Developers report that the updated SDKs make it significantly easier to port existing Ethereum dApps to Base. The newly introduced **BaseCLI** tool automates contract deployment, testnet configuration, and environment setup, reducing development overhead by as much as 50%.
@@ -171,7 +169,7 @@ Observers say the move could accelerate user adoption, as more high-quality proj
     url: "#",
     content: `# Base Chain NFTs Go Mainstream: OpenSea Rolls Out Complete Support
 
-**February 20, 2025 —** OpenSea, the world’s largest NFT marketplace, has officially integrated Base Chain into its platform. Creators and collectors can now mint, buy, and sell Base-based NFTs without leaving the familiar OpenSea interface.
+**February 20, 2025** — OpenSea, the world’s largest NFT marketplace, has officially integrated Base Chain into its platform. Creators and collectors can now mint, buy, and sell Base-based NFTs without leaving the familiar OpenSea interface.
 
 ## Why This Matters
 - **Lower Minting Fees:** Base’s low gas costs make NFT creation more accessible, especially for smaller artists and collectors who might be priced out on Ethereum mainnet.
@@ -195,7 +193,7 @@ Overall, the OpenSea-Base collaboration is a significant milestone in the ongoin
     url: "#",
     content: `# Base Chain Overtakes Competitors in TPS Rankings, Showcasing Scalability
 
-**February 20, 2025 —** A new report by Layer-2 Analytics ranks Base Chain as the top Layer 2 network in terms of transaction throughput, surpassing both Arbitrum and Polygon’s zkEVM in average transactions per second (TPS). According to the study, Base consistently handles **2,000–3,000 TPS** during peak hours, thanks to ongoing optimizations and network upgrades.
+**February 20, 2025** — A new report by Layer-2 Analytics ranks Base Chain as the top Layer 2 network in terms of transaction throughput, surpassing both Arbitrum and Polygon’s zkEVM in average transactions per second (TPS). According to the study, Base consistently handles **2,000–3,000 TPS** during peak hours, thanks to ongoing optimizations and network upgrades.
 
 ## Behind the High Throughput
 - **OP Stack Enhancements:** Base’s architecture benefits from close collaboration with OP Labs, incorporating improved data availability solutions that reduce latency and boost capacity.
@@ -217,7 +215,7 @@ Layer-2 Analytics predicts that Base’s TPS could climb even higher if the chai
     url: "#",
     content: `# Liquidity Boom: Leading DEX Offers Reward Bonanza on Base Chain
 
-**February 20, 2025 —** One of the largest decentralized exchanges (DEXs) on Ethereum, widely known for its innovative tokenomics, has unveiled a new incentive program exclusively for Base Chain liquidity providers. Under this scheme, LPs supplying stablecoins and blue-chip tokens to Base-based pools can earn **double rewards** for a limited period.
+**February 20, 2025** — One of the largest decentralized exchanges (DEXs) on Ethereum, widely known for its innovative tokenomics, has unveiled a new incentive program exclusively for Base Chain liquidity providers. Under this scheme, LPs supplying stablecoins and blue-chip tokens to Base-based pools can earn **double rewards** for a limited period.
 
 ## Program Highlights
 - **Reward Multiplier:** Liquidity providers can earn boosted governance tokens and additional yield in stablecoins when they stake on Base.
@@ -239,7 +237,7 @@ Social media channels are buzzing with LPs discussing strategies to maximize the
     url: "#",
     content: `# Eco-Friendly Blockchain: Base Chain Lauded for Low Carbon Footprint
 
-**February 19, 2025 —** Environmental groups and sustainability-focused organizations are applauding Base Chain for its relatively low energy consumption compared to traditional Proof-of-Work blockchains. By leveraging Ethereum’s Proof-of-Stake (PoS) model and introducing additional off-chain data compression, Base Chain has reduced per-transaction energy usage to a fraction of older networks.
+**February 19, 2025** — Environmental groups and sustainability-focused organizations are applauding Base Chain for its relatively low energy consumption compared to traditional Proof-of-Work blockchains. By leveraging Ethereum’s Proof-of-Stake (PoS) model and introducing additional off-chain data compression, Base Chain has reduced per-transaction energy usage to a fraction of older networks.
 
 ## Key Eco-Friendly Features
 1. **PoS Inheritance:** Because Base relies on Ethereum’s PoS security, it benefits from Ethereum’s drastically lower energy requirements compared to PoW systems.
@@ -261,7 +259,7 @@ Coinbase developers are exploring additional “green” enhancements, such as o
     url: "#",
     content: `# Two Years of Base: Coinbase Hosts Virtual Summit to Mark Mainnet Milestone
 
-**February 19, 2025 —** Coinbase has officially celebrated the second anniversary of Base Chain’s mainnet launch with a virtual summit that brought together industry leaders, developers, and community members. The event highlighted the network’s rapid growth, from a fledgling Layer 2 project in August 2023 to a major player in DeFi, NFTs, and Web3 gaming.
+**February 19, 2025** — Coinbase has officially celebrated the second anniversary of Base Chain’s mainnet launch with a virtual summit that brought together industry leaders, developers, and community members. The event highlighted the network’s rapid growth, from a fledgling Layer 2 project in August 2023 to a major player in DeFi, NFTs, and Web3 gaming.
 
 ## Summit Highlights
 - **Keynote by Brian Armstrong:** Coinbase’s CEO recapped the journey from testnet to mainnet, emphasizing the role of open-source collaboration in Base’s success.
@@ -291,7 +289,7 @@ With two years of progress under its belt, Base appears poised to continue shapi
     url: "#",
     content: `# On-Chain Gaming Thrives on Base: Fast Transactions Spark Surge in Player Counts
 
-**February 19, 2025 —** A new wave of on-chain games has taken root on Base Chain, pushing player counts and transaction volumes to unprecedented levels. According to GameFi Now, the number of active gaming wallets on Base has jumped **35%** in the last month alone, solidifying the chain’s reputation as a go-to platform for blockchain-based entertainment.
+**February 19, 2025** — A new wave of on-chain games has taken root on Base Chain, pushing player counts and transaction volumes to unprecedented levels. According to GameFi Now, the number of active gaming wallets on Base has jumped **35%** in the last month alone, solidifying the chain’s reputation as a go-to platform for blockchain-based entertainment.
 
 ## Key Drivers
 1. **Instant Microtransactions:** Base’s high throughput and low fees enable seamless in-game purchases, trades, and reward distributions—vital for real-time gaming experiences.
@@ -315,7 +313,7 @@ As Web3 gaming continues to expand, Base Chain’s low-cost environment could at
     url: "#",
     content: `# Base Chain Achieves Regulatory Milestones, Opening Doors for Institutional Investment
 
-**February 19, 2025 —** Base Chain has secured regulatory approval in several major jurisdictions, including Singapore, the United Kingdom, and parts of the European Union. This development is expected to pave the way for broader institutional adoption, as financial entities can now confidently offer services and investment products built on Base.
+**February 19, 2025** — Base Chain has secured regulatory approval in several major jurisdictions, including Singapore, the United Kingdom, and parts of the European Union. This development is expected to pave the way for broader institutional adoption, as financial entities can now confidently offer services and investment products built on Base.
 
 ## The Approval Process
 Coinbase, leveraging its global compliance team, worked closely with local regulators to showcase Base Chain’s security, transparency, and alignment with emerging digital asset frameworks. Key areas of focus included:
@@ -338,7 +336,7 @@ While this approval is a major win, Coinbase representatives caution that regula
     url: "#",
     content: `# Base Chain Embraces Account Abstraction, Ushering in Next-Gen User Experiences
 
-**February 19, 2025 —** Account abstraction, a long-awaited feature that separates wallet logic from private keys, has officially arrived on Base Chain. The upgrade aims to simplify wallet management for everyday users, potentially removing one of the biggest hurdles to mainstream crypto adoption.
+**February 19, 2025** — Account abstraction, a long-awaited feature that separates wallet logic from private keys, has officially arrived on Base Chain. The upgrade aims to simplify wallet management for everyday users, potentially removing one of the biggest hurdles to mainstream crypto adoption.
 
 ## How It Works
 Traditionally, each Ethereum account is tied to a specific private key. With account abstraction:
@@ -363,7 +361,7 @@ By lowering the technical barriers to entry, account abstraction stands to trans
     url: "#",
     content: `# The Rise of “DeFi-NFT” Platforms on Base: Unlocking New Possibilities
 
-**February 19, 2025 —** A fresh wave of DeFi-NFT hybrid platforms is emerging on Base Chain, blending collectible assets with financial instruments in groundbreaking ways. By combining yield-earning strategies with the unique ownership model of NFTs, these platforms cater to both hardcore DeFi traders and dedicated NFT collectors.
+**February 19, 2025** — A fresh wave of DeFi-NFT hybrid platforms is emerging on Base Chain, blending collectible assets with financial instruments in groundbreaking ways. By combining yield-earning strategies with the unique ownership model of NFTs, these platforms cater to both hardcore DeFi traders and dedicated NFT collectors.
 
 ## Key Innovations
 1. **NFT Staking:** Users can stake their NFTs in liquidity pools or vaults, earning passive income without relinquishing ownership of their digital collectibles.
@@ -379,6 +377,7 @@ By lowering the technical barriers to entry, account abstraction stands to trans
 Analysts believe the DeFi-NFT crossover could be a significant growth driver for Base Chain, attracting a wider range of users beyond traditional token traders. By merging the financial potential of DeFi with the cultural appeal of NFTs, these platforms exemplify the network’s capacity for innovation. As more creators and investors explore these hybrid models, Base Chain is likely to remain at the forefront of Web3 experimentation.`,
   },
 ];
+
 
   
   
