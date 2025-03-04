@@ -13,6 +13,8 @@ import {
   GroupIcon,
   RocketIcon,
 } from "./icons";
+import { CloudIcon, CloudLightningIcon, CloudUploadIcon, CoinsIcon, CpuIcon, FileIcon, FilesIcon, HashIcon, LinkIcon, LogsIcon, Rocket } from "lucide-react";
+import { GenIcon, IconBase } from "react-icons/lib";
 
 type Milestone = {
   date: string;
@@ -24,17 +26,31 @@ type Milestone = {
 const roadmapData: Milestone[] = [
   {
     date: "Feb 27, 2025",
-    title: "v1 Beta Launch",
+    title: "v1 Launch Beta Testing",
     description:
-      "Homebase v1 beta goes live with core functionalities and limited features. Early adopters get exclusive access to product demos and feedback channels.",
-    icon: <RocketIcon />,
+      "Homebase v1 open beta goes live with core functionalities and limited features. Early adopters get exclusive access to products and the chance to earn rewards down the road.",
+    icon: <FilesIcon />,
   },
   {
     date: "TBD",
     title: "Coin Launch",
     description:
-      "Introducing our native coin. More details and presale information coming soon!",
+      "Introducing $HOME Coin. More details and presale information coming once launch data is confirmed, join our telegram to stay up to date!",
+    icon: <Rocket />,
+  },
+  {
+    date: "Mar 20, 2025",
+    title: "Coin of the Week Spaces",
+    description:
+      "Our first community event will be weekly spaces hosted on Sunday where everyone will submit the coin they think will perform the best that given week. Winner gets an ETH prize",
     icon: <CoinIcon />,
+  },
+  {
+    date: "Apr 3, 2025",
+    title: "Trading Competition",
+    description:
+      "Enter your wallet in a week long trading competition, top 3 traders for the week get ETH prizes",
+    icon: <ChartIcon />,
   },
   {
     date: "Mar 10, 2025",
@@ -48,7 +64,7 @@ const roadmapData: Milestone[] = [
     title: "v2 Official Launch",
     description:
       "Release upgraded features: enhanced charts, expanded whale watchers, additional tools, and the launch of the Homebase Forum.",
-    icon: <RocketIcon />,
+    icon: <FilesIcon />,
   },
   {
     date: "Apr 20, 2025",
@@ -61,17 +77,17 @@ const roadmapData: Milestone[] = [
     date: "Jun 01, 2025",
     title: "Next Phase Preview",
     description:
-      "Wrap-up of the current roadmap with a sneak peek at exciting upcoming features and product enhancements.",
-    icon: <ToolIcon />,
+      "Building a new Phase of on-chain analytics, AI smart analytics.",
+    icon: <CloudUploadIcon />,
   },
 ];
 
 const cardVariants = {
   hidden: { opacity: 0, y: 20 },
-  visible: { 
-    opacity: 1, 
-    y: 0, 
-    transition: { type: "spring", stiffness: 120, damping: 15 }
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { type: "spring", stiffness: 120, damping: 15 },
   },
 };
 
@@ -95,7 +111,9 @@ function TimelineCard({ milestone, index, isLeft, isSelected, onClick }: Timelin
       variants={cardVariants}
       whileHover={{ scale: 1.03, transition: { duration: 0.2 } }}
     >
-      <div className="p-6 rounded-md border border-black bg-white text-black shadow-md">
+      <div
+        className={`p-6 rounded-md border ${isSelected ? "border-blue-600" : "border-black"} bg-white text-black shadow-md`}
+      >
         <motion.button
           whileHover={{ rotate: 360, transition: { duration: 0.4 } }}
           className={`w-16 h-16 mb-4 rounded-full border-2 flex items-center justify-center mx-auto ${
@@ -174,6 +192,8 @@ export default function RoadmapSection() {
     </section>
   );
 }
+
+
 
 
 

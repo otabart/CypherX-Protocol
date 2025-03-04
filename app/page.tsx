@@ -1,22 +1,40 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import CountUp from "react-countup";
 import Link from "next/link";
-import RoadmapSection from "./components/RoadmapSection"; // adjust path as necessary
-
-// Import your custom components (adjust paths as needed)
+import RoadmapSection from "./components/RoadmapSection";
 import ScrollingTokenBanner from "./components/ScrollingTokenBanner";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
+import { NewsArticle } from "./content/articles";
 
-// Import the NewsArticle type from your content file
-import { NewsArticle } from "./content/articles"; // adjust path as needed
+// Custom hook to check if viewport is mobile
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+  return isMobile;
+}
 
-/* --------------------------------------------------------------------------
-   ICON COMPONENTS (All defined only once)
-   -------------------------------------------------------------------------- */
+// Helper to return scroll animation props based on device type
+function getScrollAnimationProps(isMobile) {
+  return {
+    initial: { opacity: 0, y: isMobile ? 50 : 30 },
+    whileInView: { opacity: 1, y: 0 },
+    viewport: { once: true },
+    transition: { duration: isMobile ? 1.0 : 0.8, ease: "easeOut" },
+  };
+}
+
+// ICON COMPONENTS
 function CoinIcon() {
   return (
     <svg
@@ -133,7 +151,7 @@ function ShieldIcon() {
   );
 }
 
-/* New Icons for "How Homebase Powers Base" Section */
+// New Icons for "How Homebase Powers Base" Section
 function ChartIcon() {
   return (
     <svg
@@ -191,7 +209,7 @@ function ToolIcon() {
   );
 }
 
-/* New Icons for "Market Moves Fast" Section */
+// New Icons for "Market Moves Fast" Section (if needed)
 function TrendIcon() {
   return (
     <svg
@@ -250,13 +268,132 @@ function SentimentIcon() {
   );
 }
 
-/* --------------------------------------------------------------------------
-   LATEST NEWS SECTION (Dynamic)
-   -------------------------------------------------------------------------- */
+// Animation variants for EthereumStats
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.3 },
+  },
+};
+
+const cardVariants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0 },
+};
+
+const headerVariants = {
+  hidden: { opacity: 0, y: -30 },
+  visible: { opacity: 1, y: 0 },
+  hover: { scale: 1.02, textShadow: "0px 0px 8px rgba(37,99,235,0.8)" },
+};
+
+const cardHoverVariants = {
+  scale: 1.05,
+  rotateX: 5,
+  rotateY: 5,
+  boxShadow: "0px 10px 20px rgba(0, 0, 0, 0.3)",
+};
+
+const iconHoverVariants = {
+  rotate: 10,
+  filter: "drop-shadow(0px 0px 8px rgba(37,99,235,0.8))",
+};
+
+// EthereumStats Component
+function EthereumStats({ stats }) {
+  if (!stats) return <div className="text-center text-gray-500">Loading stats...</div>;
+
+  return (
+    <motion.section
+      className="px-4 py-8 flex flex-col items-center"
+      initial="hidden"
+      animate="visible"
+      variants={containerVariants}
+    >
+      {/* Section Title */}
+      <motion.div
+        className="max-w-2xl mx-auto mb-6 text-center"
+        variants={headerVariants}
+        initial="hidden"
+        animate="visible"
+        // Removed whileHover="hover" here
+        transition={{ duration: 0.6 }}
+      >
+        <h2 className="text-3xl font-extrabold text-primaryBlue">
+          Ethereum Network Stats
+        </h2>
+        <p className="text-gray-600 mt-1 text-lg">
+          Live insights into Ethereum’s price, trading volume, and latest block data.
+        </p>
+      </motion.div>
+
+      {/* Responsive Grid: 2 Columns on Mobile, 3 on Desktop */}
+      <motion.div
+        className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 w-full max-w-lg sm:max-w-3xl"
+        variants={containerVariants}
+      >
+        {[
+          {
+            title: "ETH Price (USD)",
+            value: stats.price,
+            suffix: "$",
+            icon: <CoinIcon />,
+          },
+          {
+            title: "24h Ethereum Volume",
+            value: stats.volume,
+            suffix: "$",
+            icon: <VolumeIcon />,
+          },
+          {
+            title: "Latest Block",
+            value: stats.latestBlock,
+            suffix: "",
+            icon: <BlockIcon />,
+          },
+        ].map((stat, index) => (
+          <motion.div
+            key={index}
+            className="w-full bg-white border border-gray-300 rounded-lg shadow-md flex flex-col items-center p-4"
+            variants={cardVariants}
+            // Removed whileHover={cardHoverVariants}
+            whileTap={{ scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 300 }}
+          >
+            <motion.div
+              className="text-primaryBlue text-4xl mb-2"
+              // Removed whileHover={iconHoverVariants}
+              transition={{ type: "spring", stiffness: 200 }}
+            >
+              {stat.icon}
+            </motion.div>
+            <h2 className="text-sm font-semibold text-gray-700 text-center">{stat.title}</h2>
+            <p className="text-xl font-bold text-gray-900 mt-1">
+              <CountUp
+                start={stat.value * 0.9}
+                end={stat.value}
+                duration={2}
+                separator=","
+                decimals={2}
+                suffix={` ${stat.suffix}`}
+              />
+            </p>
+          </motion.div>
+        ))}
+      </motion.div>
+    </motion.section>
+  );
+}
+
+// LatestNewsSection Component
 function LatestNewsSection() {
   const [latestArticles, setLatestArticles] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const isMobile = useIsMobile();
+  const scrollProps = getScrollAnimationProps(isMobile);
 
   useEffect(() => {
     async function fetchArticles() {
@@ -269,8 +406,7 @@ function LatestNewsSection() {
         }
         const articles: NewsArticle[] = await res.json();
         const sortedArticles = articles.sort(
-          (a, b) =>
-            new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+          (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
         );
         setLatestArticles(sortedArticles.slice(0, 3));
       } catch (err) {
@@ -285,13 +421,7 @@ function LatestNewsSection() {
 
   if (loading) {
     return (
-      <motion.section
-        className="py-12 container mx-auto px-4"
-        initial={{ opacity: 0, y: 20 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true }}
-        transition={{ duration: 0.6 }}
-      >
+      <motion.section className="py-12 container mx-auto px-4" {...scrollProps}>
         <h2 className="text-3xl font-extrabold mb-6 text-center">Latest News</h2>
         <p className="text-center">Loading latest news...</p>
       </motion.section>
@@ -300,13 +430,7 @@ function LatestNewsSection() {
 
   if (error) {
     return (
-      <motion.section
-        className="py-12 container mx-auto px-4"
-        initial={{ opacity: 0, y: 20 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true }}
-        transition={{ duration: 0.6 }}
-      >
+      <motion.section className="py-12 container mx-auto px-4" {...scrollProps}>
         <h2 className="text-3xl font-extrabold mb-6 text-center">Latest News</h2>
         <p className="text-center text-red-500">{error}</p>
       </motion.section>
@@ -314,13 +438,7 @@ function LatestNewsSection() {
   }
 
   return (
-    <motion.section
-      className="py-12 container mx-auto px-4"
-      initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true }}
-      transition={{ duration: 0.6 }}
-    >
+    <motion.section className="py-12 container mx-auto px-4" {...scrollProps}>
       <h2 className="text-3xl font-extrabold mb-6 text-center">Latest News</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {latestArticles.map((article) => (
@@ -331,10 +449,7 @@ function LatestNewsSection() {
           >
             <h3 className="text-xl font-bold text-primaryBlue">{article.title}</h3>
             <p className="text-sm mt-2">{article.content.slice(0, 100)}...</p>
-            <Link
-              href={`/news/${article.id}`}
-              className="text-primaryBlue mt-4 inline-block hover:underline"
-            >
+            <Link href={`/news/${article.id}`} className="text-primaryBlue mt-4 inline-block hover:underline">
               Read more
             </Link>
           </motion.div>
@@ -344,9 +459,7 @@ function LatestNewsSection() {
   );
 }
 
-/* --------------------------------------------------------------------------
-   MAIN HOMEPAGE COMPONENT
-   -------------------------------------------------------------------------- */
+// HomePage Component
 function HomePage() {
   const [stats, setStats] = useState({
     price: 0,
@@ -354,7 +467,10 @@ function HomePage() {
     latestBlock: 0,
   });
 
-  // Fetch live ETH price, 24h volume from CoinGecko and latest block from Alchemy
+  const isMobile = useIsMobile();
+  const scrollProps = getScrollAnimationProps(isMobile);
+
+  // Fetch live ETH data and latest block
   useEffect(() => {
     async function fetchData() {
       try {
@@ -378,7 +494,7 @@ function HomePage() {
         const alchemyData = await alchemyRes.json();
         const latestBlock = parseInt(alchemyData?.result, 16) || 0;
 
-        // Fetch ETH data from CoinGecko (using /coins/ethereum)
+        // Fetch ETH data from CoinGecko
         const coingeckoRes = await fetch(`${coingeckoUrl}/coins/ethereum`);
         const coingeckoData = await coingeckoRes.json();
         const price = coingeckoData?.market_data?.current_price?.usd || 0;
@@ -405,17 +521,13 @@ function HomePage() {
       {/* Hero Section */}
       <motion.section
         className="text-center py-20 bg-gradient-to-r from-primaryBlue to-blue-500 text-white"
-        initial={{ opacity: 0, y: 20 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true }}
-        transition={{ duration: 0.6 }}
+        {...scrollProps}
       >
         <h1 className="text-5xl font-extrabold mb-6 leading-tight">
           See Forward with Homebase Analytics
         </h1>
         <p className="text-lg mb-10 max-w-2xl mx-auto leading-relaxed">
-          Discover insights that drive Base Chain Markets. Get helpful trading tools,
-          professional insights, and on-chain analytics—all in one place.
+          Discover insights that drive Base Chain Markets. Get helpful trading tools, professional insights, and on-chain analytics—all in one place.
         </p>
         <div className="flex justify-center space-x-4">
           <Link href="/tools">
@@ -432,67 +544,11 @@ function HomePage() {
       </motion.section>
 
       <main className="flex-grow">
-        {/* Stats Section */}
-        <motion.section
-          className="container mx-auto py-12 px-4"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-        >
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 text-center">
-            {[
-              {
-                title: "ETH Price (USD)",
-                value: stats.price,
-                suffix: "$",
-                icon: <CoinIcon />,
-              },
-              {
-                title: "24h Ethereum Volume",
-                value: stats.volume,
-                suffix: "$",
-                icon: <VolumeIcon />,
-              },
-              {
-                title: "Latest Block",
-                value: stats.latestBlock,
-                suffix: "",
-                icon: <BlockIcon />,
-              },
-            ].map((stat, index) => (
-              <motion.div
-                key={index}
-                className="p-6 bg-white shadow-md rounded-lg flex flex-col items-center"
-                whileHover={{ scale: 1.05 }}
-              >
-                {stat.icon}
-                <h2 className="text-xl font-bold text-primaryBlue mb-1">
-                  {stat.title}
-                </h2>
-                <p className="text-2xl font-semibold leading-relaxed text-gray-800">
-                  <CountUp
-                    start={stat.value * 0.9}
-                    end={stat.value}
-                    duration={2}
-                    separator=","
-                    decimals={2}
-                    suffix={` ${stat.suffix}`}
-                  />
-                </p>
-              </motion.div>
-            ))}
-          </div>
-        </motion.section>
+        {/* Ethereum Stats Section */}
+        <EthereumStats stats={stats} />
 
         {/* "What is Base?" Section */}
-        <motion.section
-          className="w-full py-16 bg-gray-50 text-center"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-        >
+        <motion.section className="w-full py-16 bg-gray-50 text-center" {...scrollProps}>
           <div className="max-w-5xl mx-auto px-4">
             <h2 className="text-4xl md:text-5xl font-extrabold mb-6 leading-tight">
               <span className="text-black">What is</span>{" "}
@@ -502,97 +558,81 @@ function HomePage() {
               Base is a next-generation Layer 2 network, designed for faster and cheaper transactions while unlocking new possibilities for Web3.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              <motion.div
-                className="p-6 bg-white rounded-lg shadow-sm"
-                whileHover={{ scale: 1.05 }}
-              >
+              <motion.div className="p-6 bg-white rounded-lg shadow-sm" whileHover={{ scale: 1.05 }}>
                 <LightningIcon />
-                <h3 className="text-xl font-bold text-primaryBlue mb-3">
-                  Faster Transactions
-                </h3>
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  Enjoy near-instant confirmations and lower fees.
-                </p>
+                <h3 className="text-xl font-bold text-primaryBlue mb-3">Faster Transactions</h3>
+                <p className="text-sm text-gray-600 leading-relaxed">Enjoy near-instant confirmations and lower fees.</p>
               </motion.div>
-              <motion.div
-                className="p-6 bg-white rounded-lg shadow-sm"
-                whileHover={{ scale: 1.05 }}
-              >
+              <motion.div className="p-6 bg-white rounded-lg shadow-sm" whileHover={{ scale: 1.05 }}>
                 <CodeIcon />
-                <h3 className="text-xl font-bold text-primaryBlue mb-3">
-                  EVM-Compatible
-                </h3>
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  Deploy your dApps seamlessly with full Ethereum compatibility.
-                </p>
+                <h3 className="text-xl font-bold text-primaryBlue mb-3">EVM-Compatible</h3>
+                <p className="text-sm text-gray-600 leading-relaxed">Deploy your dApps seamlessly with full Ethereum compatibility.</p>
               </motion.div>
-              <motion.div
-                className="p-6 bg-white rounded-lg shadow-sm"
-                whileHover={{ scale: 1.05 }}
-              >
+              <motion.div className="p-6 bg-white rounded-lg shadow-sm" whileHover={{ scale: 1.05 }}>
                 <ShieldIcon />
-                <h3 className="text-xl font-bold text-primaryBlue mb-3">
-                  Secure &amp; Scalable
-                </h3>
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  Robust security meets unrivaled scalability, backed by industry leaders.
-                </p>
+                <h3 className="text-xl font-bold text-primaryBlue mb-3">Secure &amp; Scalable</h3>
+                <p className="text-sm text-gray-600 leading-relaxed">Robust security meets unrivaled scalability, backed by industry leaders.</p>
               </motion.div>
             </div>
           </div>
         </motion.section>
 
         {/* "How Homebase Powers Base" Section */}
-        <motion.section
-          className="w-full py-16 bg-white text-center"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-        >
-          <div className="max-w-5xl mx-auto px-4">
+        <motion.section className="w-full py-16 bg-gray-50 text-center relative" {...scrollProps}>
+          {/* Soft Wave Background */}
+          <div className="absolute inset-0 w-full h-full bg-gray-50">
+            <svg
+              className="absolute bottom-0 left-0 w-full"
+              viewBox="0 0 1440 320"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                fill="white"
+                d="M0,256L120,245.3C240,235,480,213,720,181.3C960,149,1200,107,1320,85.3L1440,64V320H1320C1200,320,960,320,720,320C480,320,240,320,120,320H0Z"
+              />
+            </svg>
+          </div>
+          <div className="max-w-5xl mx-auto px-4 relative z-10">
             <h2 className="text-4xl md:text-5xl font-extrabold mb-6 text-primaryBlue leading-tight">
               How Homebase Powers Base
             </h2>
-            <p className="text-gray-700 max-w-3xl mx-auto mb-10 text-lg leading-relaxed">
-              Homebase aggregates on-chain data, market metrics, and developer tools to give you a holistic view of Base. Stay ahead with real-time insights.
+            <p className="text-gray-700 max-w-3xl mx-auto mb-8 text-lg leading-relaxed">
+              Homebase provides cutting-edge tools to track on-chain data, monitor whale movements, and stay ahead of token launches.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              <motion.div
-                className="p-6 bg-gray-50 rounded-lg shadow-sm"
-                whileHover={{ scale: 1.05 }}
-              >
+              {/* Screener Card */}
+              <motion.div className="p-6 bg-white border-2 border-black rounded-lg shadow-md" whileHover={{ scale: 1.05 }}>
                 <ChartIcon />
-                <h3 className="text-xl font-bold text-primaryBlue mb-1">
-                  In-Depth Analytics
-                </h3>
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  Dive into comprehensive charts and metrics.
-                </p>
+                <h3 className="text-xl font-bold text-black mb-2">Homebase Screener</h3>
+                <p className="text-sm text-gray-600 leading-relaxed mb-4">Get real-time coin prices and find the hottest base pairs.</p>
+                <Link href="/tools/trading-research/token-scanner">
+                  <button className="mt-3 px-5 py-2 border-2 border-black text-black font-semibold rounded-full hover:bg-black hover:text-white transition-all">
+                    Find Coins →
+                  </button>
+                </Link>
               </motion.div>
-              <motion.div
-                className="p-6 bg-gray-50 rounded-lg shadow-sm"
-                whileHover={{ scale: 1.05 }}
-              >
+              {/* Whale Watchers Card */}
+              <motion.div className="p-6 bg-white border-2 border-black rounded-lg shadow-md" whileHover={{ scale: 1.05 }}>
                 <InsightIcon />
-                <h3 className="text-xl font-bold text-primaryBlue mb-1">
-                  Key Insights
-                </h3>
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  Get actionable insights and trends from blockchain data.
-                </p>
+                <h3 className="text-xl font-bold text-black mb-2">Whale Watchers</h3>
+                <p className="text-sm text-gray-600 leading-relaxed mb-4">Track large wallet movements and detect potential market shifts.</p>
+                <Link href="/tools/trading-research/whale-watcher">
+                  <button className="mt-3 px-5 py-2 border-2 border-black text-black font-semibold rounded-full hover:bg-black hover:text-white transition-all">
+                    Track Whales →
+                  </button>
+                </Link>
               </motion.div>
-              <motion.div
-                className="p-6 bg-gray-50 rounded-lg shadow-sm"
-                whileHover={{ scale: 1.05 }}
-              >
+              {/* Token Launch Calendar Card */}
+              <motion.div className="p-6 bg-white border-2 border-black rounded-lg shadow-md" whileHover={{ scale: 1.05 }}>
                 <ToolIcon />
-                <h3 className="text-xl font-bold text-primaryBlue mb-1">
-                  Developer Tools
-                </h3>
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  Access robust APIs, contract explorers, and more.
-                </p>
+                <h3 className="text-xl font-bold text-black mb-2">Token Launch Calendar</h3>
+                <p className="text-sm text-gray-600 leading-relaxed mb-4">Stay ahead with upcoming token launches and market trends.</p>
+                <Link href="/tools/market-insights/launch-calendar">
+                  <button className="mt-3 px-5 py-2 border-2 border-black text-black font-semibold rounded-full hover:bg-black hover:text-white transition-all">
+                    View Calendar →
+                  </button>
+                </Link>
               </motion.div>
             </div>
           </div>
@@ -605,17 +645,19 @@ function HomePage() {
         <LatestNewsSection />
       </main>
 
+      {/* Footer */}
       <Footer />
     </div>
   );
 }
 
-/* --------------------------------------------------------------------------
-   MAIN EXPORT: HomePage Component Wrapper
-   -------------------------------------------------------------------------- */
+// Main Export: HomePage Component Wrapper
 export default function HomePageWrapper() {
   return <HomePage />;
 }
+
+
+
 
 
 

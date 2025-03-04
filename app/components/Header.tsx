@@ -9,6 +9,8 @@ import Image from "next/image";
 const Header = () => {
   const { data: session } = useSession();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isToolsOpen, setIsToolsOpen] = useState(false); // For desktop dropdown
+  const [isToolsMobileOpen, setIsToolsMobileOpen] = useState(false); // For mobile submenu
   const pathname = usePathname();
 
   // Close mobile menu on route change
@@ -29,36 +31,9 @@ const Header = () => {
               height={40}
             />
             <span className="ml-2 text-xl font-bold text-[#0052FF] relative top-1 md:top-0">
-              homebase.
+              Homebase
             </span>
           </Link>
-        </div>
-
-        {/* Enhanced Search Bar (Desktop Only) */}
-        <div className="hidden md:block flex-1 mx-8">
-          <div className="relative max-w-xl mx-auto">
-            <input
-              type="text"
-              placeholder="Search..."
-              className="w-full bg-gray-100 text-gray-800 placeholder-gray-500 border border-gray-300 rounded-full pl-4 pr-10 py-2 focus:outline-none focus:ring-2 focus:ring-[#0052FF] transition"
-            />
-            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-              <svg
-                className="w-5 h-5 text-gray-500"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 1010.5 18a7.5 7.5 0 006.15-3.15z"
-                />
-              </svg>
-            </div>
-          </div>
         </div>
 
         {/* Desktop Navigation */}
@@ -69,12 +44,161 @@ const Header = () => {
           >
             Home
           </Link>
-          <Link
-            href="/tools"
-            className="text-gray-800 hover:text-[#0052FF] transition-colors"
+
+          {/* Tools Dropdown (Desktop) */}
+          <div
+            className="relative"
+            // Enlarge the hover area to include both button and menu:
+            onMouseEnter={() => setIsToolsOpen(true)}
+            onMouseLeave={() => setIsToolsOpen(false)}
           >
-            Tools
-          </Link>
+            <button
+              className="text-gray-800 hover:text-[#0052FF] transition-colors inline-flex items-center"
+            >
+              Tools
+              <svg
+                className="ml-1 w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {/* Dropdown Menu */}
+            <ul
+              className={`absolute z-10 left-0 top-full mt-1 bg-white border border-gray-200 rounded shadow-md w-56 py-2 transform transition-all duration-200 ease-out ${
+                isToolsOpen
+                  ? "opacity-100 scale-100 pointer-events-auto"
+                  : "opacity-0 scale-95 pointer-events-none"
+              }`}
+            >
+              <li>
+                <Link
+                  href="/tools/trading-research/whale-watcher"
+                  className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100"
+                >
+                  {/* Eye Icon */}
+                  <svg
+                    className="w-4 h-4 text-[#0052FF]"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M2.458 12C3.732 7.943 7.523 5 12 5s8.268 2.943 9.542 7c-1.274 4.057-5.065 7-9.542 7s-8.268-2.943-9.542-7z"
+                    />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                    />
+                  </svg>
+                  Whale Watchers
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/tools/trading-research/token-scanner"
+                  className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100"
+                >
+                  {/* MagnifyingGlass Icon */}
+                  <svg
+                    className="w-4 h-4 text-[#0052FF]"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 1010.5 18a7.5 7.5 0 006.15-3.15z"
+                    />
+                  </svg>
+                  Token Screener
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/tools/trading-research/honeypot-checker"
+                  className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100"
+                >
+                  {/* ShieldExclamation Icon */}
+                  <svg
+                    className="w-4 h-4 text-[#0052FF]"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 8v4m0 4h.01M20.205 7.697l-7.2-3.6a1.3 1.3 0 00-1.01 0l-7.2 3.6A1.3 1.3 0 004 8.848v6.304a1.3 1.3 0 00.795 1.151l7.2 3.6c.315.158.694.158 1.01 0l7.2-3.6A1.3 1.3 0 0020 15.152V8.848a1.3 1.3 0 00-.795-1.151z"
+                    />
+                  </svg>
+                  Honeypot Scanner
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/tools/market-insights/launch-calendar"
+                  className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100"
+                >
+                  {/* CalendarDays Icon */}
+                  <svg
+                    className="w-4 h-4 text-[#0052FF]"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
+                  </svg>
+                  Launch Calendar
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/tools/market-insights/terminal"
+                  className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100"
+                >
+                  {/* Newspaper Icon */}
+                  <svg
+                    className="w-4 h-4 text-[#0052FF]"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M19 20H5a2 2 0 01-2-2V5.4C3 5.179 3.179 5 3.4 5H5c.265 0 .52.105.707.293l.293.293h13a2 2 0 012 2V18a2 2 0 01-2 2z"
+                    />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M7 8h10M7 12h6m-6 4h10"
+                    />
+                  </svg>
+                  News Terminal
+                </Link>
+              </li>
+            </ul>
+          </div>
+
           <Link
             href="/forum"
             className="text-gray-800 hover:text-[#0052FF] transition-colors"
@@ -148,7 +272,7 @@ const Header = () => {
           isMenuOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        {/* Updated Close Button */}
+        {/* Close Button */}
         <button
           onClick={() => setIsMenuOpen(false)}
           className="absolute top-4 right-4 text-gray-800 bg-gray-100 rounded-full p-1 hover:bg-gray-200 transition"
@@ -161,14 +285,10 @@ const Header = () => {
             viewBox="0 0 24 24"
             stroke="currentColor"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M6 18L18 6M6 6l12 12"
-            />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
+
         <nav className="flex flex-col gap-4 p-4 mt-12">
           <Link
             href="/"
@@ -177,13 +297,175 @@ const Header = () => {
           >
             Home
           </Link>
-          <Link
-            href="/tools"
-            onClick={() => setIsMenuOpen(false)}
-            className="text-gray-800 hover:text-[#0052FF] transition-colors"
-          >
-            Tools
-          </Link>
+
+          {/* Tools Submenu (Mobile) */}
+          <div>
+            <button
+              onClick={() => setIsToolsMobileOpen(!isToolsMobileOpen)}
+              className="text-gray-800 hover:text-[#0052FF] transition-colors w-full text-left flex items-center justify-between"
+            >
+              <span>Tools</span>
+              <svg
+                className="ml-2 w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                {isToolsMobileOpen ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                )}
+              </svg>
+            </button>
+            {isToolsMobileOpen && (
+              <ul className="mt-2 ml-4 space-y-2">
+                <li>
+                  <Link
+                    href="/tools/whale-watchers"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      setIsToolsMobileOpen(false);
+                    }}
+                    className="block flex items-center gap-2 text-gray-800 hover:text-[#0052FF] transition-colors"
+                  >
+                    {/* Eye Icon */}
+                    <svg
+                      className="w-4 h-4 text-[#0052FF]"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M2.458 12C3.732 7.943 7.523 5 12 5s8.268 2.943 9.542 7c-1.274 4.057-5.065 7-9.542 7s-8.268-2.943-9.542-7z"
+                      />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                      />
+                    </svg>
+                    Whale Watchers
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/tools/token-screener"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      setIsToolsMobileOpen(false);
+                    }}
+                    className="block flex items-center gap-2 text-gray-800 hover:text-[#0052FF] transition-colors"
+                  >
+                    {/* MagnifyingGlass Icon */}
+                    <svg
+                      className="w-4 h-4 text-[#0052FF]"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 1010.5 18a7.5 7.5 0 006.15-3.15z"
+                      />
+                    </svg>
+                    Token Screener
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/tools/honeypot-scanner"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      setIsToolsMobileOpen(false);
+                    }}
+                    className="block flex items-center gap-2 text-gray-800 hover:text-[#0052FF] transition-colors"
+                  >
+                    {/* ShieldExclamation Icon */}
+                    <svg
+                      className="w-4 h-4 text-[#0052FF]"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 8v4m0 4h.01M20.205 7.697l-7.2-3.6a1.3 1.3 0 00-1.01 0l-7.2 3.6A1.3 1.3 0 004 8.848v6.304a1.3 1.3 0 00.795 1.151l7.2 3.6c.315.158.694.158 1.01 0l7.2-3.6A1.3 1.3 0 0020 15.152V8.848a1.3 1.3 0 00-.795-1.151z"
+                      />
+                    </svg>
+                    Honeypot Scanner
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/tools/launch-calendar"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      setIsToolsMobileOpen(false);
+                    }}
+                    className="block flex items-center gap-2 text-gray-800 hover:text-[#0052FF] transition-colors"
+                  >
+                    {/* CalendarDays Icon */}
+                    <svg
+                      className="w-4 h-4 text-[#0052FF]"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                      />
+                    </svg>
+                    Launch Calendar
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/tools/news-terminal"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      setIsToolsMobileOpen(false);
+                    }}
+                    className="block flex items-center gap-2 text-gray-800 hover:text-[#0052FF] transition-colors"
+                  >
+                    {/* Newspaper Icon */}
+                    <svg
+                      className="w-4 h-4 text-[#0052FF]"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M19 20H5a2 2 0 01-2-2V5.4C3 5.179 3.179 5 3.4 5H5c.265 0 .52.105.707.293l.293.293h13a2 2 0 012 2V18a2 2 0 01-2 2z"
+                      />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M7 8h10M7 12h6m-6 4h10"
+                      />
+                    </svg>
+                    News Terminal
+                  </Link>
+                </li>
+              </ul>
+            )}
+          </div>
+
           <Link
             href="/forum"
             onClick={() => setIsMenuOpen(false)}
@@ -205,6 +487,7 @@ const Header = () => {
           >
             Docs
           </Link>
+
           {session ? (
             <Link
               href="/account"
@@ -229,6 +512,9 @@ const Header = () => {
 };
 
 export default Header;
+
+
+
 
 
 

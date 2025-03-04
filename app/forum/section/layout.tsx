@@ -1,8 +1,9 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import Header from '@/components/Header';
-import Sidebar from '@/components/Sidebar';
+import Header from '../../../components/Header';
+import Footer from '../../../components/Footer';
+import Sidebar from '../../../components/Sidebar'; // Add Sidebar import
 
 export default function SectionLayout({ children }: { children: React.ReactNode }) {
   const { section } = useParams(); // Get section name from URL
@@ -22,6 +23,8 @@ export default function SectionLayout({ children }: { children: React.ReactNode 
           {children}
         </section>
       </div>
+      <Footer /> {/* Make sure Footer is included */}
     </div>
   );
 }
+

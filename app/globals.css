@@ -1,9 +1,13 @@
+@import url('https://use.typekit.net/xyz.css'); /* Replace with the actual Geist font CDN */
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 body {
-  @apply bg-white text-black font-sans;
+  font-family: 'Geist', sans-serif;
+  @apply bg-white text-black font-sans antialiased;
 }
+
 
 

@@ -1,6 +1,7 @@
 "use client";
 import React from "react";
 
+// Existing Icons (UNCHANGED)
 export function CoinIcon() {
   return (
     <svg
@@ -38,6 +39,64 @@ export function LightningIcon() {
     </svg>
   );
 }
+
+export function GasIcon() {
+  return (
+    <svg
+      width="42"
+      height="42"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="mx-auto"
+    >
+      <path d="M3 3v18h12V3H3z" />
+      <path d="M7 14h4" />
+      <path d="M10 17a2 2 0 01-2-2" />
+      <path d="M15 7h2a2 2 0 012 2v9" />
+      <path d="M20 7h-3" />
+    </svg>
+  );
+}
+
+export function EditIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+      <path d="M18.5 2.5a2.121 2.121 0 013 3L11 16l-4 1 1-4 9.5-9.5z" />
+    </svg>
+  );
+}
+
+// app/components/icons.tsx
+export function HomeIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path d="M3 9.5L12 3l9 6.5v10.5a2 2 0 01-2 2h-14a2 2 0 01-2-2v-10.5z" />
+      <path d="M9 22V12h6v10" />
+    </svg>
+  );
+}
+
 
 export function ChartIcon() {
   return (
@@ -117,8 +176,8 @@ export function ToolIcon() {
   );
 }
 
-// Restored GearIcon export (kept for other uses)
-export function GearIcon() {
+// ✅ Newly Added Icons
+export function LiveDataIcon() {
   return (
     <svg
       width="42"
@@ -126,22 +185,17 @@ export function GearIcon() {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth="1.8"
       strokeLinecap="round"
       strokeLinejoin="round"
       className="mx-auto"
     >
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33" />
-      <path d="M4.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33" />
-      <path d="M19.4 9a1.65 1.65 0 01.33 1.82l.06.06a2 2 0 00-2.83 2.83l-.06-.06a1.65 1.65 0 01-1.82-.33" />
-      <path d="M4.6 15a1.65 1.65 0 01-.33-1.82l-.06-.06a2 2 0 002.83-2.83l.06.06a1.65 1.65 0 011.82.33" />
+      <path d="M3 12h3l3 8 4-16 3 8h5" />
     </svg>
   );
 }
 
-// New RocketIcon for v1 and v2 (alternative to GearIcon)
-export function RocketIcon() {
+export function VerifiedIcon() {
   return (
     <svg
       width="42"
@@ -149,20 +203,36 @@ export function RocketIcon() {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth="1.8"
       strokeLinecap="round"
       strokeLinejoin="round"
       className="mx-auto"
     >
-      {/* A simple rocket shape */}
-      <path d="M12 2L15 8L12 10L9 8z" />
-      <path d="M12 10v10" />
-      <path d="M9 16l3-2 3 2" />
+      <polyline points="20 6 9 17 4 12" />
     </svg>
   );
 }
 
-// New GroupIcon for Community Kick-Off
+export function PredictionIcon() {
+  return (
+    <svg
+      width="42"
+      height="42"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="mx-auto"
+    >
+      <path d="M3 3v18h18" />
+      <path d="M19 9l-5 5-4-4-3 3" />
+    </svg>
+  );
+}
+
+// ✅ Group Icon (Newly Added)
 export function GroupIcon() {
   return (
     <svg
@@ -183,3 +253,62 @@ export function GroupIcon() {
   );
 }
 
+export function TrophyIcon() {
+  return (
+    <svg
+      width="42"
+      height="42"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="mx-auto"
+    >
+      <path d="M4 6h16" />
+      <path d="M18 6c0 3.3-2.7 6-6 6S6 9.3 6 6" />
+      <path d="M12 12v6" />
+      <path d="M8 18h8" />
+    </svg>
+  );
+}
+
+export function VoteIcon() {
+  return (
+    <svg
+      width="42"
+      height="42"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="mx-auto"
+    >
+      <path d="M9 12l2 2l4-4" />
+      <path d="M3 12l3 3l3-3" />
+    </svg>
+  );
+}
+
+export function TipIcon() {
+  return (
+    <svg
+      width="42"
+      height="42"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="mx-auto"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 8v4" />
+      <path d="M12 16h.01" />
+    </svg>
+  );
+}
