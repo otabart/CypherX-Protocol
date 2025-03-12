@@ -13,8 +13,22 @@ import {
   GroupIcon,
   RocketIcon,
 } from "./icons";
-import { CloudIcon, CloudLightningIcon, CloudUploadIcon, CoinsIcon, CpuIcon, FileIcon, FilesIcon, HashIcon, LinkIcon, LogsIcon, Rocket } from "lucide-react";
-import { GenIcon, IconBase } from "react-icons/lib";
+import {
+  CloudIcon,
+  CloudLightningIcon,
+  CloudUploadIcon,
+  CoinsIcon,
+  CpuIcon,
+  FileIcon,
+  FilesIcon,
+  HashIcon,
+  LinkIcon,
+  LogsIcon,
+  Rocket,
+} from "lucide-react";
+
+// Replace these icon imports with your own, as needed
+// import { GenIcon, IconBase } from "react-icons/lib";
 
 type Milestone = {
   date: string;
@@ -99,9 +113,16 @@ type TimelineCardProps = {
   onClick: () => void;
 };
 
-function TimelineCard({ milestone, index, isLeft, isSelected, onClick }: TimelineCardProps) {
+function TimelineCard({
+  milestone,
+  index,
+  isLeft,
+  isSelected,
+  onClick,
+}: TimelineCardProps) {
   const ref = useRef(null);
   const inView = useInView(ref, { once: false, margin: "-20%" });
+
   return (
     <motion.div
       ref={ref}
@@ -112,17 +133,21 @@ function TimelineCard({ milestone, index, isLeft, isSelected, onClick }: Timelin
       whileHover={{ scale: 1.03, transition: { duration: 0.2 } }}
     >
       <div
-        className={`p-6 rounded-md border ${isSelected ? "border-blue-600" : "border-black"} bg-white text-black shadow-md`}
+        className={`p-6 rounded-md border ${
+          isSelected ? "border-[#0052FF]" : "border-black"
+        } bg-white text-black shadow-md`}
       >
         <motion.button
           whileHover={{ rotate: 360, transition: { duration: 0.4 } }}
           className={`w-16 h-16 mb-4 rounded-full border-2 flex items-center justify-center mx-auto ${
-            isSelected ? "border-blue-600" : "border-black"
+            isSelected ? "border-[#0052FF]" : "border-black"
           }`}
         >
           {milestone.icon}
         </motion.button>
-        <h3 className="text-xl font-bold mb-2 text-blue-600">{milestone.title}</h3>
+        <h3 className="text-xl font-bold mb-2 text-[#0052FF]">
+          {milestone.title}
+        </h3>
         <p className="text-sm mb-2">{milestone.description}</p>
         <span className="text-xs text-gray-600">{milestone.date}</span>
       </div>
@@ -137,22 +162,26 @@ export default function RoadmapSection() {
     <section className="relative bg-white py-16 overflow-hidden">
       {/* Top Wave Background – Soft Grey Wave */}
       <div className="absolute top-0 left-0 right-0 -z-10">
-        <svg className="w-full h-48 md:h-64" viewBox="0 0 1440 320" preserveAspectRatio="none">
+        <svg
+          className="w-full h-48 md:h-64"
+          viewBox="0 0 1440 320"
+          preserveAspectRatio="none"
+        >
           <path fill="#E5E7EB" d="M0,160 C360,80 1080,240 1440,160 L1440,0 L0,0 Z"></path>
         </svg>
       </div>
 
       <div className="relative max-w-4xl mx-auto">
         {/* Heading */}
-        <h2 className="text-center text-4xl font-extrabold mb-12 text-blue-600">
+        <h2 className="text-center text-4xl font-extrabold mb-12 text-[#0052FF]">
           2025 Roadmap
         </h2>
-        
+
         {/* Timeline Container */}
         <div className="relative mt-8">
           {/* Vertical Center Line (only on PC, not behind heading) */}
           <div className="hidden md:block absolute top-0 left-1/2 h-full w-1 bg-black transform -translate-x-1/2"></div>
-          
+
           <div className="space-y-6">
             {roadmapData.map((milestone, index) => {
               const isLeft = index % 2 === 0;
@@ -182,32 +211,17 @@ export default function RoadmapSection() {
           </div>
         </div>
       </div>
-      
+
       {/* Bottom Wave Background – Soft Grey Wave */}
       <div className="absolute bottom-0 left-0 right-0 -z-10">
-        <svg className="w-full h-32 md:h-48" viewBox="0 0 1440 320" preserveAspectRatio="none">
+        <svg
+          className="w-full h-32 md:h-48"
+          viewBox="0 0 1440 320"
+          preserveAspectRatio="none"
+        >
           <path fill="#E5E7EB" d="M0,64 C360,160 1080,0 1440,64 L1440,320 L0,320 Z"></path>
         </svg>
       </div>
     </section>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

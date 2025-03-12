@@ -4,11 +4,23 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import CountUp from "react-countup";
 import Link from "next/link";
+
+// ======= Existing Imports =======
 import RoadmapSection from "./components/RoadmapSection";
 import ScrollingTokenBanner from "./components/ScrollingTokenBanner";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
-import { NewsArticle } from "./content/articles";
+
+// ======= New PartnersScroller Import =======
+import PartnersScroller from "./components/PartnersScroller";
+
+// Replace or remove if not needed:
+export type NewsArticle = {
+  id: string;
+  title: string;
+  content: string;
+  publishedAt: string;
+};
 
 // Custom hook to check if viewport is mobile
 function useIsMobile() {
@@ -25,7 +37,7 @@ function useIsMobile() {
 }
 
 // Helper to return scroll animation props based on device type
-function getScrollAnimationProps(isMobile) {
+function getScrollAnimationProps(isMobile: boolean) {
   return {
     initial: { opacity: 0, y: isMobile ? 50 : 30 },
     whileInView: { opacity: 1, y: 0 },
@@ -268,41 +280,33 @@ function SentimentIcon() {
   );
 }
 
-// Animation variants for EthereumStats
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.3 },
-  },
-};
-
-const cardVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0 },
-};
-
-const headerVariants = {
-  hidden: { opacity: 0, y: -30 },
-  visible: { opacity: 1, y: 0 },
-  hover: { scale: 1.02, textShadow: "0px 0px 8px rgba(37,99,235,0.8)" },
-};
-
-const cardHoverVariants = {
-  scale: 1.05,
-  rotateX: 5,
-  rotateY: 5,
-  boxShadow: "0px 10px 20px rgba(0, 0, 0, 0.3)",
-};
-
-const iconHoverVariants = {
-  rotate: 10,
-  filter: "drop-shadow(0px 0px 8px rgba(37,99,235,0.8))",
-};
-
-// EthereumStats Component
-function EthereumStats({ stats }) {
+// EthereumStats example
+function EthereumStats({
+  stats,
+}: {
+  stats: { price: number; volume: number; latestBlock: number };
+}) {
   if (!stats) return <div className="text-center text-gray-500">Loading stats...</div>;
+
+  // Animation variants
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: { staggerChildren: 0.3 },
+    },
+  };
+
+  const cardVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0 },
+  };
+
+  const headerVariants = {
+    hidden: { opacity: 0, y: -30 },
+    visible: { opacity: 1, y: 0 },
+    hover: { scale: 1.02, textShadow: "0px 0px 8px rgba(37,99,235,0.8)" },
+  };
 
   return (
     <motion.section
@@ -317,18 +321,15 @@ function EthereumStats({ stats }) {
         variants={headerVariants}
         initial="hidden"
         animate="visible"
-        // Removed whileHover="hover" here
         transition={{ duration: 0.6 }}
       >
-        <h2 className="text-3xl font-extrabold text-primaryBlue">
-          Ethereum Network Stats
-        </h2>
+        <h2 className="text-3xl font-extrabold text-primaryBlue">Ethereum Network Stats</h2>
         <p className="text-gray-600 mt-1 text-lg">
           Live insights into Ethereum’s price, trading volume, and latest block data.
         </p>
       </motion.div>
 
-      {/* Responsive Grid: 2 Columns on Mobile, 3 on Desktop */}
+      {/* Stats Grid */}
       <motion.div
         className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 w-full max-w-lg sm:max-w-3xl"
         variants={containerVariants}
@@ -357,13 +358,11 @@ function EthereumStats({ stats }) {
             key={index}
             className="w-full bg-white border border-gray-300 rounded-lg shadow-md flex flex-col items-center p-4"
             variants={cardVariants}
-            // Removed whileHover={cardHoverVariants}
             whileTap={{ scale: 0.95 }}
             transition={{ type: "spring", stiffness: 300 }}
           >
             <motion.div
               className="text-primaryBlue text-4xl mb-2"
-              // Removed whileHover={iconHoverVariants}
               transition={{ type: "spring", stiffness: 200 }}
             >
               {stat.icon}
@@ -386,7 +385,7 @@ function EthereumStats({ stats }) {
   );
 }
 
-// LatestNewsSection Component
+// (Optional) LatestNewsSection
 function LatestNewsSection() {
   const [latestArticles, setLatestArticles] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -449,7 +448,10 @@ function LatestNewsSection() {
           >
             <h3 className="text-xl font-bold text-primaryBlue">{article.title}</h3>
             <p className="text-sm mt-2">{article.content.slice(0, 100)}...</p>
-            <Link href={`/news/${article.id}`} className="text-primaryBlue mt-4 inline-block hover:underline">
+            <Link
+              href={`/news/${article.id}`}
+              className="text-primaryBlue mt-4 inline-block hover:underline"
+            >
               Read more
             </Link>
           </motion.div>
@@ -459,7 +461,7 @@ function LatestNewsSection() {
   );
 }
 
-// HomePage Component
+// Main page component
 function HomePage() {
   const [stats, setStats] = useState({
     price: 0,
@@ -470,7 +472,7 @@ function HomePage() {
   const isMobile = useIsMobile();
   const scrollProps = getScrollAnimationProps(isMobile);
 
-  // Fetch live ETH data and latest block
+  // Fetch live ETH data and block info
   useEffect(() => {
     async function fetchData() {
       try {
@@ -480,7 +482,7 @@ function HomePage() {
           console.error("Missing API URLs in environment variables.");
           return;
         }
-        // Fetch latest block from Alchemy
+        // Alchemy: latest block
         const alchemyRes = await fetch(alchemyUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -494,7 +496,7 @@ function HomePage() {
         const alchemyData = await alchemyRes.json();
         const latestBlock = parseInt(alchemyData?.result, 16) || 0;
 
-        // Fetch ETH data from CoinGecko
+        // CoinGecko: ETH price & volume
         const coingeckoRes = await fetch(`${coingeckoUrl}/coins/ethereum`);
         const coingeckoData = await coingeckoRes.json();
         const price = coingeckoData?.market_data?.current_price?.usd || 0;
@@ -506,6 +508,8 @@ function HomePage() {
       }
     }
     fetchData();
+
+    // Optionally refetch every 10s
     const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
   }, []);
@@ -527,28 +531,31 @@ function HomePage() {
           See Forward with Homebase Analytics
         </h1>
         <p className="text-lg mb-10 max-w-2xl mx-auto leading-relaxed">
-          Discover insights that drive Base Chain Markets. Get helpful trading tools, professional insights, and on-chain analytics—all in one place.
+          Discover insights that drive Base Chain Markets. Get helpful trading tools,
+          professional insights, and on-chain analytics—all in one place.
         </p>
         <div className="flex justify-center space-x-4">
-          <Link href="/tools">
+          <Link href="/docs">
             <button className="px-6 py-3 border border-white bg-transparent text-white font-semibold rounded-full hover:bg-white hover:text-primaryBlue transition-all">
-              Explore Tools →
+              Read Docs →
             </button>
           </Link>
           <Link href="/terminal">
             <button className="px-6 py-3 border border-white bg-transparent text-white font-semibold rounded-full hover:bg-white hover:text-primaryBlue transition-all">
-              News Terminal →
+              Enter Terminal →
             </button>
           </Link>
         </div>
       </motion.section>
 
-      <main className="flex-grow">
-        {/* Ethereum Stats Section */}
-        <EthereumStats stats={stats} />
+      {/* PARTNERS SCROLLING LOGOS (UPDATED) */}
+      <PartnersScroller />
 
-        {/* "What is Base?" Section */}
-        <motion.section className="w-full py-16 bg-gray-50 text-center" {...scrollProps}>
+      {/* Ethereum Stats Section */}
+      <EthereumStats stats={stats} />
+
+       {/* "What is Base?" Section */}
+       <motion.section className="w-full py-16 bg-gray-50 text-center" {...scrollProps}>
           <div className="max-w-5xl mx-auto px-4">
             <h2 className="text-4xl md:text-5xl font-extrabold mb-6 leading-tight">
               <span className="text-black">What is</span>{" "}
@@ -608,7 +615,7 @@ function HomePage() {
                 <p className="text-sm text-gray-600 leading-relaxed mb-4">Get real-time coin prices and find the hottest base pairs.</p>
                 <Link href="/token-scanner">
                   <button className="mt-3 px-5 py-2 border-2 border-black text-black font-semibold rounded-full hover:bg-black hover:text-white transition-all">
-                    Find Coins →
+                    Screener →
                   </button>
                 </Link>
               </motion.div>
@@ -638,12 +645,11 @@ function HomePage() {
           </div>
         </motion.section>
 
-        {/* Roadmap Section */}
-        <RoadmapSection />
+      {/* Roadmap Section */}
+      <RoadmapSection />
 
-        {/* Latest News Section (Dynamic) */}
-        <LatestNewsSection />
-      </main>
+      {/* Latest News Section (Dynamic) */}
+      <LatestNewsSection />
 
       {/* Footer */}
       <Footer />
@@ -651,18 +657,7 @@ function HomePage() {
   );
 }
 
-// Main Export: HomePage Component Wrapper
-export default function HomePageWrapper() {
+// Export your Page component
+export default function Page() {
   return <HomePage />;
 }
-
-
-
-
-
-
-
-
-
-
-

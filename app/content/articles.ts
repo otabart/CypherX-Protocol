@@ -12,7 +12,7 @@ export const articles: NewsArticle[] = [
   {
     id: "1",
     title: "Regulatory Roundup: Progress on Crypto Laws and Compliance Initiatives",
-    publishedAt: new Date("2025-03-03T12:23:00Z").toISOString(),
+    publishedAt: new Date("2025-03-11T12:23:00Z").toISOString(),
     source: "Base News",
     author: "Homebase AI",
     url: "#",
@@ -37,7 +37,7 @@ For Base users and developers, these regulatory advancements are encouraging. Cl
   {
     id: "2",
     title: "Compliance On-Chain: Identity Verification and KYC Come to Base",
-    publishedAt: new Date("2025-03-04T10:48:00Z").toISOString(),
+    publishedAt: new Date("2025-03-11T10:48:00Z").toISOString(),
     source: "Base News",
     author: "Homebase AI",
     url: "#",
@@ -66,7 +66,7 @@ All these measures are positioning Base as one of the most compliance-ready ecos
   {
     id: "3",
     title: "DeFi Deepens on Base: TVL Surges as Liquidity Floods In",
-    publishedAt: new Date("2025-03-04T09:15:00Z").toISOString(),
+    publishedAt: new Date("2025-03-10T09:15:00Z").toISOString(),
     source: "Base News",
     author: "Homebase AI",
     url: "#",

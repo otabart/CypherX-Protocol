@@ -1,16 +1,27 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-};
-
-export default nextConfig;
-/** @type {import('next').NextConfig} */
-const nextConfig = {
+  reactStrictMode: true,
   images: {
-    domains: ['i.imgur.com', 'upload.wikimedia.org', 'img.icons8.com'],
+    domains: [
+      "i.imgur.com",
+      "images.typeform.com",
+      "landing.coingecko.com",
+      "upload.wikimedia.org",
+      "res.cloudinary.com",
+      "google.com",
+      "img.icons8.com",
+      "www.alchemy.com",
+      "lh7-us.googleusercontent.com",
+      // Newly added:
+      "elitecity.io",
+      "images.mirror-media.xyz",
+      "www.datocms-assets.com",
+    ],
   },
 };
 
-module.exports = nextConfig;
+export default nextConfig;
+
+
 
