@@ -1,15 +1,25 @@
+"use client";
+
 import { useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 
+// Firebase
+import { signOut } from "firebase/auth";
+import { auth } from "@/lib/firebase"; // your path
+import { useAuth } from "@/app/providers"; // your AuthProvider
+
 const Header = () => {
-  const { data: session } = useSession();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  // From Firebase Auth context
+  const { user, loading } = useAuth();
+
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isToolsOpen, setIsToolsOpen] = useState(false);
   const [isToolsMobileOpen, setIsToolsMobileOpen] = useState(false);
-  const pathname = usePathname();
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -17,11 +27,17 @@ const Header = () => {
     setIsToolsMobileOpen(false);
   }, [pathname]);
 
+  // Sign out logic
+  async function handleSignOut() {
+    await signOut(auth);
+    router.push("/login");
+  }
+
   return (
     <>
       <header className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
         <div className="container mx-auto flex items-center justify-between px-6 py-4">
-          {/* Logo & v1 BETA badge */}
+          {/* Logo & BETA badge */}
           <Link href="/" className="flex items-center">
             <div className="coinContainer">
               <div className="coinInner">
@@ -41,7 +57,7 @@ const Header = () => {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center space-x-6">
-            {/* Tool Library Dropdown (widened to w-64) */}
+            {/* Tool Library Dropdown */}
             <div
               className="relative group"
               onMouseEnter={() => setIsToolsOpen(true)}
@@ -69,7 +85,6 @@ const Header = () => {
                 <li className="px-4 py-2 text-gray-700 hover:bg-gray-100">
                   <Link href="/whale-watcher" className="flex flex-col">
                     <div className="flex items-center gap-2">
-                      {/* Eye Icon */}
                       <svg
                         className="w-4 h-4 text-[#0052FF]"
                         fill="none"
@@ -98,7 +113,6 @@ const Header = () => {
                 <li className="border-t border-gray-200 px-4 py-2 text-gray-700 hover:bg-gray-100">
                   <Link href="/token-scanner" className="flex flex-col">
                     <div className="flex items-center gap-2">
-                      {/* MagnifyingGlass Icon */}
                       <svg
                         className="w-4 h-4 text-[#0052FF]"
                         fill="none"
@@ -122,7 +136,6 @@ const Header = () => {
                 <li className="border-t border-gray-200 px-4 py-2 text-gray-700 hover:bg-gray-100">
                   <Link href="/honeypot-scanner" className="flex flex-col">
                     <div className="flex items-center gap-2">
-                      {/* ShieldExclamation Icon */}
                       <svg
                         className="w-4 h-4 text-[#0052FF]"
                         fill="none"
@@ -146,7 +159,6 @@ const Header = () => {
                 <li className="border-t border-gray-200 px-4 py-2 text-gray-700 hover:bg-gray-100">
                   <Link href="/launch-calendar" className="flex flex-col">
                     <div className="flex items-center gap-2">
-                      {/* CalendarDays Icon */}
                       <svg
                         className="w-4 h-4 text-[#0052FF]"
                         fill="none"
@@ -170,7 +182,6 @@ const Header = () => {
                 <li className="border-t border-gray-200 px-4 py-2 text-gray-700 hover:bg-gray-100">
                   <Link href="/terminal" className="flex flex-col">
                     <div className="flex items-center gap-2">
-                      {/* Newspaper Icon */}
                       <svg
                         className="w-4 h-4 text-[#0052FF]"
                         fill="none"
@@ -199,36 +210,43 @@ const Header = () => {
               </ul>
             </div>
 
-            {/* Additional Links (no descriptive text on desktop) */}
+            {/* Additional Desktop Links */}
             <Link href="/docs" className="text-gray-800 hover:text-[#0052FF] transition-colors">
               Docs
             </Link>
-            <Link href="/whitepaper" className="text-gray-800 hover:text-[#0052FF] transition-colors">
+            <Link
+              href="/whitepaper"
+              className="text-gray-800 hover:text-[#0052FF] transition-colors"
+            >
               Whitepaper
             </Link>
-            <Link href="/TradingCompetition" className="text-gray-800 hover:text-[#0052FF] transition-colors">
+            <Link
+              href="/TradingCompetition"
+              className="text-gray-800 hover:text-[#0052FF] transition-colors"
+            >
               Competition
             </Link>
 
-            {/* Sign in / Account */}
-            {session ? (
-              <Link
-                href="/account"
-                className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#0052FF] text-white hover:bg-blue-600 transition-colors"
-              >
-                <span>Account</span>
-              </Link>
-            ) : (
-              <Link
-                href="/login"
-                className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#0052FF] text-white hover:bg-blue-600 transition-colors"
-              >
-                <span>Sign in</span>
-              </Link>
+            {/* Conditionally show user avatar or sign in */}
+            {!loading && (
+              user ? (
+                // If user is logged in, show avatar with dropdown
+                <UserAvatar
+                  photoURL={user.photoURL} // or from your Firestore doc
+                  onSignOut={handleSignOut}
+                />
+              ) : (
+                <Link
+                  href="/login"
+                  className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#0052FF] text-white hover:bg-blue-600 transition-colors"
+                >
+                  Sign in
+                </Link>
+              )
             )}
           </nav>
 
-          {/* Mobile Menu Toggle Button */}
+          {/* Mobile Nav Toggle */}
           <button
             onClick={() => setIsMenuOpen(!isMenuOpen)}
             className="md:hidden text-gray-800"
@@ -297,33 +315,7 @@ const Header = () => {
                     onClick={() => setIsMenuOpen(false)}
                     className="block py-2 border-b border-gray-200 text-gray-800 hover:text-[#0052FF]"
                   >
-                    <div className="flex items-center gap-2">
-                      {/* Eye Icon */}
-                      <svg
-                        className="w-4 h-4 text-[#0052FF]"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M2.458 12C3.732 7.943 7.523 5 12 5s8.268 2.943 9.542 7c-1.274 4.057-5.065 7-9.542 7s-8.268-2.943-9.542-7z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                        />
-                      </svg>
-                      <div className="flex flex-col">
-                        <span>Whale Watchers</span>
-                        <span className="text-xs text-gray-500">
-                          Monitor large wallet transactions in real-time
-                        </span>
-                      </div>
-                    </div>
+                    Whale Watchers
                   </Link>
                 </li>
                 <li>
@@ -332,28 +324,7 @@ const Header = () => {
                     onClick={() => setIsMenuOpen(false)}
                     className="block py-2 border-b border-gray-200 text-gray-800 hover:text-[#0052FF]"
                   >
-                    <div className="flex items-center gap-2">
-                      {/* MagnifyingGlass Icon */}
-                      <svg
-                        className="w-4 h-4 text-[#0052FF]"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 1010.5 18a7.5 7.5 0 006.15-3.15z"
-                        />
-                      </svg>
-                      <div className="flex flex-col">
-                        <span>Token Screener</span>
-                        <span className="text-xs text-gray-500">
-                          Analyze tokens for liquidity, volume, and more
-                        </span>
-                      </div>
-                    </div>
+                    Token Screener
                   </Link>
                 </li>
                 <li>
@@ -362,28 +333,7 @@ const Header = () => {
                     onClick={() => setIsMenuOpen(false)}
                     className="block py-2 border-b border-gray-200 text-gray-800 hover:text-[#0052FF]"
                   >
-                    <div className="flex items-center gap-2">
-                      {/* ShieldExclamation Icon */}
-                      <svg
-                        className="w-4 h-4 text-[#0052FF]"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M12 8v4m0 4h.01M20.205 7.697l-7.2-3.6a1.3 1.3 0 00-1.01 0l-7.2 3.6A1.3 1.3 0 004 8.848v6.304a1.3 1.3 0 00.795 1.151l7.2 3.6c.315.158.694.158 1.01 0l7.2-3.6A1.3 1.3 0 0020 15.152V8.848a1.3 1.3 0 00-.795-1.151z"
-                        />
-                      </svg>
-                      <div className="flex flex-col">
-                        <span>Honeypot Scanner</span>
-                        <span className="text-xs text-gray-500">
-                          Check if a token&apos;s contract can trap funds
-                        </span>
-                      </div>
-                    </div>
+                    Honeypot Scanner
                   </Link>
                 </li>
                 <li>
@@ -392,28 +342,7 @@ const Header = () => {
                     onClick={() => setIsMenuOpen(false)}
                     className="block py-2 border-b border-gray-200 text-gray-800 hover:text-[#0052FF]"
                   >
-                    <div className="flex items-center gap-2">
-                      {/* CalendarDays Icon */}
-                      <svg
-                        className="w-4 h-4 text-[#0052FF]"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                        />
-                      </svg>
-                      <div className="flex flex-col">
-                        <span>Launch Calendar</span>
-                        <span className="text-xs text-gray-500">
-                          Stay informed on upcoming token launches
-                        </span>
-                      </div>
-                    </div>
+                    Launch Calendar
                   </Link>
                 </li>
                 <li>
@@ -422,40 +351,14 @@ const Header = () => {
                     onClick={() => setIsMenuOpen(false)}
                     className="block py-2 text-gray-800 hover:text-[#0052FF]"
                   >
-                    <div className="flex items-center gap-2">
-                      {/* Newspaper Icon */}
-                      <svg
-                        className="w-4 h-4 text-[#0052FF]"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M19 20H5a2 2 0 01-2-2V5.4C3 5.179 3.179 5 3.4 5H5c.265 0 .52.105.707.293l.293.293h13a2 2 0 012 2V18a2 2 0 01-2 2z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M7 8h10M7 12h6m-6 4h10"
-                        />
-                      </svg>
-                      <div className="flex flex-col">
-                        <span>News Terminal</span>
-                        <span className="text-xs text-gray-500">
-                          Get the latest DeFi updates and news
-                        </span>
-                      </div>
-                    </div>
+                    News Terminal
                   </Link>
                 </li>
               </ul>
             )}
           </div>
 
-          {/* Other Nav Links (with descriptions in mobile only) */}
+          {/* Other Nav Links */}
           <div className="border-b border-gray-300 py-4">
             <Link
               href="/analysts"
@@ -502,30 +405,45 @@ const Header = () => {
             </Link>
           </div>
 
-          {/* Account / Sign In */}
+          {/* Mobile Account / Sign In */}
           <div className="mt-4">
-            {session ? (
-              <Link
-                href="/account"
-                onClick={() => setIsMenuOpen(false)}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#0052FF] text-white hover:bg-blue-600 transition-colors"
-              >
-                <span>Account</span>
-              </Link>
-            ) : (
-              <Link
-                href="/login"
-                onClick={() => setIsMenuOpen(false)}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#0052FF] text-white hover:bg-blue-600 transition-colors"
-              >
-                <span>Sign in</span>
-              </Link>
+            {!loading && (
+              user ? (
+                <>
+                  <Link
+                    href="/account"
+                    onClick={() => setIsMenuOpen(false)}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#0052FF] text-white hover:bg-blue-600 transition-colors"
+                  >
+                    Account
+                  </Link>
+                  {/* (Optional) sign-out for mobile
+                  <button
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      handleSignOut();
+                    }}
+                    className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-300 transition-colors"
+                  >
+                    Sign out
+                  </button>
+                  */}
+                </>
+              ) : (
+                <Link
+                  href="/login"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#0052FF] text-white hover:bg-blue-600 transition-colors"
+                >
+                  Sign in
+                </Link>
+              )
             )}
           </div>
         </nav>
       </div>
 
-      {/* Custom CSS for Coin Animation and Tool Library Underline */}
+      {/* Custom CSS for Coin Animation, etc. */}
       <style jsx>{`
         .coinContainer {
           position: relative;
@@ -561,8 +479,8 @@ const Header = () => {
           left: 0;
           bottom: -2px;
           width: 0;
-          height: 1px; /* Thinner underline */
-          background-color: #0052FF;
+          height: 1px;
+          background-color: #0052ff;
           transition: width 0.3s ease;
         }
         .animated-underline:hover::after {
@@ -575,17 +493,52 @@ const Header = () => {
 
 export default Header;
 
+/**
+ * Renders a user avatar with a 2px blue border.
+ * On hover, a small dropdown shows "My Account" and "Sign out".
+ */
+function UserAvatar({
+  photoURL,
+  onSignOut
+}: {
+  photoURL?: string | null;
+  onSignOut: () => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
 
+  // If the user has no photo, show a placeholder.
+  const avatarSrc = photoURL || "https://via.placeholder.com/40?text=No+Pic";
 
+  return (
+    <div
+      className="relative"
+      onMouseEnter={() => setIsOpen(true)}
+      onMouseLeave={() => setIsOpen(false)}
+    >
+      {/* Circle avatar with a 2px blue border */}
+      <div className="w-10 h-10 rounded-full border-2 border-blue-600 overflow-hidden cursor-pointer">
+        {/* Using <img> for simplicity. If you want <Image>, that can be used but note layout constraints. */}
+        <img
+          src={avatarSrc}
+          alt="User Avatar"
+          className="w-full h-full object-cover"
+        />
+      </div>
 
-
-
-
-
-
-
-
-
+      {/* Hover dropdown */}
+      {isOpen && (
+        <ul className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded shadow-md py-2 w-36">
+          <li className="px-4 py-2 hover:bg-gray-100">
+            <Link href="/account">My Account</Link>
+          </li>
+          <li className="px-4 py-2 hover:bg-gray-100">
+            <button onClick={onSignOut}>Sign out</button>
+          </li>
+        </ul>
+      )}
+    </div>
+  );
+}
 
 
 

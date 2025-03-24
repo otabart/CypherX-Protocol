@@ -7,13 +7,14 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        primaryBlue: '#0052FF', // Blue for accents
-        white: '#FFFFFF',      // White background
-        black: '#000000',      // Black text
+        primaryBlue: '#0052FF', // Your accent color
+        white: '#FFFFFF',
+        black: '#000000',
       },
     },
   },
   plugins: [],
 };
+
 
 

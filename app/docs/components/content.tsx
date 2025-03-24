@@ -8,7 +8,6 @@ import {
   PieChart,
   Activity,
   AlertTriangle,
-  Users,
   PlayCircle,
   TrendingUp,
   Code,
@@ -35,36 +34,41 @@ const contentData: Record<string, SectionData> = {
     lastUpdated: "February 15, 2025",
     breadcrumb: ["Home", "Docs", "Products"],
     content: `
-Homebase provides a range of tools for exploring the Base chain effectively:
-• Analytics Dashboard for real-time data
-• Market Insights for price & volume tracking
-• Community Forum for direct engagement
+Homebase offers a powerful suite of tools designed for the Base chain ecosystem:
+• Analytics Dashboard – Real-time data and insights.
+• Trading Tools – Featuring Whale Watchers, Token Scanner, Honeypot Checker, and Enhanced Terminal Commands.
+• Trading Competitions – Live challenges with rewards.
+• Launch Calendar – Stay updated on upcoming token launches and key events.
     `,
     callout:
-      "We regularly update each tool based on community feedback. Share your thoughts to help us shape the future of Homebase!",
+      "We continuously evolve our tools based on user feedback. Your insights help shape the future of Homebase!",
   },
   analytics: {
     title: "Trading Tools",
     lastUpdated: "February 15, 2025",
-    breadcrumb: ["Home", "Docs", "Products", "Analytics"],
+    breadcrumb: ["Home", "Docs", "Products", "Trading Tools"],
     content: `
 Trading Tools
 
-Navigating the fast-paced world of crypto trading requires precision, speed, and reliable insights. Homebase offers a suite of powerful trading tools designed to give traders an edge in the market.
+Homebase’s Trading Tools empower you to trade smarter and faster:
 
 Whale Watchers Tool
-Track the movements of the biggest players in the market with our Whale Watchers Tool. By monitoring large wallet transactions and key liquidity shifts, this tool helps you identify trends before they hit the mainstream. Stay ahead by following the money and reacting strategically to major market moves.
+Monitor significant wallet transactions and liquidity shifts on the Base chain.
 
-Token Screener
-Finding the right tokens at the right time can be the difference between catching a moonshot and missing out. Our Token Screener provides real-time filtering and ranking based on liquidity, volume, contract safety, and other key indicators.
+Token Scanner
+Analyze tokens with key metrics such as liquidity, volume, and contract safety.
 
-Honeypot Tracker
-Avoid scams and protect your investments with our Honeypot Tracker. This tool scans smart contracts for malicious code, ensuring that tokens can be freely traded and aren’t designed to trap funds.
+Honeypot Checker
+Scan smart contracts to detect potential scams and secure your trades.
 
-Homebase equips you with the best tools to trade smarter, safer, and faster.
+Enhanced Terminal Commands
+Access features instantly with our streamlined commands.
+
+Trading Competitions
+Join live trading challenges to test your skills and earn rewards.
     `,
     callout:
-      "Pro Tip: Our Whale Watchers Tool provides insights on specific tokens—not all on-chain transactions.",
+      "Tip: Use our Enhanced Terminal Commands to jump straight into any tool with a single command.",
   },
   insights: {
     title: "Market Insights",
@@ -73,99 +77,59 @@ Homebase equips you with the best tools to trade smarter, safer, and faster.
     content: `
 Market Insights
 
-Staying informed is the key to success in crypto. Homebase provides cutting-edge market insights through our News Terminal, Launch Calendar, and Analysts sections.
+Stay ahead in crypto with real-time updates and event tracking:
 
 News Terminal
-Aggregates real-time updates from top sources to track breaking news, regulatory changes, and market shifts.
+Receive curated news and market updates from top sources.
 
 Launch Calendar
-Keeps you ahead by tracking upcoming token launches, major airdrops, protocol upgrades, and other key events.
-
-Analysts
-Features expert breakdowns of market trends and trading strategies, giving actionable intelligence for confident decisions.
+Keep track of upcoming token launches, protocol upgrades, and other key events.
     `,
     callout:
-      "Heads Up: Our News Terminal content is curated by our AI to deliver only the most relevant updates.",
-  },
-  forum: {
-    title: "Community Forum",
-    lastUpdated: "February 15, 2025",
-    breadcrumb: ["Home", "Docs", "Products", "Forum"],
-    content: `
-Community Forum
-
-Crypto thrives on community, and at Homebase, we’re building a space where traders, developers, and investors can connect, share insights, and collaborate. Our Community Forum, set to launch at the end of March, will be a hub for discussions, market analysis, and collaboration within the Base chain ecosystem and beyond.
-
-What the Forum Offers:
-1. Market Discussions – Engage in real-time conversations about token trends, trading strategies, and industry news.
-2. Project Deep Dives – Get community-driven research and analysis on new and emerging projects.
-3. Alpha & Trade Signals – Stay ahead with user-generated trade signals and alpha leaks.
-4. Technical Help & Development – Connect with developers and blockchain experts for guidance.
-5. Community Challenges & Rewards – Participate in exclusive events and earn recognition.
-    `,
-    callout:
-      "We hold weekly AMAs and special events—join the conversation and share your ideas.",
+      "Note: Our News Terminal delivers only the most relevant updates, powered by intelligent curation.",
   },
   launch: {
-    title: "When Do We Launch?",
+    title: "Launch Information",
     lastUpdated: "February 15, 2025",
     breadcrumb: ["Home", "Docs", "Launch"],
     content: `
-Homebase Launch – Set for early March
+Homebase is scheduled to launch in early March, debuting on Clank.Fun—the premier launchpad on Base. This strategic launch maximizes liquidity, taps into a highly engaged community, and sets the stage for future growth.
 
-Homebase is set to launch in early March, and we’re bringing the hype straight to Clank.Fun—the premier launchpad on Base. Our decision to launch on Clank isn’t just about convenience; it’s about tapping into a thriving culture, minimizing LP fees, and ensuring our platform has the best possible start in the Base ecosystem.
-
-Why Clank.Fun?
-• Low Liquidity Fees – Maximizes initial liquidity.
-• Engaged Community – Ideal for projects with strong social momentum.
-• Proven Success – Home to some of Base’s most viral launches.
-
-What to Expect:
+Highlights:
 • Fair token launch with no insider allocations.
-• Massive community engagement.
-• A strong post-launch roadmap with real utility.
+• Robust community engagement from day one.
+• A dynamic post-launch roadmap full of new utilities.
     `,
     callout:
-      "Early adopters may receive exclusive perks—stay tuned for airdrop announcements.",
+      "Early adopters may receive exclusive perks. Stay tuned for airdrop and bonus announcements!",
   },
   "past-news": {
-    title: "Past News",
+    title: "Past News & Updates",
     lastUpdated: "February 15, 2025",
     breadcrumb: ["Home", "Docs", "Past News"],
     content: `
 Homebase Company News & Updates
 
-Trading Tools Expansion:
-• Whale Watchers Tool – Tracks large Base chain transactions.
-• Token Screener – Helps traders analyze tokens.
-• Honeypot Tracker – Detects scams.
-
-Market Insights Features:
-• News Terminal – Aggregates crypto news.
-• Launch Calendar – Tracks upcoming events.
-
-Analyst Reports:
-• Provides in-depth market analysis.
-
-Forum Announcement:
-• Community Forum launching at the end of March.
+Recent Enhancements:
+• Expanded Trading Tools – Introducing Whale Watchers, Token Scanner, Honeypot Checker, and Enhanced Terminal Commands.
+• New Trading Competitions – Engage in live challenges and earn rewards.
+• Market Insights Upgrade – Launch Calendar and News Terminal improvements.
 
 Token Launch:
-• Homebase token launching on Clank.Fun.
+• Homebase token debut on Clank.Fun.
     `,
     callout:
-      "Follow our Twitter for monthly retrospectives on development milestones and upcoming ideas.",
+      "Follow our social channels for monthly retrospectives on milestones and upcoming innovations.",
   },
   "company-updates": {
     title: "Company Updates",
     lastUpdated: "February 15, 2025",
     breadcrumb: ["Home", "Docs", "Company Updates"],
     content: `
-Stay tuned for behind-the-scenes updates at Homebase.
-We share roadmap adjustments, team expansions, and funding news regularly.
+Stay informed with the latest updates from Homebase. We share roadmap adjustments, team expansions, funding news, and feature launches—including Trading Competitions and Enhanced Terminal Commands.
     `,
     callout:
-      "Got suggestions? We rely on community insight to guide our development priorities.",
+      "Your feedback drives our innovation. Let us know what you'd like to see next!",
   },
   "getting-started": {
     title: "Getting Started",
@@ -174,41 +138,38 @@ We share roadmap adjustments, team expansions, and funding news regularly.
     content: `
 Getting Started with Homebase
 
-1.) Create an account:
+1.) Create an Account:
    • Click the “Sign-in” button.
-   • Choose a Username.
-   • Enjoy our library of tools.
+   • Choose a username.
+   • Access our full suite of tools.
 
-2.) Explore Tool Library:
+2.) Explore the Tool Library:
    - Whale Watchers – Track major wallet movements.
-   - Token Screener – Analyze tokens based on key indicators.
-   - Honeypot Scanner – Verify contracts before trading.
-   
+   - Token Scanner – Evaluate tokens with comprehensive metrics.
+   - Honeypot Checker – Verify contract safety.
+   - Trading Competitions – Participate in live challenges.
+   - Enhanced Terminal Commands – Instantly access platform features.
 
-3.) Stay Informed:
+3.) Stay Updated:
    - News Terminal – Get the latest crypto news.
-   - Launch Calendar – Never miss token launches.
-   - Analyst Reports – In-depth market breakdowns.
+   - Launch Calendar – Never miss upcoming token launches.
+   - Market Insights – Access real-time data and reports.
 
-4.) Join the Community Forum:
-   • Launching in late March—a space for collaboration.
-
-5.) Participate in the Homebase Token Launch:
-   • Early March on Clank.Fun.
+4.) Participate in the Homebase Token Launch:
+   • Scheduled for early March on Clank.Fun.
     `,
     callout:
-      "If you have any trouble, our support team is ready to help. Ask in the forum or email support@homebase.com.",
+      "Need help? Our support team is ready—reach out via our help center or email support@homebase.com.",
   },
   "api-docs": {
     title: "API Documentation",
     lastUpdated: "February 15, 2025",
     breadcrumb: ["Home", "Docs", "API Documentation"],
     content: `
-Developers can integrate real-time Base chain data into their apps via our RESTful API.
-Access transaction details, wallet info, and market metrics with ease.
+Developers can integrate real-time Base chain data into their applications using our RESTful API. Access transaction details, wallet info, and market metrics with ease.
     `,
     callout:
-      "API Keys are currently unavailable; stay tuned for updates.",
+      "API keys are currently unavailable; stay tuned for future updates.",
   },
   default: {
     title: "Welcome to Homebase Docs",
@@ -225,21 +186,16 @@ function crumbToRoute(crumb: string): string {
   return `/docs/${crumb.toLowerCase().replace(/\s+/g, "-")}`;
 }
 
-/**
- * Chooses a unique icon based on keywords in the paragraph and active section.
- * Uses a set to avoid duplicate icon usage.
- */
 function chooseUniqueIcon(para: string, sectionId: string, usedIcons: Set<string>): JSX.Element {
   const lower = para.toLowerCase();
   const mapping: { [keyword: string]: { icon: JSX.Element; name: string } } = {
     "whale watchers": { icon: <Activity className="w-8 h-8 text-[#0052FF]" />, name: "whale" },
-    "token screener": { icon: <Clipboard className="w-8 h-8 text-[#0052FF]" />, name: "screener" },
-    "honeypot tracker": { icon: <AlertTriangle className="w-8 h-8 text-[#0052FF]" />, name: "honeypot" },
+    "token scanner": { icon: <Clipboard className="w-8 h-8 text-[#0052FF]" />, name: "scanner" },
+    "honeypot checker": { icon: <AlertTriangle className="w-8 h-8 text-[#0052FF]" />, name: "honeypot" },
     "news terminal": { icon: <FileText className="w-8 h-8 text-[#0052FF]" />, name: "news" },
     "launch calendar": { icon: <Calendar className="w-8 h-8 text-[#0052FF]" />, name: "calendar" },
-    "analysts": { icon: <PieChart className="w-8 h-8 text-[#0052FF]" />, name: "analysts" },
-    "community forum": { icon: <Users className="w-8 h-8 text-[#0052FF]" />, name: "forum" },
-    "connect your wallet": { icon: <PlayCircle className="w-8 h-8 text-[#0052FF]" />, name: "wallet" },
+    "trading competitions": { icon: <TrendingUp className="w-8 h-8 text-[#0052FF]" />, name: "competitions" },
+    "enhanced terminal commands": { icon: <Code className="w-8 h-8 text-[#0052FF]" />, name: "commands" },
   };
 
   for (const keyword in mapping) {
@@ -265,9 +221,6 @@ function chooseUniqueIcon(para: string, sectionId: string, usedIcons: Set<string
   return <Book className="w-8 h-8 text-[#0052FF]" />;
 }
 
-/**
- * Returns a CTA link (white text with an arrow) if the paragraph contains certain keywords.
- */
 function getCTA(para: string): JSX.Element | null {
   const lower = para.toLowerCase();
   if (lower.includes("connect your wallet")) {
@@ -275,15 +228,6 @@ function getCTA(para: string): JSX.Element | null {
       <Link href="/connect">
         <span className="mt-2 inline-flex items-center text-white hover:underline">
           Connect Wallet <ArrowRight className="ml-1 w-4 h-4" />
-        </span>
-      </Link>
-    );
-  }
-  if (lower.includes("community forum")) {
-    return (
-      <Link href="/forum">
-        <span className="mt-2 inline-flex items-center text-white hover:underline">
-          Join Forum <ArrowRight className="ml-1 w-4 h-4" />
         </span>
       </Link>
     );
@@ -324,10 +268,7 @@ export default function Content({ activeSection }: ContentProps) {
     );
   });
 
-  // Split the content into paragraphs based on double newlines.
   const paragraphs = section.content.split("\n\n").filter((p) => p.trim().length > 0);
-
-  // Set to track used icon keys for uniqueness.
   const usedIcons = new Set<string>();
 
   return (
@@ -340,11 +281,9 @@ export default function Content({ activeSection }: ContentProps) {
           Last Updated: {section.lastUpdated}
         </span>
       </div>
-      {/* Section Title */}
       <h2 className="text-xl md:text-2xl font-bold text-white mb-4">
         {section.title}
       </h2>
-      {/* Callout Section placed under the header */}
       {section.callout && (
         <div className="mb-6">
           <div className="p-4 bg-[#0052FF] border-l-4 border-[#0052FF] rounded-md flex items-start space-x-3">
@@ -355,7 +294,6 @@ export default function Content({ activeSection }: ContentProps) {
           </div>
         </div>
       )}
-      {/* Content Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {paragraphs.map((para, idx) => {
           const icon = chooseUniqueIcon(para, activeSection, usedIcons);
@@ -379,6 +317,8 @@ export default function Content({ activeSection }: ContentProps) {
     </div>
   );
 }
+
+
 
 
 

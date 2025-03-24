@@ -11,7 +11,6 @@ import {
 import { motion } from "framer-motion";
 import { Tooltip } from "react-tooltip";
 import "react-tooltip/dist/react-tooltip.css";
-import Header from "../components/Header";
 import Footer from "../components/Footer";
 
 export default function HoneypotPage() {
@@ -65,14 +64,18 @@ export default function HoneypotPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-white text-black">
-      <Header />
+    <div className="min-h-screen flex flex-col bg-black text-white font-mono">
+      {/* Banner */}
+      <div className="bg-[#0052FF] text-white py-4 text-center">
+        <h1 className="text-3xl font-bold">Honeypot Scanner</h1>
+        <p className="text-sm">Analyze token contracts for potential honeypot traps</p>
+      </div>
 
       <main className="flex-grow container mx-auto px-4 py-8 md:py-12 space-y-12">
         {/* Callout: How It Works */}
         <section>
-          <div className="flex items-start gap-3 bg-[#0052FF] text-white p-4 rounded-md shadow">
-            <FiInfo className="w-12 h-12 md:w-8 md:h-8 mt-1" />
+          <div className="flex items-start gap-3 bg-black border border-[#0052FF] p-4 rounded-md shadow">
+            <FiInfo className="w-10 h-10 mt-1 text-[#0052FF]" />
             <div className="leading-relaxed">
               <h3 className="text-lg font-bold mb-1">How It Works</h3>
               <p>
@@ -85,39 +88,36 @@ export default function HoneypotPage() {
         </section>
 
         {/* Section 2: Scan a Token */}
-        <section className="max-w-lg mx-auto bg-white p-8 rounded-md shadow-xl text-center">
-          <h2 className="text-3xl font-bold mb-6" style={{ color: "#0052FF" }}>
-            Scan a Token
-          </h2>
-          <div className="flex items-center justify-center border border-gray-300 rounded-md p-3 mb-4">
+        <section className="max-w-lg mx-auto bg-black border border-[#0052FF] p-8 rounded-md shadow-xl text-center">
+          <h2 className="text-3xl font-bold mb-6 text-[#0052FF]">Scan a Token</h2>
+          <div className="flex items-center justify-center border border-[#0052FF] rounded-md p-3 mb-4">
             <input
               type="text"
               placeholder="Enter token address..."
               value={tokenAddress}
               onChange={(e) => setTokenAddress(e.target.value)}
-              className="w-full px-3 py-2 border-none focus:outline-none text-center"
+              className="w-full px-3 py-2 bg-black text-white border-none focus:outline-none text-center"
             />
             <button
               onClick={handleScan}
               className="ml-2 bg-[#0052FF] text-white px-4 py-2 rounded-md flex items-center gap-2 hover:bg-blue-700 transition"
             >
-              {/* FiSearch now uses its size prop (18) to remain unchanged */}
               <FiSearch size={18} />
               <span className="hidden sm:inline">Scan</span>
             </button>
           </div>
 
           {loading && (
-            <div className="mt-6 p-6 border rounded-md shadow-sm bg-white animate-pulse">
-              <div className="h-6 w-3/4 bg-gray-300 rounded mb-4 mx-auto"></div>
-              <div className="h-4 w-1/2 bg-gray-300 rounded mb-2 mx-auto"></div>
-              <div className="h-4 w-2/3 bg-gray-300 rounded mb-2 mx-auto"></div>
-              <div className="h-4 w-full bg-gray-300 rounded mx-auto"></div>
+            <div className="mt-6 p-6 border border-[#0052FF] rounded-md shadow-sm bg-black animate-pulse">
+              <div className="h-6 w-3/4 bg-[#0052FF] rounded mb-4 mx-auto"></div>
+              <div className="h-4 w-1/2 bg-[#0052FF] rounded mb-2 mx-auto"></div>
+              <div className="h-4 w-2/3 bg-[#0052FF] rounded mb-2 mx-auto"></div>
+              <div className="h-4 w-full bg-[#0052FF] rounded mx-auto"></div>
             </div>
           )}
 
           {error && (
-            <p className="text-center mt-4 text-red-600">
+            <p className="text-center mt-4 text-red-500">
               {typeof error === "object" && error !== null ? error.message : error}
             </p>
           )}
@@ -127,7 +127,7 @@ export default function HoneypotPage() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.4 }}
-              className="mt-6 p-6 border rounded-md shadow-sm bg-white"
+              className="mt-6 p-6 border border-[#0052FF] rounded-md shadow-sm bg-black"
             >
               <p className="font-semibold break-all mb-4">
                 {scanResult.token?.name
@@ -136,18 +136,18 @@ export default function HoneypotPage() {
               </p>
               <div className="my-3">
                 {scanResult?.honeypotResult?.isHoneypot ? (
-                  <p className="flex items-center justify-center text-xl font-bold text-red-600">
-                    <FiAlertTriangle className="w-12 h-12 md:w-8 md:h-8 mr-2" />
+                  <p className="flex items-center justify-center text-xl font-bold text-red-500">
+                    <FiAlertTriangle className="w-10 h-10 mr-2" />
                     Honeypot Detected
                   </p>
                 ) : (
-                  <p className="flex items-center justify-center text-xl font-bold text-green-600">
-                    <FiShield className="w-12 h-12 md:w-8 md:h-8 mr-2" />
+                  <p className="flex items-center justify-center text-xl font-bold text-[#0052FF]">
+                    <FiShield className="w-10 h-10 mr-2" />
                     No Honeypot Detected
                   </p>
                 )}
               </div>
-              <div className="text-sm text-gray-700 space-y-2">
+              <div className="text-sm text-white space-y-2">
                 {scanResult?.summary && (
                   <>
                     <p>
@@ -157,7 +157,7 @@ export default function HoneypotPage() {
                         data-tooltip-content="Overall risk rating based on simulation results"
                         className="ml-1 inline-block cursor-help"
                       >
-                        <FiInfo className="w-12 h-12 md:w-8 md:h-8 text-gray-500 inline" />
+                        <FiInfo className="w-6 h-6 md:w-8 md:h-8 inline text-[#0052FF]" />
                       </span>
                     </p>
                     <p>
@@ -197,24 +197,22 @@ export default function HoneypotPage() {
 
         {/* Additional Details with Arrow Icons */}
         <section className="max-w-3xl mx-auto text-center">
-          <h3 className="text-2xl font-bold mb-4" style={{ color: "#0052FF" }}>
-            Additional Details
-          </h3>
+          <h3 className="text-2xl font-bold mb-4 text-[#0052FF]">Additional Details</h3>
           <div className="flex flex-col gap-3 items-start max-w-md mx-auto text-left">
             <div className="flex items-start gap-2">
-              <FiArrowRight className="w-12 h-12 md:w-8 md:h-8 text-[#0052FF] mt-1" />
+              <FiArrowRight className="w-8 h-8 text-[#0052FF] mt-1" />
               <span>
                 <strong>Risk Analysis:</strong> Evaluates overall risk based on simulation data.
               </span>
             </div>
             <div className="flex items-start gap-2">
-              <FiArrowRight className="w-12 h-12 md:w-8 md:h-8 text-[#0052FF] mt-1" />
+              <FiArrowRight className="w-8 h-8 text-[#0052FF] mt-1" />
               <span>
                 <strong>Transaction Simulation:</strong> Checks if transactions trigger honeypot behavior.
               </span>
             </div>
             <div className="flex items-start gap-2">
-              <FiArrowRight className="w-12 h-12 md:w-8 md:h-8 text-[#0052FF] mt-1" />
+              <FiArrowRight className="w-8 h-8 text-[#0052FF] mt-1" />
               <span>
                 <strong>Detailed Reporting:</strong> Displays tax rates, risk levels, and potential red flags.
               </span>
@@ -232,6 +230,10 @@ export default function HoneypotPage() {
     </div>
   );
 }
+
+
+
+
 
 
 

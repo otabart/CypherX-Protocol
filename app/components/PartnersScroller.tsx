@@ -5,22 +5,27 @@ const partners = [
   {
     src: "https://res.cloudinary.com/dsr37ut2z/image/upload/v1691545750/marketplace/covalent_marketing_dt84ka.png",
     alt: "Covalent",
+    link: "https://www.covalenthq.com/",
   },
   {
     src: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Uniswap_Logo_and_Wordmark.svg/2560px-Uniswap_Logo_and_Wordmark.svg.png",
     alt: "Uniswap",
+    link: "https://uniswap.org/",
   },
   {
     src: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Coinbase.svg/2560px-Coinbase.svg.png",
     alt: "Coinbase",
+    link: "https://www.coinbase.com/",
   },
   {
     src: "https://www.datocms-assets.com/105223/1701819587-logo.svg",
     alt: "Alchemy",
+    link: "https://www.alchemy.com/",
   },
   {
     src: "https://landing.coingecko.com/wp-content/uploads/2020/03/CoinGecko.png",
     alt: "CoinGecko",
+    link: "https://www.coingecko.com/",
   },
 ];
 
@@ -62,38 +67,38 @@ export default function PartnersScroller() {
       `}</style>
 
       <div className="marquee-track">
-        {/* 
-          First set of 5 logos.
-          We add a margin-right so that the last logo in this set (CoinGecko)
-          is spaced properly from the first logo in the second set (Covalent).
-        */}
+        {/* First set of logos */}
         <div className="flex flex-nowrap items-center gap-6 sm:gap-16 md:gap-18 lg:gap-24 mr-6 sm:mr-16 md:mr-18 lg:mr-24">
           {partners.map((partner, idx) => (
             <div key={`p1-${idx}`} className="flex-shrink-0">
-              <Image
-                src={partner.src}
-                alt={partner.alt}
-                className="h-auto w-[60px] sm:w-[80px] md:w-[100px] lg:w-[120px]"
-                width={120}
-                height={80}
-                style={{ objectFit: "contain" }}
-              />
+              <a href={partner.link} target="_blank" rel="noopener noreferrer">
+                <Image
+                  src={partner.src}
+                  alt={partner.alt}
+                  className="h-auto w-[60px] sm:w-[80px] md:w-[100px] lg:w-[120px]"
+                  width={120}
+                  height={80}
+                  style={{ objectFit: "contain" }}
+                />
+              </a>
             </div>
           ))}
         </div>
 
-        {/* Second set of the same 5 logos */}
+        {/* Second set of logos */}
         <div className="flex flex-nowrap items-center gap-6 sm:gap-16 md:gap-18 lg:gap-24">
           {partners.map((partner, idx) => (
             <div key={`p2-${idx}`} className="flex-shrink-0">
-              <Image
-                src={partner.src}
-                alt={partner.alt}
-                className="h-auto w-[60px] sm:w-[80px] md:w-[100px] lg:w-[120px]"
-                width={120}
-                height={80}
-                style={{ objectFit: "contain" }}
-              />
+              <a href={partner.link} target="_blank" rel="noopener noreferrer">
+                <Image
+                  src={partner.src}
+                  alt={partner.alt}
+                  className="h-auto w-[60px] sm:w-[80px] md:w-[100px] lg:w-[120px]"
+                  width={120}
+                  height={80}
+                  style={{ objectFit: "contain" }}
+                />
+              </a>
             </div>
           ))}
         </div>
@@ -101,6 +106,7 @@ export default function PartnersScroller() {
     </div>
   );
 }
+
 
 
 

@@ -14,6 +14,9 @@ import Footer from "./components/Footer";
 // ======= New PartnersScroller Import =======
 import PartnersScroller from "./components/PartnersScroller";
 
+// ======= Import the Base AI Index Component =======
+import BaseAiIndex from "./components/Indexes";
+
 // Replace or remove if not needed:
 export type NewsArticle = {
   id: string;
@@ -163,7 +166,6 @@ function ShieldIcon() {
   );
 }
 
-// New Icons for "How Homebase Powers Base" Section
 function ChartIcon() {
   return (
     <svg
@@ -216,12 +218,11 @@ function ToolIcon() {
       className="text-primaryBlue mx-auto mb-3"
     >
       <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33h.09a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51h.09a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v.09a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+      <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33h.09a1.65 1.65 0 001 1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51h.09a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v.09a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
     </svg>
   );
 }
 
-// New Icons for "Market Moves Fast" Section (if needed)
 function TrendIcon() {
   return (
     <svg
@@ -280,13 +281,13 @@ function SentimentIcon() {
   );
 }
 
-// EthereumStats example
 function EthereumStats({
   stats,
 }: {
   stats: { price: number; volume: number; latestBlock: number };
 }) {
-  if (!stats) return <div className="text-center text-gray-500">Loading stats...</div>;
+  if (!stats)
+    return <div className="text-center text-gray-500">Loading stats...</div>;
 
   // Animation variants
   const containerVariants = {
@@ -305,7 +306,10 @@ function EthereumStats({
   const headerVariants = {
     hidden: { opacity: 0, y: -30 },
     visible: { opacity: 1, y: 0 },
-    hover: { scale: 1.02, textShadow: "0px 0px 8px rgba(37,99,235,0.8)" },
+    hover: {
+      scale: 1.02,
+      textShadow: "0px 0px 8px rgba(37,99,235,0.8)",
+    },
   };
 
   return (
@@ -323,9 +327,12 @@ function EthereumStats({
         animate="visible"
         transition={{ duration: 0.6 }}
       >
-        <h2 className="text-3xl font-extrabold text-primaryBlue">Ethereum Network Stats</h2>
+        <h2 className="text-3xl font-extrabold text-primaryBlue">
+          Ethereum Network Stats
+        </h2>
         <p className="text-gray-600 mt-1 text-lg">
-          Live insights into Ethereum’s price, trading volume, and latest block data.
+          Live insights into Ethereum’s price, trading volume, and latest block
+          data.
         </p>
       </motion.div>
 
@@ -367,7 +374,9 @@ function EthereumStats({
             >
               {stat.icon}
             </motion.div>
-            <h2 className="text-sm font-semibold text-gray-700 text-center">{stat.title}</h2>
+            <h2 className="text-sm font-semibold text-gray-700 text-center">
+              {stat.title}
+            </h2>
             <p className="text-xl font-bold text-gray-900 mt-1">
               <CountUp
                 start={stat.value * 0.9}
@@ -405,7 +414,9 @@ function LatestNewsSection() {
         }
         const articles: NewsArticle[] = await res.json();
         const sortedArticles = articles.sort(
-          (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+          (a, b) =>
+            new Date(b.publishedAt).getTime() -
+            new Date(a.publishedAt).getTime()
         );
         setLatestArticles(sortedArticles.slice(0, 3));
       } catch (err) {
@@ -531,8 +542,8 @@ function HomePage() {
           See Forward with Homebase Analytics
         </h1>
         <p className="text-lg mb-10 max-w-2xl mx-auto leading-relaxed">
-          Discover insights that drive Base Chain Markets. Get helpful trading tools,
-          professional insights, and on-chain analytics—all in one place.
+          Discover insights that drive Base Chain Markets. Get helpful trading
+          tools, professional insights, and on-chain analytics—all in one place.
         </p>
         <div className="flex justify-center space-x-4">
           <Link href="/docs">
@@ -548,102 +559,164 @@ function HomePage() {
         </div>
       </motion.section>
 
-      {/* PARTNERS SCROLLING LOGOS (UPDATED) */}
+      {/* PARTNERS SCROLLING LOGOS */}
       <PartnersScroller />
 
       {/* Ethereum Stats Section */}
       <EthereumStats stats={stats} />
 
-       {/* "What is Base?" Section */}
-       <motion.section className="w-full py-16 bg-gray-50 text-center" {...scrollProps}>
-          <div className="max-w-5xl mx-auto px-4">
-            <h2 className="text-4xl md:text-5xl font-extrabold mb-6 leading-tight">
-              <span className="text-black">What is</span>{" "}
-              <span className="text-primaryBlue">Base?</span>
-            </h2>
-            <p className="text-gray-700 max-w-2xl mx-auto mb-10 text-lg leading-relaxed">
-              Base is a next-generation Layer 2 network, designed for faster and cheaper transactions while unlocking new possibilities for Web3.
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              <motion.div className="p-6 bg-white rounded-lg shadow-sm" whileHover={{ scale: 1.05 }}>
-                <LightningIcon />
-                <h3 className="text-xl font-bold text-primaryBlue mb-3">Faster Transactions</h3>
-                <p className="text-sm text-gray-600 leading-relaxed">Enjoy near-instant confirmations and lower fees.</p>
-              </motion.div>
-              <motion.div className="p-6 bg-white rounded-lg shadow-sm" whileHover={{ scale: 1.05 }}>
-                <CodeIcon />
-                <h3 className="text-xl font-bold text-primaryBlue mb-3">EVM-Compatible</h3>
-                <p className="text-sm text-gray-600 leading-relaxed">Deploy your dApps seamlessly with full Ethereum compatibility.</p>
-              </motion.div>
-              <motion.div className="p-6 bg-white rounded-lg shadow-sm" whileHover={{ scale: 1.05 }}>
-                <ShieldIcon />
-                <h3 className="text-xl font-bold text-primaryBlue mb-3">Secure &amp; Scalable</h3>
-                <p className="text-sm text-gray-600 leading-relaxed">Robust security meets unrivaled scalability, backed by industry leaders.</p>
-              </motion.div>
-            </div>
-          </div>
-        </motion.section>
+      {/* Base AI Index Section */}
+      {isMobile ? (
+        <section className="py-8 w-full px-4">
+          <BaseAiIndex />
+        </section>
+      ) : (
+        <section className="py-12 container mx-auto px-4">
+          <BaseAiIndex />
+        </section>
+      )}
 
-        {/* "How Homebase Powers Base" Section */}
-        <motion.section className="w-full py-16 bg-gray-50 text-center relative" {...scrollProps}>
-          {/* Soft Wave Background */}
-          <div className="absolute inset-0 w-full h-full bg-gray-50">
-            <svg
-              className="absolute bottom-0 left-0 w-full"
-              viewBox="0 0 1440 320"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
+      {/* "What is Base?" Section */}
+      <motion.section
+        className="w-full py-16 bg-gray-50 text-center"
+        {...scrollProps}
+      >
+        <div className="max-w-5xl mx-auto px-4">
+          <h2 className="text-4xl md:text-5xl font-extrabold mb-6 leading-tight">
+            <span className="text-black">What is</span>{" "}
+            <span className="text-primaryBlue">Base?</span>
+          </h2>
+          <p className="text-gray-700 max-w-2xl mx-auto mb-10 text-lg leading-relaxed">
+            Base is a next-generation Layer 2 Blockchain Network, designed for faster and cheaper
+            transactions.  
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <motion.div
+              className="p-6 bg-white rounded-lg shadow-sm"
+              whileHover={{ scale: 1.05 }}
             >
-              <path
-                fill="white"
-                d="M0,256L120,245.3C240,235,480,213,720,181.3C960,149,1200,107,1320,85.3L1440,64V320H1320C1200,320,960,320,720,320C480,320,240,320,120,320H0Z"
-              />
-            </svg>
+              <LightningIcon />
+              <h3 className="text-xl font-bold text-primaryBlue mb-3">
+                Faster Transactions
+              </h3>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                Enjoy near-instant confirmations and lower fees.
+              </p>
+            </motion.div>
+            <motion.div
+              className="p-6 bg-white rounded-lg shadow-sm"
+              whileHover={{ scale: 1.05 }}
+            >
+              <CodeIcon />
+              <h3 className="text-xl font-bold text-primaryBlue mb-3">
+                EVM-Compatible
+              </h3>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                Deploy your dApps seamlessly with full Ethereum compatibility.
+              </p>
+            </motion.div>
+            <motion.div
+              className="p-6 bg-white rounded-lg shadow-sm"
+              whileHover={{ scale: 1.05 }}
+            >
+              <ShieldIcon />
+              <h3 className="text-xl font-bold text-primaryBlue mb-3">
+                Secure &amp; Scalable
+              </h3>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                Robust security meets unrivaled scalability, backed by industry
+                leaders.
+              </p>
+            </motion.div>
           </div>
-          <div className="max-w-5xl mx-auto px-4 relative z-10">
-            <h2 className="text-4xl md:text-5xl font-extrabold mb-6 text-primaryBlue leading-tight">
-              How Homebase Powers Base
-            </h2>
-            <p className="text-gray-700 max-w-3xl mx-auto mb-8 text-lg leading-relaxed">
-              Homebase provides cutting-edge tools to track on-chain data, monitor whale movements, and stay ahead of token launches.
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {/* Screener Card */}
-              <motion.div className="p-6 bg-white border-2 border-black rounded-lg shadow-md" whileHover={{ scale: 1.05 }}>
-                <ChartIcon />
-                <h3 className="text-xl font-bold text-black mb-2">Homebase Screener</h3>
-                <p className="text-sm text-gray-600 leading-relaxed mb-4">Get real-time coin prices and find the hottest base pairs.</p>
-                <Link href="/token-scanner">
-                  <button className="mt-3 px-5 py-2 border-2 border-black text-black font-semibold rounded-full hover:bg-black hover:text-white transition-all">
-                    Screener →
-                  </button>
-                </Link>
-              </motion.div>
-              {/* Whale Watchers Card */}
-              <motion.div className="p-6 bg-white border-2 border-black rounded-lg shadow-md" whileHover={{ scale: 1.05 }}>
-                <InsightIcon />
-                <h3 className="text-xl font-bold text-black mb-2">Whale Watchers</h3>
-                <p className="text-sm text-gray-600 leading-relaxed mb-4">Track large wallet movements and detect potential market shifts.</p>
-                <Link href="/whale-watcher">
-                  <button className="mt-3 px-5 py-2 border-2 border-black text-black font-semibold rounded-full hover:bg-black hover:text-white transition-all">
-                    Track Whales →
-                  </button>
-                </Link>
-              </motion.div>
-              {/* Token Launch Calendar Card */}
-              <motion.div className="p-6 bg-white border-2 border-black rounded-lg shadow-md" whileHover={{ scale: 1.05 }}>
-                <ToolIcon />
-                <h3 className="text-xl font-bold text-black mb-2">Token Launch Calendar</h3>
-                <p className="text-sm text-gray-600 leading-relaxed mb-4">Stay ahead with upcoming token launches and market trends.</p>
-                <Link href="/launch-calendar">
-                  <button className="mt-3 px-5 py-2 border-2 border-black text-black font-semibold rounded-full hover:bg-black hover:text-white transition-all">
-                    View Calendar →
-                  </button>
-                </Link>
-              </motion.div>
-            </div>
+        </div>
+      </motion.section>
+
+      {/* "How Homebase Powers Base" Section */}
+      <motion.section
+        className="w-full py-16 bg-gray-50 text-center relative"
+        {...scrollProps}
+      >
+        {/* Soft Wave Background */}
+        <div className="absolute inset-0 w-full h-full bg-gray-50">
+          <svg
+            className="absolute bottom-0 left-0 w-full"
+            viewBox="0 0 1440 320"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              fill="white"
+              d="M0,256L120,245.3C240,235,480,213,720,181.3C960,149,1200,107,1320,85.3L1440,64V320H1320C1200,320,960,320,720,320C480,320,240,320,120,320H0Z"
+            />
+          </svg>
+        </div>
+        <div className="max-w-5xl mx-auto px-4 relative z-10">
+          <h2 className="text-4xl md:text-5xl font-extrabold mb-6 text-primaryBlue leading-tight">
+            How Homebase Powers Base
+          </h2>
+          <p className="text-gray-700 max-w-3xl mx-auto mb-8 text-lg leading-relaxed">
+            Homebase provides cutting-edge tools to track on-chain data, monitor whale
+            movements, and stay ahead of token launches.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {/* Screener Card */}
+            <motion.div
+              className="p-6 bg-white border-2 border-black rounded-lg shadow-md"
+              whileHover={{ scale: 1.05 }}
+            >
+              <ChartIcon />
+              <h3 className="text-xl font-bold text-black mb-2">
+                Homebase Screener
+              </h3>
+              <p className="text-sm text-gray-600 leading-relaxed mb-4">
+                Get real-time coin prices and find the hottest base pairs.
+              </p>
+              <Link href="/token-scanner">
+                <button className="mt-3 px-5 py-2 border-2 border-black text-black font-semibold rounded-full hover:bg-black hover:text-white transition-all">
+                  Screener →
+                </button>
+              </Link>
+            </motion.div>
+            {/* Whale Watchers Card */}
+            <motion.div
+              className="p-6 bg-white border-2 border-black rounded-lg shadow-md"
+              whileHover={{ scale: 1.05 }}
+            >
+              <InsightIcon />
+              <h3 className="text-xl font-bold text-black mb-2">
+                Whale Watchers
+              </h3>
+              <p className="text-sm text-gray-600 leading-relaxed mb-4">
+                Track large wallet movements and detect potential market shifts.
+              </p>
+              <Link href="/whale-watcher">
+                <button className="mt-3 px-5 py-2 border-2 border-black text-black font-semibold rounded-full hover:bg-black hover:text-white transition-all">
+                  Track Whales →
+                </button>
+              </Link>
+            </motion.div>
+            {/* Token Launch Calendar Card */}
+            <motion.div
+              className="p-6 bg-white border-2 border-black rounded-lg shadow-md"
+              whileHover={{ scale: 1.05 }}
+            >
+              <ToolIcon />
+              <h3 className="text-xl font-bold text-black mb-2">
+                Token Launch Calendar
+              </h3>
+              <p className="text-sm text-gray-600 leading-relaxed mb-4">
+                Stay ahead with upcoming token launches and market trends.
+              </p>
+              <Link href="/launch-calendar">
+                <button className="mt-3 px-5 py-2 border-2 border-black text-black font-semibold rounded-full hover:bg-black hover:text-white transition-all">
+                  View Calendar →
+                </button>
+              </Link>
+            </motion.div>
           </div>
-        </motion.section>
+        </div>
+      </motion.section>
 
       {/* Roadmap Section */}
       <RoadmapSection />

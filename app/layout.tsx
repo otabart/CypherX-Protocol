@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import "./globals.css";
-import { Providers } from "./providers";
+import "./globals.css"; // includes Tailwind (base, components, utilities)
+import { Providers } from "./providers"; // Our new combined Firebase + Query + Competition provider
 
 export const metadata: Metadata = {
   title: "Homebase Markets",
@@ -26,6 +26,7 @@ export default function RootLayout({
     </html>
   );
 }
+
 
 
 

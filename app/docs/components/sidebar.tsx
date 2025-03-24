@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface SidebarProps {
   activeSection: string;
@@ -28,6 +29,11 @@ const sections = [
   { id: "faqs", title: "FAQs" },
 ];
 
+const dropdownVariants = {
+  hidden: { opacity: 0, height: 0, transition: { duration: 0.2, when: "afterChildren" } },
+  visible: { opacity: 1, height: "auto", transition: { duration: 0.3, when: "beforeChildren" } },
+};
+
 export default function Sidebar({
   activeSection,
   setActiveSection,
@@ -47,7 +53,10 @@ export default function Sidebar({
   );
 
   return (
-    <aside
+    <motion.aside
+      initial={{ x: -50, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      transition={{ duration: 0.5 }}
       className={`
         fixed
         lg:static
@@ -55,7 +64,7 @@ export default function Sidebar({
         left-0
         z-20
         h-full
-        w-64
+        w-[90vw] lg:w-64
         bg-black
         border-r border-gray-700
         px-4
@@ -84,7 +93,7 @@ export default function Sidebar({
         placeholder="Search Docs..."
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
-        className="w-full px-4 py-2 mb-6 border border-gray-600 rounded-md bg-black text-white"
+        className="w-full px-4 py-2 mb-6 border border-gray-600 rounded-md bg-black text-white text-sm"
       />
 
       <ul className="space-y-4">
@@ -92,12 +101,12 @@ export default function Sidebar({
           <li key={section.id}>
             {section.subSections ? (
               <div>
-                <button
-                  className="flex items-center justify-between w-full text-left px-4 py-2 rounded-md transition-all hover:bg-[#0052FF]"
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="flex items-center justify-between w-full text-left px-4 py-2 rounded-md transition-colors hover:bg-[#0052FF]"
                   onClick={() =>
-                    setOpenDropdown(
-                      openDropdown === section.id ? null : section.id
-                    )
+                    setOpenDropdown(openDropdown === section.id ? null : section.id)
                   }
                 >
                   <span>{section.title}</span>
@@ -106,50 +115,62 @@ export default function Sidebar({
                   ) : (
                     <ChevronRight size={18} />
                   )}
-                </button>
-                {openDropdown === section.id && (
-                  <ul className="pl-4 space-y-2 mt-1">
-                    {section.subSections.map((sub) => (
-                      <li key={sub.id}>
-                        <button
-                          onClick={() => {
-                            setActiveSection(sub.id);
-                            setIsSidebarOpen(false);
-                          }}
-                          className={`block w-full text-left px-4 py-2 rounded-md transition-all ${
-                            activeSection === sub.id
-                              ? "bg-[#0052FF] text-white font-bold"
-                              : "hover:bg-[#0052FF]"
-                          }`}
-                        >
-                          {sub.title}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                </motion.button>
+                <AnimatePresence>
+                  {openDropdown === section.id && (
+                    <motion.ul
+                      initial="hidden"
+                      animate="visible"
+                      exit="hidden"
+                      variants={dropdownVariants}
+                      className="pl-4 space-y-2 mt-1 overflow-hidden"
+                    >
+                      {section.subSections.map((sub) => (
+                        <motion.li key={sub.id} whileHover={{ x: 5 }} whileTap={{ scale: 0.98 }}>
+                          <button
+                            onClick={() => {
+                              setActiveSection(sub.id);
+                              setIsSidebarOpen(false);
+                            }}
+                            className={`block w-full text-left px-4 py-2 rounded-md transition-colors ${
+                              activeSection === sub.id
+                                ? "bg-[#0052FF] text-white font-bold"
+                                : "hover:bg-[#0052FF] text-gray-300"
+                            }`}
+                          >
+                            {sub.title}
+                          </button>
+                        </motion.li>
+                      ))}
+                    </motion.ul>
+                  )}
+                </AnimatePresence>
               </div>
             ) : (
-              <button
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
                 onClick={() => {
                   setActiveSection(section.id);
                   setIsSidebarOpen(false);
                 }}
-                className={`w-full text-left px-4 py-2 rounded-md transition-all ${
+                className={`w-full text-left px-4 py-2 rounded-md transition-colors ${
                   activeSection === section.id
                     ? "bg-[#0052FF] text-white font-bold"
-                    : "hover:bg-[#0052FF]"
+                    : "hover:bg-[#0052FF] text-gray-300"
                 }`}
               >
                 {section.title}
-              </button>
+              </motion.button>
             )}
           </li>
         ))}
       </ul>
-    </aside>
+    </motion.aside>
   );
 }
+
+
 
 
 
