@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { tokenMapping } from "../tokenMapping"; // adjust if needed
-import { useAuth } from "@/app/providers"; // or the correct path
+import { useAuth } from "@/app/providers"; // adjust path as needed
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -15,13 +15,37 @@ import {
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 
+/* ===========================================================================
+   1. TYPE DEFINITIONS
+   =========================================================================== */
+
 type HistoryLine = {
   text: string;
   color?: string;
 };
 
+type InstallStep = {
+  stepNumber: number;
+  description: string;
+  baseShade?: number;
+};
+
+type NewsItem = {
+  id: number;
+  title: string;
+  content: string;
+  author: string;
+  source: string;
+  publishedAt: string;
+  slug: string;
+};
+
+/* ===========================================================================
+   2. HELPER FUNCTIONS
+   =========================================================================== */
+
+// Formats text with rich styling.
 function formatText(text: string): React.ReactNode {
-  // Splits text into bold/italic parts
   const parts = text.split(/(\*\*[^*]+\*\*|_[^_]+_)/g);
   return parts.map((part, idx) => {
     if (part.startsWith("**") && part.endsWith("**")) {
@@ -34,24 +58,233 @@ function formatText(text: string): React.ReactNode {
   });
 }
 
+// Sleep helper to simulate delays.
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Simple blinking animation for the triple dots
-// Add this in a global CSS or style block if not present
-// .blinking-dots {
-//   animation: blink 1.2s infinite;
-// }
-// @keyframes blink {
-//   0%, 60% { opacity: 1; }
-//   61%, 100% { opacity: 0; }
-// }
+// Adjusts a hex color by a given amount (amt is multiplied by 2 for a more dramatic effect).
+function adjustColor(hex: string, amt: number): string {
+  let usePound = false;
+  if (hex[0] === "#") {
+    hex = hex.slice(1);
+    usePound = true;
+  }
+  let num = parseInt(hex, 16);
+  let r = (num >> 16) + amt * 2;
+  r = Math.min(255, Math.max(0, r));
+  let g = ((num >> 8) & 0x00ff) + amt * 2;
+  g = Math.min(255, Math.max(0, g));
+  let b = (num & 0x0000ff) + amt * 2;
+  b = Math.min(255, Math.max(0, b));
+  return (usePound ? "#" : "") + ((r << 16) | (g << 8) | b).toString(16).padStart(6, "0");
+}
+
+// Truncate article content if it exceeds maxLength characters.
+function truncateContent(content: string, maxLength = 200): string {
+  if (content.length > maxLength) {
+    return content.slice(0, maxLength) + " ...-->Full Article <--";
+  }
+  return content;
+}
+
+/* ===========================================================================
+   3. MODULE HANDLERS
+   =========================================================================== */
+
+// AI Index module handlers (commands use the "/indexes-" prefix).
+async function handleAiIndexInstall(
+  setHistory: React.Dispatch<React.SetStateAction<HistoryLine[]>>,
+  accent: string
+) {
+  setHistory((prev) => [
+    { text: "Installing AI Index module...", color: accent },
+    ...prev,
+  ]);
+  const steps: InstallStep[] = [
+    { stepNumber: 1, description: "Initializing AI index environment", baseShade: -40 },
+    { stepNumber: 2, description: "Fetching AI token metadata", baseShade: -20 },
+    { stepNumber: 3, description: "Downloading AI index data", baseShade: 0 },
+    { stepNumber: 4, description: "Integrating with on-chain analytics", baseShade: 20 },
+    { stepNumber: 5, description: "Finalizing AI Index setup", baseShade: 40 },
+  ];
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    await sleep(700);
+    setHistory((prev) => [
+      { text: `[Step ${step.stepNumber}/${steps.length}] ${step.description}`, color: adjustColor(accent, step.baseShade || 0) },
+      ...prev,
+    ]);
+    let progressBar = "";
+    const totalBars = 20;
+    const barsFilled = Math.floor(((i + 1) / steps.length) * totalBars);
+    for (let b = 0; b < totalBars; b++) {
+      progressBar += b < barsFilled ? "█" : "░";
+    }
+    await sleep(500);
+    setHistory((prev) => [
+      { text: `Progress: [${progressBar}] ${Math.round((100 * (i + 1)) / steps.length)}%`, color: adjustColor(accent, (step.baseShade || 0) - 10) },
+      ...prev,
+    ]);
+  }
+  setHistory((prev) => [
+    { text: "AI Index module installed successfully!", color: accent },
+    { text: "Access it via '/indexes-menu' for advanced on-chain AI analytics.", color: accent },
+    ...prev,
+  ]);
+}
+
+async function handleAiIndexRefresh(
+  setHistory: React.Dispatch<React.SetStateAction<HistoryLine[]>>,
+  accent: string
+) {
+  setHistory((prev) => [
+    { text: "Refreshing AI Index data...", color: accent },
+    ...prev,
+  ]);
+  await sleep(1000);
+  setHistory((prev) => [
+    { text: "AI Index data refreshed successfully.", color: accent },
+    ...prev,
+  ]);
+}
+
+function handleAiIndexStats(
+  setHistory: React.Dispatch<React.SetStateAction<HistoryLine[]>>,
+  accent: string
+) {
+  setHistory((prev) => [
+    { text: "== AI Index Detailed Stats ==", color: accent },
+    { text: "Commands available:", color: accent },
+    { text: "  /indexes-refresh - Refresh the data", color: accent },
+    { text: "  /indexes-stats - Show current index stats", color: accent },
+    { text: "Token Data:", color: accent },
+    { text: "  GAME: 4.86% weight | 24h Change: +1.2% | Market Cap: $123M", color: accent },
+    { text: "  BANKR: 5.24% weight | 24h Change: -0.5% | Market Cap: $234M", color: accent },
+    { text: "  FAI: 12.57% weight | 24h Change: +2.3% | Market Cap: $345M", color: accent },
+    { text: "  VIRTUAL: 26.80% weight | 24h Change: +0.8% | Market Cap: $456M", color: accent },
+    { text: "  CLANKER: 15.89% weight | 24h Change: -1.0% | Market Cap: $567M", color: accent },
+    { text: "  KAITO: 16.22% weight | 24h Change: +0.7% | Market Cap: $678M", color: accent },
+    { text: "  COOKIE: 5.12% weight | 24h Change: +1.5% | Market Cap: $789M", color: accent },
+    { text: "  VVV: 5.08% weight | 24h Change: +0.3% | Market Cap: $890M", color: accent },
+    { text: "  DRB: 3.80% weight | 24h Change: -0.2% | Market Cap: $901M", color: accent },
+    { text: "  AIXBT: 10.50% weight | 24h Change: +1.8% | Market Cap: $1.0B", color: accent },
+    { text: "Total Market Cap: $5.0B", color: accent },
+    { text: "Overall 24h Change: +0.75%", color: accent },
+  ]);
+}
+
+// News module handlers.
+async function handleNewsInstall(
+  setHistory: React.Dispatch<React.SetStateAction<HistoryLine[]>>,
+  accent: string,
+  setNewsInstalled: React.Dispatch<React.SetStateAction<boolean>>,
+  setNewsItems: React.Dispatch<React.SetStateAction<NewsItem[]>>
+) {
+  setHistory((prev) => [
+    { text: "Installing News module...", color: accent },
+    ...prev,
+  ]);
+  const steps: InstallStep[] = [
+    { stepNumber: 1, description: "Initializing news environment", baseShade: -40 },
+    { stepNumber: 2, description: "Fetching news metadata", baseShade: -20 },
+    { stepNumber: 3, description: "Downloading latest news", baseShade: 0 },
+    { stepNumber: 4, description: "Integrating news feed", baseShade: 20 },
+    { stepNumber: 5, description: "Finalizing News module setup", baseShade: 40 },
+  ];
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    await sleep(700);
+    setHistory((prev) => [
+      { text: `[Step ${step.stepNumber}/${steps.length}] ${step.description}`, color: adjustColor(accent, step.baseShade || 0) },
+      ...prev,
+    ]);
+    let progressBar = "";
+    const totalBars = 20;
+    const barsFilled = Math.floor(((i + 1) / steps.length) * totalBars);
+    for (let b = 0; b < totalBars; b++) {
+      progressBar += b < barsFilled ? "█" : "░";
+    }
+    await sleep(500);
+    setHistory((prev) => [
+      { text: `Progress: [${progressBar}] ${Math.round((100 * (i + 1)) / steps.length)}%`, color: adjustColor(accent, (step.baseShade || 0) - 10) },
+      ...prev,
+    ]);
+  }
+  // Fetch news from the API endpoint (which queries the articles collection).
+  try {
+    const res = await fetch("/api/news", { cache: "no-store" });
+    if (!res.ok) throw new Error(`News API error: ${res.status}`);
+    const newsData: NewsItem[] = await res.json();
+    setNewsItems(newsData);
+  } catch (error) {
+    console.error("News fetch error:", error);
+    setNewsItems([]);
+  }
+  setNewsInstalled(true);
+  setHistory((prev) => [
+    { text: "News module installed successfully!", color: accent },
+    { text: "Access it via '/news-menu' to view and navigate the latest news.", color: accent },
+    ...prev,
+  ]);
+}
+
+async function handleNewsRefresh(
+  setHistory: React.Dispatch<React.SetStateAction<HistoryLine[]>>,
+  accent: string,
+  setNewsItems: React.Dispatch<React.SetStateAction<NewsItem[]>>
+) {
+  setHistory((prev) => [
+    { text: "Refreshing news feed...", color: accent },
+    ...prev,
+  ]);
+  try {
+    const res = await fetch("/api/news", { cache: "no-store" });
+    if (!res.ok) throw new Error(`News API error: ${res.status}`);
+    const newsData: NewsItem[] = await res.json();
+    setNewsItems(newsData);
+  } catch (error) {
+    console.error("News refresh error:", error);
+    setNewsItems([]);
+  }
+  setHistory((prev) => [
+    { text: "News feed refreshed successfully.", color: accent },
+    ...prev,
+  ]);
+}
+
+function handleNewsMenu(
+  setHistory: React.Dispatch<React.SetStateAction<HistoryLine[]>>,
+  accent: string
+) {
+  setHistory((prev) => [
+    { text: "== News Module Menu ==", color: accent },
+    { text: "Commands available:", color: accent },
+    { text: "  /get-news - Fetch and display the latest news", color: accent },
+    { text: "  /refresh-news - Refresh the news feed", color: accent },
+    { text: "  /next-news - View next news item", color: accent },
+    { text: "  /prev-news - View previous news item", color: accent },
+    { text: "  /clear-news - Clear news view", color: accent },
+    { text: "  /search-news <query> - Search articles by title", color: accent },
+    ...prev,
+  ]);
+}
+
+/* ===========================================================================
+   4. MAIN COMPONENT
+   =========================================================================== */
 
 export default function HomebaseTerminal() {
   const router = useRouter();
   const { user, loading } = useAuth();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Terminal state variables
+  // State for News module.
+  const [newsInstalled, setNewsInstalled] = useState(false);
+  const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
+  const [currentNewsIndex, setCurrentNewsIndex] = useState(0);
+
+  /* --------------------------------------------------------------------------
+     4a. STATE VARIABLES
+     -------------------------------------------------------------------------- */
   const [history, setHistory] = useState<HistoryLine[]>([]);
   const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -62,7 +295,12 @@ export default function HomebaseTerminal() {
   const [toast, setToast] = useState("");
   const [errorLog, setErrorLog] = useState<string[]>([]);
 
-  // Remove color swatch outline
+  // Module flag: AI Index.
+  const [isAiIndexInstalled, setIsAiIndexInstalled] = useState(false);
+
+  /* --------------------------------------------------------------------------
+     4b. INITIAL LOAD & LOCAL STORAGE
+     -------------------------------------------------------------------------- */
   useEffect(() => {
     const style = document.createElement("style");
     style.innerHTML = `
@@ -73,7 +311,6 @@ export default function HomebaseTerminal() {
     return () => document.head.removeChild(style);
   }, []);
 
-  // Load from local storage on mount, filter out old welcomes
   useEffect(() => {
     const storedHistory = localStorage.getItem("homebaseHistory");
     if (storedHistory) {
@@ -87,7 +324,6 @@ export default function HomebaseTerminal() {
     if (storedErrors) setErrorLog(JSON.parse(storedErrors));
   }, []);
 
-  // Save changes
   useEffect(() => {
     localStorage.setItem("homebaseHistory", JSON.stringify(history));
   }, [history]);
@@ -98,7 +334,9 @@ export default function HomebaseTerminal() {
     localStorage.setItem("homebaseErrorLog", JSON.stringify(errorLog));
   }, [errorLog]);
 
-  // Ctrl+K => clear terminal
+  /* --------------------------------------------------------------------------
+     4c. GLOBAL SHORTCUTS
+     -------------------------------------------------------------------------- */
   useEffect(() => {
     function handleGlobalKeyDown(e: KeyboardEvent) {
       if (e.ctrlKey && e.key.toLowerCase() === "k") {
@@ -110,7 +348,6 @@ export default function HomebaseTerminal() {
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
   }, []);
 
-  // Ctrl+R => go back
   useEffect(() => {
     function handleCtrlR(e: KeyboardEvent) {
       if (e.ctrlKey && e.key.toLowerCase() === "r") {
@@ -122,22 +359,22 @@ export default function HomebaseTerminal() {
     return () => window.removeEventListener("keydown", handleCtrlR);
   }, [router]);
 
-  // Base commands (excluding /login, /signup, /setdisplay, /changepassword)
+  /* --------------------------------------------------------------------------
+     4d. BASE COMMANDS & SUGGESTIONS
+     -------------------------------------------------------------------------- */
   const baseCommands: Record<string, string> = {
-    "/whalewatchers": "/whale-watcher",
+    "/whales": "/whale-watcher",
     "/news": "/base-chain-news",
     "/home": "/",
     "/screener": "/token-scanner",
     "/menu": "",
     "/clear": "",
     "/shortcuts": "",
-    "/trading": "/TradingCompetition",
-    "/dashboard": "/TradingCompetition/dashboard",
-    "/errorlog": "",
     "/account": "/account",
+    "/tournaments": "/TradingCompetition",
+    "/dashboard": "/TradingCompetition/dashboard",
   };
 
-  // Suggestions: only from base commands
   function updateSuggestions(value: string) {
     const trimmed = value.trim().toLowerCase();
     if (!trimmed) {
@@ -190,7 +427,7 @@ export default function HomebaseTerminal() {
       helpLines.push("Screener Help: '/screener' opens the Token Scanner page.");
     }
     if (lower.includes("whale")) {
-      helpLines.push("Whale Watcher Help: '/whalewatchers' opens the Whale Watcher page.");
+      helpLines.push("Whale Watcher Help: '/whale-watcher' opens the Whale Watcher page.");
     }
     if (helpLines.length > 0) {
       setHistory((prev) => [
@@ -205,7 +442,6 @@ export default function HomebaseTerminal() {
     setErrorLog((prev) => [...prev, msg]);
   }
 
-  // Insert lines at the TOP of history
   async function typeOutLines(lines: string[], color?: string) {
     for (const line of lines) {
       setHistory((prev) => [{ text: line, color }, ...prev]);
@@ -213,11 +449,13 @@ export default function HomebaseTerminal() {
     }
   }
 
+  /* --------------------------------------------------------------------------
+     4e. TOKEN & SCAN FUNCTIONS
+     -------------------------------------------------------------------------- */
   async function fetchTokenStats(tokenSymbol: string) {
     try {
-      setStatsLoading(true);
       setHistory((prev) => [
-        { text: `Fetching stats for ${tokenSymbol}...` },
+        { text: `Fetching stats for ${tokenSymbol}...`, color: accentColor },
         ...prev,
       ]);
       const tokenAddress = tokenMapping[tokenSymbol];
@@ -237,28 +475,26 @@ export default function HomebaseTerminal() {
           `Stats for ${tokenSymbol}:`,
           `Market Cap: $${Number(tokenData.marketCap).toLocaleString()}`,
           `Price: $${Number(tokenData.priceUsd).toFixed(4)}`,
-          `24hr Change: ${Number(tokenData.priceChange?.h24 || 0).toFixed(2)}%`,
-          `Volume (24hr): $${Number(tokenData.volume.h24).toLocaleString()}`,
+          `24h Change: ${Number(tokenData.priceChange?.h24 || 0).toFixed(2)}%`,
+          `Volume (24h): $${Number(tokenData.volume.h24).toLocaleString()}`,
         ];
         await typeOutLines(lines, accentColor);
       } else {
         setHistory((prev) => [
-          { text: `No stats available for ${tokenSymbol}.` },
+          { text: `No stats available for ${tokenSymbol}.`, color: "orange" },
           ...prev,
         ]);
       }
     } catch (error: any) {
       const errMsg = `Failed to fetch stats for ${tokenSymbol}: ${error.message}`;
-      setHistory((prev) => [{ text: errMsg }, ...prev]);
+      setHistory((prev) => [{ text: errMsg, color: "red" }, ...prev]);
       logError(errMsg);
-    } finally {
-      setStatsLoading(false);
     }
   }
 
   async function fetchScanAudit(tokenAddress: string) {
     setHistory((prev) => [
-      { text: `Scanning token ${tokenAddress} for honeypot traps...` },
+      { text: `Scanning token ${tokenAddress} for honeypot traps...`, color: accentColor },
       ...prev,
     ]);
     try {
@@ -320,6 +556,9 @@ export default function HomebaseTerminal() {
     }
   }
 
+  /* --------------------------------------------------------------------------
+     4f. MAIN COMMAND HANDLER
+     -------------------------------------------------------------------------- */
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const trimmed = input.trim();
@@ -333,30 +572,189 @@ export default function HomebaseTerminal() {
   async function handleCommand(command: string) {
     if (!user && !command.startsWith("/login") && !command.startsWith("/signup")) {
       setHistory((prev) => [
-        {
-          text:
-            "Please login using: /login <email> <password> or sign up using: /signup <email> <password>",
-          color: "red",
-        },
+        { text: "Please login using: /login <email> <password> or /signup <email> <password>", color: "red" },
         ...prev,
       ]);
       return;
     }
     try {
-      // Add user input line at top
       setHistory((prev) => [
-        {
-          text: `[ ${user ? (user.displayName || "user") : "user"}@homebase ~ v1 ] $ ${command}`,
-          color: accentColor, // Display name line uses accent color
-        },
+        { text: `[ ${user ? (user.displayName || "user") : "user"}@homebase ~ v1 ] $ ${command}`, color: accentColor },
         ...prev,
       ]);
       setUserCommands((prev) => [...prev, command]);
       setHistoryIndex(-1);
-
       contextAwareHelp(command);
 
-      if (command.startsWith("/login")) {
+      // --- ADVANCED INSTALL COMMANDS ---
+      if (command.startsWith("/install")) {
+        const parts = command.split(" ");
+        const moduleName = parts[1] ? parts[1].toLowerCase() : "";
+        setHistory((prev) => [
+          { text: `Preparing to install module: ${moduleName}`, color: accentColor },
+          ...prev,
+        ]);
+        const steps: InstallStep[] = [
+          { stepNumber: 1, description: "Initializing installation environment", baseShade: -80 },
+          { stepNumber: 2, description: "Fetching module metadata", baseShade: -40 },
+          { stepNumber: 3, description: "Downloading resources", baseShade: 0 },
+          { stepNumber: 4, description: "Extracting files", baseShade: 40 },
+          { stepNumber: 5, description: "Installing dependencies", baseShade: 80 },
+          { stepNumber: 6, description: "Finalizing installation", baseShade: 100 },
+        ];
+        for (let i = 0; i < steps.length; i++) {
+          const step = steps[i];
+          await sleep(700);
+          setHistory((prev) => [
+            { text: `[Step ${step.stepNumber}/${steps.length}] ${step.description}`, color: adjustColor(accentColor, step.baseShade || 0) },
+            ...prev,
+          ]);
+          let progressBar = "";
+          const totalBars = 20;
+          const barsFilled = Math.floor(((i + 1) / steps.length) * totalBars);
+          for (let b = 0; b < totalBars; b++) {
+            progressBar += b < barsFilled ? "█" : "░";
+          }
+          await sleep(500);
+          setHistory((prev) => [
+            { text: `Progress: [${progressBar}] ${Math.round((100 * (i + 1)) / steps.length)}%`, color: adjustColor(accentColor, (step.baseShade || 0) - 10) },
+            ...prev,
+          ]);
+        }
+        switch (moduleName) {
+          case "indexes":
+            setIsAiIndexInstalled(true);
+            await handleAiIndexInstall(setHistory, accentColor);
+            break;
+          case "news":
+            await handleNewsInstall(setHistory, accentColor, setNewsInstalled, setNewsItems);
+            break;
+          default:
+            setHistory((prev) => [
+              { text: `Module "${moduleName}" is unknown. Installation canceled.`, color: "red" },
+              ...prev,
+            ]);
+            break;
+        }
+        return;
+      }
+      // --- MODULE COMMANDS ---
+      // AI Index module commands.
+      else if (command === "/indexes-menu" && isAiIndexInstalled) {
+        setHistory((prev) => [
+          { text: "== AI Index Menu ==", color: accentColor },
+          { text: "Commands available:", color: accentColor },
+          { text: "  /indexes-refresh - Refresh AI index data", color: accentColor },
+          { text: "  /indexes-stats - Show detailed index stats", color: accentColor },
+          { text: "  /indexes-clear - Clear AI Index menu", color: accentColor },
+          ...prev,
+        ]);
+      } else if (command === "/indexes-refresh" && isAiIndexInstalled) {
+        await handleAiIndexRefresh(setHistory, accentColor);
+      } else if (command === "/indexes-stats" && isAiIndexInstalled) {
+        handleAiIndexStats(setHistory, accentColor);
+      } else if (command === "/indexes-clear" && isAiIndexInstalled) {
+        setHistory([]);
+      }
+      // News module commands.
+      else if (command === "/news-menu" && newsInstalled) {
+        handleNewsMenu(setHistory, accentColor);
+      } else if (command === "/get-news" && newsInstalled) {
+        try {
+          const res = await fetch("/api/news", { cache: "no-store" });
+          if (!res.ok) throw new Error(`News API error: ${res.status}`);
+          const newsData: NewsItem[] = await res.json();
+          setNewsItems(newsData);
+          if (newsData.length > 0) {
+            setCurrentNewsIndex(0);
+            const firstNews = newsData[0];
+            setHistory((prev) => [
+              { text: `News: ${firstNews.title}`, color: accentColor },
+              { text: `Source: ${firstNews.source} | ${new Date(firstNews.publishedAt).toLocaleString()}`, color: accentColor },
+              { text: truncateContent(firstNews.content), color: accentColor },
+              ...prev,
+            ]);
+          } else {
+            setHistory((prev) => [
+              { text: "No news available.", color: accentColor },
+              ...prev,
+            ]);
+          }
+        } catch (error: any) {
+          setHistory((prev) => [
+            { text: `Error fetching news: ${error.message}`, color: "red" },
+            ...prev,
+          ]);
+        }
+      } else if (command === "/refresh-news" && newsInstalled) {
+        await handleNewsRefresh(setHistory, accentColor, setNewsItems);
+      } else if (command === "/next-news" && newsInstalled) {
+        if (currentNewsIndex < newsItems.length - 1) {
+          setCurrentNewsIndex(currentNewsIndex + 1);
+          const nextNews = newsItems[currentNewsIndex + 1];
+          setHistory((prev) => [
+            { text: `News: ${nextNews.title}`, color: accentColor },
+            { text: `Source: ${nextNews.source} | ${new Date(nextNews.publishedAt).toLocaleString()}`, color: accentColor },
+            { text: truncateContent(nextNews.content), color: accentColor },
+            ...prev,
+          ]);
+        } else {
+          setHistory((prev) => [
+            { text: "No more news items.", color: accentColor },
+            ...prev,
+          ]);
+        }
+      } else if (command === "/prev-news" && newsInstalled) {
+        if (currentNewsIndex > 0) {
+          setCurrentNewsIndex(currentNewsIndex - 1);
+          const prevNews = newsItems[currentNewsIndex - 1];
+          setHistory((prev) => [
+            { text: `News: ${prevNews.title}`, color: accentColor },
+            { text: `Source: ${prevNews.source} | ${new Date(prevNews.publishedAt).toLocaleString()}`, color: accentColor },
+            { text: truncateContent(prevNews.content), color: accentColor },
+            ...prev,
+          ]);
+        } else {
+          setHistory((prev) => [
+            { text: "This is the first news item.", color: accentColor },
+            ...prev,
+          ]);
+        }
+      } else if (command === "/clear-news" && newsInstalled) {
+        setHistory([]);
+      }
+      // --- SEARCH NEWS COMMAND ---
+      else if (command.startsWith("/search-news") && newsInstalled) {
+        const parts = command.split(" ");
+        const query = parts.slice(1).join(" ").toLowerCase();
+        if (!query) {
+          setHistory((prev) => [
+            { text: "Usage: /search-news <query>", color: "red" },
+            ...prev,
+          ]);
+          return;
+        }
+        const filtered = newsItems.filter((item) =>
+          item.title.toLowerCase().includes(query)
+        );
+        if (filtered.length > 0) {
+          setCurrentNewsIndex(0);
+          const firstMatch = filtered[0];
+          setHistory((prev) => [
+            { text: `Search Result - News: ${firstMatch.title}`, color: accentColor },
+            { text: `Source: ${firstMatch.source} | ${new Date(firstMatch.publishedAt).toLocaleString()}`, color: accentColor },
+            { text: truncateContent(firstMatch.content), color: accentColor },
+            ...prev,
+          ]);
+        } else {
+          setHistory((prev) => [
+            { text: `No news items found matching "${query}".`, color: accentColor },
+            ...prev,
+          ]);
+        }
+      }
+      // --- BASIC COMMANDS ---
+      else if (command.startsWith("/login")) {
         const parts = command.split(" ");
         if (parts.length < 3) {
           setHistory((prev) => [
@@ -370,7 +768,7 @@ export default function HomebaseTerminal() {
         try {
           await signInWithEmailAndPassword(auth, email, password);
           setHistory((prev) => [
-            { text: "Logged in successfully! Type /menu to get started.", color: "#39FF14" },
+            { text: "Logged in successfully! Type /menu to get started.", color: accentColor },
             ...prev,
           ]);
         } catch (err: any) {
@@ -380,9 +778,7 @@ export default function HomebaseTerminal() {
           ]);
         }
         return;
-      }
-
-      if (command.startsWith("/signup")) {
+      } else if (command.startsWith("/signup")) {
         const parts = command.split(" ");
         if (parts.length < 3) {
           setHistory((prev) => [
@@ -396,10 +792,7 @@ export default function HomebaseTerminal() {
         try {
           await createUserWithEmailAndPassword(auth, email, password);
           setHistory((prev) => [
-            {
-              text: "Account created and logged in successfully! Type /menu to get started.",
-              color: "#39FF14",
-            },
+            { text: "Account created and logged in successfully! Type /menu to get started.", color: accentColor },
             ...prev,
           ]);
         } catch (err: any) {
@@ -409,9 +802,7 @@ export default function HomebaseTerminal() {
           ]);
         }
         return;
-      }
-
-      if (command.startsWith("/setdisplay")) {
+      } else if (command.startsWith("/setdisplay")) {
         const parts = command.split(" ");
         if (parts.length < 2) {
           setHistory((prev) => [
@@ -424,7 +815,7 @@ export default function HomebaseTerminal() {
         try {
           await updateProfile(auth.currentUser!, { displayName: newDisplay });
           setHistory((prev) => [
-            { text: `Display name updated to: ${newDisplay}`, color: "#39FF14" },
+            { text: `Display name updated to: ${newDisplay}`, color: accentColor },
             ...prev,
           ]);
         } catch (err: any) {
@@ -434,9 +825,7 @@ export default function HomebaseTerminal() {
           ]);
         }
         return;
-      }
-
-      if (command.startsWith("/changepassword")) {
+      } else if (command.startsWith("/changepassword")) {
         const parts = command.split(" ");
         if (parts.length < 3) {
           setHistory((prev) => [
@@ -452,7 +841,7 @@ export default function HomebaseTerminal() {
           await reauthenticateWithCredential(auth.currentUser!, credential);
           await updatePassword(auth.currentUser!, newPass);
           setHistory((prev) => [
-            { text: "Password updated successfully.", color: "#39FF14" },
+            { text: "Password updated successfully.", color: accentColor },
             ...prev,
           ]);
         } catch (err: any) {
@@ -462,9 +851,7 @@ export default function HomebaseTerminal() {
           ]);
         }
         return;
-      }
-
-      if (command === "/account") {
+      } else if (command === "/account") {
         if (user) {
           setHistory((prev) => [
             { text: "Account Details:" },
@@ -474,9 +861,7 @@ export default function HomebaseTerminal() {
           ]);
         }
         return;
-      }
-
-      if (command === "/errorlog") {
+      } else if (command === "/errorlog") {
         if (errorLog.length === 0) {
           setHistory((prev) => [{ text: "No errors logged." }, ...prev]);
         } else {
@@ -489,26 +874,33 @@ export default function HomebaseTerminal() {
         }
         return;
       }
-
-      if (command === "/menu" || command === "/help") {
-        setHistory((prev) => [
+      // /help command now routes to the Docs page.
+      else if (command === "/help") {
+        router.push("/docs");
+        return;
+      }
+      // --- MENU COMMAND ---
+      else if (command === "/menu") {
+        const menuLines = [
           { text: "Available commands:" },
           { text: "/login - Login to your account" },
           { text: "/signup - Create a new account" },
+          { text: "/setdisplay <name> - Set your display name" },
           { text: "/screener - Open Token Screener" },
-          { text: "/token-stats - Fetch token statistics" },
-          { text: "/scan <token address> - Perform a honeypot scan" },
-          { text: "/whalewatchers - Navigate to Whale Watcher page" },
-          { text: "/trading - View Trading Competitions" },
+          { text: "/token-stats - e.g. /CLANKER-stats to fetch CLANKER stats" },
+          { text: "/scan <token address> - Audits the smart contract" },
+          { text: "/whales - Navigate to Whale Watcher page" },
+          { text: "/tournaments - Navigate to Competitions", },
+          { text: "/dashboard - Navigate to Competitions Dashboard" },
           { text: "/news - Navigate to Base Chain News" },
-          { text: "/dashboard - View Trading Competition Dashboard" },
           { text: "/account - Manage your account" },
-          { text: "/setdisplay <new name> - Set your display name" },
-          { text: "/changepassword <old> <new> - Change your password" },
-          { text: "/errorlog - View error logs" },
           { text: "/shortcuts - Show keyboard shortcuts" },
-          ...prev,
-        ]);
+          { text: "/install indexes - Install AI Index module" },
+          { text: "/install news - Install News module" },
+          { text: "/menu - Show this menu" },
+        ];
+        // All menu commands display in white.
+        setHistory((prev) => [...menuLines, ...prev]);
       } else if (command === "/shortcuts") {
         setHistory((prev) => [
           { text: "Keyboard Shortcuts:" },
@@ -523,7 +915,7 @@ export default function HomebaseTerminal() {
       } else if (command in baseCommands && baseCommands[command] !== "") {
         const route = baseCommands[command];
         setHistory((prev) => [
-          { text: `Navigating to ${route}...` },
+          { text: `Navigating to ${route}...`, color: accentColor },
           ...prev,
         ]);
         router.push(route);
@@ -539,7 +931,6 @@ export default function HomebaseTerminal() {
         const tokenAddress = parts[1].trim();
         fetchScanAudit(tokenAddress);
       } else {
-        // token-stats
         const statsRegex = /^\/([A-Z]+)-stats$/i;
         const match = command.match(statsRegex);
         if (match) {
@@ -547,17 +938,14 @@ export default function HomebaseTerminal() {
           fetchTokenStats(tokenSymbol);
         } else {
           setHistory((prev) => [
-            { text: `Command not recognized: ${command}` },
+            { text: `Command not recognized: ${command}`, color: "red" },
             ...prev,
           ]);
         }
       }
     } catch (err: any) {
       const crashMsg = `Terminal crashed on command "${command}": ${err.message}`;
-      setHistory((prev) => [
-        { text: crashMsg, color: "red" },
-        ...prev,
-      ]);
+      setHistory((prev) => [{ text: crashMsg, color: "red" }, ...prev]);
       logError(crashMsg);
     }
   }
@@ -579,7 +967,6 @@ export default function HomebaseTerminal() {
     >
       {/* HEADER */}
       <div className="px-4 py-2 bg-black">
-        {/* Desktop view */}
         <div className="hidden sm:flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <span className="text-lg sm:text-xl font-bold">
@@ -610,7 +997,6 @@ export default function HomebaseTerminal() {
             />
           </div>
         </div>
-        {/* Mobile view */}
         <div className="sm:hidden flex items-center justify-between w-full">
           <div>
             <h1 className="text-lg font-bold">HOMEBASE TERMINAL</h1>
@@ -642,10 +1028,10 @@ export default function HomebaseTerminal() {
         </div>
       </div>
 
-      {/* Divider */}
+      {/* DIVIDER */}
       <div className="px-4 py-2 border-t border-gray-700"></div>
 
-      {/* Single grey welcome message above prompt */}
+      {/* COMMAND INPUT SECTION */}
       <div className="px-4 py-2">
         <p className="text-sm text-gray-300">
           Welcome to Homebase Terminal! Type '/login &lt;email&gt; &lt;password&gt;' to sign in or '/signup &lt;email&gt; &lt;password&gt;' to create an account.
@@ -665,8 +1051,7 @@ export default function HomebaseTerminal() {
             aria-label="Command input"
             aria-autocomplete="both"
           />
-          {/* Triple dots that blink */}
-          <span className="ml-1 blinking-cursor text-[16px] md:text-sm blinking-dots" style={{ color: accentColor }}>
+          <span className="ml-1 blinking-cursor text-[16px] md:text-sm" style={{ color: accentColor }}>
             ...
           </span>
         </form>
@@ -694,7 +1079,7 @@ export default function HomebaseTerminal() {
         </AnimatePresence>
       </div>
 
-      {/* HISTORY: new lines at top */}
+      {/* HISTORY / OUTPUT AREA */}
       <div className="px-4 py-2 overflow-y-auto" style={{ maxHeight: "calc(100vh - 220px)" }}>
         {history.map((line, idx) => (
           <div key={idx} className="mb-1 break-words text-base sm:text-sm" style={{ color: line.color || "inherit" }}>
@@ -703,6 +1088,7 @@ export default function HomebaseTerminal() {
         ))}
       </div>
 
+      {/* TOAST NOTIFICATION */}
       {toast && (
         <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white py-2 px-4 rounded shadow">
           {toast}

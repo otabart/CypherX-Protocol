@@ -10,10 +10,12 @@ export async function GET() {
     snapshot.forEach((doc) => {
       competitions.push({ id: doc.id, ...doc.data() });
     });
+
     return NextResponse.json({ competitions }, { status: 200 });
   } catch (error) {
     console.error("Error fetching tournaments:", error);
     return NextResponse.json({ error: "Failed to fetch tournaments" }, { status: 500 });
   }
 }
+
 

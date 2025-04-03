@@ -248,7 +248,19 @@ export default function TokenScanner() {
           "0x73326b4d0225c429bed050c11c4422d91470aaf4," +
           "0x9aaae745cf2830fb8ddc6248b17436dc3a5e701c," +
           "0x7431ada8a591c955a994a21710752ef9b882b8e3," +
-          "0x625bb9bb04bdca51871ed6d07e2dd9034e914631,";
+          "0xe0907762B1D9cdfBE8061aE0Cc4A0501fa077421," +
+         "0x01e75e59Eabf83C85360351a100d22E025A75BC2," +
+         "0x04175B1f982b8C8444f238Ac0AaE59f029e21099," +
+         "0x215d3783a05D9059220E76aA92c6Fd86ed67bFDB," +
+         "0xdc7F7Ad44f3Ed116577417017cf37a19DFf9FFe9," +
+         "0x521eBB84EA82eE65154B68EcFE3a7292fb3779D6," +
+         "0x2EFAc0a597A37050AafcF4beC627249D533DD9f8," +
+         "0x3155dadAF7324c79DF418a11EBDF78F926cDef91," +
+         "0x3a7FdAFFCEc305b7c5dbab618dcE8bE2c97B6Ec5," +
+         "0x2531ec1720E5d1bC82052585271D4BE3f43E392F," +
+         "0x3D9DC963706FC7F60C81362D9817B00871968Cb7," +
+         "0xE68C6c552A2363C0B546EDA749C6eadd909e2831," +
+         "0x625bb9bb04bdca51871ed6d07e2dd9034e914631,";
         
         const tokenList = tokenAddresses.split(",");
         const tokenChunks = [];

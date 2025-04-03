@@ -18,7 +18,6 @@ const Header = () => {
   const { user, loading } = useAuth();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isToolsOpen, setIsToolsOpen] = useState(false);
   const [isToolsMobileOpen, setIsToolsMobileOpen] = useState(false);
 
   // Close mobile menu on route change
@@ -27,7 +26,7 @@ const Header = () => {
     setIsToolsMobileOpen(false);
   }, [pathname]);
 
-  // Sign out logic
+  // Sign out logic (if you still need it):
   async function handleSignOut() {
     await signOut(auth);
     router.push("/login");
@@ -55,194 +54,156 @@ const Header = () => {
             </span>
           </Link>
 
-          {/* Desktop Navigation */}
+          {/* Desktop Navigation (no dropdowns) */}
           <nav className="hidden md:flex items-center space-x-6">
-            {/* Tool Library Dropdown */}
-            <div
-              className="relative group"
-              onMouseEnter={() => setIsToolsOpen(true)}
-              onMouseLeave={() => setIsToolsOpen(false)}
-            >
-              <button className="text-gray-800 hover:text-[#0052FF] transition-colors inline-flex items-center">
-                <span className="relative animated-underline">Tool Library</span>
-                <svg
-                  className="ml-1 w-4 h-4 transform transition-transform duration-300 group-hover:rotate-180"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              <ul
-                className={`absolute z-10 left-0 top-full mt-1 bg-white border border-gray-200 rounded shadow-md w-64 py-2 transform transition-all duration-200 ease-out ${
-                  isToolsOpen
-                    ? "opacity-100 scale-100 pointer-events-auto"
-                    : "opacity-0 scale-95 pointer-events-none"
-                }`}
-              >
-                <li className="px-4 py-2 text-gray-700 hover:bg-gray-100">
-                  <Link href="/whale-watcher" className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                      <svg
-                        className="w-4 h-4 text-[#0052FF]"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M2.458 12C3.732 7.943 7.523 5 12 5s8.268 2.943 9.542 7c-1.274 4.057-5.065 7-9.542 7s-8.268-2.943-9.542-7z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                        />
-                      </svg>
-                      <span>Whale Watchers</span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Monitor large wallet transactions in real-time
-                    </p>
-                  </Link>
-                </li>
-                <li className="border-t border-gray-200 px-4 py-2 text-gray-700 hover:bg-gray-100">
-                  <Link href="/token-scanner" className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                      <svg
-                        className="w-4 h-4 text-[#0052FF]"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 1010.5 18a7.5 7.5 0 006.15-3.15z"
-                        />
-                      </svg>
-                      <span>Token Screener</span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Analyze tokens for liquidity, volume, and more
-                    </p>
-                  </Link>
-                </li>
-                <li className="border-t border-gray-200 px-4 py-2 text-gray-700 hover:bg-gray-100">
-                  <Link href="/honeypot-scanner" className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                      <svg
-                        className="w-4 h-4 text-[#0052FF]"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M12 8v4m0 4h.01M20.205 7.697l-7.2-3.6a1.3 1.3 0 00-1.01 0l-7.2 3.6A1.3 1.3 0 004 8.848v6.304a1.3 1.3 0 00.795 1.151l7.2 3.6c.315.158.694.158 1.01 0l7.2-3.6A1.3 1.3 0 0020 15.152V8.848a1.3 1.3 0 00-.795-1.151z"
-                        />
-                      </svg>
-                      <span>Honeypot Scanner</span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Check if a token&apos;s contract can trap funds
-                    </p>
-                  </Link>
-                </li>
-                <li className="border-t border-gray-200 px-4 py-2 text-gray-700 hover:bg-gray-100">
-                  <Link href="/launch-calendar" className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                      <svg
-                        className="w-4 h-4 text-[#0052FF]"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                        />
-                      </svg>
-                      <span>Launch Calendar</span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Stay informed on upcoming token launches
-                    </p>
-                  </Link>
-                </li>
-                <li className="border-t border-gray-200 px-4 py-2 text-gray-700 hover:bg-gray-100">
-                  <Link href="/terminal" className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                      <svg
-                        className="w-4 h-4 text-[#0052FF]"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M19 20H5a2 2 0 01-2-2V5.4C3 5.179 3.179 5 3.4 5H5c.265 0 .52.105.707.293l.293.293h13a2 2 0 012 2V18a2 2 0 01-2 2z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M7 8h10M7 12h6m-6 4h10"
-                        />
-                      </svg>
-                      <span>News Terminal</span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Get the latest DeFi updates and news
-                    </p>
-                  </Link>
-                </li>
-              </ul>
-            </div>
-
-            {/* Additional Desktop Links */}
-            <Link href="/docs" className="text-gray-800 hover:text-[#0052FF] transition-colors">
-              Docs
-            </Link>
-            <Link
-              href="/whitepaper"
-              className="text-gray-800 hover:text-[#0052FF] transition-colors"
-            >
-              Whitepaper
-            </Link>
-            <Link
-              href="/TradingCompetition"
-              className="text-gray-800 hover:text-[#0052FF] transition-colors"
-            >
-              Competition
-            </Link>
-
-            {/* Conditionally show user avatar or sign in */}
-            {!loading && (
-              user ? (
-                // If user is logged in, show avatar with dropdown
-                <UserAvatar
-                  photoURL={user.photoURL} // or from your Firestore doc
-                  onSignOut={handleSignOut}
+            {/* Whale Watchers */}
+            <IconLink
+              href="/whale-watcher"
+              label="Whale Watchers"
+              svg={
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M2.458 12C3.732 7.943 7.523 5 12 5s8.268 2.943 9.542 7c-1.274 4.057-5.065 7-9.542 7s-8.268-2.943-9.542-7z"
                 />
-              ) : (
+              }
+              extraPath={
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+              }
+            />
+
+            {/* Token Screener */}
+            <IconLink
+              href="/token-scanner"
+              label="Token Screener"
+              svg={
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 1010.5 18a7.5 7.5 0 006.15-3.15z"
+                />
+              }
+            />
+
+            {/* Honeypot Scanner */}
+            <IconLink
+              href="/honeypot-scanner"
+              label="Honeypot Scanner"
+              svg={
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 8v4m0 4h.01M20.205 7.697l-7.2-3.6a1.3 1.3 0 00-1.01 0l-7.2 3.6A1.3 1.3 0 004 8.848v6.304a1.3 1.3 0 00.795 1.151l7.2 3.6c.315.158.694.158 1.01 0l7.2-3.6A1.3 1.3 0 0020 15.152V8.848a1.3 1.3 0 00-.795-1.151z"
+                />
+              }
+            />
+
+            {/* Launch Calendar */}
+            <IconLink
+              href="/launch-calendar"
+              label="Launch Calendar"
+              svg={
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                />
+              }
+            />
+
+            {/* News Terminal */}
+            <IconLink
+              href="/terminal"
+              label="News Terminal"
+              svg={
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M19 20H5a2 2 0 01-2-2V5.4C3 5.179 3.179 5 3.4 5H5c.265 0 .52.105.707.293l.293.293h13a2 2 0 012 2V18a2 2 0 01-2 2z"
+                />
+              }
+              extraPath={
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M7 8h10M7 12h6m-6 4h10"
+                />
+              }
+            />
+
+            {/* Whitepaper */}
+            <IconLink
+              href="/whitepaper"
+              label="Whitepaper"
+              svg={
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9 2h6l5 5v12a2 2 0 01-2 2H7a2 2 0 01-2-2V4a2 2 0 012-2z"
+                />
+              }
+              extraPath={
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M14 2v6h6"
+                />
+              }
+            />
+
+            {/* Competition (new trophy icon) */}
+            <IconLink
+              href="/TradingCompetition"
+              label="Competition"
+              svg={
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M8 21h8M12 17v4M6 3h12l1 5a5 5 0 01-4 5v1a4 4 0 01-4 4 4 4 0 01-4-4v-1a5 5 0 01-4-5l1-5z"
+                />
+              }
+            />
+
+            {/* Account Icon (Login or Account) */}
+            {!loading && (
+              <div className="relative group">
                 <Link
-                  href="/login"
-                  className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#0052FF] text-white hover:bg-blue-600 transition-colors"
+                  href={user ? "/account" : "/login"}
+                  className="flex items-center"
                 >
-                  Sign in
+                  <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
+                    {/* Simple user icon */}
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 12c2.28 0 4-1.72 4-4s-1.72-4-4-4-4 1.72-4 4 1.72 4 4 4z"
+                      />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M6 18v-.42A2.58 2.58 0 018.58 15h6.84A2.58 2.58 0 0118 17.58V18"
+                      />
+                    </svg>
+                  </div>
+                  {/* Screen-reader text */}
+                  <span className="sr-only">{user ? "Account" : "Sign in"}</span>
                 </Link>
-              )
+                {/* Tooltip */}
+                <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-black rounded pointer-events-none whitespace-nowrap hidden group-hover:block">
+                  {user ? "Account" : "Sign in"}
+                </span>
+              </div>
             )}
           </nav>
 
@@ -286,13 +247,29 @@ const Header = () => {
         }`}
       >
         <nav className="pt-20 pb-10 px-6 h-full overflow-y-auto flex flex-col">
-          {/* Mobile Tool Library Collapsible */}
+          {/* If you still want a collapsible "Tool Library" on mobile, keep the code below.
+              Otherwise, replicate the "IconLink" approach on mobile as well. */}
           <div className="border-b border-gray-300 py-4">
             <button
               onClick={() => setIsToolsMobileOpen(!isToolsMobileOpen)}
               className="flex items-center justify-between w-full text-left font-semibold text-gray-800 hover:text-[#0052FF] transition-colors"
             >
-              <span>Tool Library</span>
+              <div className="flex items-center gap-2">
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M8 6H5a2 2 0 00-2 2v10a2 2 0 002 2h3V6zM8 6h3a2 2 0 012 2v10a2 2 0 01-2 2H8M8 6v14m5-14h3a2 2 0 012 2v10a2 2 0 01-2 2h-3V6z"
+                  />
+                </svg>
+                <span>Tool Library</span>
+              </div>
               <svg
                 className="w-5 h-5"
                 fill="none"
@@ -358,7 +335,7 @@ const Header = () => {
             )}
           </div>
 
-          {/* Other Nav Links */}
+          {/* Other Mobile Nav Links */}
           <div className="border-b border-gray-300 py-4">
             <Link
               href="/analysts"
@@ -367,77 +344,67 @@ const Header = () => {
             >
               Analysts
             </Link>
-            <Link
-              href="/docs"
-              onClick={() => setIsMenuOpen(false)}
-              className="block py-2 text-gray-800 hover:text-[#0052FF]"
-            >
-              <div className="flex flex-col">
-                <span>Docs</span>
-                <span className="text-xs text-gray-500">
-                  Explore detailed documentation and guides
-                </span>
-              </div>
-            </Link>
+
+            {/* Whitepaper */}
             <Link
               href="/whitepaper"
               onClick={() => setIsMenuOpen(false)}
-              className="block py-2 text-gray-800 hover:text-[#0052FF]"
+              className="flex items-center gap-2 py-2 text-gray-800 hover:text-[#0052FF]"
             >
-              <div className="flex flex-col">
-                <span>Whitepaper</span>
-                <span className="text-xs text-gray-500">
-                  Read our technical vision and strategy
-                </span>
-              </div>
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9 2h6l5 5v12a2 2 0 01-2 2H7a2 2 0 01-2-2V4a2 2 0 012-2z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M14 2v6h6"
+                />
+              </svg>
+              <span>Whitepaper</span>
             </Link>
+
+            {/* Competition */}
             <Link
               href="/TradingCompetition"
               onClick={() => setIsMenuOpen(false)}
-              className="block py-2 text-gray-800 hover:text-[#0052FF]"
+              className="flex items-center gap-2 py-2 text-gray-800 hover:text-[#0052FF]"
             >
-              <div className="flex flex-col">
-                <span>Competitions</span>
-                <span className="text-xs text-gray-500">
-                  Join our trading challenges for rewards
-                </span>
-              </div>
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M8 21h8M12 17v4M6 3h12l1 5a5 5 0 01-4 5v1a4 4 0 01-4 4 4 4 0 01-4-4v-1a5 5 0 01-4-5l1-5z"
+                />
+              </svg>
+              <span>Competition</span>
             </Link>
           </div>
 
-          {/* Mobile Account / Sign In */}
+          {/* Mobile Account Icon */}
           <div className="mt-4">
             {!loading && (
-              user ? (
-                <>
-                  <Link
-                    href="/account"
-                    onClick={() => setIsMenuOpen(false)}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#0052FF] text-white hover:bg-blue-600 transition-colors"
-                  >
-                    Account
-                  </Link>
-                  {/* (Optional) sign-out for mobile
-                  <button
-                    onClick={() => {
-                      setIsMenuOpen(false);
-                      handleSignOut();
-                    }}
-                    className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-300 transition-colors"
-                  >
-                    Sign out
-                  </button>
-                  */}
-                </>
-              ) : (
-                <Link
-                  href="/login"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#0052FF] text-white hover:bg-blue-600 transition-colors"
-                >
-                  Sign in
-                </Link>
-              )
+              <Link
+                href={user ? "/account" : "/login"}
+                onClick={() => setIsMenuOpen(false)}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#0052FF] text-white hover:bg-blue-600 transition-colors"
+              >
+                {user ? "Account" : "Sign in"}
+              </Link>
             )}
           </div>
         </nav>
@@ -470,22 +437,6 @@ const Header = () => {
             transform: rotateY(360deg);
           }
         }
-        .animated-underline {
-          position: relative;
-        }
-        .animated-underline::after {
-          content: "";
-          position: absolute;
-          left: 0;
-          bottom: -2px;
-          width: 0;
-          height: 1px;
-          background-color: #0052ff;
-          transition: width 0.3s ease;
-        }
-        .animated-underline:hover::after {
-          width: 100%;
-        }
       `}</style>
     </>
   );
@@ -494,51 +445,55 @@ const Header = () => {
 export default Header;
 
 /**
- * Renders a user avatar with a 2px blue border.
- * On hover, a small dropdown shows "My Account" and "Sign out".
+ * A reusable component for a single icon link + tooltip.
+ * 
+ * Props:
+ * - href: URL path
+ * - label: string (shown in tooltip)
+ * - svg: main <path> or <svg> children
+ * - extraPath?: an optional second path for more complex icons
  */
-function UserAvatar({
-  photoURL,
-  onSignOut
+function IconLink({
+  href,
+  label,
+  svg,
+  extraPath
 }: {
-  photoURL?: string | null;
-  onSignOut: () => void;
+  href: string;
+  label: string;
+  svg: React.ReactNode;
+  extraPath?: React.ReactNode;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
-
-  // If the user has no photo, show a placeholder.
-  const avatarSrc = photoURL || "https://via.placeholder.com/40?text=No+Pic";
-
   return (
-    <div
-      className="relative"
-      onMouseEnter={() => setIsOpen(true)}
-      onMouseLeave={() => setIsOpen(false)}
-    >
-      {/* Circle avatar with a 2px blue border */}
-      <div className="w-10 h-10 rounded-full border-2 border-blue-600 overflow-hidden cursor-pointer">
-        {/* Using <img> for simplicity. If you want <Image>, that can be used but note layout constraints. */}
-        <img
-          src={avatarSrc}
-          alt="User Avatar"
-          className="w-full h-full object-cover"
-        />
-      </div>
+    <div className="relative group">
+      <Link href={href} className="flex items-center">
+        {/* Gray circle with icon */}
+        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
+          <svg
+            className="w-4 h-4 text-gray-800"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            viewBox="0 0 24 24"
+          >
+            {svg}
+            {extraPath ? extraPath : null}
+          </svg>
+        </div>
+        {/* Screen-reader text */}
+        <span className="sr-only">{label}</span>
+      </Link>
 
-      {/* Hover dropdown */}
-      {isOpen && (
-        <ul className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded shadow-md py-2 w-36">
-          <li className="px-4 py-2 hover:bg-gray-100">
-            <Link href="/account">My Account</Link>
-          </li>
-          <li className="px-4 py-2 hover:bg-gray-100">
-            <button onClick={onSignOut}>Sign out</button>
-          </li>
-        </ul>
-      )}
+      {/* Tooltip on hover */}
+      <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-black rounded pointer-events-none whitespace-nowrap hidden group-hover:block">
+        {label}
+      </span>
     </div>
   );
 }
+
+
+
 
 
 

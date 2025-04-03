@@ -1,330 +1,358 @@
 "use client";
 
-import {
-  Lightbulb,
-  FileText,
-  Clipboard,
-  Calendar,
-  PieChart,
-  Activity,
-  AlertTriangle,
-  PlayCircle,
-  TrendingUp,
-  Code,
-  Book,
-  ArrowRight,
-} from "lucide-react";
+import React from "react";
 import Link from "next/link";
+import { Home } from "lucide-react";
 
 interface ContentProps {
   activeSection: string;
 }
 
-interface SectionData {
-  title: string;
-  lastUpdated: string;
-  breadcrumb: string[];
-  content: string;
-  callout: string;
-}
-
-const contentData: Record<string, SectionData> = {
-  products: {
-    title: "Products Overview",
-    lastUpdated: "February 15, 2025",
-    breadcrumb: ["Home", "Docs", "Products"],
-    content: `
-Homebase offers a powerful suite of tools designed for the Base chain ecosystem:
-• Analytics Dashboard – Real-time data and insights.
-• Trading Tools – Featuring Whale Watchers, Token Scanner, Honeypot Checker, and Enhanced Terminal Commands.
-• Trading Competitions – Live challenges with rewards.
-• Launch Calendar – Stay updated on upcoming token launches and key events.
-    `,
-    callout:
-      "We continuously evolve our tools based on user feedback. Your insights help shape the future of Homebase!",
-  },
-  analytics: {
-    title: "Trading Tools",
-    lastUpdated: "February 15, 2025",
-    breadcrumb: ["Home", "Docs", "Products", "Trading Tools"],
-    content: `
-Trading Tools
-
-Homebase’s Trading Tools empower you to trade smarter and faster:
-
-Whale Watchers Tool
-Monitor significant wallet transactions and liquidity shifts on the Base chain.
-
-Token Scanner
-Analyze tokens with key metrics such as liquidity, volume, and contract safety.
-
-Honeypot Checker
-Scan smart contracts to detect potential scams and secure your trades.
-
-Enhanced Terminal Commands
-Access features instantly with our streamlined commands.
-
-Trading Competitions
-Join live trading challenges to test your skills and earn rewards.
-    `,
-    callout:
-      "Tip: Use our Enhanced Terminal Commands to jump straight into any tool with a single command.",
-  },
-  insights: {
-    title: "Market Insights",
-    lastUpdated: "February 15, 2025",
-    breadcrumb: ["Home", "Docs", "Products", "Market Insights"],
-    content: `
-Market Insights
-
-Stay ahead in crypto with real-time updates and event tracking:
-
-News Terminal
-Receive curated news and market updates from top sources.
-
-Launch Calendar
-Keep track of upcoming token launches, protocol upgrades, and other key events.
-    `,
-    callout:
-      "Note: Our News Terminal delivers only the most relevant updates, powered by intelligent curation.",
-  },
-  launch: {
-    title: "Launch Information",
-    lastUpdated: "February 15, 2025",
-    breadcrumb: ["Home", "Docs", "Launch"],
-    content: `
-Homebase is scheduled to launch in early March, debuting on Clank.Fun—the premier launchpad on Base. This strategic launch maximizes liquidity, taps into a highly engaged community, and sets the stage for future growth.
-
-Highlights:
-• Fair token launch with no insider allocations.
-• Robust community engagement from day one.
-• A dynamic post-launch roadmap full of new utilities.
-    `,
-    callout:
-      "Early adopters may receive exclusive perks. Stay tuned for airdrop and bonus announcements!",
-  },
-  "past-news": {
-    title: "Past News & Updates",
-    lastUpdated: "February 15, 2025",
-    breadcrumb: ["Home", "Docs", "Past News"],
-    content: `
-Homebase Company News & Updates
-
-Recent Enhancements:
-• Expanded Trading Tools – Introducing Whale Watchers, Token Scanner, Honeypot Checker, and Enhanced Terminal Commands.
-• New Trading Competitions – Engage in live challenges and earn rewards.
-• Market Insights Upgrade – Launch Calendar and News Terminal improvements.
-
-Token Launch:
-• Homebase token debut on Clank.Fun.
-    `,
-    callout:
-      "Follow our social channels for monthly retrospectives on milestones and upcoming innovations.",
-  },
-  "company-updates": {
-    title: "Company Updates",
-    lastUpdated: "February 15, 2025",
-    breadcrumb: ["Home", "Docs", "Company Updates"],
-    content: `
-Stay informed with the latest updates from Homebase. We share roadmap adjustments, team expansions, funding news, and feature launches—including Trading Competitions and Enhanced Terminal Commands.
-    `,
-    callout:
-      "Your feedback drives our innovation. Let us know what you'd like to see next!",
-  },
-  "getting-started": {
-    title: "Getting Started",
-    lastUpdated: "February 15, 2025",
-    breadcrumb: ["Home", "Docs", "Getting Started"],
-    content: `
-Getting Started with Homebase
-
-1.) Create an Account:
-   • Click the “Sign-in” button.
-   • Choose a username.
-   • Access our full suite of tools.
-
-2.) Explore the Tool Library:
-   - Whale Watchers – Track major wallet movements.
-   - Token Scanner – Evaluate tokens with comprehensive metrics.
-   - Honeypot Checker – Verify contract safety.
-   - Trading Competitions – Participate in live challenges.
-   - Enhanced Terminal Commands – Instantly access platform features.
-
-3.) Stay Updated:
-   - News Terminal – Get the latest crypto news.
-   - Launch Calendar – Never miss upcoming token launches.
-   - Market Insights – Access real-time data and reports.
-
-4.) Participate in the Homebase Token Launch:
-   • Scheduled for early March on Clank.Fun.
-    `,
-    callout:
-      "Need help? Our support team is ready—reach out via our help center or email support@homebase.com.",
-  },
-  "api-docs": {
-    title: "API Documentation",
-    lastUpdated: "February 15, 2025",
-    breadcrumb: ["Home", "Docs", "API Documentation"],
-    content: `
-Developers can integrate real-time Base chain data into their applications using our RESTful API. Access transaction details, wallet info, and market metrics with ease.
-    `,
-    callout:
-      "API keys are currently unavailable; stay tuned for future updates.",
-  },
-  default: {
-    title: "Welcome to Homebase Docs",
-    lastUpdated: "N/A",
-    breadcrumb: ["Home", "Docs"],
-    content: "Select a section from the sidebar to explore our features.",
-    callout: "",
-  },
+const sectionTitles: Record<string, string> = {
+  overview: "Overview",
+  terminal: "Terminal",
+  "whale-watchers": "Whale Watchers",
+  screener: "Homebase Screener",
+  "honeypot-tracker": "Honeypot Tracker",
+  "launch-calendar": "Token Launch Calendar",
+  tournaments: "Tournaments",
+  "getting-started": "Getting Started",
+  "api-docs": "API Documentation",
+  "company-updates": "Company Updates",
 };
 
-function crumbToRoute(crumb: string): string {
-  if (crumb === "Home") return "/";
-  if (crumb === "Docs") return "/docs";
-  return `/docs/${crumb.toLowerCase().replace(/\s+/g, "-")}`;
-}
-
-function chooseUniqueIcon(para: string, sectionId: string, usedIcons: Set<string>): JSX.Element {
-  const lower = para.toLowerCase();
-  const mapping: { [keyword: string]: { icon: JSX.Element; name: string } } = {
-    "whale watchers": { icon: <Activity className="w-8 h-8 text-[#0052FF]" />, name: "whale" },
-    "token scanner": { icon: <Clipboard className="w-8 h-8 text-[#0052FF]" />, name: "scanner" },
-    "honeypot checker": { icon: <AlertTriangle className="w-8 h-8 text-[#0052FF]" />, name: "honeypot" },
-    "news terminal": { icon: <FileText className="w-8 h-8 text-[#0052FF]" />, name: "news" },
-    "launch calendar": { icon: <Calendar className="w-8 h-8 text-[#0052FF]" />, name: "calendar" },
-    "trading competitions": { icon: <TrendingUp className="w-8 h-8 text-[#0052FF]" />, name: "competitions" },
-    "enhanced terminal commands": { icon: <Code className="w-8 h-8 text-[#0052FF]" />, name: "commands" },
-  };
-
-  for (const keyword in mapping) {
-    if (lower.includes(keyword) && !usedIcons.has(mapping[keyword].name)) {
-      usedIcons.add(mapping[keyword].name);
-      return mapping[keyword].icon;
-    }
-  }
-
-  const fallbackMapping: { [name: string]: JSX.Element } = {
-    trending: <TrendingUp className="w-8 h-8 text-[#0052FF]" />,
-    code: <Code className="w-8 h-8 text-[#0052FF]" />,
-    book: <Book className="w-8 h-8 text-[#0052FF]" />,
-  };
-
-  for (const name in fallbackMapping) {
-    if (!usedIcons.has(name)) {
-      usedIcons.add(name);
-      return fallbackMapping[name];
-    }
-  }
-
-  return <Book className="w-8 h-8 text-[#0052FF]" />;
-}
-
-function getCTA(para: string): JSX.Element | null {
-  const lower = para.toLowerCase();
-  if (lower.includes("connect your wallet")) {
-    return (
-      <Link href="/connect">
-        <span className="mt-2 inline-flex items-center text-white hover:underline">
-          Connect Wallet <ArrowRight className="ml-1 w-4 h-4" />
-        </span>
-      </Link>
-    );
-  }
-  if (lower.includes("token launch")) {
-    return (
-      <Link href="/launch">
-        <span className="mt-2 inline-flex items-center text-white hover:underline">
-          Learn More <ArrowRight className="ml-1 w-4 h-4" />
-        </span>
-      </Link>
-    );
-  }
-  return null;
-}
-
 export default function Content({ activeSection }: ContentProps) {
-  const section = contentData[activeSection] || contentData.default;
-
-  const breadcrumbElements = section.breadcrumb.map((crumb, idx) => {
-    const isLast = idx === section.breadcrumb.length - 1;
-    const route = crumbToRoute(crumb);
-    return (
-      <div key={crumb} className="flex items-center space-x-1">
-        {isLast ? (
-          <span className="text-xs text-gray-300">{crumb}</span>
-        ) : (
-          <a
-            href={route}
-            className="text-xs text-blue-400 hover:underline truncate"
-            title={crumb}
-          >
-            {crumb}
-          </a>
-        )}
-        {!isLast && <span className="text-xs">/</span>}
-      </div>
-    );
-  });
-
-  const paragraphs = section.content.split("\n\n").filter((p) => p.trim().length > 0);
-  const usedIcons = new Set<string>();
-
+  // Force default to "overview" if empty.
+  const currentSection = activeSection || "overview";
+  const currentTitle = sectionTitles[currentSection] || "Overview";
   return (
-    <div className="flex-grow p-4 md:p-6 bg-black">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-y-2 mb-2">
-        <div className="flex flex-wrap gap-x-2 items-center text-gray-400">
-          {breadcrumbElements}
-        </div>
-        <span className="text-xs text-gray-400">
-          Last Updated: {section.lastUpdated}
-        </span>
+    <div className="min-h-screen flex flex-col bg-black">
+      <Breadcrumb currentTitle={currentTitle} />
+      <div className="flex-grow">
+        {currentSection === "terminal" && <TerminalContent />}
+        {currentSection === "whale-watchers" && <WhaleWatchersContent />}
+        {currentSection === "screener" && <ScreenerContent />}
+        {currentSection === "honeypot-tracker" && <HoneypotTrackerContent />}
+        {currentSection === "launch-calendar" && <LaunchCalendarContent />}
+        {currentSection === "tournaments" && <TournamentsContent />}
+        {currentSection === "getting-started" && <GettingStartedContent />}
+        {currentSection === "api-docs" && <APIDocsContent />}
+        {currentSection === "company-updates" && <CompanyUpdatesContent />}
+        {currentSection === "overview" && <OverviewContent />}
       </div>
-      <h2 className="text-xl md:text-2xl font-bold text-white mb-4">
-        {section.title}
-      </h2>
-      {section.callout && (
-        <div className="mb-6">
-          <div className="p-4 bg-[#0052FF] border-l-4 border-[#0052FF] rounded-md flex items-start space-x-3">
-            <Lightbulb className="text-white mt-1" />
-            <p className="text-sm md:text-base text-white">
-              {section.callout}
-            </p>
-          </div>
-        </div>
-      )}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {paragraphs.map((para, idx) => {
-          const icon = chooseUniqueIcon(para, activeSection, usedIcons);
-          const cta = getCTA(para);
-          return (
-            <div
-              key={idx}
-              className="flex flex-col gap-2 p-4 rounded-md shadow border border-gray-700 bg-black"
-            >
-              <div className="flex items-start gap-3">
-                <div>{icon}</div>
-                <p className="mt-1 text-sm md:text-base text-gray-300 whitespace-pre-line flex-1">
-                  {para.trim()}
-                </p>
-              </div>
-              {cta && <div>{cta}</div>}
-            </div>
-          );
-        })}
+      <footer className="sticky bottom-0 bg-black py-2 text-left">
+        <p className="text-xs text-gray-400">© 2025 Homebase. All rights reserved.</p>
+      </footer>
+    </div>
+  );
+}
+
+/* ----------------- Breadcrumb Navigation ----------------- */
+function Breadcrumb({ currentTitle }: { currentTitle: string }) {
+  return (
+    <nav className="px-4 py-2 bg-black">
+      {/* Reduced vertical padding for less awkward space */}
+      <div className="flex items-center text-sm text-blue-400">
+        <Link href="/">
+          <Home className="w-4 h-4 mr-1" />
+        </Link>
+        <span className="mx-1">›</span>
+        <Link href="/docs" className="hover:underline">
+          Docs
+        </Link>
+        <span className="mx-1">›</span>
+        <span>{currentTitle}</span>
+      </div>
+    </nav>
+  );
+}
+
+/* ----------------- Overview ----------------- */
+function OverviewContent() {
+  return (
+    <div className="p-4 bg-black">
+      <h1 className="text-4xl font-bold mb-2 text-white">Homebase Docs Overview</h1>
+      <hr className="border-t border-gray-700 my-3" />
+      <p className="text-base text-gray-300 mb-4">
+        Welcome to the Homebase Documentation! Our platform brings all on‑chain data into one unified interface.
+        No more hopping between multiple websites – here you can access live data, perform audits, and monitor market trends effortlessly.
+      </p>
+      <p className="text-base text-gray-300 mb-4">
+        Use the navigation bar above to explore sections such as Terminal, Whale Watchers, Homebase Screener, Honeypot Tracker, Token Launch Calendar, Tournaments, Getting Started, API Documentation, and Company Updates.
+      </p>
+      <p className="text-base text-gray-300">
+        For further guidance, please visit our <Link href="/docs/faq" className="text-blue-400 hover:underline">FAQ</Link> page.
+      </p>
+      <div className="mt-4">
+        <Link href="/overview" className="text-blue-400 hover:underline text-base">
+          Learn More →
+        </Link>
       </div>
     </div>
   );
 }
 
+/* ----------------- Terminal Docs ----------------- */
+function TerminalContent() {
+  return (
+    <div className="flex-grow p-4 bg-black">
+      <section className="mb-6">
+        <h1 className="text-4xl font-bold mb-2 text-white">Terminal</h1>
+        <p className="text-base text-gray-300 mb-4">
+          The Homebase Terminal is your command center for managing your account, accessing live on‑chain data, performing audits, and more.
+          It gathers data from multiple sources into one unified interface.
+        </p>
+        <p className="text-base text-gray-300 mb-4">
+          Below is the full list of commands:
+        </p>
+        <ul className="list-disc list-inside text-white text-base space-y-2">
+          <li><strong>/login &lt;email&gt; &lt;password&gt;</strong> – Log in to your account.</li>
+          <li><strong>/signup &lt;email&gt; &lt;password&gt;</strong> – Create a new account.</li>
+          <li><strong>/setdisplay &lt;name&gt;</strong> – Set your display name.</li>
+          <li><strong>/screener</strong> – Open the Homebase Token Screener.</li>
+          <li><strong>/token-stats</strong> – For example, <code>/CLANKER-stats</code> to fetch token stats.</li>
+          <li><strong>/scan &lt;token address&gt;</strong> – Audit a smart contract.</li>
+          <li><strong>/whale-watcher</strong> – Monitor large trades.</li>
+          <li><strong>/tournaments</strong> – Navigate to Competitions.</li>
+          <li><strong>/dashboard</strong> – View the Competitions Dashboard.</li>
+          <li><strong>/news</strong> – Navigate to Base Chain News.</li>
+          <li><strong>/shortcuts</strong> – Display keyboard shortcuts.</li>
+          <li><strong>/install news</strong> – Install the News module.</li>
+          <li><strong>/install indexes</strong> – Install the AI Index module.</li>
+        </ul>
+      </section>
+      <section className="mt-6">
+        <h2 className="text-2xl font-bold text-white mb-2">Install Code Example</h2>
+        <div className="bg-gray-800 p-4 rounded-md">
+          <pre className="text-sm text-white">
+{`// To install the News module:
+> /install news
 
+// To install the AI Index module:
+> /install indexes
 
+// These commands initialize the installation environment, download required resources,
+// fetch metadata, and integrate the module into your terminal.
+`}
+          </pre>
+        </div>
+        <div className="mt-4">
+          <Link href="/terminal" className="text-blue-400 hover:underline text-base">
+            Go to Terminal →
+          </Link>
+        </div>
+      </section>
+    </div>
+  );
+}
 
+/* ----------------- Whale Watchers Docs ----------------- */
+function WhaleWatchersContent() {
+  return (
+    <div className="flex-grow p-4 bg-black">
+      <h1 className="text-4xl font-bold mb-4 text-white">Whale Watchers</h1>
+      <p className="text-base text-gray-300 mb-4">
+         Monitor large trades on the Base chain. Alerts trigger when a buy or sell order exceeds $5,000 or represents at least 0.2% of a token's supply.
+      </p>
+      <p className="text-base text-gray-300 mb-4">
+         Currently, only Homebase‑approved assets are supported. For the latest list, visit <Link href="/supported/assets" className="text-blue-400 hover:underline">/supported/assets</Link>.
+      </p>
+      <p className="text-base text-gray-300 mb-4">
+        For live updates, follow our Twitter at <Link href="https://twitter.com/HomebaseAssets" target="_blank" className="text-blue-400 hover:underline">@HomebaseAssets</Link>.
+        Future v2 will include advanced filtering and broader token support.
+      </p>
+      <div className="mt-4">
+        <Link href="/whale-watchers/details" className="text-blue-400 hover:underline text-base">
+          Learn More →
+        </Link>
+      </div>
+    </div>
+  );
+}
 
+/* ----------------- Screener Docs ----------------- */
+function ScreenerContent() {
+  return (
+    <div className="flex-grow p-4 bg-black">
+      <section className="mb-10">
+        <h1 className="text-4xl font-bold mb-4 text-white">Screener Documentation</h1>
+        <p className="text-base text-gray-300 mb-6">
+          Our Homebase Screener leverages a state‑of‑the‑art trend‑driven algorithm that aggregates real‑time data from multiple sources.
+          It favors tokens with positive price movements, factors in volume trends relative to market cap, and analyzes price changes over various timeframes.
+        </p>
+        <p className="text-base text-gray-300 mb-6">
+          The algorithm computes a trending score by averaging changes over 1H, 6H, and 24H intervals and adjusting based on trading volume as a percentage of market cap.
+          This deep analysis provides actionable insights into market momentum.
+        </p>
+        <div className="bg-gray-800 p-4 rounded-md mb-6">
+          <pre className="text-sm text-white">
+{`
+// Trending score computation:
+function computeTrending(token) {
+  const avgChange = (token.h1 + token.h6 + token.h24) / 3;
+  const ratio = token.volume / token.marketCap;
+  return avgChange * ratio * (avgChange > 0 ? 1.1 : 1);
+}`}
+          </pre>
+        </div>
+        <p className="text-base text-gray-300">
+          Follow our X at <Link href="https://twitter.com/HomebaseAssets" target="_blank" className="text-blue-400 hover:underline">@HomebaseAssets</Link> for token updates.
+        </p>
+      </section>
+    </div>
+  );
+}
 
+/* ----------------- Honeypot Tracker Docs ----------------- */
+function HoneypotTrackerContent() {
+  return (
+    <div className="flex-grow p-4 bg-black">
+      <h1 className="text-4xl font-bold mb-2 text-white">Honeypot Tracker Documentation</h1>
+      <h2 className="text-xl text-gray-300 mb-4">Smart Contract Safety Check</h2>
+      <p className="text-base text-gray-300 mb-6 max-w-2xl">
+        Our Honeypot Tracker scans smart contracts for potential malicious traps.
+        Although our analysis is robust, it is not 100% foolproof—always perform your own due diligence before executing trades.
+      </p>
+      <div className="mt-4">
+        <Link href="/honeypot-scanner" className="text-blue-400 hover:underline text-base">
+          Audit Smart Contract →
+        </Link>
+      </div>
+    </div>
+  );
+}
 
+/* ----------------- Launch Calendar Docs ----------------- */
+function LaunchCalendarContent() {
+  return (
+    <div className="flex-grow p-4 bg-black">
+      <h1 className="text-4xl font-bold mb-4 text-white">Token Launch Calendar Documentation</h1>
+      <hr className="border-t border-gray-700 my-3" />
+      <p className="mt-4 text-base text-gray-300">
+        Stay informed about upcoming token launches on the Base chain. View launch dates and detailed event information quickly.
+      </p>
+      <p className="mt-4 text-base text-gray-300">
+        To submit a token for launch, email <strong>homebasemarkets@gmail.com</strong> with the token’s Symbol, Logo URL, Address, and other details.
+      </p>
+      <p className="mt-4 text-base text-gray-300">
+        Click any launch entry to view additional data on hype and sentiment.
+      </p>
+      <div className="mt-4">
+        <Link href="/launch-calendar/details" className="text-blue-400 hover:underline text-base">
+          View Calendar →
+        </Link>
+      </div>
+    </div>
+  );
+}
 
+/* ----------------- Tournaments Docs ----------------- */
+function TournamentsContent() {
+  return (
+    <div className="flex-grow p-4 bg-black">
+      <h1 className="text-4xl font-bold mb-4 text-white">Tournaments Documentation</h1>
+      <p className="text-base text-gray-300 mb-4">
+        Homebase Tournaments provide a competitive platform for traders.
+        Participate in events that are either community‑funded or Homebase‑sponsored.
+        Tournaments include entry fees, wallet tracking, live leaderboards, and detailed performance analytics.
+      </p>
+      <ul className="list-disc list-inside text-gray-300 text-base space-y-2 mb-4">
+        <li><strong>Competition Styles:</strong> Choose between community‑funded tournaments or Homebase‑sponsored events.</li>
+        <li><strong>Entry Fees:</strong> Fees vary by event and contribute to the prize pool.</li>
+        <li><strong>Wallet Tracking:</strong> Monitor your performance and that of other participants in real time.</li>
+        <li><strong>Leaderboards:</strong> Stay updated with live rankings and detailed analytics.</li>
+        <li><strong>Admin Setup:</strong> Configure and launch tournaments via our admin panel.</li>
+      </ul>
+      <div className="mt-4">
+        <Link href="/tournaments/details" className="text-blue-400 hover:underline text-base">
+          Learn More →
+        </Link>
+      </div>
+    </div>
+  );
+}
 
+/* ----------------- Getting Started Docs ----------------- */
+function GettingStartedContent() {
+  return (
+    <div className="flex-grow p-4 bg-black">
+      <div className="space-y-4">
+        <h1 className="text-4xl font-bold text-white">Getting Started with Homebase</h1>
+        <hr className="border-t border-gray-700 my-3" />
+        <div className="flex flex-col space-y-3">
+          <p className="text-base text-gray-300">
+            Begin by creating an account with <code className="bg-gray-800 px-1 py-0.5 rounded">/signup &lt;email&gt; &lt;password&gt;</code>.
+          </p>
+          <p className="text-base text-gray-300">
+            Log in using <code className="bg-gray-800 px-1 py-0.5 rounded">/login &lt;email&gt; &lt;password&gt;</code> and set your display name with <code className="bg-gray-800 px-1 py-0.5 rounded">/setdisplay &lt;new name&gt;</code>.
+          </p>
+          <p className="text-base text-gray-300">
+            Type <code className="bg-gray-800 px-1 py-0.5 rounded">/menu</code> to view the full list of available commands.
+          </p>
+          <p className="text-base text-gray-300">
+            Example: To install our News module, type <code className="bg-gray-800 px-1 py-0.5 rounded">/install news</code>; to install the AI Index module, type <code className="bg-gray-800 px-1 py-0.5 rounded">/install indexes</code>.
+          </p>
+        </div>
+      </div>
+      <div className="mt-6">
+        <Link href="/getting-started/details" className="text-blue-400 hover:underline text-base">
+          More Steps →
+        </Link>
+      </div>
+    </div>
+  );
+}
 
+/* ----------------- API Documentation Docs ----------------- */
+function APIDocsContent() {
+  return (
+    <div className="flex-grow p-4 bg-black">
+      <h1 className="text-4xl font-bold mb-2 text-white">API Documentation</h1>
+      <hr className="border-t border-gray-700 my-3" />
+      <p className="text-base text-gray-300 mb-2">
+        Our RESTful API is under development. Soon, you’ll be able to access endpoints for:
+      </p>
+      <ul className="list-disc list-inside text-gray-300 text-base space-y-2 mb-4">
+        <li>
+          <strong>/api/tokens</strong> – Fetch live token data, including market cap, price, volume, and more.
+        </li>
+        <li>
+          <strong>/api/transactions</strong> – Retrieve on‑chain transaction data and whale trades.
+        </li>
+        <li>
+          <strong>/api/news</strong> – Access the latest news and articles from our Firestore collection.
+        </li>
+      </ul>
+      <p className="text-base text-gray-300 mb-4">
+        In the future, our API will enable third‑party integrations and advanced analytics, allowing developers to build custom tools on top of Homebase data.
+      </p>
+      <div className="mt-4">
+        <Link href="/api-docs/details" className="text-blue-400 hover:underline text-base">
+          API Setup Guide →
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+/* ----------------- Company Updates Docs ----------------- */
+function CompanyUpdatesContent() {
+  return (
+    <div className="flex-grow p-4 bg-black">
+      <h1 className="text-4xl font-bold mb-2 text-white">Company Updates</h1>
+      <hr className="border-t border-gray-700 my-3" />
+      <p className="text-base text-gray-300 mb-2">
+        Check out our weekly updates covering new features, improvements, roadmap changes, and insights from the Homebase team.
+      </p>
+      <p className="text-base text-gray-300">
+        Stay informed about our progress and future plans.
+      </p>
+      <div className="mt-4">
+        <Link href="/company-updates/details" className="text-blue-400 hover:underline text-base">
+          Read More →
+        </Link>
+      </div>
+    </div>
+  );
+}
 

@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";   // <-- Import Next.js Link if you're using Next.js
+import Link from "next/link";
 import Sidebar from "./components/sidebar";
 import Content from "./components/content";
 import RightSidebar from "./components/rightsidebar";
 import { motion } from "framer-motion";
+import { Home } from "lucide-react";
 
 // Parent container to stagger child animations
 const containerVariants = {
@@ -34,21 +35,21 @@ const rightSidebarVariants = {
 };
 
 export default function DocsPage() {
-  const [activeSection, setActiveSection] = useState("products");
+  // Change default activeSection to "overview" so Overview loads on first render.
+  const [activeSection, setActiveSection] = useState("overview");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
-    <div className="flex flex-col min-h-screen bg-black text-white">
-      {/* HEADER */}
+    <div className="flex flex-col min-h-screen bg-black text-white font-mono">
+      {/* Terminal-Style Header */}
       <motion.header
         className="sticky top-0 z-30 bg-black border-b border-gray-700 px-6 py-4 shadow-md flex items-center justify-between"
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        {/* Left: Clickable Logo + Clickable Title */}
+        {/* Left: Clickable Logo + Title */}
         <div className="flex items-center space-x-3">
-          {/* LOGO Link */}
           <Link href="/">
             <img
               src="https://i.imgur.com/1Sys3Pr.png"
@@ -56,14 +57,12 @@ export default function DocsPage() {
               className="w-8 h-8 object-contain cursor-pointer"
             />
           </Link>
-          {/* TITLE Link */}
           <Link href="/">
             <h1 className="text-2xl font-bold whitespace-nowrap cursor-pointer">
-              Docs
+              Homebase Docs
             </h1>
           </Link>
         </div>
-
         {/* Hamburger icon for mobile */}
         <button
           className="block lg:hidden text-xl"
@@ -106,4 +105,3 @@ export default function DocsPage() {
     </div>
   );
 }
-

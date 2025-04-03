@@ -1,12 +1,14 @@
 {
   "name": "homebase",
   "version": "0.1.0",
+  "type": "module",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "aggregator": "node runAggregator.cjs"
   },
   "dependencies": {
     "@covalenthq/client-sdk": "^2.2.4",
@@ -29,6 +31,7 @@
     "dotenv": "^16.4.7",
     "ethers": "^6.13.5",
     "firebase": "^11.4.0",
+    "firebase-admin": "^13.2.0",
     "framer-motion": "^12.5.0",
     "html2canvas": "^1.4.1",
     "lucide-react": "^0.479.0",
@@ -49,6 +52,7 @@
     "react-loading-skeleton": "^3.5.0",
     "react-tooltip": "^5.28.0",
     "recharts": "^2.15.1",
+    "slugify": "^1.6.6",
     "swr": "^2.3.3",
     "viem": "^2.23.9"
   },
@@ -63,6 +67,11 @@
     "eslint-config-next": "15.2.2",
     "postcss": "^8.5.1",
     "tailwindcss": "^3.4.17",
+    "ts-node": "^10.9.2",
     "typescript": "^5.8.2"
+  },
+  "ts-node": {
+    "esm": true,
+    "experimentalSpecifierResolution": "node"
   }
 }

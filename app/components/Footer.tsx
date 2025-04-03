@@ -15,17 +15,17 @@ const Footer = () => {
           <a href="/" className="hover:underline">
             Home
           </a>
-          <a href="/tools" className="hover:underline">
-            Tools
-          </a>
-          <a href="/forum" className="hover:underline">
-            Forum
-          </a>
-          <a href="/analysts" className="hover:underline">
-            Analysts
+          <a href="/Competitions" className="hover:underline">
+            Competitions
           </a>
           <a href="/docs" className="hover:underline">
             Docs
+          </a>
+          <a href="/Terminal" className="hover:underline">
+            Terminal
+          </a>
+          <a href="mailto:homebasemarkets@gmail.com" className="hover:underline">
+            Contact
           </a>
         </div>
 
@@ -80,6 +80,7 @@ const Footer = () => {
 };
 
 export default Footer;
+
 
   
   

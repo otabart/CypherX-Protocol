@@ -2,7 +2,6 @@
 
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import TradingViewWidget from "@/components/TradingViewWidget";
 
 export default function TokenChartPage() {
   const { tokenAddress } = useParams(); // Extracts tokenAddress from the URL

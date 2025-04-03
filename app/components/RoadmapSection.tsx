@@ -39,56 +39,56 @@ type Milestone = {
 
 const roadmapData: Milestone[] = [
   {
-    date: "Mar 10, 2025",
+    date: "Apr 06, 2025",
     title: "v1 Launch Beta Testing",
     description:
-      "Homebase v1 open beta goes live with core functionalities and limited features. Early adopters get exclusive access to products and the chance to earn rewards down the road.",
+      "Our beta phase invites early adopters to experience and test our core functionalities, providing valuable feedback to refine the platform. During beta testing, you'll help us identify bugs, optimize performance, and shape a user-friendly experience. Join us in building a robust and innovative ecosystem on the Base chain!",
     icon: <FilesIcon />,
   },
   {
-    date: "Mar 20, 2025",
-    title: "Coin Launch",
+    date: "Apr 20, 2025",
+    title: "$HOME Launch",
     description:
-      "Introducing $HOME Coin. More details and presale information coming once launch data is confirmed, join our telegram to stay up to date!",
+      "Introducing our $HOME native token launching on clank.fun. Holding grants you access to exclusive benefits such as premium trading tools, free entry to community tournaments, and locked features designed to enhance your trading experience. Additionally, $HOME collects a 0.4% LP fee from every transaction traded, which is then redistributed back into the community.",
     icon: <Rocket />,
   },
   {
-    date: "Mar 27, 2025",
+    date: "Apr 26, 2025",
     title: "Coin of the Week Spaces",
     description:
-      "Our first community event will be weekly spaces hosted on Sunday where everyone will submit the coin they think will perform the best that given week. Winner gets an ETH prize",
+      "Coin of the Week Spaces is a weekly Sunday event where the community puts their market insights to the test. Every Sunday, participants vote on which coin they believe will perform the best in the coming week. Those who correctly predict the top performer win an ETH prize.",
     icon: <CoinIcon />,
   },
   {
-    date: "Apr 10, 2025",
-    title: "Trading Competition",
+    date: "Apr 31, 2025",
+    title: "Trade Wars Week 1",
     description:
-      "Enter your wallet in a week long trading competition, top 3 traders for the week get ETH prizes",
+      "kicks off our weekly trading competition. Whether you’re an experienced trader or just getting started, join the fray to strategize, compete, and earn rewards while learning from real market moves. Step into the arena and let the trade wars begin",
     icon: <ChartIcon />,
   },
   {
-    date: "Apr 17, 2025",
+    date: "May 05, 2025",
     title: "Community Kick-Off",
     description:
-      "Join our AMA & interactive webinar to engage with the team and discuss upcoming products.",
+      "Community Kickoff is our inaugural AMA-style event designed to bring everyone together. In this open forum, you'll have the opportunity to ask questions, share your ideas, and brainstorm new tools with our team and fellow community members. This is your chance to influence the future of Homebase—help us shape our roadmap, refine our offerings, and build a more innovative ecosystem together. Join us as we kick off our community journey and spark meaningful conversations that drive real change.",
     icon: <GroupIcon />,
   },
   {
-    date: "May 03, 2025",
+    date: "June 1, 2025",
     title: "v2 Official Launch",
     description:
-      "Release upgraded features: Adding Chart & TXs Support to screener, Whale Watchers now scans 5x as many Tokens, Introducing Homebase Forum, new trading tools added to library.",
+      "v2 Launch marks the next evolution of Homebase—a complete platform upgrade driven by community feedback and rigorous beta testing. This major milestone introduces a suite of enhanced features, including improved trading tools, advanced analytics, and a more intuitive user experience. With scalable performance and robust security protocols, v2 sets the stage for a truly decentralized ecosystem. Join us as we usher in a new era of innovation, empowering users with premium functionalities and a platform built for tomorrow's challenges.",
     icon: <FilesIcon />,
   },
   {
-    date: "May 10, 2025",
+    date: "June 10, 2025",
     title: "Hackathon & Q&A",
     description:
-      "A community hackathon paired with a live Q&A session to brainstorm and innovate together.",
+      "invites developers, designers, and crypto enthusiasts to build new tools and integrations for the Homebase ecosystem. Whether you’re a seasoned coder or just starting out, you'll have the opportunity to collaborate, experiment, and showcase your creativity. With competitive prizes, mentorship opportunities, and a collaborative environment, the hackathon is your chance to turn innovative ideas into reality and help shape the future of decentralized finance.",
     icon: <InsightIcon />,
   },
   {
-    date: "Jun 01, 2025",
+    date: "TBD",
     title: "Base Intelligence",
     description:
       "Building a new phase of on-chain analytics, with AI Smart Analytics.",

@@ -1,49 +1,77 @@
 // app/TradingCompetition/Components/Leaderboard.tsx
 "use client";
-import React from "react";
-import { useQuery } from "@tanstack/react-query";
+import React, { useEffect, useState } from "react";
+import { db } from "@/lib/firebase";
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
+import { calculateCompositeScore } from "../lib/scoringLogic";
 
 type Participant = {
-  username: string;
-  wallet: string;
+  id: string;
+  displayName: string;
+  walletAddress: string;
   profit: number;
   roi: number;
   trades: number;
+  score: number;
 };
 
-async function fetchLeaderboardData() {
-  // Return empty data for now
-  return { participants: [] };
-}
-
 export default function Leaderboard() {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["leaderboard"],
-    queryFn: fetchLeaderboardData,
-  });
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  if (isLoading) {
+  useEffect(() => {
+    const q = query(collection(db, "competitionParticipants"), orderBy("joinedAt", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data: Participant[] = [];
+      snapshot.forEach((doc) => {
+        const p = doc.data();
+        const score = calculateCompositeScore(p.profit, p.roi, p.trades);
+        data.push({
+          id: doc.id,
+          displayName: p.displayName,
+          walletAddress: p.walletAddress,
+          profit: p.profit,
+          roi: p.roi,
+          trades: p.trades,
+          score,
+        });
+      });
+      // Sort descending by score
+      data.sort((a, b) => b.score - a.score);
+      setParticipants(data);
+      setLoading(false);
+    }, (error) => {
+      console.error("Error fetching leaderboard:", error);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  if (loading) {
     return (
-      <div className="bg-[#111] border border-[#0052FF] p-4 rounded shadow-sm mt-4">
-        <p className="text-white">Loading leaderboard...</p>
+      <div className="bg-[#111] border border-[#0052FF] p-4 rounded shadow-sm mt-4 text-white">
+        Loading leaderboard...
       </div>
     );
   }
 
-  if (error) {
-    return <div className="text-white">Error: {(error as Error).message}</div>;
+  if (participants.length === 0) {
+    return (
+      <div className="bg-[#111] border border-[#0052FF] p-4 rounded shadow-sm mt-4 text-white">
+        No participants yet.
+      </div>
+    );
   }
-
-  const participants = data?.participants;
 
   return (
     <div className="bg-[#111] border border-[#0052FF] p-4 rounded shadow-sm mt-4">
-      <h3 className="text-lg font-bold mb-3">Leaderboard</h3>
-      <table className="w-full text-sm">
+      <h3 className="text-lg font-bold mb-3 text-white">Leaderboard</h3>
+      <table className="w-full text-sm text-white">
         <thead>
           <tr className="border-b border-[#0052FF]">
             <th className="py-2 text-left">Rank</th>
-            <th className="py-2 text-left">Username</th>
+            <th className="py-2 text-left">Name</th>
             <th className="py-2 text-left">Score</th>
             <th className="py-2 text-left">Profit ($)</th>
             <th className="py-2 text-left">ROI (%)</th>
@@ -51,19 +79,23 @@ export default function Leaderboard() {
           </tr>
         </thead>
         <tbody>
-          {participants && participants.length === 0 ? (
-            <tr>
-              <td colSpan={6} className="py-4 text-center text-white">
-                No participants yet.
-              </td>
+          {participants.map((p, index) => (
+            <tr key={p.id} className="border-b">
+              <td className="py-2">{index + 1}</td>
+              <td className="py-2">{p.displayName}</td>
+              <td className="py-2">{p.score.toFixed(2)}</td>
+              <td className="py-2">{p.profit}</td>
+              <td className="py-2">{p.roi}</td>
+              <td className="py-2">{p.trades}</td>
             </tr>
-          ) : (
-            // Future implementation: Render participant rows when data is available.
-            null
-          )}
+          ))}
         </tbody>
       </table>
     </div>
   );
 }
+
+
+
+
 

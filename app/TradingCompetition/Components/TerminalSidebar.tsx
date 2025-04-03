@@ -1,3 +1,4 @@
+// app/TradingCompetition/Components/TerminalSidebar.tsx
 "use client";
 import React from "react";
 import Link from "next/link";
@@ -8,8 +9,6 @@ export default function TerminalSidebar() {
   const { connectedWallet, displayName } = useCompetitionContext();
   const router = useRouter();
 
-  // When clicking this button, the user is redirected to the login page
-  // so that the terminal will fetch their account info/display name.
   const handleProfileConnect = () => {
     router.push("/login");
   };
@@ -40,6 +39,9 @@ export default function TerminalSidebar() {
         <Link href="/TradingCompetition/dashboard" className="hover:text-[#0052FF]">
           Dashboard
         </Link>
+        <Link href="/TradingCompetition/admin" className="hover:text-[#0052FF]">
+          Admin Panel
+        </Link>
       </nav>
     </aside>
   );
@@ -48,6 +50,7 @@ export default function TerminalSidebar() {
 function shortAddress(address: string) {
   return address.slice(0, 6) + "..." + address.slice(-4);
 }
+
 
 
 

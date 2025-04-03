@@ -2,13 +2,14 @@
 "use client";
 import React, { useState } from "react";
 import { toast } from "react-hot-toast";
+import { useCompetitionContext } from "../CompetitionContext";
 
 type JoinCompetitionFormProps = {
   competitionId: string;
 };
 
 export default function JoinCompetitionForm({ competitionId }: JoinCompetitionFormProps) {
-  const [walletAddress, setWalletAddress] = useState("");
+  const { connectedWallet, displayName } = useCompetitionContext();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -16,21 +17,21 @@ export default function JoinCompetitionForm({ competitionId }: JoinCompetitionFo
     e.preventDefault();
     setError("");
 
-    if (!walletAddress || walletAddress.length < 10) {
-      setError("Please enter a valid wallet address.");
+    // Basic validation
+    if (!connectedWallet || !displayName) {
+      setError("Please connect your wallet and set a display name before joining.");
       return;
     }
 
     setLoading(true);
 
     try {
-      // POST to the join endpoint (simulate entry fee payment and join process)
-      const res = await fetch(`/api/competitions/${competitionId}/join`, {
+      const res = await fetch(`/api/competition/${competitionId}/join`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ walletAddress }),
+        body: JSON.stringify({ walletAddress: connectedWallet, displayName }),
       });
 
       const data = await res.json();
@@ -49,19 +50,6 @@ export default function JoinCompetitionForm({ competitionId }: JoinCompetitionFo
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label className="block text-sm font-semibold text-white">
-          Wallet Address
-        </label>
-        <input
-          type="text"
-          className="w-full mt-1 border border-gray-700 rounded px-3 py-2 bg-[#111] text-white"
-          value={walletAddress}
-          onChange={(e) => setWalletAddress(e.target.value)}
-          placeholder="0xabc123..."
-          disabled={loading}
-        />
-      </div>
       {error && <p className="text-red-500 text-sm">{error}</p>}
       <button
         type="submit"
@@ -73,6 +61,8 @@ export default function JoinCompetitionForm({ competitionId }: JoinCompetitionFo
     </form>
   );
 }
+
+
 
 
 

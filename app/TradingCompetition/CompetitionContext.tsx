@@ -19,8 +19,8 @@ type CompetitionContextType = {
 const CompetitionContext = createContext<CompetitionContextType | null>(null);
 
 export function CompetitionProvider({ children }: { children: React.ReactNode }) {
-  const [connectedWallet, setConnectedWallet] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  const [connectedWallet, setConnectedWallet] = useState<string>(() => typeof window !== "undefined" ? localStorage.getItem("connectedWallet") || "" : "");
+  const [displayName, setDisplayName] = useState<string>(() => typeof window !== "undefined" ? localStorage.getItem("displayName") || "" : "");
   const [joinedCompetitions, setJoinedCompetitions] = useState<string[]>([]);
   const [appKit, setAppKit] = useState<any>(null);
 
@@ -77,7 +77,9 @@ export function CompetitionProvider({ children }: { children: React.ReactNode })
         const signer = web3Provider.getSigner();
         const userAddress = await signer.getAddress();
         setConnectedWallet(userAddress);
-        console.log("Connected wallet:", userAddress);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("connectedWallet", userAddress);
+        }
       } else {
         console.error("No provider found from AppKit modal.");
       }
@@ -88,6 +90,9 @@ export function CompetitionProvider({ children }: { children: React.ReactNode })
 
   function disconnectWallet() {
     setConnectedWallet("");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("connectedWallet");
+    }
   }
 
   function joinCompetition(competitionId: string) {
@@ -98,6 +103,9 @@ export function CompetitionProvider({ children }: { children: React.ReactNode })
 
   function login(name: string) {
     setDisplayName(name);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("displayName", name);
+    }
   }
 
   return (
@@ -124,6 +132,9 @@ export function useCompetitionContext() {
   }
   return ctx;
 }
+
+
+
 
 
 
