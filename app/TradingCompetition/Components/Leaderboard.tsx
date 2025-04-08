@@ -1,12 +1,12 @@
 // app/TradingCompetition/Components/Leaderboard.tsx
 "use client";
 import React, { useEffect, useState } from "react";
-import { db } from "@/lib/firebase";
-import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
+import { useCompetitionContext } from "../CompetitionContext";
+import { calculateROI } from "../lib/competitionLogic";
 import { calculateCompositeScore } from "../lib/scoringLogic";
 
 type Participant = {
-  id: string;
+  id: string; // walletAddress serves as ID
   displayName: string;
   walletAddress: string;
   profit: number;
@@ -15,38 +15,65 @@ type Participant = {
   score: number;
 };
 
-export default function Leaderboard() {
+export default function Leaderboard({ competitionId }: { competitionId: string }) {
+  const { provider, connectedWallet } = useCompetitionContext();
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(collection(db, "competitionParticipants"), orderBy("joinedAt", "desc"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data: Participant[] = [];
-      snapshot.forEach((doc) => {
-        const p = doc.data();
-        const score = calculateCompositeScore(p.profit, p.roi, p.trades);
-        data.push({
-          id: doc.id,
-          displayName: p.displayName,
-          walletAddress: p.walletAddress,
-          profit: p.profit,
-          roi: p.roi,
-          trades: p.trades,
-          score,
-        });
-      });
-      // Sort descending by score
-      data.sort((a, b) => b.score - a.score);
-      setParticipants(data);
-      setLoading(false);
-    }, (error) => {
-      console.error("Error fetching leaderboard:", error);
-      setLoading(false);
-    });
+    async function fetchLeaderboard() {
+      if (!provider || !competitionId) {
+        setLoading(false);
+        return;
+      }
 
-    return () => unsubscribe();
-  }, []);
+      try {
+        const contract = new ethers.Contract(
+          "0xYourContractAddressHere", // Replace with your contract address
+          [
+            "function getParticipants(uint256 competitionId) public view returns (address[])",
+            "function getProfit(address participant, uint256 competitionId) public view returns (uint256)",
+            "function getStartingBalance(address participant, uint256 competitionId) public view returns (uint256)",
+            "function getParticipantBalance(address participant, uint256 competitionId) public view returns (uint256)",
+            "function getTradeCount(address participant, uint256 competitionId) public view returns (uint256)",
+          ],
+          provider
+        );
+
+        const participantAddresses = await contract.getParticipants(competitionId);
+        const data: Participant[] = await Promise.all(
+          participantAddresses.map(async (addr: string) => {
+            const profit = Number(ethers.formatEther(await contract.getProfit(addr, competitionId))); // Assuming wei
+            const startBalance = Number(ethers.formatEther(await contract.getStartingBalance(addr, competitionId)));
+            const endBalance = Number(ethers.formatEther(await contract.getParticipantBalance(addr, competitionId)));
+            const trades = Number(await contract.getTradeCount(addr, competitionId));
+            const roi = calculateROI(startBalance, endBalance);
+            const score = calculateCompositeScore(profit, roi, trades);
+
+            return {
+              id: addr,
+              displayName: addr.slice(0, 6) + "..." + addr.slice(-4), // Placeholder; replace with real name if available
+              walletAddress: addr,
+              profit,
+              roi,
+              trades,
+              score,
+            };
+          })
+        );
+
+        // Sort descending by score
+        data.sort((a, b) => b.score - a.score);
+        setParticipants(data);
+        setLoading(false);
+      } catch (error) {
+        console.error("Error fetching blockchain leaderboard:", error);
+        setLoading(false);
+      }
+    }
+
+    fetchLeaderboard();
+  }, [provider, competitionId]);
 
   if (loading) {
     return (
@@ -84,8 +111,8 @@ export default function Leaderboard() {
               <td className="py-2">{index + 1}</td>
               <td className="py-2">{p.displayName}</td>
               <td className="py-2">{p.score.toFixed(2)}</td>
-              <td className="py-2">{p.profit}</td>
-              <td className="py-2">{p.roi}</td>
+              <td className="py-2">{p.profit.toFixed(2)}</td>
+              <td className="py-2">{p.roi.toFixed(2)}</td>
               <td className="py-2">{p.trades}</td>
             </tr>
           ))}

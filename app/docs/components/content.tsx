@@ -214,7 +214,7 @@ function HoneypotTrackerContent() {
         Although our analysis is robust, it is not 100% foolproof—always perform your own due diligence before executing trades.
       </p>
       <div className="mt-4">
-        <Link href="/honeypot-scanner" className="text-blue-400 hover:underline text-base">
+        <Link href="/honeypot-scannttrer" className="text-blue-400 hover:underline text-base">
           Audit Smart Contract →
         </Link>
       </div>

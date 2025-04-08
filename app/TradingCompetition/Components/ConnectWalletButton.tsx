@@ -1,38 +1,92 @@
-// app/TradingCompetition/Components/ConnectWalletButton.tsx
 "use client";
-import React, { useState } from "react";
-import { toast } from "react-hot-toast";
+import React from "react";
 import { useCompetitionContext } from "../CompetitionContext";
 
 export default function ConnectWalletButton() {
-  const { connectedWallet, connectWallet, disconnectWallet } = useCompetitionContext();
-  const [connecting, setConnecting] = useState(false);
+  const { connectedWallet, connectWallet, disconnectWallet, isAppKitLoading, isConnecting } = useCompetitionContext();
+
+  console.log("Connected wallet in button:", connectedWallet);
+  console.log("isAppKitLoading:", isAppKitLoading);
+  console.log("isConnecting:", isConnecting);
 
   async function handleConnect() {
-    try {
-      setConnecting(true);
-      await connectWallet();
-      toast.success("Wallet connected successfully!");
-    } catch (error) {
-      console.error("Connection error:", error);
-      toast.error("Failed to connect wallet. Please try again.");
-    } finally {
-      setConnecting(false);
-    }
+    await connectWallet();
   }
 
   function handleDisconnect() {
     disconnectWallet();
-    toast("Wallet disconnected.", { icon: "👋" });
   }
 
   if (connectedWallet) {
+    const shortenedAddress = `${connectedWallet.slice(0, 6)}...${connectedWallet.slice(-3)}`;
     return (
       <button
         onClick={handleDisconnect}
-        className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded"
+        className="bg-[#0052FF] hover:bg-blue-600 text-white px-4 py-2 rounded shadow-lg transition-all duration-200"
       >
-        Disconnect
+        {shortenedAddress}
+      </button>
+    );
+  }
+
+  if (isConnecting) {
+    return (
+      <button
+        disabled
+        className="bg-gray-500 text-white px-4 py-2 rounded shadow-lg flex items-center justify-center"
+      >
+        <svg
+          className="animate-spin h-5 w-5 mr-2 text-white"
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+        >
+          <circle
+            className="opacity-25"
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            strokeWidth="4"
+          />
+          <path
+            className="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+          />
+        </svg>
+        Connecting...
+      </button>
+    );
+  }
+
+  if (isAppKitLoading) {
+    return (
+      <button
+        disabled
+        className="bg-gray-500 text-white px-4 py-2 rounded shadow-lg flex items-center justify-center"
+      >
+        <svg
+          className="animate-spin h-5 w-5 mr-2 text-white"
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+        >
+          <circle
+            className="opacity-25"
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            strokeWidth="4"
+          />
+          <path
+            className="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+          />
+        </svg>
+        Loading...
       </button>
     );
   }
@@ -40,11 +94,9 @@ export default function ConnectWalletButton() {
   return (
     <button
       onClick={handleConnect}
-      disabled={connecting}
-      className="bg-[#0052FF] hover:bg-blue-500 text-white px-3 py-1 rounded disabled:opacity-50"
+      className="bg-[#0052FF] hover:bg-blue-600 text-white px-4 py-2 rounded shadow-lg transition-all duration-200"
     >
-      {connecting ? "Connecting..." : "Connect Wallet"}
+      Connect Wallet
     </button>
   );
 }
-

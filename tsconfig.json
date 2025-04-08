@@ -1,31 +1,39 @@
 {
   "compilerOptions": {
-    "target": "ESNext",  // Updated to ESNext for full ESM support
+    "target": "ESNext",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
     "esModuleInterop": true,
-    "module": "ESNext",
-    "moduleResolution": "node",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
     "plugins": [{ "name": "next" }],
-    "paths": { "@/*": ["./*"] }
+    "paths": {
+      "@/*": ["./*"],
+      "~/TradingCompetition/*": ["./app/TradingCompetition/*"]
+    },
+    "forceConsistentCasingInFileNames": true,
+    "allowSyntheticDefaultImports": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "types": ["node", "react", "react-dom"],
+    "baseUrl": ".",
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true // Added to allow .ts/.tsx in imports
   },
   "include": [
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    "aggregator.jss",
-    "app/tokenMapping.ts"
+    "app/TradingCompetition/**/*" // Explicitly include TradingCompetition dir
   ],
   "exclude": ["node_modules"]
 }
-
-
-

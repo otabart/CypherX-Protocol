@@ -1,6 +1,6 @@
+import "./globals.css";
+import { Providers } from "./providers.tsx";
 import type { Metadata } from "next";
-import "./globals.css"; // includes Tailwind (base, components, utilities)
-import { Providers } from "./providers"; // Our new combined Firebase + Query + Competition provider
 
 export const metadata: Metadata = {
   title: "Homebase Markets",
@@ -18,14 +18,13 @@ export default function RootLayout({
     <html lang="en">
       <body className="geist antialiased">
         <Providers>
-          {/* Web3Modal Wallet Connect Button (globally available) */}
-          <w3m-button />
           {children}
         </Providers>
       </body>
     </html>
   );
 }
+
 
 
 

@@ -27,7 +27,6 @@ export default function CompetitionListingPage() {
   });
 
   const competitions: Competition[] = data?.competitions || [];
-
   const [sortKey, setSortKey] = useState<keyof Competition>("startDate");
   const [filterFundingType, setFilterFundingType] = useState<string>("all");
   const [filterKeyword, setFilterKeyword] = useState("");
@@ -49,31 +48,31 @@ export default function CompetitionListingPage() {
     });
   }, [competitions, filterKeyword, filterFundingType, sortKey]);
 
-  if (isLoading) return <div className="text-white">Loading competitions...</div>;
-  if (error) return <div className="text-white">Error loading competitions.</div>;
+  if (isLoading) return <div className="text-white text-center py-4">Loading competitions...</div>;
+  if (error) return <div className="text-white text-center py-4">Error loading competitions.</div>;
 
   return (
     <motion.div
-      className="w-full px-4 py-6"
+      className="w-full px-4 py-6 bg-black"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
       transition={{ duration: 0.5 }}
     >
       <TournamentNotifications />
-      <h2 className="text-2xl font-bold mb-4 text-white">Available Competitions</h2>
-      <div className="mb-4 flex flex-col md:flex-row items-center space-y-2 md:space-y-0 md:space-x-4">
+      <h2 className="text-3xl font-bold mb-6 text-white">Available Competitions</h2>
+      <div className="mb-6 flex flex-wrap gap-4">
         <input
           type="text"
           placeholder="Search competitions..."
           value={filterKeyword}
           onChange={(e) => setFilterKeyword(e.target.value)}
-          className="px-3 py-2 border rounded"
+          className="flex-1 min-w-[200px] px-4 py-2 bg-gray-900 border border-gray-700 rounded text-white focus:outline-none focus:border-[#0052FF]"
         />
         <select
           value={filterFundingType}
           onChange={(e) => setFilterFundingType(e.target.value)}
-          className="px-3 py-2 border rounded"
+          className="w-[180px] px-4 py-2 bg-gray-900 border border-gray-700 rounded text-white focus:outline-none focus:border-[#0052FF]"
         >
           <option value="all">All Funding Types</option>
           <option value="self">Self Funded</option>
@@ -82,33 +81,33 @@ export default function CompetitionListingPage() {
         <select
           value={sortKey}
           onChange={(e) => setSortKey(e.target.value as keyof Competition)}
-          className="px-3 py-2 border rounded"
+          className="w-[180px] px-4 py-2 bg-gray-900 border border-gray-700 rounded text-white focus:outline-none focus:border-[#0052FF]"
         >
           <option value="startDate">Start Date</option>
           <option value="entryFee">Entry Fee</option>
           <option value="title">Title</option>
         </select>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredCompetitions.length ? (
           filteredCompetitions.map((comp) => (
             <motion.div
               key={comp.id}
-              className="bg-[#111] border border-[#0052FF] rounded-lg p-3 shadow-sm text-white"
+              className="bg-gray-900 border border-[#0052FF] rounded-lg p-4 shadow-lg hover:shadow-xl transition-shadow"
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
             >
-              <h3 className="text-lg font-bold">{comp.title}</h3>
-              <p className="mt-1 text-gray-300 text-sm">{comp.description}</p>
-              <div className="text-xs text-gray-400 mt-1">
-                <p>Entry Fee: {comp.entryFee}</p>
+              <h3 className="text-xl font-bold text-white">{comp.title}</h3>
+              <p className="mt-2 text-gray-300 text-sm">{comp.description}</p>
+              <div className="text-sm text-gray-400 mt-3 space-y-1">
+                <p>Entry Fee: {comp.entryFee} ETH</p>
                 <p>Funding: {comp.prizeFundingType}</p>
                 <p>Starts: {new Date(comp.startDate).toLocaleString()}</p>
               </div>
-              <div className="mt-3 flex justify-end">
+              <div className="mt-4 flex justify-end">
                 <a
                   href={`/TradingCompetition/${comp.id}`}
-                  className="bg-[#0052FF] hover:bg-blue-500 text-white px-3 py-1 rounded transition text-xs"
+                  className="bg-[#0052FF] hover:bg-blue-500 text-white px-4 py-2 rounded transition"
                 >
                   View Details
                 </a>
@@ -116,18 +115,9 @@ export default function CompetitionListingPage() {
             </motion.div>
           ))
         ) : (
-          <p className="text-white">No competitions found.</p>
+          <p className="text-white text-center col-span-full">No competitions found.</p>
         )}
       </div>
     </motion.div>
   );
 }
-
-
-
-
-
-
-
-
-

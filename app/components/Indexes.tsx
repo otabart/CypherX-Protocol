@@ -33,7 +33,16 @@ export type BaseAiToken = {
 
 // ====== STATIC LIST ======
 const baseAiTokens: BaseAiToken[] = [
-  { symbol: "GAME", address: "0x1C4CcA7C5DB003824208aDDA61Bd749e55F463a3", weight: "4.86%" }, { symbol: "BANKR", address: "0x22aF33FE49fD1Fa80c7149773dDe5890D3c76F3b", weight: "5.24%" }, { symbol: "FAI", address: "0xb33Ff54b9F7242EF1593d2C9Bcd8f9df46c77935", weight: "12.57%" }, { symbol: "VIRTUAL", address: "0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b", weight: "26.8%" }, { symbol: "CLANKER", address: "0x1bc0c42215582d5A085795f4baDbaC3ff36d1Bcb", weight: "15.89%" }, { symbol: "KAITO", address: "0x98d0baa52b2D063E780DE12F615f963Fe8537553", weight: "16.22%" }, { symbol: "COOKIE", address: "0xC0041EF357B183448B235a8Ea73Ce4E4eC8c265F", weight: "5.12%" }, { symbol: "VVV", address: "0xacfE6019Ed1A7Dc6f7B508C02d1b04ec88cC21bf", weight: "5.08%" }, { symbol: "DRB", address: "0x3ec2156D4c0A9CBdAB4a016633b7BcF6a8d68Ea2", weight: "3.8%" }, { symbol: "AIXBT", address: "0x4F9Fd6Be4a90f2620860d680c0d4d5Fb53d1A825", weight: "10.5%" },
+  { symbol: "GAME", address: "0x1C4CcA7C5DB003824208aDDA61Bd749e55F463a3", weight: "4.86%" },
+  { symbol: "BANKR", address: "0x22aF33FE49fD1Fa80c7149773dDe5890D3c76F3b", weight: "5.24%" },
+  { symbol: "FAI", address: "0xb33Ff54b9F7242EF1593d2C9Bcd8f9df46c77935", weight: "12.57%" },
+  { symbol: "VIRTUAL", address: "0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b", weight: "26.8%" },
+  { symbol: "CLANKER", address: "0x1bc0c42215582d5A085795f4baDbaC3ff36d1Bcb", weight: "15.89%" },
+  { symbol: "KAITO", address: "0x98d0baa52b2D063E780DE12F615f963Fe8537553", weight: "16.22%" },
+  { symbol: "COOKIE", address: "0xC0041EF357B183448B235a8Ea73Ce4E4eC8c265F", weight: "5.12%" },
+  { symbol: "VVV", address: "0xacfE6019Ed1A7Dc6f7B508C02d1b04ec88cC21bf", weight: "5.08%" },
+  { symbol: "DRB", address: "0x3ec2156D4c0A9CBdAB4a016633b7BcF6a8d68Ea2", weight: "3.8%" },
+  { symbol: "AIXBT", address: "0x4F9Fd6Be4a90f2620860d680c0d4d5Fb53d1A825", weight: "10.5%" },
 ];
 
 // ====== ANIMATION VARIANTS ======
@@ -56,7 +65,12 @@ function DownloadIcon() {
       viewBox="0 0 24 24"
       stroke="currentColor"
     >
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+      />
     </svg>
   );
 }
@@ -158,8 +172,7 @@ export default function BaseAiIndex() {
       const dataUrl = await domToImage.toPng(indexRef.current, {
         quality: 1,
         style: { backgroundColor: "#fff" },
-        // Uncomment below if external images require CORS:
-        // crossOrigin: "anonymous",
+        // crossOrigin: "anonymous", // if needed
       });
       const link = document.createElement("a");
       link.download = "base-ai-index.png";
@@ -184,7 +197,7 @@ export default function BaseAiIndex() {
       viewport={{ once: true, amount: 0.5 }}
       variants={containerVariants}
     >
-      {/* Unified container with square edges, no extra white space */}
+      {/* Unified container (banner + table) */}
       <motion.div
         ref={indexRef}
         className="relative shadow-lg overflow-hidden"
@@ -193,16 +206,20 @@ export default function BaseAiIndex() {
         transition={{ duration: 0.6 }}
         viewport={{ once: true, amount: 0.5 }}
       >
-        {/* Download Button (nicer circular button) */}
+        {/* Download Button */}
         <button
           onClick={handleDownloadImage}
-          className={isMobile ? "absolute top-1 right-1 p-2 rounded-full bg-white shadow hover:bg-gray-100" : "absolute top-3 right-3 p-2 rounded-full bg-white shadow hover:bg-gray-100"}
+          className={
+            isMobile
+              ? "absolute top-1 right-1 p-2 rounded-full bg-white shadow hover:bg-gray-100"
+              : "absolute top-3 right-3 p-2 rounded-full bg-white shadow hover:bg-gray-100"
+          }
           title="Download Image"
         >
           <DownloadIcon />
         </button>
 
-        {/* Blue Stats Banner – full width, no extra border/padding */}
+        {/* Blue Stats Banner */}
         <div className="bg-[#0052FF] text-white p-4 w-full">
           <h2 className="text-2xl font-bold mb-2 text-center">Base AI Index</h2>
           <div className="flex flex-col sm:flex-row justify-around text-sm">
@@ -227,18 +244,18 @@ export default function BaseAiIndex() {
           </div>
         </div>
 
-        {/* White Table Section – attached directly with no gap */}
+        {/* White Table Section */}
         <div className="bg-white p-4">
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead className="bg-gray-100">
                 <tr>
-                  <th className="border p-2" title="Token (Symbol and Icon)">Token</th>
-                  <th className="border p-2" title="Weight in the Index">Weight</th>
-                  <th className="border p-2" title="Price in USD">Price (USD)</th>
-                  <th className="border p-2" title="24h Price Change (%)">24h Change</th>
-                  <th className="border p-2" title="24h Trading Volume">Volume (24h)</th>
-                  <th className="border p-2" title="Market Capitalization">Market Cap</th>
+                  <th className="border p-2">Token</th>
+                  <th className="border p-2">Weight</th>
+                  <th className="border p-2">Price (USD)</th>
+                  <th className="border p-2">24h Change</th>
+                  <th className="border p-2">Volume (24h)</th>
+                  <th className="border p-2">Market Cap</th>
                 </tr>
               </thead>
               <tbody>
@@ -248,10 +265,11 @@ export default function BaseAiIndex() {
                     <motion.tr
                       key={token.address}
                       className="border-t hover:bg-blue-50 transition-colors"
+                      // Animate once each row hits 10% visibility
                       initial={{ opacity: 0, y: 10 }}
                       whileInView={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.4, delay: idx * 0.1 }}
-                      viewport={{ once: true, amount: 0.5 }}
+                      viewport={{ once: false, amount: 0.1 }} 
                     >
                       <td className="border p-2 flex items-center space-x-2">
                         {d?.info?.imageUrl ? (
@@ -259,7 +277,6 @@ export default function BaseAiIndex() {
                             src={d.info.imageUrl}
                             alt={token.symbol}
                             className="w-6 h-6 rounded-full"
-                            // Uncomment if external images require CORS: crossOrigin="anonymous"
                           />
                         ) : (
                           <div className="w-6 h-6 rounded-full bg-gray-300" />
@@ -303,6 +320,7 @@ export default function BaseAiIndex() {
     </motion.div>
   );
 }
+
 
 
 

@@ -10,19 +10,17 @@ import RoadmapSection from "./components/RoadmapSection";
 import ScrollingTokenBanner from "./components/ScrollingTokenBanner";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
-
-// ======= New PartnersScroller Import =======
 import PartnersScroller from "./components/PartnersScroller";
-
-// ======= Import the Base AI Index Component =======
 import BaseAiIndex from "./components/Indexes";
 
-// Replace or remove if not needed:
-export type NewsArticle = {
-  id: string;
+// Type definition for NewsArticle
+type NewsArticle = {
   title: string;
   content: string;
+  author: string;
+  source: string;
   publishedAt: string;
+  slug: string;
 };
 
 // Custom hook to check if viewport is mobile
@@ -394,84 +392,6 @@ function EthereumStats({
   );
 }
 
-// (Optional) LatestNewsSection
-function LatestNewsSection() {
-  const [latestArticles, setLatestArticles] = useState<NewsArticle[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  const isMobile = useIsMobile();
-  const scrollProps = getScrollAnimationProps(isMobile);
-
-  useEffect(() => {
-    async function fetchArticles() {
-      try {
-        const res = await fetch("/api/news");
-        if (!res.ok) {
-          setError("Failed to fetch articles");
-          setLoading(false);
-          return;
-        }
-        const articles: NewsArticle[] = await res.json();
-        const sortedArticles = articles.sort(
-          (a, b) =>
-            new Date(b.publishedAt).getTime() -
-            new Date(a.publishedAt).getTime()
-        );
-        setLatestArticles(sortedArticles.slice(0, 3));
-      } catch (err) {
-        console.error(err);
-        setError("Error fetching articles");
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchArticles();
-  }, []);
-
-  if (loading) {
-    return (
-      <motion.section className="py-12 container mx-auto px-4" {...scrollProps}>
-        <h2 className="text-3xl font-extrabold mb-6 text-center">Latest News</h2>
-        <p className="text-center">Loading latest news...</p>
-      </motion.section>
-    );
-  }
-
-  if (error) {
-    return (
-      <motion.section className="py-12 container mx-auto px-4" {...scrollProps}>
-        <h2 className="text-3xl font-extrabold mb-6 text-center">Latest News</h2>
-        <p className="text-center text-red-500">{error}</p>
-      </motion.section>
-    );
-  }
-
-  return (
-    <motion.section className="py-12 container mx-auto px-4" {...scrollProps}>
-      <h2 className="text-3xl font-extrabold mb-6 text-center">Latest News</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {latestArticles.map((article) => (
-          <motion.div
-            key={article.id}
-            whileHover={{ scale: 1.05 }}
-            className="p-4 shadow-md border rounded-lg bg-white/70 backdrop-blur-md"
-          >
-            <h3 className="text-xl font-bold text-primaryBlue">{article.title}</h3>
-            <p className="text-sm mt-2">{article.content.slice(0, 100)}...</p>
-            <Link
-              href={`/news/${article.id}`}
-              className="text-primaryBlue mt-4 inline-block hover:underline"
-            >
-              Read more
-            </Link>
-          </motion.div>
-        ))}
-      </div>
-    </motion.section>
-  );
-}
-
 // Main page component
 function HomePage() {
   const [stats, setStats] = useState({
@@ -479,6 +399,9 @@ function HomePage() {
     volume: 0,
     latestBlock: 0,
   });
+  const [latestArticles, setLatestArticles] = useState<NewsArticle[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const isMobile = useIsMobile();
   const scrollProps = getScrollAnimationProps(isMobile);
@@ -523,6 +446,32 @@ function HomePage() {
     // Optionally refetch every 10s
     const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Fetch latest news articles
+  useEffect(() => {
+    async function fetchArticles() {
+      try {
+        const res = await fetch("/api/news");
+        if (!res.ok) {
+          setError("Failed to fetch articles");
+          setLoading(false);
+          return;
+        }
+        const articles: NewsArticle[] = await res.json();
+        const sortedArticles = articles.sort(
+          (a, b) =>
+            new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+        );
+        setLatestArticles(sortedArticles.slice(0, 3));
+      } catch (err) {
+        console.error("Error fetching articles:", err);
+        setError("Error fetching articles");
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchArticles();
   }, []);
 
   return (
@@ -621,7 +570,7 @@ function HomePage() {
             >
               <ShieldIcon />
               <h3 className="text-xl font-bold text-primaryBlue mb-3">
-                Secure &amp; Scalable
+                Secure & Scalable
               </h3>
               <p className="text-sm text-gray-600 leading-relaxed">
                 Robust security meets unrivaled scalability, backed by industry
@@ -721,8 +670,52 @@ function HomePage() {
       {/* Roadmap Section */}
       <RoadmapSection />
 
-      {/* Latest News Section (Dynamic) */}
-      <LatestNewsSection />
+      {/* Latest News Section (Integrated) */}
+      {loading ? (
+        <motion.section className="py-12 container mx-auto px-4" {...scrollProps}>
+          <h2 className="text-3xl font-extrabold mb-6 text-center">Latest News</h2>
+          <p className="text-center">Loading latest news...</p>
+        </motion.section>
+      ) : error ? (
+        <motion.section className="py-12 container mx-auto px-4" {...scrollProps}>
+          <h2 className="text-3xl font-extrabold mb-6 text-center">Latest News</h2>
+          <p className="text-center text-red-500">{error}</p>
+        </motion.section>
+      ) : (
+        <motion.section className="py-12 container mx-auto px-4" {...scrollProps}>
+          <h2 className="text-3xl font-extrabold mb-6 text-center">Latest News</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {latestArticles.map((article) => {
+              console.log("Article slug in LatestNewsSection:", article.slug);
+              return (
+                <motion.div
+                  key={article.slug}
+                  whileHover={{ scale: 1.05 }}
+                  className="p-4 shadow-md border rounded-lg bg-white/70 backdrop-blur-md"
+                >
+                  <h3 className="text-xl font-bold text-primaryBlue">{article.title}</h3>
+                  <p className="text-sm mt-2">{article.content.slice(0, 100)}...</p>
+                  <Link
+                    href={`/base-chain-news/${article.slug}`}
+                    className="text-primaryBlue mt-4 inline-block hover:underline"
+                  >
+                    Read more
+                  </Link>
+                </motion.div>
+              );
+            })}
+          </div>
+          {/* Optional: Add a "View All News" link to /base-chain-news */}
+          <div className="text-center mt-8">
+            <Link
+              href="/base-chain-news"
+              className="text-primaryBlue font-semibold hover:underline"
+            >
+              View All News →
+            </Link>
+          </div>
+        </motion.section>
+      )}
 
       {/* Footer */}
       <Footer />

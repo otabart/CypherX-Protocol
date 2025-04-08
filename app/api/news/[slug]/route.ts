@@ -1,46 +1,46 @@
-// app/api/[slug]/route.ts
+import { NextResponse, NextRequest } from "next/server";
+import { db } from "../../../../lib/firebase"; // Path is correct
+import { collection, getDocs, query, where } from "firebase/firestore";
 
-import { NextResponse } from "next/server";
-import { db } from "../../lib/firebase";
-import { collection, getDocs } from "firebase/firestore";
-import slugify from "slugify";
-
-export async function GET(
-  request: Request,
-  { params }: { params: { slug: string } }
-) {
-  const { slug } = params;
-  console.log("Fetching article with slug:", slug);
+export async function GET(request: NextRequest, context: { params: { slug: string } }) {
+  const { slug } = context.params;
+  console.log("API requested slug:", slug);
 
   try {
     const articlesCol = collection(db, "articles");
-    const querySnapshot = await getDocs(articlesCol);
-    let articleData: any = null;
+    const q = query(articlesCol, where("slug", "==", slug));
+    const querySnapshot = await getDocs(q);
 
-    // Loop through documents and compute the slug on the fly if missing
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      const computedSlug = data.slug || slugify(data.title, { lower: true, strict: true });
-      if (computedSlug === slug) {
-        articleData = data;
-      }
-    });
+    console.log("Found documents:", querySnapshot.docs.length);
+    const allDocs = await getDocs(articlesCol);
+    console.log(
+      "All slugs in Firestore:",
+      allDocs.docs.map((doc) => doc.data().slug)
+    );
 
-    if (!articleData) {
+    if (querySnapshot.empty) {
+      console.log("No article found for slug:", slug);
       return NextResponse.json({ error: "Article not found" }, { status: 404 });
     }
 
-    if (articleData?.publishedAt?.toDate) {
+    const doc = querySnapshot.docs[0];
+    const articleData = doc.data();
+    console.log("Article data:", articleData);
+
+    if (articleData.publishedAt?.toDate) {
       articleData.publishedAt = articleData.publishedAt.toDate().toISOString();
-    }
-    if (!articleData.slug && articleData.title) {
-      articleData.slug = slugify(articleData.title, { lower: true, strict: true });
     }
 
     return NextResponse.json(articleData);
   } catch (error) {
-    console.error("Error fetching article", error);
-    return NextResponse.json({ error: "Error fetching article" }, { status: 500 });
+    console.error("Error fetching article:", error);
+    return NextResponse.json(
+      { error: "Error fetching article" },
+      { status: 500 }
+    );
   }
 }
 
+export async function OPTIONS() {
+  return NextResponse.json({ message: "Method not implemented" }, { status: 501 });
+}

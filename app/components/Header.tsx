@@ -115,45 +115,6 @@ const Header = () => {
               }
             />
 
-            {/* News Terminal */}
-            <IconLink
-              href="/terminal"
-              label="News Terminal"
-              svg={
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M19 20H5a2 2 0 01-2-2V5.4C3 5.179 3.179 5 3.4 5H5c.265 0 .52.105.707.293l.293.293h13a2 2 0 012 2V18a2 2 0 01-2 2z"
-                />
-              }
-              extraPath={
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M7 8h10M7 12h6m-6 4h10"
-                />
-              }
-            />
-
-            {/* Whitepaper */}
-            <IconLink
-              href="/whitepaper"
-              label="Whitepaper"
-              svg={
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M9 2h6l5 5v12a2 2 0 01-2 2H7a2 2 0 01-2-2V4a2 2 0 012-2z"
-                />
-              }
-              extraPath={
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M14 2v6h6"
-                />
-              }
-            />
 
             {/* Competition (new trophy icon) */}
             <IconLink

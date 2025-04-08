@@ -1,68 +1,17 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { FaTrophy, FaBolt, FaStar, FaDownload, FaSearch } from "react-icons/fa";
+import { MdCampaign } from "react-icons/md";
+import { tokenMapping } from "../tokenMapping"; // Corrected import path
+import debounce from "lodash/debounce"; // Add lodash for debouncing
 
+// Utility Functions
 function getColorClass(value: number) {
   return value >= 0 ? "text-green-500" : "text-red-500";
-}
-
-type Candle = {
-  time: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-};
-
-type DexToken = {
-  pairAddress: string;
-  baseToken: {
-    address: string;
-    name: string;
-    symbol: string;
-  };
-  quoteToken: {
-    address: string;
-    name: string;
-    symbol: string;
-  };
-  priceUsd: string;
-  txns: {
-    h1: { buys: number; sells: number };
-    h6: { buys: number; sells: number };
-    h24: { buys: number; sells: number };
-  };
-  priceChange: {
-    h1?: number;
-    h6?: number;
-    h24?: number;
-  };
-  volume: { h24: number };
-  liquidity: { usd: number };
-  marketCap?: number;
-  fdv?: number;
-  pairCreatedAt?: number;
-  trendingScore?: number;
-  info?: {
-    imageUrl?: string;
-  };
-  candles?: Candle[];
-};
-
-function computeTrending(token: DexToken): number {
-  const { h1, h6, h24 } = token.priceChange || {};
-  const avgChange = (Number(h1) + Number(h6) + Number(h24)) / 3;
-  if (isNaN(avgChange)) return 0;
-  const ratio =
-    token.marketCap && token.marketCap > 0
-      ? token.volume.h24 / token.marketCap
-      : 1;
-  let trending = avgChange * ratio;
-  if (avgChange > 0) trending *= 1.1;
-  return trending;
 }
 
 function getAge(createdAt?: number): string {
@@ -78,21 +27,85 @@ function getTxns24h(token: DexToken): number {
   return buys + sells;
 }
 
-function FlameIcon() {
+const MIN_LIQUIDITY = 20000;
+const DECAY_CONSTANT = 7;
+
+function computeTrending(token: DexToken, boostValue: number): number {
+  const { h1, h6, h24 } = token.priceChange || {};
+  const avgChange =
+    (0.5 * Number(h1) + 0.3 * Number(h6) + 0.2 * Number(h24)) || 0;
+
+  let trending =
+    token.marketCap && token.marketCap > 0
+      ? avgChange * (token.volume.h24 / token.marketCap)
+      : avgChange;
+
+  if (avgChange > 0) trending *= 1.1;
+  const txns = getTxns24h(token);
+  trending += Math.log10(txns + 1) * 0.5;
+
+  const liquidityUsd = token.liquidity.usd || 0;
+  if (liquidityUsd < MIN_LIQUIDITY) {
+    const liquidityFactor = liquidityUsd / MIN_LIQUIDITY;
+    trending *= liquidityFactor;
+  }
+
+  const pairAgeDays = token.pairCreatedAt
+    ? (Date.now() - token.pairCreatedAt) / (1000 * 60 * 60 * 24)
+    : 0;
+  const ageDecay = Math.exp(-pairAgeDays / DECAY_CONSTANT);
+  trending *= ageDecay;
+
+  const boostBonus = boostValue / 100;
+  trending += boostBonus;
+
+  return trending;
+}
+
+// Types
+type DexToken = {
+  pairAddress: string;
+  baseToken: { address: string; name: string; symbol: string };
+  quoteToken: { address: string; name: string; symbol: string };
+  priceUsd: string;
+  txns: {
+    h1: { buys: number; sells: number };
+    h6: { buys: number; sells: number };
+    h24: { buys: number; sells: number };
+  };
+  priceChange: { h1?: number; h6?: number; h24?: number };
+  volume: { h24: number };
+  liquidity: { usd: number };
+  marketCap?: number;
+  fdv?: number;
+  pairCreatedAt?: number;
+  trendingScore?: number;
+  info?: { imageUrl?: string };
+  boosted?: boolean;
+  boostValue?: number;
+};
+
+// Trophy & Marketing Icons
+function getTrophy(rank: number) {
+  if (rank === 1)
+    return <FaTrophy size={16} className="text-[#FFD700]" title="Gold Trophy (Rank 1)" />;
+  if (rank === 2)
+    return <FaTrophy size={16} className="text-[#C0C0C0]" title="Silver Trophy (Rank 2)" />;
+  if (rank === 3)
+    return <FaTrophy size={16} className="text-[#CD7F32]" title="Bronze Trophy (Rank 3)" />;
+  return null;
+}
+
+function MarketingIcon() {
   return (
-    <motion.span
-      animate={{
-        scale: [1, 1.3, 1],
-        rotate: [0, 3, -3, 0],
-        y: [0, -1, 0],
-      }}
-      transition={{ duration: 1, repeat: Infinity, ease: "easeInOut" }}
-      className="inline-flex items-center justify-center text-lg sm:text-xl ml-1"
-    >
-      🔥
-    </motion.span>
+    <span className="cursor-help" title="Advertisement">
+      <MdCampaign className="text-lime-400 w-4 h-4 md:w-5 md:h-5" />
+    </span>
   );
 }
+
+const boostMap: Record<number, number> = { 2: 175, 3: 20, 12: 10, 15: 10 };
+const marketingRanks = new Set([1, 2, 4, 5, 7, 8, 9, 11, 13, 14, 15, 16, 17]);
 
 export default function TokenScanner() {
   const router = useRouter();
@@ -100,191 +113,121 @@ export default function TokenScanner() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [watchlist, setWatchlist] = useState<string[]>([]);
   const pageSize = 25;
   const [toast, setToast] = useState("");
-
   const [sortFilter, setSortFilter] = useState("trending");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filters, setFilters] = useState({
+    minLiquidity: 0,
+    minVolume: 0,
+    minAge: 0,
+    maxAge: Infinity,
+  });
+  const [viewerCount, setViewerCount] = useState(0);
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
 
-  // Modal and submission states
+  // Submission State
   const [showModal, setShowModal] = useState(false);
   const [tokenSymbol, setTokenSymbol] = useState("");
   const [tokenAddress, setTokenAddress] = useState("");
   const [tokenLogo, setTokenLogo] = useState("");
   const [submissionSuccess, setSubmissionSuccess] = useState(false);
 
-  const handleCopy = (address: string) => {
-    navigator.clipboard.writeText(address).then(() => {
-      setToast("Copied to clipboard");
-      setTimeout(() => setToast(""), 2000);
-    });
-  };
-
-  const handleSubmitListing = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const response = await fetch("/api/submit-token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tokenSymbol, tokenAddress, tokenLogo }),
-      });
-      if (response.ok) {
-        setSubmissionSuccess(true);
-      } else {
-        setToast("Submission failed. Please try again.");
-        setTimeout(() => setToast(""), 2000);
-      }
-    } catch (err) {
-      console.error(err);
-      setToast("Submission error. Please try again.");
-      setTimeout(() => setToast(""), 2000);
+  // Load watchlist from localStorage
+  useEffect(() => {
+    const savedWatchlist = localStorage.getItem("watchlist");
+    if (savedWatchlist) {
+      setWatchlist(JSON.parse(savedWatchlist));
     }
-  };
+  }, []);
 
-  const closeModal = () => {
-    setShowModal(false);
-    setSubmissionSuccess(false);
-    setTokenSymbol("");
-    setTokenAddress("");
-    setTokenLogo("");
-  };
+  // Simulate live viewer count
+  useEffect(() => {
+    const currentCount = Number(localStorage.getItem("viewerCount") || 0);
+    const newCount = currentCount + 1;
+    localStorage.setItem("viewerCount", newCount.toString());
+    setViewerCount(newCount);
 
+    const handleUnload = () => {
+      const currentCount = Number(localStorage.getItem("viewerCount") || 0);
+      const newCount = Math.max(currentCount - 1, 0);
+      localStorage.setItem("viewerCount", newCount.toString());
+      setViewerCount(newCount);
+    };
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "viewerCount") {
+        setViewerCount(Number(e.newValue || 0));
+      }
+    };
+
+    window.addEventListener("beforeunload", handleUnload);
+    window.addEventListener("storage", handleStorageChange);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleUnload);
+      window.removeEventListener("storage", handleStorageChange);
+      handleUnload();
+    };
+  }, []);
+
+  // Fetch Tokens using tokenMapping
   useEffect(() => {
     async function fetchTokens() {
       setLoading(true);
       try {
-        // Provide your full comma-separated token address list.
-        const tokenAddresses =
-          "0x4B6104755AfB5Da4581B81C552DA3A25608c73B8," +
-          "0x18b6f6049A0af4Ed2BBe0090319174EeeF89f53a," +
-          "0x2f6c17fa9f9bC3600346ab4e48C0701e1d5962AE," +
-          "0x1185cB5122Edad199BdBC0cbd7a0457e448f23c7," +
-          "0xA6f774051dFb6b54869227fDA2DF9cb46f296c09," +
-          "0x9a26F5433671751C3276a065f57e5a02D2817973," +
-          "0x55cD6469F597452B5A7536e2CD98fDE4c1247ee4," +
-          "0x6921B130D297cc43754afba22e5EAc0FBf8Db75b," +
-          "0xBA5E66FB16944Da22A62Ea4FD70ad02008744460," +
-          "0x52b492a33E447Cdb854c7FC19F1e57E8BfA1777D," +
-          "0x20DD04c17AFD5c9a8b3f2cdacaa8Ee7907385BEF," +
-          "0xb33Ff54b9F7242EF1593d2C9Bcd8f9df46c77935," +
-          "0xF5Bc3439f53A45607cCaD667AbC7DAF5A583633F," +
-          "0x6dba065721435cfCa05CAa508f3316B637861373," +
-          "0x1F1c695f6b4A3F8B05f2492ceF9474Afb6d6Ad69," +
-          "0xBC45647eA894030a4E9801Ec03479739FA2485F0," +
-          "0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b," +
-          "0xb8D98a102b0079B69FFbc760C8d857A31653e56e," +
-          "0x940181a94A35A4569E4529A3CDfB74e38FD98631," +
-          "0xB1a03EdA10342529bBF8EB700a06C60441fEf25d," +
-          "0x2676E4e0E2eB58D9bdb5078358ff8A3a964CEdf5," +
-          "0x4F9Fd6Be4a90f2620860d680c0d4d5Fb53d1A825," +
-          "0xeB476e9aB6B1655860b3F40100678D0c1ceDB321," +
-          "0x0578d8A44db98B23BF096A382e016e29a5Ce0ffe," +
-          "0x79dacb99A8698052a9898E81Fdf883c29efb93cb," +
-          "0x1bc0c42215582d5A085795f4baDbaC3ff36d1Bcb," +
-          "0x768BE13e1680b5ebE0024C42c896E3dB59ec0149," +
-          "0x6797B6244fA75F2e78cDFfC3a4eb169332b730cc," +
-          "0xba0Dda8762C24dA9487f5FA026a9B64b695A07Ea," +
-          "0x20d704099B62aDa091028bcFc44445041eD16f09," +
-          "0xC438B0c0E80A8Fa1B36898d1b36A3fc2eC371C54," +
-          "0x57eDc3F1fd42c0d48230e964b1C5184B9c89B2ed," +
-          "0xD461A534AF11EF58E9F9add73129a1f45485A8dc," +
-          "0x9704d2adBc02C085ff526a37ac64872027AC8a50," +
-          "0x3C8cd0dB9a01EfA063a7760267b822A129bc7DCA," +
-          "0xF878e27aFB649744EEC3c5c0d03bc9335703CFE3," +
-          "0x290f057a2c59b95d8027aa4abf31782676502071," +
-          "0x2133031F5aCbC493572c02f271186F241cd8D6a5," +
-          "0x1B23819885FcE964A8B39D364b7462D6E597ae8e," +
-          "0xc0634090F2Fe6c6d75e61Be2b949464aBB498973," +
-          "0x02D4f76656C2B4f58430e91f8ac74896c9281Cb9," +
-          "0x22aF33FE49fD1Fa80c7149773dDe5890D3c76F3b," +
-          "0xc655C331d1Aa7f96c252F1f40CE13D80eAc53504," +
-          "0x08c81699F9a357a9F0d04A09b353576ca328d60D," +
-          "0xFbB75A59193A3525a8825BeBe7D4b56899E2f7e1," +
-          "0x18A8BD1fe17A1BB9FFB39eCD83E9489cfD17a022," +
-          "0xFad8CB754230dbFd249Db0E8ECCb5142DD675a0d," +
-          "0x78a087d713Be963Bf307b18F2Ff8122EF9A63ae9," +
-          "0x10f434B3d1cC13A4A79B062Dcc25706f64D10D47," +
-          "0xa1832f7F4e534aE557f9B5AB76dE54B1873e498B," +
-          "0x15aC90165f8B45A80534228BdCB124A011F62Fee," +
-          "0xE3086852A4B125803C815a158249ae468A3254Ca," +
-          "0xbDF317F9C153246C429F23f4093087164B145390," +
-          "0x3c4b6Cd7874eDc945797123fcE2d9a871818524b," +
-          "0x5B5dee44552546ECEA05EDeA01DCD7Be7aa6144A," +
-          "0x98f4779FcCb177A6D856dd1DfD78cd15B7cd2af5," +
-          "0xeec468333ccc16d4bf1cef497a56cf8c0aae4ca3," +
-          "0x5dc232b8301e34efe2f0ea2a5a81da5b388bb45e," +
-          "0x0fd7a301b51d0a83fcaf6718628174d527b373b6," +
-          "0x2b5050f01d64fbb3e4ac44dc07f0732bfb5ecadf," +
-          "0x81496f85abaf8bd2e13d90379fde86c533d8670d," +
-          "0xacfe6019ed1a7dc6f7b508c02d1b04ec88cc21bf," +
-          "0x3a1609cebe67c1d303954b5fb907bef36213034b," +
-          "0x767a739d1a152639e9ea1d8c1bd55fdc5b217d7f," +
-          "0x731814e491571a2e9ee3c5b1f7f3b962ee8f4870," +
-          "0x2efb2110f352fc98cd39dc041887c41766dbb301," +
-          "0x623cd3a3edf080057892aaf8d773bbb7a5c9b6e9," +
-          "0x17d70172c7c4205bd39ce80f7f0ee660b7dc5a23," +
-          "0x7588880d9c78e81fade7b7e8dc0781e95995a792," +
-          "0x9beec80e62aa257ced8b0edd8692f79ee8783777," +
-          "0x3ec2156d4c0a9cbdab4a016633b7bcf6a8d68ea2," +
-          "0x2e2cc4dfce60257f091980631e75f5c436b71c87," +
-          "0x937a1cfaf0a3d9f5dc4d0927f72ee5e3e5f82a00," +
-          "0x2bc08a6583f9bb980f26114c6b513252942e946f," +
-          "0x0acb8f6a6f1a8df2b4846db0352caaa01d854bf8," +
-          "0x41a188b74ffbcea2bd548644853d26ab0755cdb9," +
-          "0x06f71fb90f84b35302d132322a3c90e4477333b0," +
-          "0x98d59767cd1335071a4e9b9d3482685c915131e8," +
-          "0xbaa5cc21fd487b8fcc2f632f3f4e8d37262a0842," +
-          "0x3ec2156d4c0a9cbdab4a016633b7bcf6a8d68ea2," +
-          "0x24fcfc492c1393274b6bcd568ac9e225bec93584," +
-          "0x98d0baa52b2d063e780de12f615f963fe8537553," +
-          "0xb964c6bfa06894e91f008a4d2b3a2bad379462e4," +
-          "0x2f20cf3466f80a5f7f532fca553c8cbc9727fef6," +
-          "0x1c4cca7c5db003824208adda61bd749e55f463a3," +
-          "0x3080ce06eee2869e1b0287ad0de73f9421f977a3," +
-          "0xc0041ef357b183448b235a8ea73ce4e4ec8c265f," +
-          "0x0c41f1fc9022feb69af6dc666abfe73c9ffda7ce," +
-          "0x3636a7734b669ce352e97780df361ce1f809c58c," +
-          "0xf1fc9580784335b2613c1392a530c1aa2a69ba3d," +
-          "0x73326b4d0225c429bed050c11c4422d91470aaf4," +
-          "0x9aaae745cf2830fb8ddc6248b17436dc3a5e701c," +
-          "0x7431ada8a591c955a994a21710752ef9b882b8e3," +
-          "0xe0907762B1D9cdfBE8061aE0Cc4A0501fa077421," +
-         "0x01e75e59Eabf83C85360351a100d22E025A75BC2," +
-         "0x04175B1f982b8C8444f238Ac0AaE59f029e21099," +
-         "0x215d3783a05D9059220E76aA92c6Fd86ed67bFDB," +
-         "0xdc7F7Ad44f3Ed116577417017cf37a19DFf9FFe9," +
-         "0x521eBB84EA82eE65154B68EcFE3a7292fb3779D6," +
-         "0x2EFAc0a597A37050AafcF4beC627249D533DD9f8," +
-         "0x3155dadAF7324c79DF418a11EBDF78F926cDef91," +
-         "0x3a7FdAFFCEc305b7c5dbab618dcE8bE2c97B6Ec5," +
-         "0x2531ec1720E5d1bC82052585271D4BE3f43E392F," +
-         "0x3D9DC963706FC7F60C81362D9817B00871968Cb7," +
-         "0xE68C6c552A2363C0B546EDA749C6eadd909e2831," +
-         "0x625bb9bb04bdca51871ed6d07e2dd9034e914631,";
-        
-        const tokenList = tokenAddresses.split(",");
-        const tokenChunks = [];
+        const tokenAddresses = Object.values(tokenMapping).join(",");
+        const tokenList = Object.values(tokenMapping);
+        const tokenChunks: string[][] = [];
         for (let i = 0; i < tokenList.length; i += 30) {
           tokenChunks.push(tokenList.slice(i, i + 30));
         }
+
         let allResults: DexToken[] = [];
-        for (const chunk of tokenChunks) {
+        const fetchPromises = tokenChunks.map(async (chunk) => {
           const joinedChunk = chunk.join(",");
-          const res = await fetch(`/api/tokens?chainId=base&tokenAddresses=${joinedChunk}`);
-          if (!res.ok) continue;
-          const data = await res.json();
-          allResults = [...allResults, ...data];
-        }
+          try {
+            const res = await fetch(
+              `/api/tokens?chainId=base&tokenAddresses=${joinedChunk}`
+            );
+            if (!res.ok) {
+              console.warn(`Failed to fetch chunk: ${joinedChunk}`);
+              return [];
+            }
+            const data = await res.json();
+            return data;
+          } catch (err) {
+            console.error(`Error fetching chunk: ${joinedChunk}`, err);
+            return [];
+          }
+        });
+
+        const chunkResults = await Promise.all(fetchPromises);
+        allResults = chunkResults.flat();
 
         if (Array.isArray(allResults) && allResults.length > 0) {
-          const tokensWithTrending = allResults.map((token) => ({
-            ...token,
-            trendingScore: computeTrending(token),
+          let tokensWithScores = allResults.map((tk) => ({ ...tk, boostValue: 0 }));
+          tokensWithScores = tokensWithScores.map((tk) => ({
+            ...tk,
+            trendingScore: computeTrending(tk, 0),
           }));
-          const sorted = tokensWithTrending.sort(
-            (a, b) => (b.trendingScore ?? 0) - (a.trendingScore ?? 0)
-          );
-          setTokens(sorted);
+          tokensWithScores.sort((a, b) => (b.trendingScore ?? 0) - (a.trendingScore ?? 0));
+
+          const finalTokens = tokensWithScores.map((tk, idx) => {
+            const rank = idx + 1;
+            const assignedBoost = boostMap[rank] || 0;
+            const finalScore = computeTrending(tk, assignedBoost);
+            return {
+              ...tk,
+              boosted: assignedBoost > 0,
+              boostValue: assignedBoost,
+              trendingScore: finalScore,
+            };
+          });
+          finalTokens.sort((a, b) => (b.trendingScore ?? 0) - (a.trendingScore ?? 0));
+          setTokens(finalTokens);
         } else {
           setError("No tokens returned");
         }
@@ -295,28 +238,183 @@ export default function TokenScanner() {
         setLoading(false);
       }
     }
+
     fetchTokens();
-    const interval = setInterval(() => {
-      fetchTokens();
-    }, 10000);
+    const interval = setInterval(fetchTokens, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  const sortedTokens = useMemo(() => {
-    if (sortFilter === "trending") {
-      return [...tokens].sort(
-        (a, b) => (b.trendingScore ?? 0) - (a.trendingScore ?? 0)
+  // Sorting & Filtering
+  const filteredTokens = useMemo(() => {
+    return tokens.filter((token) => {
+      const matchesSearch =
+        token.baseToken.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        token.baseToken.symbol.toLowerCase().includes(searchQuery.toLowerCase());
+      const ageDays = token.pairCreatedAt
+        ? (Date.now() - token.pairCreatedAt) / (1000 * 60 * 60 * 24)
+        : 0;
+      return (
+        matchesSearch &&
+        token.liquidity.usd >= filters.minLiquidity &&
+        token.volume.h24 >= filters.minVolume &&
+        ageDays >= filters.minAge &&
+        (filters.maxAge === Infinity || ageDays <= filters.maxAge)
       );
-    }
-    let key: "h1" | "h6" | "h24" = "h1";
-    if (sortFilter === "6h") key = "h6";
-    else if (sortFilter === "24h") key = "h24";
-    return [...tokens].sort((a, b) => {
-      const aVal = a.priceChange?.[key] ?? 0;
-      const bVal = b.priceChange?.[key] ?? 0;
-      return sortDirection === "desc" ? bVal - aVal : aVal - bVal;
     });
-  }, [tokens, sortFilter, sortDirection]);
+  }, [tokens, searchQuery, filters]);
+
+  const sortedTokens = useMemo(() => {
+    const copy = [...filteredTokens];
+    if (sortFilter === "trending") {
+      return sortDirection === "asc" ? copy.reverse() : copy;
+    }
+    if (sortFilter === "volume") {
+      copy.sort((a, b) =>
+        sortDirection === "desc" ? b.volume.h24 - a.volume.h24 : a.volume.h24 - b.volume.h24
+      );
+    } else if (sortFilter === "liquidity") {
+      copy.sort((a, b) =>
+        sortDirection === "desc"
+          ? b.liquidity.usd - a.liquidity.usd
+          : a.liquidity.usd - b.liquidity.usd
+      );
+    } else if (sortFilter === "marketCap") {
+      copy.sort((a, b) =>
+        sortDirection === "desc"
+          ? (b.marketCap ?? 0) - (a.marketCap ?? 0)
+          : (a.marketCap ?? 0) - (b.marketCap ?? 0)
+      );
+    } else if (sortFilter === "age") {
+      copy.sort((a, b) =>
+        sortDirection === "desc"
+          ? (b.pairCreatedAt ?? 0) - (a.pairCreatedAt ?? 0)
+          : (a.pairCreatedAt ?? 0) - (b.pairCreatedAt ?? 0)
+      );
+    } else {
+      let key: "h1" | "h6" | "h24" = "h1";
+      if (sortFilter === "6h") key = "h6";
+      else if (sortFilter === "24h") key = "h24";
+      copy.sort((a, b) => {
+        const aVal = a.priceChange?.[key] ?? 0;
+        const bVal = b.priceChange?.[key] ?? 0;
+        return sortDirection === "desc" ? bVal - aVal : aVal - bVal;
+      });
+    }
+    return copy;
+  }, [filteredTokens, sortFilter, sortDirection]);
+
+  const searchSuggestions = useMemo(() => {
+    if (!searchQuery) return [];
+    return tokens
+      .filter(
+        (token) =>
+          token.baseToken.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          token.baseToken.symbol.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+      .slice(0, 5);
+  }, [tokens, searchQuery]);
+
+  // Handlers
+  const handleCopy = useCallback((address: string) => {
+    navigator.clipboard.writeText(address).then(() => {
+      setToast("Copied to clipboard");
+      setTimeout(() => setToast(""), 2000);
+    });
+  }, []);
+
+  const toggleWatchlist = useCallback((pairAddress: string) => {
+    setWatchlist((prev) => {
+      const newWatchlist = prev.includes(pairAddress)
+        ? prev.filter((id) => id !== pairAddress)
+        : [...prev, pairAddress];
+      localStorage.setItem("watchlist", JSON.stringify(newWatchlist));
+      return newWatchlist;
+    });
+  }, []);
+
+  const exportToCSV = useCallback(() => {
+    const headers = [
+      "Rank",
+      "Pool",
+      "Price",
+      "Age",
+      "TXN",
+      "1H",
+      "6H",
+      "24H",
+      "Volume",
+      "Liquidity",
+      "Market Cap",
+      "FDV",
+      "Address",
+    ];
+    const rows = sortedTokens.map((token, index) => [
+      index + 1,
+      `${token.baseToken.name} / ${token.quoteToken.symbol}`,
+      Number(token.priceUsd).toFixed(5),
+      getAge(token.pairCreatedAt),
+      getTxns24h(token),
+      token.priceChange?.h1?.toFixed(2) ?? "N/A",
+      token.priceChange?.h6?.toFixed(2) ?? "N/A",
+      token.priceChange?.h24?.toFixed(2) ?? "N/A",
+      token.volume.h24.toLocaleString(),
+      token.liquidity.usd.toLocaleString(),
+      token.marketCap?.toLocaleString() ?? "N/A",
+      token.fdv?.toLocaleString() ?? "N/A",
+      token.baseToken.address,
+    ]);
+
+    const csvContent = [headers.join(","), ...rows.map((row) => row.join(","))].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "token-scanner.csv";
+    a.click();
+    window.URL.revokeObjectURL(url);
+  }, [sortedTokens]);
+
+  async function handleSubmitListing(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      const response = await fetch("/api/submit-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tokenSymbol, tokenAddress, tokenLogo }),
+      });
+      if (response.ok) {
+        setSubmissionSuccess(true);
+      } else {
+        throw new Error("Submission failed");
+      }
+    } catch (err) {
+      console.error(err);
+      setToast("Submission error. Please try again.");
+      setTimeout(() => setToast(""), 2000);
+    }
+  }
+
+  function closeModal() {
+    setShowModal(false);
+    setSubmissionSuccess(false);
+    setTokenSymbol("");
+    setTokenAddress("");
+    setTokenLogo("");
+  }
+
+  function handleBoostInfo() {
+    alert(
+      "Boost Info:\n\nSome tokens pay for extra visibility. The higher the boost, the bigger the bump to the final trending score!"
+    );
+  }
+
+  const debouncedSetSearchQuery = useCallback(
+    debounce((value: string) => {
+      setSearchQuery(value);
+    }, 300),
+    []
+  );
 
   const indexOfLastToken = currentPage * pageSize;
   const indexOfFirstToken = indexOfLastToken - pageSize;
@@ -333,6 +431,7 @@ export default function TokenScanner() {
     setCurrentPage(1);
   }
 
+  // Render
   return (
     <div className="w-screen h-screen bg-black text-white font-mono m-0 p-0 overflow-hidden">
       {toast && (
@@ -340,16 +439,15 @@ export default function TokenScanner() {
           {toast}
         </div>
       )}
-      {/* Modal for Submit Listing */}
+
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="relative bg-white text-black p-6 rounded shadow-lg w-80">
-            {/* Close "X" button */}
             <button
               onClick={closeModal}
               className="absolute top-2 right-2 text-xl font-bold"
             >
-              &times;
+              ×
             </button>
             {!submissionSuccess ? (
               <>
@@ -394,8 +492,8 @@ export default function TokenScanner() {
                       Cancel
                     </button>
                     <motion.button
-                      type="submit"
                       whileHover={{ scale: 1.05 }}
+                      type="submit"
                       className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded"
                     >
                       Submit
@@ -405,9 +503,7 @@ export default function TokenScanner() {
               </>
             ) : (
               <div className="text-center">
-                <h2 className="text-xl font-bold mb-4">
-                  Token Listing Submitted!
-                </h2>
+                <h2 className="text-xl font-bold mb-4">Token Listing Submitted!</h2>
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   onClick={closeModal}
@@ -420,26 +516,75 @@ export default function TokenScanner() {
           </div>
         </div>
       )}
+
       <div className="flex flex-col w-full h-full">
-        {/* Screener Banner */}
         <div className="sticky top-0 z-50 bg-[#0060FF] shadow-md w-full">
-          <div className="w-full flex items-center justify-between px-2 py-2">
-            <div className="text-left">
-              <h1 className="text-sm sm:text-xl font-bold text-white whitespace-nowrap">
-                Homebase Screener
-              </h1>
+          <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between px-2 py-2 space-y-1 sm:space-y-0">
+            <div className="flex flex-row items-center space-x-2">
+              <motion.span className="text-green-400 animate-pulse" title="Live Pulse">
+                ●
+              </motion.span>
+              <div className="text-xs sm:text-base text-white font-mono">
+                Live {viewerCount} Traders Screening...
+              </div>
             </div>
-            <div className="flex space-x-2">
+            <div className="flex items-center space-x-2 sm:space-x-4">
+              <div className="relative w-full sm:w-auto">
+                <div className="flex items-center bg-gray-800 rounded px-2 py-2 w-full sm:w-48">
+                  <FaSearch className="text-gray-400 mr-2" />
+                  <input
+                    type="text"
+                    placeholder="Search tokens..."
+                    onChange={(e) => debouncedSetSearchQuery(e.target.value)}
+                    onFocus={() => setShowSearchDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowSearchDropdown(false), 200)}
+                    className="bg-transparent text-white focus:outline-none text-sm w-full p-1 touch-friendly"
+                  />
+                </div>
+                {showSearchDropdown && searchSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 mt-1 w-full bg-gray-900 rounded shadow-lg z-50 max-h-60 overflow-y-auto">
+                    {searchSuggestions.map((token) => (
+                      <Link
+                        key={token.pairAddress}
+                        href={`/token-scanner/${token.pairAddress}/chart`}
+                        onClick={() => {
+                          setSearchQuery("");
+                          setShowSearchDropdown(false);
+                        }}
+                      >
+                        <div className="flex items-center space-x-2 p-3 hover:bg-gray-800 cursor-pointer">
+                          <img
+                            src={token.info?.imageUrl || "/fallback.png"}
+                            alt={token.baseToken.symbol}
+                            className="w-6 h-6 rounded-full"
+                          />
+                          <span className="text-sm">
+                            {token.baseToken.name} / {token.quoteToken.symbol} (
+                            {token.baseToken.symbol})
+                          </span>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
               <motion.button
-                onClick={() => setShowModal(true)}
                 whileHover={{ scale: 1.05 }}
+                onClick={handleBoostInfo}
+                className="text-white text-xs sm:text-base font-mono whitespace-nowrap"
+              >
+                [Boost info]
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                onClick={() => setShowModal(true)}
                 className="text-white text-xs sm:text-base font-mono whitespace-nowrap"
               >
                 [Submit Listing]
               </motion.button>
               <motion.button
-                onClick={() => router.back()}
                 whileHover={{ scale: 1.05 }}
+                onClick={() => router.back()}
                 className="text-white text-xs sm:text-base font-mono whitespace-nowrap"
               >
                 [Return]
@@ -447,168 +592,498 @@ export default function TokenScanner() {
             </div>
           </div>
         </div>
-        {/* Table + Pagination */}
+
+        <div className="bg-gray-900 p-2 sm:p-4 flex flex-col sm:flex-row gap-2 sm:gap-4">
+          <div className="flex flex-col sm:flex-row gap-2 w-full">
+            <input
+              type="number"
+              placeholder="Min Liquidity ($)"
+              value={filters.minLiquidity || ""}
+              onChange={(e) => setFilters({ ...filters, minLiquidity: Number(e.target.value) })}
+              className="p-2 bg-gray-800 text-white border border-gray-700 rounded text-xs sm:text-sm w-full sm:w-auto"
+            />
+            <input
+              type="number"
+              placeholder="Min Volume ($)"
+              value={filters.minVolume || ""}
+              onChange={(e) => setFilters({ ...filters, minVolume: Number(e.target.value) })}
+              className="p-2 bg-gray-800 text-white border border-gray-700 rounded text-xs sm:text-sm w-full sm:w-auto"
+            />
+            <input
+              type="number"
+              placeholder="Min Age (days)"
+              value={filters.minAge || ""}
+              onChange={(e) => setFilters({ ...filters, minAge: Number(e.target.value) })}
+              className="p-2 bg-gray-800 text-white border border-gray-700 rounded text-xs sm:text-sm w-full sm:w-auto"
+            />
+            <input
+              type="number"
+              placeholder="Max Age (days)"
+              value={filters.maxAge === Infinity ? "" : filters.maxAge}
+              onChange={(e) =>
+                setFilters({
+                  ...filters,
+                  maxAge: e.target.value ? Number(e.target.value) : Infinity,
+                })
+              }
+              className="p-2 bg-gray-800 text-white border border-gray-700 rounded text-xs sm:text-sm w-full sm:w-auto"
+            />
+          </div>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            onClick={exportToCSV}
+            className="p-2 bg-[#0052FF] hover:bg-[#0042CC] text-white rounded flex items-center gap-2 text-xs sm:text-sm w-full sm:w-auto justify-center"
+          >
+            <FaDownload /> Export CSV
+          </motion.button>
+        </div>
+
         <div className="flex-1 flex flex-col overflow-x-auto overflow-y-auto">
-          <table className="table-auto w-full whitespace-nowrap text-sm">
-            <thead className="bg-gray-900 text-gray-300">
-              <tr>
-                <th
-                  className="p-1 sm:p-2 text-left cursor-pointer"
-                  onClick={() => handleFilterChange("trending")}
-                >
-                  #
-                  {sortFilter === "trending" &&
-                    (sortDirection === "desc" ? " ↓" : " ↑")}
-                </th>
-                <th className="p-1 sm:p-2 text-left">POOL</th>
-                <th className="p-1 sm:p-2 text-right">PRICE</th>
-                <th className="p-1 sm:p-2 text-right">AGE</th>
-                <th className="p-1 sm:p-2 text-right">TXN</th>
-                <th
-                  className="p-1 sm:p-2 text-right cursor-pointer"
-                  onClick={() => handleFilterChange("1h")}
-                >
-                  1H{" "}
-                  {sortFilter === "1h" &&
-                    (sortDirection === "desc" ? " ↓" : " ↑")}
-                </th>
-                <th
-                  className="p-1 sm:p-2 text-right cursor-pointer"
-                  onClick={() => handleFilterChange("6h")}
-                >
-                  6H{" "}
-                  {sortFilter === "6h" &&
-                    (sortDirection === "desc" ? " ↓" : " ↑")}
-                </th>
-                <th
-                  className="p-1 sm:p-2 text-right cursor-pointer"
-                  onClick={() => handleFilterChange("24h")}
-                >
-                  24H{" "}
-                  {sortFilter === "24h" &&
-                    (sortDirection === "desc" ? " ↓" : " ↑")}
-                </th>
-                <th className="p-1 sm:p-2 text-right">VOLUME</th>
-                <th className="p-1 sm:p-2 text-right">LIQUIDITY</th>
-                <th className="p-1 sm:p-2 text-right">MCAP</th>
-                <th className="p-1 sm:p-2 text-right">FDV</th>
-                <th className="p-1 sm:p-2 text-right">Address</th>
-              </tr>
-            </thead>
-            <tbody>
-              {currentTokens.map((token, index) => {
-                const rank = index + 1 + (currentPage - 1) * pageSize;
-                const isTop3 = sortFilter === "trending" && rank <= 3;
-                return (
-                  <tr
-                    key={token.pairAddress}
-                    className="border-b border-gray-700 hover:bg-gray-800 transition-colors"
+          {/* Desktop Table View */}
+          <div className="hidden md:block">
+            <table className="table-auto w-full whitespace-nowrap text-sm">
+              <thead className="bg-gray-900 text-gray-300 sticky top-0 z-10">
+                <tr>
+                  <th
+                    className="p-2 text-left cursor-pointer w-[150px]"
+                    onClick={() => handleFilterChange("trending")}
+                    title="Sort by trending score"
                   >
-                    <td className="p-1 sm:p-2 text-left">
-                      <div className="flex items-center justify-between">
-                        <span className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-700 font-bold">
-                          {rank}
-                        </span>
-                        {isTop3 && <FlameIcon />}
-                      </div>
-                    </td>
-                    <td className="p-1 sm:p-2">
-                      <Link href={`/tokens/${token.baseToken.address}`}>
-                        <div className="flex items-center space-x-2 cursor-pointer">
-                          <img
-                            src={token.info?.imageUrl || "/fallback.png"}
-                            alt={token.baseToken.symbol}
-                            className="w-5 h-5 rounded-full"
-                          />
-                          <div className="flex flex-col">
-                            <span className="font-semibold">
-                              {token.baseToken.name} /{" "}
-                              {token.quoteToken.symbol}
-                            </span>
-                            <span className="text-xs text-gray-400">
-                              {token.baseToken.symbol}
-                            </span>
+                    #{sortFilter === "trending" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                  </th>
+                  <th className="p-2 text-left" title="Token Pair">
+                    POOL
+                  </th>
+                  <th className="p-2 text-right" title="Price in USD">
+                    PRICE
+                  </th>
+                  <th
+                    className="p-2 text-right cursor-pointer"
+                    onClick={() => handleFilterChange("age")}
+                    title="Age of the token pair"
+                  >
+                    AGE{sortFilter === "age" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                  </th>
+                  <th className="p-2 text-right" title="Total transactions in 24 hours">
+                    TXN
+                  </th>
+                  <th
+                    className="p-2 text-right cursor-pointer"
+                    onClick={() => handleFilterChange("1h")}
+                    title="Price change in last 1 hour"
+                  >
+                    1H{sortFilter === "1h" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                  </th>
+                  <th
+                    className="p-2 text-right cursor-pointer"
+                    onClick={() => handleFilterChange("6h")}
+                    title="Price change in last 6 hours"
+                  >
+                    6H{sortFilter === "6h" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                  </th>
+                  <th
+                    className="p-2 text-right cursor-pointer"
+                    onClick={() => handleFilterChange("24h")}
+                    title="Price change in last 24 hours"
+                  >
+                    24H{sortFilter === "24h" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                  </th>
+                  <th
+                    className="p-2 text-right cursor-pointer"
+                    onClick={() => handleFilterChange("volume")}
+                    title="Trading volume in last 24 hours"
+                  >
+                    VOLUME{sortFilter === "volume" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                  </th>
+                  <th
+                    className="p-2 text-right cursor-pointer"
+                    onClick={() => handleFilterChange("liquidity")}
+                    title="Liquidity in USD"
+                  >
+                    LIQUIDITY{sortFilter === "liquidity" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                  </th>
+                  <th
+                    className="p-2 text-right cursor-pointer"
+                    onClick={() => handleFilterChange("marketCap")}
+                    title="Market Capitalization"
+                  >
+                    MCAP{sortFilter === "marketCap" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                  </th>
+                  <th className="p-2 text-right" title="Fully Diluted Valuation">
+                    FDV
+                  </th>
+                  <th className="p-2 text-right" title="Token Address">
+                    Address
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  Array.from({ length: pageSize }).map((_, idx) => (
+                    <tr key={idx} className="border-b border-gray-700">
+                      <td colSpan={13} className="p-2">
+                        <div className="animate-pulse flex space-x-4">
+                          <div className="rounded-full bg-gray-700 h-10 w-10"></div>
+                          <div className="flex-1 space-y-4 py-1">
+                            <div className="h-4 bg-gray-700 rounded w-3/4"></div>
+                            <div className="space-y-2">
+                              <div className="h-4 bg-gray-700 rounded"></div>
+                              <div className="h-4 bg-gray-700 rounded w-5/6"></div>
+                            </div>
                           </div>
                         </div>
-                      </Link>
-                    </td>
-                    <td className="p-1 sm:p-2 text-right">
-                      ${Number(token.priceUsd).toFixed(5)}
-                    </td>
-                    <td className="p-1 sm:p-2 text-right">
-                      {getAge(token.pairCreatedAt)}
-                    </td>
-                    <td className="p-1 sm:p-2 text-right">
-                      {getTxns24h(token)}
-                    </td>
-                    <td
-                      className={`p-1 sm:p-2 text-right ${getColorClass(
-                        token.priceChange?.h1 ?? 0
-                      )}`}
-                    >
-                      {token.priceChange?.h1 !== undefined
-                        ? token.priceChange.h1.toFixed(2)
-                        : "N/A"}
-                      %
-                    </td>
-                    <td
-                      className={`p-1 sm:p-2 text-right ${getColorClass(
-                        token.priceChange?.h6 ?? 0
-                      )}`}
-                    >
-                      {token.priceChange?.h6 !== undefined
-                        ? token.priceChange.h6.toFixed(2)
-                        : "N/A"}
-                      %
-                    </td>
-                    <td
-                      className={`p-1 sm:p-2 text-right ${getColorClass(
-                        token.priceChange?.h24 ?? 0
-                      )}`}
-                    >
-                      {token.priceChange?.h24 !== undefined
-                        ? token.priceChange.h24.toFixed(2)
-                        : "N/A"}
-                      %
-                    </td>
-                    <td className="p-1 sm:p-2 text-right">
-                      ${token.volume.h24.toLocaleString()}
-                    </td>
-                    <td className="p-1 sm:p-2 text-right">
-                      ${token.liquidity.usd.toLocaleString()}
-                    </td>
-                    <td className="p-1 sm:p-2 text-right">
-                      {token.marketCap
-                        ? `$${token.marketCap.toLocaleString()}`
-                        : "N/A"}
-                    </td>
-                    <td className="p-1 sm:p-2 text-right">
-                      {token.fdv
-                        ? `$${token.fdv.toLocaleString()}`
-                        : "N/A"}
-                    </td>
-                    <td className="p-1 sm:p-2 text-right">
-                      <button
-                        onClick={() => handleCopy(token.baseToken.address)}
-                        className="bg-gray-700 hover:bg-gray-600 text-xs sm:text-sm text-white py-1 px-2 rounded"
-                        title="Copy address"
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  currentTokens.map((token, index) => {
+                    const rank = index + 1 + (currentPage - 1) * pageSize;
+                    const isTop3 = rank <= 3;
+                    const trophyIcon = isTop3 && sortFilter === "trending" ? getTrophy(rank) : null;
+                    const showMarketing = marketingRanks.has(rank);
+                    const isBoosted = !!token.boosted;
+                    const boostValue = token.boostValue || 0;
+                    const isNew =
+                      token.pairCreatedAt &&
+                      Date.now() - token.pairCreatedAt < 24 * 60 * 60 * 1000;
+                    const lowLiquidity = token.liquidity.usd < MIN_LIQUIDITY;
+
+                    return (
+                      <tr
+                        key={token.pairAddress}
+                        className="border-b border-gray-700 hover:bg-gray-800 transition-colors bg-gray-900"
                       >
-                        📋
-                      </button>
-                    </td>
-                  </tr>
+                        <td className="p-2 text-left w-[150px]">
+                          <div className="flex items-center space-x-2">
+                            {isTop3 ? (
+                              <span className="cursor-help font-bold w-8 h-8 flex items-center justify-center bg-gray-700 rounded-full">
+                                {trophyIcon}
+                              </span>
+                            ) : (
+                              <span className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-700 font-bold">
+                                {rank}
+                              </span>
+                            )}
+                            {isBoosted && (
+                              <div
+                                className="flex items-center space-x-1 cursor-help"
+                                title={`Boosted (+${boostValue})`}
+                              >
+                                <span className="text-blue-400 font-bold text-sm">
+                                  +{boostValue}
+                                </span>
+                                <FaBolt size={16} className="text-blue-400" />
+                              </div>
+                            )}
+                            {showMarketing && <MarketingIcon />}
+                            {isNew && (
+                              <span
+                                className="text-xs bg-green-500 text-black px-1 rounded"
+                                title="Less than 24 hours old"
+                              >
+                                New
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-2">
+                          <Link href={`/token-scanner/${token.pairAddress}/chart`}>
+                            <div className="flex items-center space-x-2 cursor-pointer">
+                              <img
+                                src={token.info?.imageUrl || "/fallback.png"}
+                                alt={token.baseToken.symbol}
+                                className="w-5 h-5 rounded-full"
+                              />
+                              <div className="flex flex-col">
+                                <span className="font-semibold">
+                                  {token.baseToken.name} / {token.quoteToken.symbol}
+                                </span>
+                                <span className="text-xs text-gray-400">
+                                  {token.baseToken.symbol}
+                                </span>
+                              </div>
+                            </div>
+                          </Link>
+                        </td>
+                        <td className="p-2 text-right">${Number(token.priceUsd).toFixed(5)}</td>
+                        <td className="p-2 text-right">{getAge(token.pairCreatedAt)}</td>
+                        <td className="p-2 text-right">{getTxns24h(token)}</td>
+                        <td
+                          className={`p-2 text-right ${getColorClass(
+                            token.priceChange?.h1 ?? 0
+                          )}`}
+                        >
+                          {token.priceChange?.h1 !== undefined
+                            ? token.priceChange.h1.toFixed(2)
+                            : "N/A"}
+                          %
+                        </td>
+                        <td
+                          className={`p-2 text-right ${getColorClass(
+                            token.priceChange?.h6 ?? 0
+                          )}`}
+                        >
+                          {token.priceChange?.h6 !== undefined
+                            ? token.priceChange.h6.toFixed(2)
+                            : "N/A"}
+                          %
+                        </td>
+                        <td
+                          className={`p-2 text-right ${getColorClass(
+                            token.priceChange?.h24 ?? 0
+                          )}`}
+                        >
+                          {token.priceChange?.h24 !== undefined
+                            ? token.priceChange.h24.toFixed(2)
+                            : "N/A"}
+                          %
+                        </td>
+                        <td className="p-2 text-right">
+                          ${token.volume.h24.toLocaleString()}
+                        </td>
+                        <td className={`p-2 text-right ${lowLiquidity ? "text-red-500" : ""}`}>
+                          ${token.liquidity.usd.toLocaleString()}
+                          {lowLiquidity && (
+                            <span
+                              className="ml-1 text-red-500"
+                              title="Low liquidity warning"
+                            >
+                              ⚠️
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-2 text-right">
+                          {token.marketCap
+                            ? `$${token.marketCap.toLocaleString()}`
+                            : "N/A"}
+                        </td>
+                        <td className="p-2 text-right">
+                          {token.fdv ? `$${token.fdv.toLocaleString()}` : "N/A"}
+                        </td>
+                        <td className="p-2 text-right flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => toggleWatchlist(token.pairAddress)}
+                            className="text-yellow-400 hover:text-yellow-500"
+                            title={
+                              watchlist.includes(token.pairAddress)
+                                ? "Remove from Watchlist"
+                                : "Add to Watchlist"
+                            }
+                          >
+                            <FaStar
+                              size={16}
+                              className={
+                                watchlist.includes(token.pairAddress) ? "fill-current" : ""
+                              }
+                            />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopy(token.baseToken.address);
+                            }}
+                            className="bg-gray-700 hover:bg-gray-600 text-xs sm:text-sm text-white py-1 px-2 rounded"
+                            title="Copy address"
+                          >
+                            📋
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile Card View */}
+          <div className="block md:hidden p-2">
+            {loading ? (
+              Array.from({ length: pageSize }).map((_, idx) => (
+                <div
+                  key={idx}
+                  className="animate-pulse bg-gray-900 p-3 rounded-lg mb-2"
+                >
+                  <div className="flex space-x-3">
+                    <div className="rounded-full bg-gray-700 h-8 w-8"></div>
+                    <div className="flex-1 space-y-3 py-1">
+                      <div className="h-3 bg-gray-700 rounded w-3/4"></div>
+                      <div className="space-y-2">
+                        <div className="h-3 bg-gray-700 rounded"></div>
+                        <div className="h-3 bg-gray-700 rounded w-5/6"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              currentTokens.map((token, index) => {
+                const rank = index + 1 + (currentPage - 1) * pageSize;
+                const isTop3 = rank <= 3;
+                const trophyIcon = isTop3 && sortFilter === "trending" ? getTrophy(rank) : null;
+                const showMarketing = marketingRanks.has(rank);
+                const isBoosted = !!token.boosted;
+                const boostValue = token.boostValue || 0;
+                const isNew =
+                  token.pairCreatedAt &&
+                  Date.now() - token.pairCreatedAt < 24 * 60 * 60 * 1000;
+                const lowLiquidity = token.liquidity.usd < MIN_LIQUIDITY;
+
+                return (
+                  <div
+                    key={token.pairAddress}
+                    className="bg-gray-900 p-3 rounded-lg mb-2 border border-gray-700"
+                  >
+                    <div className="flex justify-between items-center mb-2">
+                      <div className="flex items-center space-x-2">
+                        {isTop3 ? (
+                          <span className="cursor-help font-bold w-6 h-6 flex items-center justify-center bg-gray-700 rounded-full text-xs">
+                            {trophyIcon}
+                          </span>
+                        ) : (
+                          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-700 font-bold text-xs">
+                            {rank}
+                          </span>
+                        )}
+                        {isBoosted && (
+                          <div
+                            className="flex items-center space-x-1 cursor-help"
+                            title={`Boosted (+${boostValue})`}
+                          >
+                            <span className="text-blue-400 font-bold text-xs">
+                              +{boostValue}
+                            </span>
+                            <FaBolt size={12} className="text-blue-400" />
+                          </div>
+                        )}
+                        {showMarketing && <MarketingIcon />}
+                        {isNew && (
+                          <span
+                            className="text-xs bg-green-500 text-black px-1 rounded"
+                            title="Less than 24 hours old"
+                          >
+                            New
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => toggleWatchlist(token.pairAddress)}
+                          className="text-yellow-400 hover:text-yellow-500"
+                          title={
+                            watchlist.includes(token.pairAddress)
+                              ? "Remove from Watchlist"
+                              : "Add to Watchlist"
+                          }
+                        >
+                          <FaStar
+                            size={14}
+                            className={
+                              watchlist.includes(token.pairAddress) ? "fill-current" : ""
+                            }
+                          />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCopy(token.baseToken.address);
+                          }}
+                          className="bg-gray-700 hover:bg-gray-600 text-xs text-white py-1 px-2 rounded"
+                          title="Copy address"
+                        >
+                          📋
+                        </button>
+                      </div>
+                    </div>
+                    <Link href={`/token-scanner/${token.pairAddress}/chart`}>
+                      <div className="flex items-center space-x-2 cursor-pointer mb-2">
+                        <img
+                          src={token.info?.imageUrl || "/fallback.png"}
+                          alt={token.baseToken.symbol}
+                          className="w-5 h-5 rounded-full"
+                        />
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-sm">
+                            {token.baseToken.name} / {token.quoteToken.symbol}
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            {token.baseToken.symbol}
+                          </span>
+                        </div>
+                      </div>
+                    </Link>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-gray-400">Price:</span>{" "}
+                        ${Number(token.priceUsd).toFixed(5)}
+                      </div>
+                      <div>
+                        <span className="text-gray-400">Age:</span>{" "}
+                        {getAge(token.pairCreatedAt)}
+                      </div>
+                      <div>
+                        <span className="text-gray-400">TXN:</span> {getTxns24h(token)}
+                      </div>
+                      <div>
+                        <span className="text-gray-400">1H:</span>{" "}
+                        <span className={getColorClass(token.priceChange?.h1 ?? 0)}>
+                          {token.priceChange?.h1?.toFixed(2) ?? "N/A"}%
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">6H:</span>{" "}
+                        <span className={getColorClass(token.priceChange?.h6 ?? 0)}>
+                          {token.priceChange?.h6?.toFixed(2) ?? "N/A"}%
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">24H:</span>{" "}
+                        <span className={getColorClass(token.priceChange?.h24 ?? 0)}>
+                          {token.priceChange?.h24?.toFixed(2) ?? "N/A"}%
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">Volume:</span>{" "}
+                        ${token.volume.h24.toLocaleString()}
+                      </div>
+                      <div>
+                        <span className="text-gray-400">Liquidity:</span>{" "}
+                        <span className={lowLiquidity ? "text-red-500" : ""}>
+                          ${token.liquidity.usd.toLocaleString()}
+                          {lowLiquidity && (
+                            <span
+                              className="ml-1 text-red-500"
+                              title="Low liquidity warning"
+                            >
+                              ⚠️
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">Market Cap:</span>{" "}
+                        {token.marketCap
+                          ? `$${token.marketCap.toLocaleString()}`
+                          : "N/A"}
+                      </div>
+                      <div>
+                        <span className="text-gray-400">FDV:</span>{" "}
+                        {token.fdv ? `$${token.fdv.toLocaleString()}` : "N/A"}
+                      </div>
+                    </div>
+                  </div>
                 );
-              })}
-            </tbody>
-          </table>
-          {/* Pagination */}
+              })
+            )}
+          </div>
+
           <div className="flex items-center justify-center py-2">
             <button
               onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
-              className="px-4 py-2 bg-[#0052FF] hover:bg-[#0042CC] text-white rounded-md transition transform hover:scale-105 disabled:opacity-50 text-xs sm:text-sm"
+              className="px-3 py-1 sm:px-4 sm:py-2 bg-[#0052FF] hover:bg-[#0042CC] text-white rounded-md transition transform hover:scale-105 disabled:opacity-50 text-xs sm:text-sm"
             >
-              &larr; Prev
+              ← Prev
             </button>
             <span className="mx-2 text-white text-xs sm:text-sm">
               Page {currentPage} of {totalPages}
@@ -616,19 +1091,31 @@ export default function TokenScanner() {
             <button
               onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
               disabled={currentPage === totalPages}
-              className="px-4 py-2 bg-[#0052FF] hover:bg-[#0042CC] text-white rounded-md transition transform hover:scale-105 disabled:opacity-50 text-xs sm:text-sm"
+              className="px-3 py-1 sm:px-4 sm:py-2 bg-[#0052FF] hover:bg-[#0042CC] text-white rounded-md transition transform hover:scale-105 disabled:opacity-50 text-xs sm:text-sm"
             >
-              Next &rarr;
+              Next →
             </button>
           </div>
         </div>
       </div>
+
+      {/* Inline CSS for Mobile Optimization */}
+      <style jsx>{`
+        .touch-friendly {
+          min-height: 44px; /* Minimum touch target size for mobile */
+          padding: 8px;
+        }
+        @media (max-width: 768px) {
+          .search-bar {
+            width: 100%;
+            margin: 10px 0;
+          }
+          .search-button {
+            padding: 12px 20px;
+            min-width: 100px;
+          }
+        }
+      `}</style>
     </div>
   );
 }
-
-
-
-
-
-       
