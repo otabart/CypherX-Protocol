@@ -1,29 +1,34 @@
-// lib/firebase.ts
-
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
+import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
+import { getAuth, connectAuthEmulator } from "firebase/auth";
 
-// ⚠️ Use the same NEXT_PUBLIC_* env vars that worked for you before.
-// Make sure you have them in .env.local exactly as they were.
-// Then RESTART your dev server after any change to .env.local.
+// Firebase configuration
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,            // same as before
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,    // same
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,      // same
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET, // same
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID, // same
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,              // same
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: "homebase-dapp.firebaseapp.com",
+  projectId: "homebase-dapp",
+  storageBucket: "homebase-dapp.appspot.com",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Only initialize once, in case of HMR in dev
+// Initialize Firebase app only if it hasn't been initialized
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-// Keep the lines for Auth (like you had) plus new lines for db + storage
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const storage = getStorage(app);
+// Initialize Firestore
+const db = getFirestore(app);
 
+// Initialize Authentication
+const auth = getAuth(app);
+
+// Connect to emulators if running locally
+if (process.env.NODE_ENV === "development") {
+  // Firestore emulator
+  connectFirestoreEmulator(db, "localhost", 8080);
+  // Auth emulator
+  connectAuthEmulator(auth, "http://localhost:9099", { disableWarnings: true });
+}
+
+export { db, auth };
 
 

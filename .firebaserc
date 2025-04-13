@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "homebase-e8356"
-  }
+    "default": "homebase-dapp",
+    "Homebase": "homebase-dapp"
+  },
+  "targets": {},
+  "etags": {}
 }

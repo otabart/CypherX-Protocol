@@ -23,10 +23,10 @@
     "noFallthroughCasesInSwitch": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "types": ["node", "react", "react-dom"],
+    "types": ["node", "react", "react-dom", "framer-motion"], // Added framer-motion types
     "baseUrl": ".",
     "verbatimModuleSyntax": true,
-    "allowImportingTsExtensions": true // Added to allow .ts/.tsx in imports
+    "allowImportingTsExtensions": true // Allows .ts/.tsx in imports
   },
   "include": [
     "next-env.d.ts",

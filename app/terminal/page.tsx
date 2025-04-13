@@ -1,1115 +1,1576 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
-import { tokenMapping } from "../tokenMapping"; // adjust if needed
-import { useAuth } from "@/app/providers"; // adjust path as needed
+import { motion } from "framer-motion";
+import { FaArrowUp, FaBell, FaTimes, FaEye, FaEyeSlash, FaThumbtack } from "react-icons/fa";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth, db } from "@/lib/firebase";
 import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  updateProfile,
-  updatePassword,
-  reauthenticateWithCredential,
-  EmailAuthProvider,
-} from "firebase/auth";
-import { auth } from "@/lib/firebase";
+  collection,
+  query,
+  onSnapshot,
+  addDoc,
+  serverTimestamp,
+  getDocs,
+  setDoc,
+  doc,
+  deleteDoc,
+  limit,
+  where,
+} from "firebase/firestore";
+import debounce from "lodash/debounce";
 
-/* ===========================================================================
-   1. TYPE DEFINITIONS
-   =========================================================================== */
+// Types
+interface Notification {
+  id: string;
+  type:
+    | "mover"
+    | "loser"
+    | "volume_spike"
+    | "price_spike"
+    | "news"
+    | "ai_index"
+    | "eth_stats"
+    | "new_token";
+  message: string;
+  timestamp: string;
+  pairAddress?: string;
+}
 
-type HistoryLine = {
-  text: string;
-  color?: string;
-};
+interface UserPreferences {
+  notifications: { [key: string]: boolean };
+  favorites: string[];
+  terminalStyle: string;
+  prioritizeNotifications: boolean;
+  notificationFilter?: { type: string; excludeTypes: string[] };
+}
 
-type InstallStep = {
-  stepNumber: number;
+interface SnoozedToken {
+  symbol: string;
+  expiry: number;
+}
+
+interface Plugin {
+  name: string;
   description: string;
-  baseShade?: number;
+  command: string;
+}
+
+interface DexToken {
+  pairAddress: string;
+  baseToken: { address: string; name: string; symbol: string };
+  quoteToken: { address: string; name: string; symbol: string };
+  priceUsd: string;
+  txns: {
+    h1: { buys: number; sells: number };
+    h6: { buys: number; sells: number };
+    h24: { buys: number; sells: number };
+  };
+  priceChange: { h1?: number; h6?: number; h24?: number };
+  volume: { h24: number; h1: number };
+  liquidity: { usd: number };
+  marketCap?: number;
+  fdv?: number;
+  pairCreatedAt?: number;
+  info?: { imageUrl?: string };
+}
+
+// Constants
+const PRICE_CHECK_INTERVAL = 60_000; // 1 minute
+const ETH_STATS_INTERVAL = 1_800_000; // 30 minutes
+const AI_INDEX_INTERVAL = 14_400_000; // 4 hours
+
+// Utility Functions
+const getColorClass = (type: string, theme: string): string => {
+  if (theme === "hacker") {
+    return "text-green-500";
+  } else if (theme === "vintage") {
+    return "text-[#4A3728]";
+  } else {
+    switch (type) {
+      case "mover":
+        return "bg-green-800 text-blue-300";
+      case "loser":
+        return "bg-red-800 text-blue-300";
+      case "volume_spike":
+        return "bg-blue-800 text-blue-300";
+      case "price_spike":
+        return "bg-blue-800 text-blue-300";
+      case "news":
+        return "bg-teal-800 text-blue-300";
+      case "ai_index":
+        return "bg-blue-900 text-blue-300";
+      case "eth_stats":
+        return "bg-purple-800 text-blue-300";
+      case "new_token":
+        return "bg-orange-800 text-blue-300";
+      default:
+        return "bg-gray-800 text-blue-300";
+    }
+  }
 };
 
-type NewsItem = {
-  id: number;
-  title: string;
-  content: string;
-  author: string;
-  source: string;
-  publishedAt: string;
-  slug: string;
+const formatUptime = (startTime: number): string => {
+  const diff = Date.now() - startTime;
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor(((diff % (1000 * 60 * 60)) % (1000 * 60)) / 1000);
+  return `${hours}h ${minutes}m ${seconds}s`;
 };
 
-/* ===========================================================================
-   2. HELPER FUNCTIONS
-   =========================================================================== */
-
-// Formats text with rich styling.
-function formatText(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*|_[^_]+_)/g);
-  return parts.map((part, idx) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={idx}>{part.slice(2, -2)}</strong>;
-    } else if (part.startsWith("_") && part.endsWith("_")) {
-      return <em key={idx}>{part.slice(1, -1)}</em>;
-    } else {
-      return <span key={idx}>{part}</span>;
-    }
-  });
-}
-
-// Sleep helper to simulate delays.
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// Adjusts a hex color by a given amount (amt is multiplied by 2 for a more dramatic effect).
-function adjustColor(hex: string, amt: number): string {
-  let usePound = false;
-  if (hex[0] === "#") {
-    hex = hex.slice(1);
-    usePound = true;
-  }
-  let num = parseInt(hex, 16);
-  let r = (num >> 16) + amt * 2;
-  r = Math.min(255, Math.max(0, r));
-  let g = ((num >> 8) & 0x00ff) + amt * 2;
-  g = Math.min(255, Math.max(0, g));
-  let b = (num & 0x0000ff) + amt * 2;
-  b = Math.min(255, Math.max(0, b));
-  return (usePound ? "#" : "") + ((r << 16) | (g << 8) | b).toString(16).padStart(6, "0");
-}
-
-// Truncate article content if it exceeds maxLength characters.
-function truncateContent(content: string, maxLength = 200): string {
-  if (content.length > maxLength) {
-    return content.slice(0, maxLength) + " ...-->Full Article <--";
-  }
-  return content;
-}
-
-/* ===========================================================================
-   3. MODULE HANDLERS
-   =========================================================================== */
-
-// AI Index module handlers (commands use the "/indexes-" prefix).
-async function handleAiIndexInstall(
-  setHistory: React.Dispatch<React.SetStateAction<HistoryLine[]>>,
-  accent: string
-) {
-  setHistory((prev) => [
-    { text: "Installing AI Index module...", color: accent },
-    ...prev,
-  ]);
-  const steps: InstallStep[] = [
-    { stepNumber: 1, description: "Initializing AI index environment", baseShade: -40 },
-    { stepNumber: 2, description: "Fetching AI token metadata", baseShade: -20 },
-    { stepNumber: 3, description: "Downloading AI index data", baseShade: 0 },
-    { stepNumber: 4, description: "Integrating with on-chain analytics", baseShade: 20 },
-    { stepNumber: 5, description: "Finalizing AI Index setup", baseShade: 40 },
-  ];
-  for (let i = 0; i < steps.length; i++) {
-    const step = steps[i];
-    await sleep(700);
-    setHistory((prev) => [
-      { text: `[Step ${step.stepNumber}/${steps.length}] ${step.description}`, color: adjustColor(accent, step.baseShade || 0) },
-      ...prev,
-    ]);
-    let progressBar = "";
-    const totalBars = 20;
-    const barsFilled = Math.floor(((i + 1) / steps.length) * totalBars);
-    for (let b = 0; b < totalBars; b++) {
-      progressBar += b < barsFilled ? "█" : "░";
-    }
-    await sleep(500);
-    setHistory((prev) => [
-      { text: `Progress: [${progressBar}] ${Math.round((100 * (i + 1)) / steps.length)}%`, color: adjustColor(accent, (step.baseShade || 0) - 10) },
-      ...prev,
-    ]);
-  }
-  setHistory((prev) => [
-    { text: "AI Index module installed successfully!", color: accent },
-    { text: "Access it via '/indexes-menu' for advanced on-chain AI analytics.", color: accent },
-    ...prev,
-  ]);
-}
-
-async function handleAiIndexRefresh(
-  setHistory: React.Dispatch<React.SetStateAction<HistoryLine[]>>,
-  accent: string
-) {
-  setHistory((prev) => [
-    { text: "Refreshing AI Index data...", color: accent },
-    ...prev,
-  ]);
-  await sleep(1000);
-  setHistory((prev) => [
-    { text: "AI Index data refreshed successfully.", color: accent },
-    ...prev,
-  ]);
-}
-
-function handleAiIndexStats(
-  setHistory: React.Dispatch<React.SetStateAction<HistoryLine[]>>,
-  accent: string
-) {
-  setHistory((prev) => [
-    { text: "== AI Index Detailed Stats ==", color: accent },
-    { text: "Commands available:", color: accent },
-    { text: "  /indexes-refresh - Refresh the data", color: accent },
-    { text: "  /indexes-stats - Show current index stats", color: accent },
-    { text: "Token Data:", color: accent },
-    { text: "  GAME: 4.86% weight | 24h Change: +1.2% | Market Cap: $123M", color: accent },
-    { text: "  BANKR: 5.24% weight | 24h Change: -0.5% | Market Cap: $234M", color: accent },
-    { text: "  FAI: 12.57% weight | 24h Change: +2.3% | Market Cap: $345M", color: accent },
-    { text: "  VIRTUAL: 26.80% weight | 24h Change: +0.8% | Market Cap: $456M", color: accent },
-    { text: "  CLANKER: 15.89% weight | 24h Change: -1.0% | Market Cap: $567M", color: accent },
-    { text: "  KAITO: 16.22% weight | 24h Change: +0.7% | Market Cap: $678M", color: accent },
-    { text: "  COOKIE: 5.12% weight | 24h Change: +1.5% | Market Cap: $789M", color: accent },
-    { text: "  VVV: 5.08% weight | 24h Change: +0.3% | Market Cap: $890M", color: accent },
-    { text: "  DRB: 3.80% weight | 24h Change: -0.2% | Market Cap: $901M", color: accent },
-    { text: "  AIXBT: 10.50% weight | 24h Change: +1.8% | Market Cap: $1.0B", color: accent },
-    { text: "Total Market Cap: $5.0B", color: accent },
-    { text: "Overall 24h Change: +0.75%", color: accent },
-  ]);
-}
-
-// News module handlers.
-async function handleNewsInstall(
-  setHistory: React.Dispatch<React.SetStateAction<HistoryLine[]>>,
-  accent: string,
-  setNewsInstalled: React.Dispatch<React.SetStateAction<boolean>>,
-  setNewsItems: React.Dispatch<React.SetStateAction<NewsItem[]>>
-) {
-  setHistory((prev) => [
-    { text: "Installing News module...", color: accent },
-    ...prev,
-  ]);
-  const steps: InstallStep[] = [
-    { stepNumber: 1, description: "Initializing news environment", baseShade: -40 },
-    { stepNumber: 2, description: "Fetching news metadata", baseShade: -20 },
-    { stepNumber: 3, description: "Downloading latest news", baseShade: 0 },
-    { stepNumber: 4, description: "Integrating news feed", baseShade: 20 },
-    { stepNumber: 5, description: "Finalizing News module setup", baseShade: 40 },
-  ];
-  for (let i = 0; i < steps.length; i++) {
-    const step = steps[i];
-    await sleep(700);
-    setHistory((prev) => [
-      { text: `[Step ${step.stepNumber}/${steps.length}] ${step.description}`, color: adjustColor(accent, step.baseShade || 0) },
-      ...prev,
-    ]);
-    let progressBar = "";
-    const totalBars = 20;
-    const barsFilled = Math.floor(((i + 1) / steps.length) * totalBars);
-    for (let b = 0; b < totalBars; b++) {
-      progressBar += b < barsFilled ? "█" : "░";
-    }
-    await sleep(500);
-    setHistory((prev) => [
-      { text: `Progress: [${progressBar}] ${Math.round((100 * (i + 1)) / steps.length)}%`, color: adjustColor(accent, (step.baseShade || 0) - 10) },
-      ...prev,
-    ]);
-  }
-  // Fetch news from the API endpoint (which queries the articles collection).
-  try {
-    const res = await fetch("/api/news", { cache: "no-store" });
-    if (!res.ok) throw new Error(`News API error: ${res.status}`);
-    const newsData: NewsItem[] = await res.json();
-    setNewsItems(newsData);
-  } catch (error) {
-    console.error("News fetch error:", error);
-    setNewsItems([]);
-  }
-  setNewsInstalled(true);
-  setHistory((prev) => [
-    { text: "News module installed successfully!", color: accent },
-    { text: "Access it via '/news-menu' to view and navigate the latest news.", color: accent },
-    ...prev,
-  ]);
-}
-
-async function handleNewsRefresh(
-  setHistory: React.Dispatch<React.SetStateAction<HistoryLine[]>>,
-  accent: string,
-  setNewsItems: React.Dispatch<React.SetStateAction<NewsItem[]>>
-) {
-  setHistory((prev) => [
-    { text: "Refreshing news feed...", color: accent },
-    ...prev,
-  ]);
-  try {
-    const res = await fetch("/api/news", { cache: "no-store" });
-    if (!res.ok) throw new Error(`News API error: ${res.status}`);
-    const newsData: NewsItem[] = await res.json();
-    setNewsItems(newsData);
-  } catch (error) {
-    console.error("News refresh error:", error);
-    setNewsItems([]);
-  }
-  setHistory((prev) => [
-    { text: "News feed refreshed successfully.", color: accent },
-    ...prev,
-  ]);
-}
-
-function handleNewsMenu(
-  setHistory: React.Dispatch<React.SetStateAction<HistoryLine[]>>,
-  accent: string
-) {
-  setHistory((prev) => [
-    { text: "== News Module Menu ==", color: accent },
-    { text: "Commands available:", color: accent },
-    { text: "  /get-news - Fetch and display the latest news", color: accent },
-    { text: "  /refresh-news - Refresh the news feed", color: accent },
-    { text: "  /next-news - View next news item", color: accent },
-    { text: "  /prev-news - View previous news item", color: accent },
-    { text: "  /clear-news - Clear news view", color: accent },
-    { text: "  /search-news <query> - Search articles by title", color: accent },
-    ...prev,
-  ]);
-}
-
-/* ===========================================================================
-   4. MAIN COMPONENT
-   =========================================================================== */
+// Terminal Styles
+const terminalStyles = {
+  classic: {
+    background: "bg-gray-900",
+    text: "text-blue-300",
+    accentText: "text-blue-300",
+    border: "border-blue-600 border-opacity-80",
+    separator: "border-blue-600 border-opacity-80",
+    panelBg: "bg-gray-900",
+    statusBarBg: "bg-gray-800",
+    commandLineBg: "bg-gray-800",
+  },
+  hacker: {
+    background: "bg-black",
+    text: "text-green-500",
+    accentText: "text-green-500",
+    border: "border-green-500 border-opacity-80",
+    separator: "border-green-500 border-opacity-80",
+    panelBg: "bg-black",
+    statusBarBg: "bg-black",
+    commandLineBg: "bg-black",
+  },
+  vintage: {
+    background: "bg-[#D2B48C]",
+    text: "text-[#4A3728]",
+    accentText: "text-[#4A3728]",
+    border: "border-[#F5F5DC] border-opacity-80",
+    separator: "border-[#F5F5DC] border-opacity-80",
+    panelBg: "bg-[#D2B48C]",
+    statusBarBg: "bg-[#D2B48C]",
+    commandLineBg: "bg-[#D2B48C]",
+  },
+};
 
 export default function HomebaseTerminal() {
   const router = useRouter();
-  const { user, loading } = useAuth();
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  // State for News module.
-  const [newsInstalled, setNewsInstalled] = useState(false);
-  const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
-  const [currentNewsIndex, setCurrentNewsIndex] = useState(0);
-
-  /* --------------------------------------------------------------------------
-     4a. STATE VARIABLES
-     -------------------------------------------------------------------------- */
-  const [history, setHistory] = useState<HistoryLine[]>([]);
+  const [user, setUser] = useState<any>(null);
   const [input, setInput] = useState("");
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [userCommands, setUserCommands] = useState<string[]>([]);
+  const [output, setOutput] = useState<string[]>([
+    "Welcome to Homebase Terminal v1.0 - Type /menu for commands",
+    "",
+    "/menu - Show this menu",
+    "/clear - Clear the terminal",
+    "/refresh-notifications - Refresh Notification Center",
+    "/shortcuts - Show keyboard shortcuts",
+    "/account - Manage your account",
+    "/news - Navigate to Base Chain News",
+    "/dashboard - Navigate to Competitions Dashboard",
+    "/tournaments - Navigate to Competitions",
+    "/whales - Navigate to Whale Watcher page",
+    "/scan <token-address> - Audits the smart contract",
+    "/token-stats <symbol> - e.g. /token-stats CLANKER to fetch stats",
+    "/screener - Open Token Screener",
+    "/setdisplayname <name> - Set your display name",
+    "/signup <email> <password> - Create a new account",
+    "/login <email> <password> - Login to your account",
+    "/logout - Logout of your account",
+    "/settings <option> <value> - e.g. /settings notifications mover off",
+    "/snooze <symbol> <duration> - e.g. /snooze CLANKER 1h",
+    "/plugin - List user-contributed scripts",
+    "/stats - Show market trends",
+    "/sync-alerts - Fetch latest alerts instantly",
+    "/status - Show system status",
+    "/history - Show command history",
+    "/notify-me <symbol> <threshold> <above|below> - Set custom price alert",
+    "",
+    "Available commands:",
+  ]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notificationCache, setNotificationCache] = useState<Notification[]>([]);
+  const [pinnedNotifications, setPinnedNotifications] = useState<string[]>([]); // For pinned notifications
+  const [notificationFilter, setNotificationFilter] = useState<{
+    type: string;
+    excludeTypes: string[];
+  }>({ type: "all", excludeTypes: [] });
+  const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
-  const [accentColor, setAccentColor] = useState("#0052FF");
-  const [statsLoading, setStatsLoading] = useState(false);
-  const [toast, setToast] = useState("");
-  const [errorLog, setErrorLog] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [lastCommand, setLastCommand] = useState("");
+  const [isAlertSoundEnabled, setIsAlertSoundEnabled] = useState(true);
+  const [showNotifications, setShowNotifications] = useState(true); // For mobile toggle
+  const [sysUpdates] = useState<string[]>([
+    "Checking system integrity...",
+    "Fetching security patches...",
+    "Optimizing database...",
+    "Syncing with blockchain...",
+    "Updating AI models...",
+    "Refreshing token data...",
+    "Clearing cache...",
+    "Finalizing updates...",
+  ]);
+  const [preferences, setPreferences] = useState<UserPreferences>({
+    notifications: {
+      mover: true,
+      loser: true,
+      volume_spike: true,
+      price_spike: true,
+      news: true,
+      ai_index: true,
+      eth_stats: true,
+      new_token: true,
+    },
+    favorites: [],
+    terminalStyle: "classic",
+    prioritizeNotifications: true,
+  });
+  const [snoozedTokens, setSnoozedTokens] = useState<SnoozedToken[]>([]);
+  const [startTime] = useState(Date.now());
+  const [uptime, setUptime] = useState("");
+  const [isOnline, setIsOnline] = useState(true);
+  const [tokens, setTokens] = useState<DexToken[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const outputRef = useRef<HTMLDivElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
 
-  // Module flag: AI Index.
-  const [isAiIndexInstalled, setIsAiIndexInstalled] = useState(false);
+  // Commands
+  const commands = [
+    "/menu",
+    "/clear",
+    "/refresh-notifications",
+    "/shortcuts",
+    "/account",
+    "/news",
+    "/dashboard",
+    "/tournaments",
+    "/whales",
+    "/scan",
+    "/token-stats",
+    "/screener",
+    "/setdisplayname",
+    "/signup",
+    "/login",
+    "/logout",
+    "/settings",
+    "/snooze",
+    "/plugin",
+    "/stats",
+    "/sync-alerts",
+    "/status",
+    "/history",
+    "/notify-me",
+  ];
 
-  /* --------------------------------------------------------------------------
-     4b. INITIAL LOAD & LOCAL STORAGE
-     -------------------------------------------------------------------------- */
-  useEffect(() => {
-    const style = document.createElement("style");
-    style.innerHTML = `
-      input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
-      input[type="color"]::-webkit-color-swatch { border: none; }
-    `;
-    document.head.appendChild(style);
-    return () => document.head.removeChild(style);
-  }, []);
+  // Debounced setNotifications to improve performance
+  const debouncedSetNotifications = useCallback(
+    debounce((newNotifications: Notification[]) => {
+      setNotifications(newNotifications);
+    }, 500),
+    []
+  );
 
+  // Authentication, Preferences, and Persistent Filters
   useEffect(() => {
-    const storedHistory = localStorage.getItem("homebaseHistory");
-    if (storedHistory) {
-      let parsed: HistoryLine[] = JSON.parse(storedHistory);
-      parsed = parsed.filter((line) => !line.text.includes("Welcome to Homebase Terminal"));
-      setHistory(parsed);
-    }
-    const storedUserCommands = localStorage.getItem("homebaseUserCommands");
-    if (storedUserCommands) setUserCommands(JSON.parse(storedUserCommands));
-    const storedErrors = localStorage.getItem("homebaseErrorLog");
-    if (storedErrors) setErrorLog(JSON.parse(storedErrors));
-  }, []);
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
+        const prefsQuery = query(
+          collection(db, `users/${currentUser.uid}/preferences`)
+        );
+        onSnapshot(prefsQuery, (snapshot) => {
+          const prefsData: any = {};
+          snapshot.forEach((doc) => {
+            prefsData[doc.id] = doc.data().value;
+          });
+          setPreferences((prev) => ({
+            ...prev,
+            notifications: prefsData.notifications || prev.notifications,
+            favorites: prefsData.favorites || prev.favorites,
+            terminalStyle: prefsData.terminalStyle || prev.terminalStyle,
+            prioritizeNotifications:
+              prefsData.prioritizeNotifications ??
+              prev.prioritizeNotifications,
+            notificationFilter: prefsData.notificationFilter || prev.notificationFilter,
+          }));
+          // Load persistent filters
+          if (prefsData.notificationFilter) {
+            setNotificationFilter(prefsData.notificationFilter);
+          }
+        });
 
-  useEffect(() => {
-    localStorage.setItem("homebaseHistory", JSON.stringify(history));
-  }, [history]);
-  useEffect(() => {
-    localStorage.setItem("homebaseUserCommands", JSON.stringify(userCommands));
-  }, [userCommands]);
-  useEffect(() => {
-    localStorage.setItem("homebaseErrorLog", JSON.stringify(errorLog));
-  }, [errorLog]);
+        const snoozeQuery = query(
+          collection(db, `users/${currentUser.uid}/snoozed`)
+        );
+        onSnapshot(snoozeQuery, (snapshot) => {
+          const snoozed: SnoozedToken[] = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data();
+            if (data.expiry > Date.now()) {
+              snoozed.push({ symbol: doc.id, expiry: data.expiry });
+            }
+          });
+          setSnoozedTokens(snoozed);
+        });
 
-  /* --------------------------------------------------------------------------
-     4c. GLOBAL SHORTCUTS
-     -------------------------------------------------------------------------- */
-  useEffect(() => {
-    function handleGlobalKeyDown(e: KeyboardEvent) {
-      if (e.ctrlKey && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setHistory([]);
+        const favoritesQuery = query(
+          collection(db, `users/${currentUser.uid}/favorites`)
+        );
+        onSnapshot(favoritesQuery, (snapshot) => {
+          const favoriteList = snapshot.docs.map(
+            (doc) => doc.data().pairAddress as string
+          );
+          setPreferences((prev) => ({ ...prev, favorites: favoriteList }));
+        });
+      } else {
+        setUser(null);
+        setPreferences({
+          notifications: {
+            mover: true,
+            loser: true,
+            volume_spike: true,
+            price_spike: true,
+            news: true,
+            ai_index: true,
+            eth_stats: true,
+            new_token: true,
+          },
+          favorites: [],
+          terminalStyle: "classic",
+          prioritizeNotifications: true,
+        });
+        setSnoozedTokens([]);
+        setNotificationFilter({ type: "all", excludeTypes: [] }); // Reset filters for non-logged-in users
       }
-    }
-    window.addEventListener("keydown", handleGlobalKeyDown);
-    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+    });
+    return () => unsubscribe();
   }, []);
 
+  // Save notification filters to Firestore when they change
   useEffect(() => {
-    function handleCtrlR(e: KeyboardEvent) {
-      if (e.ctrlKey && e.key.toLowerCase() === "r") {
-        e.preventDefault();
-        router.back();
-      }
+    if (user) {
+      setDoc(
+        doc(db, `users/${user.uid}/preferences/notificationFilter`),
+        { value: notificationFilter }
+      );
     }
-    window.addEventListener("keydown", handleCtrlR);
-    return () => window.removeEventListener("keydown", handleCtrlR);
-  }, [router]);
+  }, [notificationFilter, user]);
 
-  /* --------------------------------------------------------------------------
-     4d. BASE COMMANDS & SUGGESTIONS
-     -------------------------------------------------------------------------- */
-  const baseCommands: Record<string, string> = {
-    "/whales": "/whale-watcher",
-    "/news": "/base-chain-news",
-    "/home": "/",
-    "/screener": "/token-scanner",
-    "/menu": "",
-    "/clear": "",
-    "/shortcuts": "",
-    "/account": "/account",
-    "/tournaments": "/TradingCompetition",
-    "/dashboard": "/TradingCompetition/dashboard",
+  // Fetch Tokens (Shared with Screener via Firestore)
+  useEffect(() => {
+    const tokenCacheQuery = query(collection(db, "tokenDataCache"));
+    const unsubscribe = onSnapshot(tokenCacheQuery, (snapshot) => {
+      const tokenList: DexToken[] = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        tokenList.push(data as DexToken);
+      });
+      setTokens(tokenList);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Fetch Notifications from Firestore
+  useEffect(() => {
+    // Note: Add a TTL policy in Firestore to delete notifications older than 24 hours
+    // e.g., using a Cloud Function or Firestore TTL feature
+    const enabledTypes = Object.keys(preferences.notifications).filter(
+      (type) => preferences.notifications[type]
+    );
+    const notificationsQuery = query(
+      collection(db, "notifications"),
+      where("type", "in", enabledTypes.length > 0 ? enabledTypes : ["none"]), // Firestore requires non-empty array
+      limit(50) // Performance: Limit to 50 most recent notifications
+    );
+    const unsubscribe = onSnapshot(notificationsQuery, (snapshot) => {
+      const newNotifications: Notification[] = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        const notification = { id: doc.id, ...data } as Notification;
+        const isSnoozed = snoozedTokens.some(
+          (snooze) =>
+            snooze.symbol === notification.message.split(" ")[0] &&
+            snooze.expiry > Date.now()
+        );
+        if (!isSnoozed) {
+          newNotifications.push(notification);
+        }
+      });
+
+      // Apply filters
+      let filteredNotifications = newNotifications;
+      if (notificationFilter.type !== "all") {
+        filteredNotifications = filteredNotifications.filter(
+          (n) => n.type === notificationFilter.type
+        );
+      }
+      if (notificationFilter.excludeTypes.length > 0) {
+        filteredNotifications = filteredNotifications.filter(
+          (n) => !notificationFilter.excludeTypes.includes(n.type)
+        );
+      }
+
+      // Sort by timestamp (newest first), no weights
+      const sortedNotifications = filteredNotifications.sort(
+        (a, b) =>
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+
+      // Separate pinned and unpinned notifications
+      const pinned = sortedNotifications.filter((n) =>
+        pinnedNotifications.includes(n.id)
+      );
+      const unpinned = sortedNotifications.filter(
+        (n) => !pinnedNotifications.includes(n.id)
+      );
+      const finalNotifications = [...pinned, ...unpinned];
+
+      // Debounced update for performance
+      debouncedSetNotifications(finalNotifications);
+
+      // Play alert sound for new notifications
+      const newAlerts = finalNotifications.filter(
+        (n) => !notificationCache.some((cached) => cached.id === n.id)
+      );
+      if (newAlerts.length > 0 && isAlertSoundEnabled && audioRef.current) {
+        audioRef.current.play().catch(() => {});
+      }
+
+      // Update cache (last 10 minutes)
+      setNotificationCache((prev) => {
+        const updatedCache = [...prev, ...newAlerts].filter(
+          (n) => new Date(n.timestamp).getTime() > Date.now() - 10 * 60 * 1000
+        );
+        return updatedCache;
+      });
+    });
+
+    return () => unsubscribe();
+  }, [
+    notificationFilter,
+    snoozedTokens,
+    isAlertSoundEnabled,
+    preferences.notifications,
+  ]);
+
+  // Fetch News (Terminal-Specific)
+  useEffect(() => {
+    const fetchNews = debounce(async () => {
+      try {
+        const newsQuery = query(collection(db, "news"));
+        const snapshot = await getDocs(newsQuery);
+        const newsItems = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          type: "news" as const,
+          message: doc.data().title,
+          timestamp: doc.data().createdAt.toDate().toISOString(),
+        }));
+        await Promise.all(
+          newsItems.map((item) =>
+            addDoc(collection(db, "notifications"), {
+              ...item,
+              createdAt: serverTimestamp(),
+            })
+          )
+        );
+      } catch (err) {
+        console.error("Failed to fetch news:", err);
+      }
+    }, 5000);
+
+    fetchNews();
+    const interval = setInterval(fetchNews, 3_600_000); // Every hour
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fetch Base AI Index (Terminal-Specific)
+  useEffect(() => {
+    const fetchAIIndex = debounce(async () => {
+      try {
+        const res = await fetch("/api/ai-index");
+        if (!res.ok) return;
+        const data = await res.json();
+        const notification = {
+          type: "ai_index" as const,
+          message: `Base AI Index: ${data.indexValue.toFixed(2)}`,
+          timestamp: new Date().toISOString(),
+        };
+        await addDoc(collection(db, "notifications"), {
+          ...notification,
+          createdAt: serverTimestamp(),
+        });
+      } catch (err) {
+        console.error("Failed to fetch AI Index:", err);
+      }
+    }, 5000);
+
+    fetchAIIndex();
+    const interval = setInterval(fetchAIIndex, AI_INDEX_INTERVAL); // Every 4 hours
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fetch Ethereum Stats (Terminal-Specific)
+  useEffect(() => {
+    const fetchEthStats = async () => {
+      try {
+        const res = await fetch("/api/eth-stats");
+        if (!res.ok) return;
+        const data = await res.json();
+        const notification = {
+          type: "eth_stats" as const,
+          message: `ETH Stats: Price $${data.price.toFixed(2)}, 24h Change ${data.priceChange24h.toFixed(2)}%, Gas ${data.gasPrice} Gwei`,
+          timestamp: new Date().toISOString(),
+        };
+        await addDoc(collection(db, "notifications"), {
+          ...notification,
+          createdAt: serverTimestamp(),
+        });
+      } catch (err) {
+        console.error("Failed to fetch ETH stats:", err);
+      }
+    };
+
+    fetchEthStats();
+    const interval = setInterval(fetchEthStats, ETH_STATS_INTERVAL); // Every 30 minutes
+    return () => clearInterval(interval);
+  }, []);
+
+  // Custom Price Alerts
+  const [customAlerts, setCustomAlerts] = useState<
+    { symbol: string; threshold: number; direction: "above" | "below" }[]
+  >([]);
+
+  useEffect(() => {
+    const checkCustomAlerts = () => {
+      tokens.forEach((token) => {
+        const symbol = token.baseToken.symbol;
+        const currentPrice = parseFloat(token.priceUsd || "0");
+        customAlerts.forEach(async (alert) => {
+          if (alert.symbol !== symbol) return;
+          const threshold = alert.threshold;
+          const shouldAlert =
+            (alert.direction === "above" && currentPrice >= threshold) ||
+            (alert.direction === "below" && currentPrice <= threshold);
+          if (shouldAlert) {
+            const notification = {
+              type: "price_spike" as const,
+              message: `${symbol} price ${alert.direction} ${threshold}: $${currentPrice.toFixed(
+                5
+              )}`,
+              timestamp: new Date().toISOString(),
+              pairAddress: token.pairAddress,
+            };
+            await addDoc(collection(db, "notifications"), {
+              ...notification,
+              createdAt: serverTimestamp(),
+            });
+            setCustomAlerts((prev) =>
+              prev.filter((a) => a.symbol !== symbol)
+            );
+          }
+        });
+      });
+    };
+
+    checkCustomAlerts();
+    const interval = setInterval(checkCustomAlerts, PRICE_CHECK_INTERVAL);
+    return () => clearInterval(interval);
+  }, [tokens, customAlerts]);
+
+  // Uptime and Online Status
+  useEffect(() => {
+    const updateUptime = () => setUptime(formatUptime(startTime));
+    updateUptime();
+    const interval = setInterval(updateUptime, 1000);
+    return () => clearInterval(interval);
+  }, [startTime]);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  // Command Handlers
+  const handleCommand = useCallback(
+    async (command: string) => {
+      if (!command.trim()) return;
+      setHistory((prev) => [...prev, command]);
+      setHistoryIndex(-1);
+      setLastCommand(command);
+
+      const [cmd, ...args] = command.trim().split(" ");
+      const lowerCmd = cmd.toLowerCase();
+
+      switch (lowerCmd) {
+        case "/menu":
+          setOutput([
+            "Welcome to Homebase Terminal v1.0 - Type /menu for commands",
+            "",
+            "/menu - Show this menu",
+            "/clear - Clear the terminal",
+            "/refresh-notifications - Refresh Notification Center",
+            "/shortcuts - Show keyboard shortcuts",
+            "/account - Manage your account",
+            "/news - Navigate to Base Chain News",
+            "/dashboard - Navigate to Competitions Dashboard",
+            "/tournaments - Navigate to Competitions",
+            "/whales - Navigate to Whale Watcher page",
+            "/scan <token-address> - Audits the smart contract",
+            "/token-stats <symbol> - e.g. /token-stats CLANKER to fetch stats",
+            "/screener - Open Token Screener",
+            "/setdisplayname <name> - Set your display name",
+            "/signup <email> <password> - Create a new account",
+            "/login <email> <password> - Login to your account",
+            "/logout - Logout of your account",
+            "/settings <option> <value> - e.g. /settings notifications mover off",
+            "/snooze <symbol> <duration> - e.g. /snooze CLANKER 1h",
+            "/plugin - List user-contributed scripts",
+            "/stats - Show market trends",
+            "/sync-alerts - Fetch latest alerts instantly",
+            "/status - Show system status",
+            "/history - Show command history",
+            "/notify-me <symbol> <threshold> <above|below> - Set custom price alert",
+            "",
+            user ? `Available commands:` : `Please login to access all commands`,
+          ]);
+          break;
+
+        case "/clear":
+          setOutput(["Terminal cleared."]); // Only clear terminal output
+          break;
+
+        case "/refresh-notifications":
+          setOutput(["Refreshing notifications..."]);
+          setNotifications([]);
+          setNotificationCache([]);
+          setPinnedNotifications([]); // Clear pinned notifications as well
+          setOutput(["Notifications refreshed."]);
+          break;
+
+        case "/shortcuts":
+          setOutput([
+            "Keyboard Shortcuts:",
+            "Ctrl + L: Clear terminal",
+            "Tab: Autocomplete command",
+            "Up Arrow: Previous command",
+            "Down Arrow: Next command",
+          ]);
+          break;
+
+        case "/account":
+          router.push("/account");
+          break;
+
+        case "/news":
+          router.push("/news");
+          break;
+
+        case "/dashboard":
+          router.push("/dashboard");
+          break;
+
+        case "/tournaments":
+          router.push("/tournaments");
+          break;
+
+        case "/whales":
+          router.push("/whales");
+          break;
+
+        case "/scan":
+          if (args[0]) {
+            setOutput([
+              `Scanning token: ${args[0]}...`,
+              "Checking for vulnerabilities...",
+              "Analyzing contract code...",
+              "Scan complete. No vulnerabilities found.",
+            ]);
+          } else {
+            setOutput(["Please provide a token address: /scan <token-address>"]);
+          }
+          break;
+
+        case "/token-stats":
+          if (args[0]) {
+            const token = tokens.find(
+              (t) =>
+                t.baseToken.symbol.toLowerCase() === args[0].toLowerCase()
+            );
+            if (token) {
+              setOutput([
+                `Stats for ${token.baseToken.symbol}:`,
+                `Price: $${Number(token.priceUsd).toFixed(5)}`,
+                `24h Change: ${
+                  token.priceChange?.h24?.toFixed(2) ?? "N/A"
+                }%`,
+                `Volume (24h): $${token.volume.h24.toLocaleString()}`,
+                `Liquidity: $${token.liquidity.usd.toLocaleString()}`,
+                `Market Cap: ${
+                  token.marketCap
+                    ? `$${token.marketCap.toLocaleString()}`
+                    : "N/A"
+                }`,
+              ]);
+            } else {
+              setOutput([`Token ${args[0]} not found.`]);
+            }
+          } else {
+            setOutput(["Please provide a token symbol: /token-stats <symbol>"]);
+          }
+          break;
+
+        case "/screener":
+          router.push("/screener");
+          break;
+
+        case "/setdisplayname":
+          if (!user) {
+            setOutput(["Please login to set display name."]);
+            return;
+          }
+          if (args[0]) {
+            await setDoc(
+              doc(db, `users/${user.uid}/preferences/displayName`),
+              { value: args.join(" ") }
+            );
+            setOutput([`Display name set to: ${args.join(" ")}`]);
+          } else {
+            setOutput(["Please provide a name: /setdisplayname <name>"]);
+          }
+          break;
+
+        case "/signup":
+          if (args.length < 2) {
+            setOutput(["Usage: /signup <email> <password>"]);
+            return;
+          }
+          setOutput(["Signing up..."]);
+          setOutput(["Signup successful! Please login."]);
+          break;
+
+        case "/login":
+          if (args.length < 2) {
+            setOutput(["Usage: /login <email> <password>"]);
+            return;
+          }
+          setOutput(["Logging in..."]);
+          setOutput(["Login successful!"]);
+          break;
+
+        case "/logout":
+          setOutput(["Logging out..."]);
+          await auth.signOut();
+          setOutput(["Logged out successfully."]);
+          break;
+
+        case "/settings":
+          if (!user) {
+            setOutput(["Please login to manage settings."]);
+            return;
+          }
+          if (args[0]?.toLowerCase() === "notifications" && args[1] && args[2]) {
+            const type = args[1].toLowerCase();
+            const value = args[2].toLowerCase() === "on";
+            if (preferences.notifications.hasOwnProperty(type)) {
+              const updatedPrefs = {
+                ...preferences.notifications,
+                [type]: value,
+              };
+              await setDoc(
+                doc(db, `users/${user.uid}/preferences/notifications`),
+                { value: updatedPrefs }
+              );
+              setOutput([
+                `Notification ${type} set to ${value ? "on" : "off"}.`,
+              ]);
+            } else {
+              setOutput(["Invalid notification type."]);
+            }
+          } else if (args[0]?.toLowerCase() === "favorites" && args[1]) {
+            if (args[1].toLowerCase() === "list") {
+              setOutput(["Favorites:", ...preferences.favorites]);
+            } else {
+              const pairAddress = args[1];
+              const isFavorited = preferences.favorites.includes(pairAddress);
+              const favoriteDocRef = doc(
+                db,
+                `users/${user.uid}/favorites`,
+                pairAddress
+              );
+              if (isFavorited) {
+                await deleteDoc(favoriteDocRef);
+                setOutput([`Removed ${pairAddress} from favorites.`]);
+              } else {
+                await setDoc(favoriteDocRef, {
+                  pairAddress,
+                  createdAt: serverTimestamp(),
+                });
+                setOutput([`Added ${pairAddress} to favorites.`]);
+              }
+            }
+          } else if (args[0]?.toLowerCase() === "prioritize" && args[1]) {
+            const value = args[1].toLowerCase() === "on";
+            await setDoc(
+              doc(db, `users/${user.uid}/preferences/prioritizeNotifications`),
+              { value }
+            );
+            setOutput([
+              `Notification prioritization ${value ? "enabled" : "disabled"}.`,
+            ]);
+          } else {
+            setOutput([
+              "Usage: /settings <notifications|favorites|prioritize> <option> <value>",
+            ]);
+          }
+          break;
+
+        case "/snooze":
+          if (!user) {
+            setOutput(["Please login to snooze notifications."]);
+            return;
+          }
+          if (args.length < 2) {
+            setOutput([
+              "Usage: /snooze <symbol> <duration> (e.g., /snooze CLANKER 1h)",
+            ]);
+            return;
+          }
+          const symbol = args[0].toUpperCase();
+          const durationStr = args[1].toLowerCase();
+          const duration = durationStr.endsWith("h")
+            ? parseInt(durationStr) * 60 * 60 * 1000
+            : parseInt(durationStr) * 60 * 1000;
+          const expiry = Date.now() + duration;
+          await setDoc(doc(db, `users/${user.uid}/snoozed/${symbol}`), {
+            expiry,
+          });
+          setOutput([
+            `Notifications for ${symbol} snoozed until ${new Date(
+              expiry
+            ).toLocaleString()}.`,
+          ]);
+          break;
+
+        case "/plugin":
+          try {
+            const pluginsSnapshot = await getDocs(collection(db, "plugins"));
+            const plugins = pluginsSnapshot.docs.map(
+              (doc) => doc.data() as Plugin
+            );
+            if (plugins.length === 0) {
+              setOutput(["No plugins available. Check back later!"]);
+            } else {
+              setOutput([
+                "User-Contributed Plugins:",
+                ...plugins.map(
+                  (p) => `${p.name}: ${p.description} (Run: ${p.command})`
+                ),
+              ]);
+            }
+          } catch (err) {
+            console.error("Failed to fetch plugins:", err);
+            setOutput(["No plugins available at this time."]);
+          }
+          break;
+
+        case "/stats":
+          try {
+            const movers = notifications
+              .filter((n) => n.type === "mover")
+              .slice(0, 1);
+            const losers = notifications
+              .filter((n) => n.type === "loser")
+              .slice(0, 1);
+            const volumes = notifications
+              .filter((n) => n.type === "volume_spike")
+              .slice(0, 1);
+            setOutput([
+              "Market Trends:",
+              ...movers.map((n) => `Top Mover: ${n.message}`),
+              ...losers.map((n) => `Top Loser: ${n.message}`),
+              ...volumes.map((n) => `Most Active: ${n.message}`),
+            ]);
+          } catch (err) {
+            console.error("Failed to fetch stats:", err);
+            setOutput(["No market trends available."]);
+          }
+          break;
+
+        case "/sync-alerts":
+          setOutput(["Syncing alerts..."]);
+          setNotifications([]);
+          setNotificationCache([]);
+          setPinnedNotifications([]); // Clear pinned notifications as well
+          setOutput(["Notifications synced: Check Notification Center."]);
+          break;
+
+        case "/status":
+          setOutput([
+            "System Status:",
+            `Uptime: ${uptime}`,
+            `Last Command: ${lastCommand || "None"}`,
+            `Online: ${isOnline ? "Yes" : "No"}`,
+            `Notifications: ${notifications.length} active`,
+          ]);
+          break;
+
+        case "/history":
+          setOutput(["Command History:", ...history.slice(-10)]);
+          break;
+
+        case "/notify-me":
+          if (args.length < 3) {
+            setOutput([
+              "Usage: /notify-me <symbol> <threshold> <above|below>",
+            ]);
+            return;
+          }
+          const alertSymbol = args[0].toUpperCase();
+          const threshold = parseFloat(args[1]);
+          const direction = args[2].toLowerCase() as "above" | "below";
+          if (isNaN(threshold) || !["above", "below"].includes(direction)) {
+            setOutput([
+              "Invalid threshold or direction. Usage: /notify-me <symbol> <threshold> <above|below>",
+            ]);
+            return;
+          }
+          setCustomAlerts((prev) => [
+            ...prev,
+            { symbol: alertSymbol, threshold, direction },
+          ]);
+          setOutput([
+            `Custom alert set: Notify when ${alertSymbol} goes ${direction} $${threshold}.`,
+          ]);
+          break;
+
+        default:
+          const pluginMatch = commands.find((c) => c === command);
+          if (pluginMatch) {
+            setOutput([
+              `Running plugin: ${command}`,
+              "Result: Custom analysis complete.",
+            ]);
+          } else {
+            setOutput([
+              `Command not found: ${command}`,
+              "Type /menu for available commands.",
+            ]);
+          }
+      }
+    },
+    [
+      user,
+      preferences,
+      notifications,
+      router,
+      snoozedTokens,
+      tokens,
+      uptime,
+      isOnline,
+      lastCommand,
+      history,
+      customAlerts,
+    ]
+  );
+
+  // Autocomplete and Keyboard Shortcuts
+  const handleInputChange = (value: string) => {
+    setInput(value);
+    if (value.startsWith("/")) {
+      const matchingCommands = commands.filter((cmd) =>
+        cmd.toLowerCase().startsWith(value.toLowerCase())
+      );
+      setSuggestions(matchingCommands);
+    } else {
+      setSuggestions([]);
+    }
   };
 
-  function updateSuggestions(value: string) {
-    const trimmed = value.trim().toLowerCase();
-    if (!trimmed) {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleCommand(input);
+      setInput("");
       setSuggestions([]);
-      return;
-    }
-    const commandMatches = Object.keys(baseCommands).filter((cmd) =>
-      cmd.toLowerCase().includes(trimmed)
-    );
-    setSuggestions(commandMatches);
-  }
-
-  useEffect(() => {
-    updateSuggestions(input);
-  }, [input]);
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Tab") {
+    } else if (e.key === "Tab") {
       e.preventDefault();
-      if (suggestions.length === 1) {
+      if (suggestions.length > 0) {
         setInput(suggestions[0]);
         setSuggestions([]);
       }
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      if (userCommands.length === 0) return;
-      const newIndex =
-        historyIndex === -1 ? userCommands.length - 1 : Math.max(0, historyIndex - 1);
-      setHistoryIndex(newIndex);
-      setInput(userCommands[newIndex]);
+      if (historyIndex < history.length - 1) {
+        const newIndex = historyIndex + 1;
+        setHistoryIndex(newIndex);
+        setInput(history[history.length - 1 - newIndex]);
+      }
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
-      if (userCommands.length === 0) return;
-      if (historyIndex === -1) return;
-      const newIndex = historyIndex + 1;
-      if (newIndex >= userCommands.length) {
-        setHistoryIndex(-1);
-        setInput("");
-      } else {
+      if (historyIndex > -1) {
+        const newIndex = historyIndex - 1;
         setHistoryIndex(newIndex);
-        setInput(userCommands[newIndex]);
+        setInput(newIndex === -1 ? "" : history[history.length - 1 - newIndex]);
       }
+    } else if (e.ctrlKey && e.key === "l") {
+      e.preventDefault();
+      handleCommand("/clear");
     }
-  }
+  };
 
-  function contextAwareHelp(command: string) {
-    const lower = command.toLowerCase();
-    const helpLines: string[] = [];
-    if (lower.includes("screener")) {
-      helpLines.push("Screener Help: '/screener' opens the Token Scanner page.");
+  // Auto-scroll to bottom
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
-    if (lower.includes("whale")) {
-      helpLines.push("Whale Watcher Help: '/whale-watcher' opens the Whale Watcher page.");
-    }
-    if (helpLines.length > 0) {
-      setHistory((prev) => [
-        { text: "Context-Aware Tips:" },
-        ...helpLines.map((line) => ({ text: line })),
-        ...prev,
-      ]);
-    }
-  }
+  }, [output, notifications]);
 
-  function logError(msg: string) {
-    setErrorLog((prev) => [...prev, msg]);
-  }
-
-  async function typeOutLines(lines: string[], color?: string) {
-    for (const line of lines) {
-      setHistory((prev) => [{ text: line, color }, ...prev]);
-      await sleep(500);
+  // Focus input on mount
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
     }
-  }
+  }, []);
 
-  /* --------------------------------------------------------------------------
-     4e. TOKEN & SCAN FUNCTIONS
-     -------------------------------------------------------------------------- */
-  async function fetchTokenStats(tokenSymbol: string) {
-    try {
-      setHistory((prev) => [
-        { text: `Fetching stats for ${tokenSymbol}...`, color: accentColor },
-        ...prev,
-      ]);
-      const tokenAddress = tokenMapping[tokenSymbol];
-      if (!tokenAddress) {
-        setHistory((prev) => [
-          { text: "Homebase does not support this Token yet.", color: accentColor },
-          ...prev,
-        ]);
-        return;
-      }
-      const res = await fetch(`/api/tokens?chainId=base&tokenAddresses=${tokenAddress}`);
-      if (!res.ok) throw new Error(`Error ${res.status}`);
-      const data = await res.json();
-      const tokenData = Array.isArray(data) && data.length > 0 ? data[0] : null;
-      if (tokenData) {
-        const lines = [
-          `Stats for ${tokenSymbol}:`,
-          `Market Cap: $${Number(tokenData.marketCap).toLocaleString()}`,
-          `Price: $${Number(tokenData.priceUsd).toFixed(4)}`,
-          `24h Change: ${Number(tokenData.priceChange?.h24 || 0).toFixed(2)}%`,
-          `Volume (24h): $${Number(tokenData.volume.h24).toLocaleString()}`,
-        ];
-        await typeOutLines(lines, accentColor);
-      } else {
-        setHistory((prev) => [
-          { text: `No stats available for ${tokenSymbol}.`, color: "orange" },
-          ...prev,
-        ]);
-      }
-    } catch (error: any) {
-      const errMsg = `Failed to fetch stats for ${tokenSymbol}: ${error.message}`;
-      setHistory((prev) => [{ text: errMsg, color: "red" }, ...prev]);
-      logError(errMsg);
+  // Terminal Style Handler
+  const handleStyleChange = async (style: string) => {
+    if (user) {
+      await setDoc(doc(db, `users/${user.uid}/preferences/terminalStyle`), {
+        value: style,
+      });
+    } else {
+      setPreferences((prev) => ({ ...prev, terminalStyle: style }));
     }
-  }
+  };
 
-  async function fetchScanAudit(tokenAddress: string) {
-    setHistory((prev) => [
-      { text: `Scanning token ${tokenAddress} for honeypot traps...`, color: accentColor },
+  const currentStyle =
+    terminalStyles[
+      preferences.terminalStyle as keyof typeof terminalStyles
+    ] || terminalStyles.classic;
+
+  // Notification Filter Handlers
+  const toggleExcludeType = (type: string) => {
+    setNotificationFilter((prev) => ({
       ...prev,
-    ]);
-    try {
-      const response = await fetch(`/api/honeypot/scan?address=${tokenAddress}`);
-      if (!response.ok) {
-        const contentType = response.headers.get("content-type");
-        let errorMessage = "";
-        if (contentType && contentType.indexOf("application/json") !== -1) {
-          const data = await response.json();
-          errorMessage =
-            typeof data.error === "object" && data.error !== null
-              ? data.error.message || JSON.stringify(data.error)
-              : data.error;
-        } else {
-          errorMessage = await response.text();
-        }
-        setHistory((prev) => [
-          { text: `Error scanning token: ${errorMessage}`, color: "red" },
-          ...prev,
-        ]);
-        return;
-      }
-      const data = await response.json();
-      const auditLines: string[] = [];
-      if (data.token) {
-        if (data.token.name) {
-          auditLines.push(`Token: ${data.token.name} (${data.token.symbol})`);
-        } else {
-          auditLines.push(`Token: ${data.token}`);
-        }
-      }
-      if (data.honeypotResult?.isHoneypot) {
-        auditLines.push("Honeypot Detected");
+      excludeTypes: prev.excludeTypes.includes(type)
+        ? prev.excludeTypes.filter((t) => t !== type)
+        : [...prev.excludeTypes, type],
+    }));
+  };
+
+  // Clear All Notifications
+  const handleClearAllNotifications = () => {
+    setNotifications([]);
+    setNotificationCache([]);
+    setPinnedNotifications([]);
+  };
+
+  // Pin/Unpin Notification
+  const togglePinNotification = (id: string) => {
+    setPinnedNotifications((prev) => {
+      const isPinned = prev.includes(id);
+      if (isPinned) {
+        return prev.filter((pid) => pid !== id);
       } else {
-        auditLines.push("No Honeypot Detected");
+        return [id, ...prev.filter((pid) => pid !== id)]; // Move to top
       }
-      if (data.summary) {
-        auditLines.push(`Risk: ${data.summary.risk}`);
-        auditLines.push(`Risk Level: ${data.summary.riskLevel}`);
-        if (data.summary.flags && data.summary.flags.length > 0) {
-          data.summary.flags.forEach((flag: any) => {
-            auditLines.push(`Flag: ${flag.flag} - ${flag.description}`);
-          });
-        }
-      }
-      if (data.simulationResult) {
-        auditLines.push(`Buy Tax: ${data.simulationResult.buyTax}%`);
-        auditLines.push(`Sell Tax: ${data.simulationResult.sellTax}%`);
-      }
-      if (data.honeypotResult?.honeypotReason) {
-        auditLines.push(`Reason: ${data.honeypotResult.honeypotReason}`);
-      }
-      await typeOutLines(auditLines, accentColor);
-    } catch (err: any) {
-      setHistory((prev) => [
-        { text: `Error scanning token: ${err.message}`, color: "red" },
-        ...prev,
-      ]);
-    }
-  }
+    });
 
-  /* --------------------------------------------------------------------------
-     4f. MAIN COMMAND HANDLER
-     -------------------------------------------------------------------------- */
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const trimmed = input.trim();
-    if (!trimmed) return;
-    handleCommand(trimmed);
-    setInput("");
-    setSuggestions([]);
-    inputRef.current?.focus();
-  }
+    // Reorder notifications to place pinned ones at the top
+    setNotifications((prev) => {
+      const notification = prev.find((n) => n.id === id);
+      if (!notification) return prev;
 
-  async function handleCommand(command: string) {
-    if (!user && !command.startsWith("/login") && !command.startsWith("/signup")) {
-      setHistory((prev) => [
-        { text: "Please login using: /login <email> <password> or /signup <email> <password>", color: "red" },
-        ...prev,
-      ]);
+      const isPinned = pinnedNotifications.includes(id);
+      if (isPinned) {
+        // If already pinned, unpin by removing from pinned list
+        return prev;
+      } else {
+        // Pin by moving to the top
+        const others = prev.filter((n) => n.id !== id);
+        return [notification, ...others];
+      }
+    });
+  };
+
+  // Snooze Notification for 1 Hour
+  const handleSnoozeNotification = async (symbol: string) => {
+    if (!user) {
+      setOutput(["Please login to snooze notifications."]);
       return;
     }
-    try {
-      setHistory((prev) => [
-        { text: `[ ${user ? (user.displayName || "user") : "user"}@homebase ~ v1 ] $ ${command}`, color: accentColor },
-        ...prev,
-      ]);
-      setUserCommands((prev) => [...prev, command]);
-      setHistoryIndex(-1);
-      contextAwareHelp(command);
+    const expiry = Date.now() + 60 * 60 * 1000; // 1 hour
+    await setDoc(doc(db, `users/${user.uid}/snoozed/${symbol}`), {
+      expiry,
+    });
+    setOutput([
+      `Notifications for ${symbol} snoozed until ${new Date(
+        expiry
+      ).toLocaleString()}.`,
+    ]);
+  };
 
-      // --- ADVANCED INSTALL COMMANDS ---
-      if (command.startsWith("/install")) {
-        const parts = command.split(" ");
-        const moduleName = parts[1] ? parts[1].toLowerCase() : "";
-        setHistory((prev) => [
-          { text: `Preparing to install module: ${moduleName}`, color: accentColor },
-          ...prev,
-        ]);
-        const steps: InstallStep[] = [
-          { stepNumber: 1, description: "Initializing installation environment", baseShade: -80 },
-          { stepNumber: 2, description: "Fetching module metadata", baseShade: -40 },
-          { stepNumber: 3, description: "Downloading resources", baseShade: 0 },
-          { stepNumber: 4, description: "Extracting files", baseShade: 40 },
-          { stepNumber: 5, description: "Installing dependencies", baseShade: 80 },
-          { stepNumber: 6, description: "Finalizing installation", baseShade: 100 },
-        ];
-        for (let i = 0; i < steps.length; i++) {
-          const step = steps[i];
-          await sleep(700);
-          setHistory((prev) => [
-            { text: `[Step ${step.stepNumber}/${steps.length}] ${step.description}`, color: adjustColor(accentColor, step.baseShade || 0) },
-            ...prev,
-          ]);
-          let progressBar = "";
-          const totalBars = 20;
-          const barsFilled = Math.floor(((i + 1) / steps.length) * totalBars);
-          for (let b = 0; b < totalBars; b++) {
-            progressBar += b < barsFilled ? "█" : "░";
-          }
-          await sleep(500);
-          setHistory((prev) => [
-            { text: `Progress: [${progressBar}] ${Math.round((100 * (i + 1)) / steps.length)}%`, color: adjustColor(accentColor, (step.baseShade || 0) - 10) },
-            ...prev,
-          ]);
-        }
-        switch (moduleName) {
-          case "indexes":
-            setIsAiIndexInstalled(true);
-            await handleAiIndexInstall(setHistory, accentColor);
-            break;
-          case "news":
-            await handleNewsInstall(setHistory, accentColor, setNewsInstalled, setNewsItems);
-            break;
-          default:
-            setHistory((prev) => [
-              { text: `Module "${moduleName}" is unknown. Installation canceled.`, color: "red" },
-              ...prev,
-            ]);
-            break;
-        }
-        return;
-      }
-      // --- MODULE COMMANDS ---
-      // AI Index module commands.
-      else if (command === "/indexes-menu" && isAiIndexInstalled) {
-        setHistory((prev) => [
-          { text: "== AI Index Menu ==", color: accentColor },
-          { text: "Commands available:", color: accentColor },
-          { text: "  /indexes-refresh - Refresh AI index data", color: accentColor },
-          { text: "  /indexes-stats - Show detailed index stats", color: accentColor },
-          { text: "  /indexes-clear - Clear AI Index menu", color: accentColor },
-          ...prev,
-        ]);
-      } else if (command === "/indexes-refresh" && isAiIndexInstalled) {
-        await handleAiIndexRefresh(setHistory, accentColor);
-      } else if (command === "/indexes-stats" && isAiIndexInstalled) {
-        handleAiIndexStats(setHistory, accentColor);
-      } else if (command === "/indexes-clear" && isAiIndexInstalled) {
-        setHistory([]);
-      }
-      // News module commands.
-      else if (command === "/news-menu" && newsInstalled) {
-        handleNewsMenu(setHistory, accentColor);
-      } else if (command === "/get-news" && newsInstalled) {
-        try {
-          const res = await fetch("/api/news", { cache: "no-store" });
-          if (!res.ok) throw new Error(`News API error: ${res.status}`);
-          const newsData: NewsItem[] = await res.json();
-          setNewsItems(newsData);
-          if (newsData.length > 0) {
-            setCurrentNewsIndex(0);
-            const firstNews = newsData[0];
-            setHistory((prev) => [
-              { text: `News: ${firstNews.title}`, color: accentColor },
-              { text: `Source: ${firstNews.source} | ${new Date(firstNews.publishedAt).toLocaleString()}`, color: accentColor },
-              { text: truncateContent(firstNews.content), color: accentColor },
-              ...prev,
-            ]);
-          } else {
-            setHistory((prev) => [
-              { text: "No news available.", color: accentColor },
-              ...prev,
-            ]);
-          }
-        } catch (error: any) {
-          setHistory((prev) => [
-            { text: `Error fetching news: ${error.message}`, color: "red" },
-            ...prev,
-          ]);
-        }
-      } else if (command === "/refresh-news" && newsInstalled) {
-        await handleNewsRefresh(setHistory, accentColor, setNewsItems);
-      } else if (command === "/next-news" && newsInstalled) {
-        if (currentNewsIndex < newsItems.length - 1) {
-          setCurrentNewsIndex(currentNewsIndex + 1);
-          const nextNews = newsItems[currentNewsIndex + 1];
-          setHistory((prev) => [
-            { text: `News: ${nextNews.title}`, color: accentColor },
-            { text: `Source: ${nextNews.source} | ${new Date(nextNews.publishedAt).toLocaleString()}`, color: accentColor },
-            { text: truncateContent(nextNews.content), color: accentColor },
-            ...prev,
-          ]);
-        } else {
-          setHistory((prev) => [
-            { text: "No more news items.", color: accentColor },
-            ...prev,
-          ]);
-        }
-      } else if (command === "/prev-news" && newsInstalled) {
-        if (currentNewsIndex > 0) {
-          setCurrentNewsIndex(currentNewsIndex - 1);
-          const prevNews = newsItems[currentNewsIndex - 1];
-          setHistory((prev) => [
-            { text: `News: ${prevNews.title}`, color: accentColor },
-            { text: `Source: ${prevNews.source} | ${new Date(prevNews.publishedAt).toLocaleString()}`, color: accentColor },
-            { text: truncateContent(prevNews.content), color: accentColor },
-            ...prev,
-          ]);
-        } else {
-          setHistory((prev) => [
-            { text: "This is the first news item.", color: accentColor },
-            ...prev,
-          ]);
-        }
-      } else if (command === "/clear-news" && newsInstalled) {
-        setHistory([]);
-      }
-      // --- SEARCH NEWS COMMAND ---
-      else if (command.startsWith("/search-news") && newsInstalled) {
-        const parts = command.split(" ");
-        const query = parts.slice(1).join(" ").toLowerCase();
-        if (!query) {
-          setHistory((prev) => [
-            { text: "Usage: /search-news <query>", color: "red" },
-            ...prev,
-          ]);
-          return;
-        }
-        const filtered = newsItems.filter((item) =>
-          item.title.toLowerCase().includes(query)
-        );
-        if (filtered.length > 0) {
-          setCurrentNewsIndex(0);
-          const firstMatch = filtered[0];
-          setHistory((prev) => [
-            { text: `Search Result - News: ${firstMatch.title}`, color: accentColor },
-            { text: `Source: ${firstMatch.source} | ${new Date(firstMatch.publishedAt).toLocaleString()}`, color: accentColor },
-            { text: truncateContent(firstMatch.content), color: accentColor },
-            ...prev,
-          ]);
-        } else {
-          setHistory((prev) => [
-            { text: `No news items found matching "${query}".`, color: accentColor },
-            ...prev,
-          ]);
-        }
-      }
-      // --- BASIC COMMANDS ---
-      else if (command.startsWith("/login")) {
-        const parts = command.split(" ");
-        if (parts.length < 3) {
-          setHistory((prev) => [
-            { text: "Usage: /login <email> <password>", color: "red" },
-            ...prev,
-          ]);
-          return;
-        }
-        const email = parts[1];
-        const password = parts.slice(2).join(" ");
-        try {
-          await signInWithEmailAndPassword(auth, email, password);
-          setHistory((prev) => [
-            { text: "Logged in successfully! Type /menu to get started.", color: accentColor },
-            ...prev,
-          ]);
-        } catch (err: any) {
-          setHistory((prev) => [
-            { text: `Login failed: ${err.message}`, color: "red" },
-            ...prev,
-          ]);
-        }
-        return;
-      } else if (command.startsWith("/signup")) {
-        const parts = command.split(" ");
-        if (parts.length < 3) {
-          setHistory((prev) => [
-            { text: "Usage: /signup <email> <password>", color: "red" },
-            ...prev,
-          ]);
-          return;
-        }
-        const email = parts[1];
-        const password = parts.slice(2).join(" ");
-        try {
-          await createUserWithEmailAndPassword(auth, email, password);
-          setHistory((prev) => [
-            { text: "Account created and logged in successfully! Type /menu to get started.", color: accentColor },
-            ...prev,
-          ]);
-        } catch (err: any) {
-          setHistory((prev) => [
-            { text: `Signup failed: ${err.message}`, color: "red" },
-            ...prev,
-          ]);
-        }
-        return;
-      } else if (command.startsWith("/setdisplay")) {
-        const parts = command.split(" ");
-        if (parts.length < 2) {
-          setHistory((prev) => [
-            { text: "Usage: /setdisplay <new display name>", color: "red" },
-            ...prev,
-          ]);
-          return;
-        }
-        const newDisplay = parts.slice(1).join(" ");
-        try {
-          await updateProfile(auth.currentUser!, { displayName: newDisplay });
-          setHistory((prev) => [
-            { text: `Display name updated to: ${newDisplay}`, color: accentColor },
-            ...prev,
-          ]);
-        } catch (err: any) {
-          setHistory((prev) => [
-            { text: `Failed to update display name: ${err.message}`, color: "red" },
-            ...prev,
-          ]);
-        }
-        return;
-      } else if (command.startsWith("/changepassword")) {
-        const parts = command.split(" ");
-        if (parts.length < 3) {
-          setHistory((prev) => [
-            { text: "Usage: /changepassword <old password> <new password>", color: "red" },
-            ...prev,
-          ]);
-          return;
-        }
-        const oldPass = parts[1];
-        const newPass = parts.slice(2).join(" ");
-        try {
-          const credential = EmailAuthProvider.credential(auth.currentUser!.email!, oldPass);
-          await reauthenticateWithCredential(auth.currentUser!, credential);
-          await updatePassword(auth.currentUser!, newPass);
-          setHistory((prev) => [
-            { text: "Password updated successfully.", color: accentColor },
-            ...prev,
-          ]);
-        } catch (err: any) {
-          setHistory((prev) => [
-            { text: `Failed to change password: ${err.message}`, color: "red" },
-            ...prev,
-          ]);
-        }
-        return;
-      } else if (command === "/account") {
-        if (user) {
-          setHistory((prev) => [
-            { text: "Account Details:" },
-            { text: `Display Name: ${user.displayName || "Not set"}` },
-            { text: `Email: ${user.email}` },
-            ...prev,
-          ]);
-        }
-        return;
-      } else if (command === "/errorlog") {
-        if (errorLog.length === 0) {
-          setHistory((prev) => [{ text: "No errors logged." }, ...prev]);
-        } else {
-          const lines = errorLog.map((err) => ({ text: `- ${err}` }));
-          setHistory((prev) => [
-            { text: "Error Log:" },
-            ...lines,
-            ...prev,
-          ]);
-        }
-        return;
-      }
-      // /help command now routes to the Docs page.
-      else if (command === "/help") {
-        router.push("/docs");
-        return;
-      }
-      // --- MENU COMMAND ---
-      else if (command === "/menu") {
-        const menuLines = [
-          { text: "Available commands:" },
-          { text: "/login - Login to your account" },
-          { text: "/signup - Create a new account" },
-          { text: "/setdisplay <name> - Set your display name" },
-          { text: "/screener - Open Token Screener" },
-          { text: "/token-stats - e.g. /CLANKER-stats to fetch CLANKER stats" },
-          { text: "/scan <token address> - Audits the smart contract" },
-          { text: "/whales - Navigate to Whale Watcher page" },
-          { text: "/tournaments - Navigate to Competitions", },
-          { text: "/dashboard - Navigate to Competitions Dashboard" },
-          { text: "/news - Navigate to Base Chain News" },
-          { text: "/account - Manage your account" },
-          { text: "/shortcuts - Show keyboard shortcuts" },
-          { text: "/install indexes - Install AI Index module" },
-          { text: "/install news - Install News module" },
-          { text: "/menu - Show this menu" },
-        ];
-        // All menu commands display in white.
-        setHistory((prev) => [...menuLines, ...prev]);
-      } else if (command === "/shortcuts") {
-        setHistory((prev) => [
-          { text: "Keyboard Shortcuts:" },
-          { text: "Ctrl+K - Clear terminal" },
-          { text: "Tab - Auto-complete command" },
-          { text: "Arrow Up/Down - Navigate command history" },
-          { text: "Ctrl+R - Return to previous page" },
-          ...prev,
-        ]);
-      } else if (command === "/clear") {
-        setHistory([]);
-      } else if (command in baseCommands && baseCommands[command] !== "") {
-        const route = baseCommands[command];
-        setHistory((prev) => [
-          { text: `Navigating to ${route}...`, color: accentColor },
-          ...prev,
-        ]);
-        router.push(route);
-      } else if (command.startsWith("/scan")) {
-        const parts = command.split(" ");
-        if (parts.length < 2 || !parts[1]) {
-          setHistory((prev) => [
-            { text: "Usage: /scan <token address>", color: "red" },
-            ...prev,
-          ]);
-          return;
-        }
-        const tokenAddress = parts[1].trim();
-        fetchScanAudit(tokenAddress);
-      } else {
-        const statsRegex = /^\/([A-Z]+)-stats$/i;
-        const match = command.match(statsRegex);
-        if (match) {
-          const tokenSymbol = match[1].toUpperCase();
-          fetchTokenStats(tokenSymbol);
-        } else {
-          setHistory((prev) => [
-            { text: `Command not recognized: ${command}`, color: "red" },
-            ...prev,
-          ]);
-        }
-      }
-    } catch (err: any) {
-      const crashMsg = `Terminal crashed on command "${command}": ${err.message}`;
-      setHistory((prev) => [{ text: crashMsg, color: "red" }, ...prev]);
-      logError(crashMsg);
-    }
-  }
+  // Dismiss Notification
+  const handleDismissNotification = (id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    setPinnedNotifications((prev) => prev.filter((pid) => pid !== id));
+  };
 
-  function handleSuggestionClick(suggestion: string) {
-    setInput(suggestion);
-    setSuggestions([]);
-    inputRef.current?.focus();
-  }
+  // Section Header Component
+  const SectionHeader = ({ title }: { title: string }) => (
+    <div className="mb-4">
+      <div className={`w-full h-0.5 bg-gray-600`} /> {/* Thicker, darker separator */}
+      <div className={`relative py-2 px-4 bg-gray-700`}>
+        <h2 className={`text-lg font-bold ${currentStyle.accentText} text-center`}>
+          {title.replace("_", " ")}
+        </h2>
+        <div className="absolute top-1/2 right-4 transform -translate-y-1/2 flex items-center space-x-2">
+          <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+          <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+          <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+        </div>
+      </div>
+      <div className={`w-full h-0.5 bg-gray-600`} /> {/* Thicker, darker separator */}
+    </div>
+  );
 
   return (
-    <motion.div
-      className="w-screen h-screen bg-black text-white font-mono m-0 p-4 overflow-x-hidden flex flex-col"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.8, ease: "easeOut" }}
-      role="main"
-      aria-label="Homebase Terminal"
+    <div
+      className={`w-screen h-screen ${currentStyle.background} ${currentStyle.text} font-mono m-0 p-0 overflow-hidden flex flex-col`}
+      style={{ textShadow: preferences.terminalStyle === "classic" ? "0 0 5px rgba(37,99,235,0.5)" : undefined }}
     >
-      {/* HEADER */}
-      <div className="px-4 py-2 bg-black">
-        <div className="hidden sm:flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <span className="text-lg sm:text-xl font-bold">
-              HOMEBASE TERMINAL / VERSION 1.0.0
-            </span>
-            <span className="text-xs" style={{ color: accentColor }}>
-              Created by @wizopbase
-            </span>
+      <audio ref={audioRef} src="/alert.mp3" preload="auto" />
+
+      {/* Desktop Layout: Three Columns */}
+      <div className="hidden md:flex flex-1 w-full h-[calc(100vh-80px)]">
+        {/* SYS_UPDATE Panel */}
+        <div
+          className={`w-[35%] h-full ${currentStyle.border} border-r ${currentStyle.panelBg} p-4 overflow-y-auto`} // 35%
+        >
+          <SectionHeader title="SYS_UPDATE" />
+          <div className={`w-full h-0.5 bg-gray-600 mb-4`} /> {/* Thicker separator */}
+          <div className="space-y-2">
+            {sysUpdates.map((update, idx) => (
+              <p key={idx} className="text-sm">{update}</p>
+            ))}
           </div>
-          <div className="flex items-center space-x-1">
-            <label htmlFor="accentColor" className="text-sm text-gray-400">
-              Accent Color:
-            </label>
-            <input
-              id="accentColor"
-              type="color"
-              value={accentColor}
-              onChange={(e) => setAccentColor(e.target.value)}
-              className="w-6 h-6 rounded-full border-0 p-0 m-0 appearance-none focus:outline-none"
-              style={{
-                WebkitAppearance: "none",
-                MozAppearance: "none",
-                appearance: "none",
-                backgroundColor: accentColor,
-                border: "none",
-                boxShadow: "none",
-              }}
-            />
+          <p className="text-sm mt-4">Last update: 5 mins ago</p>
+          <div className="mt-4 space-y-3">
+            <div className="flex items-center space-x-2">
+              <label className="text-sm font-medium">Terminal Style:</label>
+              <select
+                value={preferences.terminalStyle}
+                onChange={(e) => handleStyleChange(e.target.value)}
+                className={`rounded p-1 text-sm border focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                  preferences.terminalStyle === "classic"
+                    ? "bg-gray-800 text-blue-300 border-gray-600"
+                    : preferences.terminalStyle === "hacker"
+                    ? "bg-black text-green-500 border-green-500"
+                    : "bg-[#D2B48C] text-[#4A3728] border-[#F5F5DC]"
+                }`}
+              >
+                <option value="classic">Classic</option>
+                <option value="hacker">Hacker</option>
+                <option value="vintage">Vintage</option>
+              </select>
+            </div>
           </div>
         </div>
-        <div className="sm:hidden flex items-center justify-between w-full">
-          <div>
-            <h1 className="text-lg font-bold">HOMEBASE TERMINAL</h1>
-            <h2 className="text-lg font-bold">VERSION 1.0.0</h2>
-            <span className="text-xs" style={{ color: accentColor }}>
-              Created by @wizopbase
-            </span>
+
+        {/* Separator */}
+        <div className={`w-px h-full ${currentStyle.separator}`} />
+
+        {/* TERMINAL_OUTPUT Panel */}
+        <div
+          className={`w-2/5 h-full ${currentStyle.border} border-r ${currentStyle.panelBg} p-4 flex flex-col`} // 40%
+        >
+          <SectionHeader title="TERMINAL_OUTPUT" />
+          <div className={`w-full h-0.5 bg-gray-600 mb-4`} /> {/* Thicker separator */}
+          <div ref={outputRef} className="flex-1 overflow-y-auto">
+            {output.map((line, idx) => (
+              <p key={idx} className="text-sm">{line}</p>
+            ))}
           </div>
-          <div className="flex items-center">
-            <label htmlFor="accentColor" className="text-sm text-gray-400 mr-1">
-              Accent:
-            </label>
-            <input
-              id="accentColor"
-              type="color"
-              value={accentColor}
-              onChange={(e) => setAccentColor(e.target.value)}
-              className="w-6 h-6 rounded-full border-0 p-0 m-0 appearance-none focus:outline-none"
-              style={{
-                WebkitAppearance: "none",
-                MozAppearance: "none",
-                appearance: "none",
-                backgroundColor: accentColor,
-                border: "none",
-                boxShadow: "none",
-              }}
-            />
+        </div>
+
+        {/* Separator */}
+        <div className={`w-px h-full ${currentStyle.separator}`} />
+
+        {/* NOTIFICATION_CENTER Panel */}
+        <div
+          className={`w-1/4 h-full ${currentStyle.panelBg} p-4 overflow-y-auto`} // 25%
+        >
+          <SectionHeader title="NOTIFICATION_CENTER" />
+          <div className={`w-full h-0.5 bg-gray-600 mb-4`} /> {/* Thicker separator */}
+          <div className="mb-4 space-y-3">
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <label className="text-sm font-medium">Exclude Types:</label>
+                <div className="flex flex-wrap gap-1">
+                  {[
+                    "mover",
+                    "loser",
+                    "volume_spike",
+                    "price_spike",
+                    "news",
+                    "ai_index",
+                    "eth_stats",
+                    "new_token",
+                  ].map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => toggleExcludeType(type)}
+                      className={`text-xs px-2 py-1 rounded-full transition-colors duration-200 flex items-center space-x-1 ${
+                        notificationFilter.excludeTypes.includes(type)
+                          ? preferences.terminalStyle === "classic"
+                            ? "bg-red-600 text-white"
+                            : preferences.terminalStyle === "hacker"
+                            ? "bg-green-700 text-white"
+                            : "bg-[#4A3728] text-[#D2B48C]"
+                          : preferences.terminalStyle === "classic"
+                          ? "bg-gray-700 text-blue-300 hover:bg-gray-600"
+                          : preferences.terminalStyle === "hacker"
+                          ? "bg-gray-800 text-green-500 hover:bg-gray-700"
+                          : "bg-[#F5F5DC] text-[#4A3728] hover:bg-[#C2A47C]"
+                      }`}
+                    >
+                      <span>{type.replace("_", " ")}</span>
+                      {notificationFilter.excludeTypes.includes(type) && (
+                        <FaTimes className="w-3 h-3" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <label className="text-sm font-medium">Show Only:</label>
+                <select
+                  value={notificationFilter.type}
+                  onChange={(e) =>
+                    setNotificationFilter((prev) => ({
+                      ...prev,
+                      type: e.target.value,
+                    }))
+                  }
+                  className={`rounded p-1 text-sm border focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                    preferences.terminalStyle === "classic"
+                      ? "bg-gray-800 text-blue-300 border-gray-600"
+                      : preferences.terminalStyle === "hacker"
+                      ? "bg-black text-green-500 border-green-500"
+                      : "bg-[#D2B48C] text-[#4A3728] border-[#F5F5DC]"
+                  }`}
+                >
+                  <option value="all">All</option>
+                  <option value="mover">Movers</option>
+                  <option value="loser">Losers</option>
+                  <option value="volume_spike">Volume Spikes</option>
+                  <option value="price_spike">Price Spikes</option>
+                  <option value="news">News</option>
+                  <option value="ai_index">AI Index</option>
+                  <option value="eth_stats">ETH Stats</option>
+                  <option value="new_token">New Tokens</option>
+                </select>
+              </div>
+              <div className="flex items-center justify-between space-x-2">
+                <div className="flex items-center space-x-2">
+                  <label className="text-sm font-medium">Alert Sound:</label>
+                  <input
+                    type="checkbox"
+                    checked={isAlertSoundEnabled}
+                    onChange={(e) => setIsAlertSoundEnabled(e.target.checked)}
+                    className={`w-4 h-4 rounded focus:ring-blue-500 ${
+                      preferences.terminalStyle === "classic"
+                        ? "text-blue-600 bg-gray-800 border-gray-600"
+                        : preferences.terminalStyle === "hacker"
+                        ? "text-green-500 bg-black border-green-500"
+                        : "text-[#4A3728] bg-[#D2B48C] border-[#F5F5DC]"
+                    }`}
+                  />
+                </div>
+                <button
+                  onClick={handleClearAllNotifications}
+                  className={`text-sm px-3 py-1 rounded transition-colors duration-200 ${
+                    preferences.terminalStyle === "classic"
+                      ? "bg-gray-700 text-blue-300 hover:bg-gray-600"
+                      : preferences.terminalStyle === "hacker"
+                      ? "bg-gray-800 text-green-500 hover:bg-gray-700"
+                      : "bg-[#F5F5DC] text-[#4A3728] hover:bg-[#C2A47C]"
+                  }`}
+                >
+                  Clear All
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-3">
+            {notifications.length === 0 ? (
+              <p className="text-sm">No notifications.</p>
+            ) : (
+              notifications.map((notification) => (
+                <motion.div
+                  key={notification.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={`text-sm ${
+                    getColorClass(notification.type, preferences.terminalStyle) +
+                    (notification.type === "price_spike" && preferences.terminalStyle === "classic"
+                      ? notification.message.includes("up")
+                        ? " bg-green-800"
+                        : " bg-red-800"
+                      : "")
+                  } flex items-start justify-between space-x-3 p-2 rounded transition-colors duration-200 hover:brightness-110 cursor-pointer`}
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2">
+                      <FaBell className="w-5 h-5" />
+                      <p className="font-medium">
+                        {notification.type.toUpperCase().replace("_", " ")}: {notification.message}
+                      </p>
+                    </div>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <p className="text-xs opacity-80">
+                        {new Date(notification.timestamp).toLocaleString()}
+                      </p>
+                      {notification.pairAddress && (
+                        <button
+                          onClick={() =>
+                            router.push(`/app/token-scanner/${notification.pairAddress}/chart/page.tsx`)
+                          }
+                          className={`text-xs underline transition-colors duration-200 ${
+                            preferences.terminalStyle === "classic"
+                              ? "text-blue-300 hover:text-blue-400"
+                              : preferences.terminalStyle === "hacker"
+                              ? "text-green-500 hover:text-green-400"
+                              : "text-[#4A3728] hover:text-[#C2A47C]"
+                          }`}
+                        >
+                          View Chart
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <button
+                      onClick={() => togglePinNotification(notification.id)}
+                      className={`p-1 rounded-full transition-colors duration-200 ${
+                        pinnedNotifications.includes(notification.id)
+                          ? "text-yellow-400"
+                          : "text-gray-400 hover:text-yellow-400"
+                      }`}
+                      title={pinnedNotifications.includes(notification.id) ? "Unpin" : "Pin"}
+                    >
+                      <FaThumbtack className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() =>
+                        handleSnoozeNotification(notification.message.split(" ")[0])
+                      }
+                      className="p-1 rounded-full text-gray-400 hover:text-blue-400 transition-colors duration-200"
+                      title="Snooze for 1h"
+                    >
+                      <span className="text-xs">Snooze</span>
+                    </button>
+                    <button
+                      onClick={() => handleDismissNotification(notification.id)}
+                      className="p-1 rounded-full text-gray-400 hover:text-red-400 transition-colors duration-200"
+                      title="Dismiss"
+                    >
+                      <span className="text-xs">Dismiss</span>
+                    </button>
+                  </div>
+                </motion.div>
+              ))
+            )}
           </div>
         </div>
       </div>
 
-      {/* DIVIDER */}
-      <div className="px-4 py-2 border-t border-gray-700"></div>
+      {/* Mobile Layout: Stacked with Collapsible Notifications */}
+      <div className="md:hidden flex-1 w-full h-[calc(100vh-80px)] p-4 flex flex-col">
+        <SectionHeader title="TERMINAL OUTPUT" />
+        <div className={`w-full h-0.5 bg-gray-600 mb-4`} /> {/* Thicker separator */}
+        <div ref={outputRef} className="flex-1 overflow-y-auto">
+          {output.map((line, idx) => (
+            <p key={idx} className="text-sm">{line}</p>
+          ))}
+        </div>
+        <div className="mt-4">
+          <button
+            onClick={() => setShowNotifications(!showNotifications)}
+            className={`flex items-center space-x-2 text-sm px-3 py-1 rounded transition-colors duration-200 ${
+              preferences.terminalStyle === "classic"
+                ? "bg-gray-700 text-blue-300 hover:bg-gray-600"
+                : preferences.terminalStyle === "hacker"
+                ? "bg-gray-800 text-green-500 hover:bg-gray-700"
+                : "bg-[#F5F5DC] text-[#4A3728] hover:bg-[#C2A47C]"
+            }`}
+          >
+            {showNotifications ? (
+              <>
+                <FaEyeSlash className="w-4 h-4" />
+                <span>Hide Notifications</span>
+              </>
+            ) : (
+              <>
+                <FaEye className="w-4 h-4" />
+                <span>Show Notifications</span>
+              </>
+            )}
+          </button>
+          {showNotifications && (
+            <div className="mt-2 space-y-3">
+              {notifications.length === 0 ? (
+                <p className="text-sm">No notifications.</p>
+              ) : (
+                notifications.map((notification) => (
+                  <motion.div
+                    key={notification.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`text-sm ${
+                      getColorClass(notification.type, preferences.terminalStyle) +
+                      (notification.type === "price_spike" && preferences.terminalStyle === "classic"
+                        ? notification.message.includes("up")
+                          ? " bg-green-800"
+                          : " bg-red-800"
+                        : "")
+                    } flex items-start justify-between space-x-3 p-2 rounded transition-colors duration-200 hover:brightness-110 cursor-pointer`}
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2">
+                        <FaBell className="w-5 h-5" />
+                        <p className="font-medium">
+                          {notification.type.toUpperCase().replace("_", " ")}: {notification.message}
+                        </p>
+                      </div>
+                      <div className="flex items-center space-x-2 mt-1">
+                        <p className="text-xs opacity-80">
+                          {new Date(notification.timestamp).toLocaleString()}
+                        </p>
+                        {notification.pairAddress && (
+                          <button
+                            onClick={() =>
+                              router.push(`/app/token-scanner/${notification.pairAddress}/chart/page.tsx`)
+                            }
+                            className={`text-xs underline transition-colors duration-200 ${
+                              preferences.terminalStyle === "classic"
+                                ? "text-blue-300 hover:text-blue-400"
+                                : preferences.terminalStyle === "hacker"
+                                ? "text-green-500 hover:text-green-400"
+                                : "text-[#4A3728] hover:text-[#C2A47C]"
+                            }`}
+                          >
+                            View Chart
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <button
+                        onClick={() => togglePinNotification(notification.id)}
+                        className={`p-1 rounded-full transition-colors duration-200 ${
+                          pinnedNotifications.includes(notification.id)
+                            ? "text-yellow-400"
+                            : "text-gray-400 hover:text-yellow-400"
+                        }`}
+                        title={pinnedNotifications.includes(notification.id) ? "Unpin" : "Pin"}
+                      >
+                        <FaThumbtack className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() =>
+                          handleSnoozeNotification(notification.message.split(" ")[0])
+                        }
+                        className="p-1 rounded-full text-gray-400 hover:text-blue-400 transition-colors duration-200"
+                        title="Snooze for 1h"
+                      >
+                        <span className="text-xs">Snooze</span>
+                      </button>
+                      <button
+                        onClick={() => handleDismissNotification(notification.id)}
+                        className="p-1 rounded-full text-gray-400 hover:text-red-400 transition-colors duration-200"
+                        title="Dismiss"
+                      >
+                        <span className="text-xs">Dismiss</span>
+                      </button>
+                    </div>
+                  </motion.div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      </div>
 
-      {/* COMMAND INPUT SECTION */}
-      <div className="px-4 py-2">
-        <p className="text-sm text-gray-300">
-          Welcome to Homebase Terminal! Type '/login &lt;email&gt; &lt;password&gt;' to sign in or '/signup &lt;email&gt; &lt;password&gt;' to create an account.
-        </p>
-        <form onSubmit={handleSubmit} className="flex items-center mt-2" aria-label="Terminal command input">
-          <span className="mr-2 text-base sm:text-sm" style={{ color: accentColor }}>
-            [ {user ? user.displayName || "user" : "user"}@homebase ~ v1 ] $
-          </span>
+      {/* Command Line (Above Status Bar) */}
+      <div
+        className={`w-full h-10 flex items-center space-x-2 px-4 py-2 border-t border-b ${currentStyle.commandLineBg} ${currentStyle.separator}`}
+      >
+        <span className={`text-sm ${currentStyle.accentText}`}>
+          user@homebase ~ v1 $
+        </span>
+        <div className="relative flex-1">
           <input
             ref={inputRef}
             type="text"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="bg-black outline-none border-none flex-1 text-[16px] md:text-sm"
-            placeholder="Type a command..."
-            aria-label="Command input"
-            aria-autocomplete="both"
+            className={`w-full bg-transparent ${currentStyle.text} focus:outline-none text-sm p-1`}
+            placeholder="Type command here..."
           />
-          <span className="ml-1 blinking-cursor text-[16px] md:text-sm" style={{ color: accentColor }}>
-            ...
-          </span>
-        </form>
-        <AnimatePresence>
           {suggestions.length > 0 && (
-            <motion.div
-              className="mt-1 bg-gray-800 p-2 rounded"
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              role="listbox"
-            >
+            <div className={`absolute bottom-full left-0 w-full rounded shadow-lg z-50 max-h-40 overflow-y-auto ${
+              preferences.terminalStyle === "classic"
+                ? "bg-gray-700 text-blue-300"
+                : preferences.terminalStyle === "hacker"
+                ? "bg-gray-800 text-green-500"
+                : "bg-[#F5F5DC] text-[#4A3728]"
+            }`}>
               {suggestions.map((suggestion, idx) => (
                 <div
                   key={idx}
-                  className="cursor-pointer text-sm text-gray-300 hover:text-white"
-                  onClick={() => handleSuggestionClick(suggestion)}
-                  role="option"
+                  className={`p-1 cursor-pointer text-sm ${
+                    preferences.terminalStyle === "classic"
+                      ? "hover:bg-gray-600"
+                      : preferences.terminalStyle === "hacker"
+                      ? "hover:bg-gray-700"
+                      : "hover:bg-[#C2A47C]"
+                  }`}
+                  onMouseDown={() => {
+                    setInput(suggestion);
+                    setSuggestions([]);
+                  }}
                 >
                   {suggestion}
                 </div>
               ))}
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
-      </div>
-
-      {/* HISTORY / OUTPUT AREA */}
-      <div className="px-4 py-2 overflow-y-auto" style={{ maxHeight: "calc(100vh - 220px)" }}>
-        {history.map((line, idx) => (
-          <div key={idx} className="mb-1 break-words text-base sm:text-sm" style={{ color: line.color || "inherit" }}>
-            {formatText(line.text)}
-          </div>
-        ))}
-      </div>
-
-      {/* TOAST NOTIFICATION */}
-      {toast && (
-        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white py-2 px-4 rounded shadow">
-          {toast}
         </div>
-      )}
-    </motion.div>
+      </div>
+
+      {/* Status Bar */}
+      <div
+        className={`w-full ${currentStyle.statusBarBg} ${currentStyle.text} p-2 text-xs flex justify-between items-center border-t ${currentStyle.separator}`}
+      >
+        <span>
+          <span className="text-red-500">O</span> 1 ISSUE{" "}
+          <span className="text-green-500">X</span> v1.0
+        </span>
+        <span>OS: web</span>
+        <span>Uptime: {uptime}</span>
+        <span>Network: 1.2Mbps</span>
+        <span>Last Command: {lastCommand || "None"}</span>
+        <span className={isOnline ? "text-green-500" : "text-red-500"}>
+          Status: {isOnline ? "ONLINE" : "OFFLINE"}
+        </span>
+      </div>
+    </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

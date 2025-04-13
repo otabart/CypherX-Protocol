@@ -81,7 +81,7 @@ const roadmapData: Milestone[] = [
     date: "June 1, 2025",
     title: "v2 Official Launch",
     description:
-      "v2 Launch marks the next evolution of Homebase—a complete platform upgrade driven by community feedback and rigorous beta testing. This major milestone introduces a suite of enhanced features, including improved trading tools, advanced analytics, and a more intuitive user experience.",
+      "v2 Launch marks the next evolution of Homebase—a complete platform upgrade driven by community feedback and rigorous beta testing. This major milestone introduces a suite of enhanced features, instant listing on new-pairs, advanced whale filtering, and much more.",
     icon: <BsRocketTakeoff />,
   },
   {

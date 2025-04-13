@@ -4,10 +4,11 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
+import { doc, setDoc, getDoc } from "firebase/firestore"; // Added getDoc import
 import { auth, db } from "@/lib/firebase";
 
+// Use same styles as login page
 const COLORS = {
   white: "#FFFFFF",
   black: "#000000",
@@ -117,7 +118,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: COLORS.gray,
     cursor: "pointer",
   },
-  loginButton: {
+  signupButton: {
     width: "100%",
     padding: "10px",
     backgroundColor: COLORS.coinbaseBlue,
@@ -165,16 +166,18 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
 };
 
-export default function AccountPage() {
+export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
+  // Ensure user exists in Firestore users collection
   const ensureUserInFirestore = async (user: any) => {
     const userRef = doc(db, "users", user.uid);
-    const userSnap = await getDoc(userRef);
+    const userSnap = await getDoc(userRef); // getDoc is now imported
 
     if (!userSnap.exists()) {
       await setDoc(userRef, {
@@ -186,25 +189,36 @@ export default function AccountPage() {
     }
   };
 
-  const handleEmailLogin = async (e: React.FormEvent) => {
+  // Handle email/password signup
+  const handleEmailSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await ensureUserInFirestore(userCredential.user);
       router.push("/account/dashboard");
     } catch (err: any) {
-      if (err.code === "auth/user-not-found" || err.code === "auth/wrong-password") {
-        setError("Invalid email or password. Please try again.");
+      // Map Firebase errors to user-friendly messages
+      if (err.code === "auth/email-already-in-use") {
+        setError("Email already in use. Please log in or use a different email.");
       } else if (err.code === "auth/invalid-email") {
         setError("Invalid email address. Please check your email and try again.");
+      } else if (err.code === "auth/weak-password") {
+        setError("Password is too weak. Please use a stronger password.");
       } else {
-        setError("Failed to log in. Please try again.");
+        setError("Failed to sign up. Please try again.");
       }
     }
   };
 
-  const handleGoogleLogin = async () => {
+  // Handle Google SSO signup
+  const handleGoogleSignup = async () => {
     setError(null);
     try {
       const provider = new GoogleAuthProvider();
@@ -213,15 +227,16 @@ export default function AccountPage() {
       router.push("/account/dashboard");
     } catch (err: any) {
       if (err.code === "auth/popup-closed-by-user") {
-        setError("Login cancelled. Please try again.");
+        setError("Sign-up cancelled. Please try again.");
       } else {
-        setError("Failed to log in with Google. Please try again.");
+        setError("Failed to sign up with Google. Please try again.");
       }
     }
   };
 
   return (
     <div style={styles.pageContainer}>
+      {/* Header */}
       <header style={styles.header}>
         <Link href="/">
           <Image
@@ -242,11 +257,13 @@ export default function AccountPage() {
         </div>
       </header>
 
+      {/* Main Content */}
       <div style={styles.container}>
         <div style={styles.formContainer}>
-          <h1 style={styles.formHeader}>Log in to Homebase</h1>
+          <h1 style={styles.formHeader}>Sign up for Homebase</h1>
 
-          <button style={styles.ssoButton} onClick={handleGoogleLogin}>
+          {/* SSO Buttons */}
+          <button style={styles.ssoButton} onClick={handleGoogleSignup}>
             <Image
               src="https://www.google.com/favicon.ico"
               alt="Google"
@@ -267,15 +284,18 @@ export default function AccountPage() {
             Continue with Apple
           </button>
 
+          {/* Divider */}
           <div style={styles.divider}>
             <div style={styles.dividerLine}></div>
             <span style={styles.dividerText}>OR</span>
             <div style={styles.dividerLine}></div>
           </div>
 
+          {/* Error Message */}
           {error && <p style={styles.error}>{error}</p>}
 
-          <form onSubmit={handleEmailLogin}>
+          {/* Email/Password Form */}
+          <form onSubmit={handleEmailSignup}>
             <div>
               <input
                 type="email"
@@ -302,14 +322,25 @@ export default function AccountPage() {
                 {showPassword ? "Hide" : "Show"}
               </span>
             </div>
-            <button type="submit" style={styles.loginButton}>
-              Log in
+            <div style={styles.passwordContainer}>
+              <input
+                type={showPassword ? "text" : "password"}
+                placeholder="Confirm Password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                style={styles.input}
+                required
+              />
+            </div>
+            <button type="submit" style={styles.signupButton}>
+              Sign up
             </button>
           </form>
 
+          {/* Links */}
           <div style={styles.links}>
-            <Link href="/account/signup" style={styles.link}>
-              Sign up
+            <Link href="/account" style={styles.link}>
+              Log in
             </Link>
             <Link href="/forgot-password" style={styles.link}>
               Forgot your password?
@@ -321,6 +352,7 @@ export default function AccountPage() {
         </div>
       </div>
 
+      {/* Footer */}
       <footer style={styles.footer}>
         <div style={styles.footerLinks}>
           <Link href="/support" style={styles.footerLink}>
@@ -350,4 +382,3 @@ export default function AccountPage() {
     </div>
   );
 }
-

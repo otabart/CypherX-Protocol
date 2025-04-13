@@ -38,7 +38,7 @@ export default function CompetitionListingPage() {
       exit={{ opacity: 0, y: -20 }}
       transition={{ duration: 0.5 }}
     >
-      <h2 className="text-2xl font-bold mb-4">Available Competitions</h2>
+      <h2 className="text-2xl font-bold mb-4">Upcoming Tournaments</h2>
 
       {/* 1 col on mobile, 2 cols on md+ */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

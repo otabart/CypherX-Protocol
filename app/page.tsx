@@ -525,147 +525,153 @@ function HomePage() {
         </section>
       )}
 
-      {/* "What is Base?" Section */}
-      <motion.section
-        className="w-full py-16 bg-gray-50 text-center"
-        {...scrollProps}
+{/* "What is Base?" Section */}
+<motion.section
+  className="w-full py-16 bg-gray-50 text-center"
+  {...scrollProps}
+>
+  <div className="max-w-5xl mx-auto px-4">
+    <h2 className="text-4xl md:text-5xl font-extrabold mb-6 leading-tight">
+      <span className="text-black">What is</span>{" "}
+      <span className="text-primaryBlue">Base?</span>
+    </h2>
+    <p className="text-gray-700 max-w-2xl mx-auto mb-10 text-lg leading-relaxed">
+      Base is a next-generation Layer 2 Blockchain Network, designed for faster and cheaper
+      transactions.
+    </p>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <motion.div
+        className="p-6 bg-white rounded-lg shadow-sm"
+        whileHover={{ scale: 1.05 }}
       >
-        <div className="max-w-5xl mx-auto px-4">
-          <h2 className="text-4xl md:text-5xl font-extrabold mb-6 leading-tight">
-            <span className="text-black">What is</span>{" "}
-            <span className="text-primaryBlue">Base?</span>
-          </h2>
-          <p className="text-gray-700 max-w-2xl mx-auto mb-10 text-lg leading-relaxed">
-            Base is a next-generation Layer 2 Blockchain Network, designed for faster and cheaper
-            transactions.  
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <motion.div
-              className="p-6 bg-white rounded-lg shadow-sm"
-              whileHover={{ scale: 1.05 }}
-            >
-              <LightningIcon />
-              <h3 className="text-xl font-bold text-primaryBlue mb-3">
-                Faster Transactions
-              </h3>
-              <p className="text-sm text-gray-600 leading-relaxed">
-                Enjoy near-instant confirmations and lower fees.
-              </p>
-            </motion.div>
-            <motion.div
-              className="p-6 bg-white rounded-lg shadow-sm"
-              whileHover={{ scale: 1.05 }}
-            >
-              <CodeIcon />
-              <h3 className="text-xl font-bold text-primaryBlue mb-3">
-                EVM-Compatible
-              </h3>
-              <p className="text-sm text-gray-600 leading-relaxed">
-                Deploy your dApps seamlessly with full Ethereum compatibility.
-              </p>
-            </motion.div>
-            <motion.div
-              className="p-6 bg-white rounded-lg shadow-sm"
-              whileHover={{ scale: 1.05 }}
-            >
-              <ShieldIcon />
-              <h3 className="text-xl font-bold text-primaryBlue mb-3">
-                Secure & Scalable
-              </h3>
-              <p className="text-sm text-gray-600 leading-relaxed">
-                Robust security meets unrivaled scalability, backed by industry
-                leaders.
-              </p>
-            </motion.div>
-          </div>
-        </div>
-      </motion.section>
+        <LightningIcon />
+        <h3 className="text-xl font-bold text-primaryBlue mb-3">
+          Faster Transactions
+        </h3>
+        <p className="text-sm text-gray-600 leading-relaxed">
+          Enjoy near-instant confirmations and lower fees.
+        </p>
+      </motion.div>
+      <motion.div
+        className="p-6 bg-white rounded-lg shadow-sm"
+        whileHover={{ scale: 1.05 }}
+      >
+        <CodeIcon />
+        <h3 className="text-xl font-bold text-primaryBlue mb-3">
+          EVM-Compatible
+        </h3>
+        <p className="text-sm text-gray-600 leading-relaxed">
+          Deploy your dApps seamlessly with full Ethereum compatibility.
+        </p>
+      </motion.div>
+      <motion.div
+        className="p-6 bg-white rounded-lg shadow-sm"
+        whileHover={{ scale: 1.05 }}
+      >
+        <ShieldIcon />
+        <h3 className="text-xl font-bold text-primaryBlue mb-3">
+          Secure & Scalable
+        </h3>
+        <p className="text-sm text-gray-600 leading-relaxed">
+          Robust security meets unrivaled scalability, backed by industry
+          leaders.
+        </p>
+      </motion.div>
+    </div>
+  </div>
+</motion.section>
 
-      {/* "How Homebase Powers Base" Section */}
-      <motion.section
-        className="w-full py-16 bg-gray-50 text-center relative"
-        {...scrollProps}
+{/* "How Homebase Powers Base" Section */}
+<motion.section
+  className="w-full py-16 bg-gray-50 text-center relative"
+  {...scrollProps}
+>
+  {/* Original wave background unchanged */}
+  <div className="absolute inset-0 w-full h-full bg-gray-50">
+    <svg
+      className="absolute bottom-0 left-0 w-full"
+      viewBox="0 0 1440 320"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        fill="white"
+        d="M0,256L120,245.3C240,235,480,213,720,181.3C960,149,1200,107,1320,85.3L1440,64V320H1320C1200,320,960,320,720,320C480,320,240,320,120,320H0Z"
+      />
+    </svg>
+  </div>
+  <div className="max-w-5xl mx-auto px-4 relative z-10">
+    <h2 className="text-4xl md:text-5xl font-extrabold mb-6 text-primaryBlue leading-tight">
+      How Homebase Powers Base
+    </h2>
+    <p className="text-gray-700 max-w-3xl mx-auto mb-8 text-lg leading-relaxed">
+      Homebase provides cutting-edge tools to track on-chain data, monitor whale
+      movements, and stay ahead of token launches.
+    </p>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      {/* Screener Card with updated design */}
+      <motion.div
+        className="p-6 bg-white border-2 border-gray-800 rounded-xl shadow-md hover:shadow-xl transition-all duration-300 group" // Updated card styles
+        whileHover={{ scale: 1.05 }}
       >
-        {/* Soft Wave Background */}
-        <div className="absolute inset-0 w-full h-full bg-gray-50">
-          <svg
-            className="absolute bottom-0 left-0 w-full"
-            viewBox="0 0 1440 320"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
+        <ChartIcon className="w-10 h-10 mx-auto mb-4 text-gray-500 group-hover:text-primaryBlue transition-colors duration-300" /> {/* Added icon styling */}
+        <h3 className="text-xl font-bold text-black mb-2">
+          Homebase Screener
+        </h3>
+        <p className="text-base text-gray-700 leading-relaxed mb-4"> {/* Updated text size and color */}
+          Get real-time coin prices and find the hottest base pairs.
+        </p>
+        <Link href="/token-scanner">
+          <button
+            className="mt-3 px-5 py-2 border-2 border-gray-800 text-gray-900 font-bold rounded-full hover:bg-primaryBlue hover:text-white hover:border-primaryBlue transition-all duration-300" // Updated button hover color
           >
-            <path
-              fill="white"
-              d="M0,256L120,245.3C240,235,480,213,720,181.3C960,149,1200,107,1320,85.3L1440,64V320H1320C1200,320,960,320,720,320C480,320,240,320,120,320H0Z"
-            />
-          </svg>
-        </div>
-        <div className="max-w-5xl mx-auto px-4 relative z-10">
-          <h2 className="text-4xl md:text-5xl font-extrabold mb-6 text-primaryBlue leading-tight">
-            How Homebase Powers Base
-          </h2>
-          <p className="text-gray-700 max-w-3xl mx-auto mb-8 text-lg leading-relaxed">
-            Homebase provides cutting-edge tools to track on-chain data, monitor whale
-            movements, and stay ahead of token launches.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {/* Screener Card */}
-            <motion.div
-              className="p-6 bg-white border-2 border-black rounded-lg shadow-md"
-              whileHover={{ scale: 1.05 }}
-            >
-              <ChartIcon />
-              <h3 className="text-xl font-bold text-black mb-2">
-                Homebase Screener
-              </h3>
-              <p className="text-sm text-gray-600 leading-relaxed mb-4">
-                Get real-time coin prices and find the hottest base pairs.
-              </p>
-              <Link href="/token-scanner">
-                <button className="mt-3 px-5 py-2 border-2 border-black text-black font-semibold rounded-full hover:bg-black hover:text-white transition-all">
-                  Screener →
-                </button>
-              </Link>
-            </motion.div>
-            {/* Whale Watchers Card */}
-            <motion.div
-              className="p-6 bg-white border-2 border-black rounded-lg shadow-md"
-              whileHover={{ scale: 1.05 }}
-            >
-              <InsightIcon />
-              <h3 className="text-xl font-bold text-black mb-2">
-                Whale Watchers
-              </h3>
-              <p className="text-sm text-gray-600 leading-relaxed mb-4">
-                Track large wallet movements and detect potential market shifts.
-              </p>
-              <Link href="/whale-watcher">
-                <button className="mt-3 px-5 py-2 border-2 border-black text-black font-semibold rounded-full hover:bg-black hover:text-white transition-all">
-                  Track Whales →
-                </button>
-              </Link>
-            </motion.div>
-            {/* Token Launch Calendar Card */}
-            <motion.div
-              className="p-6 bg-white border-2 border-black rounded-lg shadow-md"
-              whileHover={{ scale: 1.05 }}
-            >
-              <ToolIcon />
-              <h3 className="text-xl font-bold text-black mb-2">
-                Token Launch Calendar
-              </h3>
-              <p className="text-sm text-gray-600 leading-relaxed mb-4">
-                Stay ahead with upcoming token launches and market trends.
-              </p>
-              <Link href="/launch-calendar">
-                <button className="mt-3 px-5 py-2 border-2 border-black text-black font-semibold rounded-full hover:bg-black hover:text-white transition-all">
-                  View Calendar →
-                </button>
-              </Link>
-            </motion.div>
-          </div>
-        </div>
-      </motion.section>
+            Screener →
+          </button>
+        </Link>
+      </motion.div>
+      {/* Whale Watchers Card with updated design */}
+      <motion.div
+        className="p-6 bg-white border-2 border-gray-800 rounded-xl shadow-md hover:shadow-xl transition-all duration-300 group" // Updated card styles
+        whileHover={{ scale: 1.05 }}
+      >
+        <InsightIcon className="w-10 h-10 mx-auto mb-4 text-gray-500 group-hover:text-primaryBlue transition-colors duration-300" /> {/* Added icon styling */}
+        <h3 className="text-xl font-bold text-black mb-2">
+          Whale Watchers
+        </h3>
+        <p className="text-base text-gray-700 leading-relaxed mb-4"> {/* Updated text size and color */}
+          Track large wallet movements and detect potential market shifts.
+        </p>
+        <Link href="/whale-watcher">
+          <button
+            className="mt-3 px-5 py-2 border-2 border-gray-800 text-gray-900 font-bold rounded-full hover:bg-primaryBlue hover:text-white hover:border-primaryBlue transition-all duration-300" // Updated button hover color
+          >
+            Track Whales →
+          </button>
+        </Link>
+      </motion.div>
+      {/* Token Launch Calendar Card with updated design */}
+      <motion.div
+        className="p-6 bg-white border-2 border-gray-800 rounded-xl shadow-md hover:shadow-xl transition-all duration-300 group" // Updated card styles
+        whileHover={{ scale: 1.05 }}
+      >
+        <ToolIcon className="w-10 h-10 mx-auto mb-4 text-gray-500 group-hover:text-primaryBlue transition-colors duration-300" /> {/* Added icon styling */}
+        <h3 className="text-xl font-bold text-black mb-2">
+          Token Launch Calendar
+        </h3>
+        <p className="text-base text-gray-700 leading-relaxed mb-4"> {/* Updated text size and color */}
+          Stay ahead with upcoming token launches and market trends.
+        </p>
+        <Link href="/launch-calendar">
+          <button
+            className="mt-3 px-5 py-2 border-2 border-gray-800 text-gray-900 font-bold rounded-full hover:bg-primaryBlue hover:text-white hover:border-primaryBlue transition-all duration-300" // Updated button hover color
+          >
+            View Calendar →
+          </button>
+        </Link>
+      </motion.div>
+    </div>
+  </div>
+</motion.section>
 
       {/* Roadmap Section */}
       <RoadmapSection />
