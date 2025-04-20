@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "baseUrl": ".", // Sets the base directory for absolute imports
     "target": "ESNext",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
@@ -15,16 +16,16 @@
     "incremental": true,
     "plugins": [{ "name": "next" }],
     "paths": {
-      "@/*": ["./*"],
-      "~/TradingCompetition/*": ["./app/TradingCompetition/*"]
+      "@/*": ["./*"], // Maps @/ to root directory (e.g., @/lib/firebase.ts resolves to ./lib/firebase.ts)
+      "~/TradingCompetition/*": ["./app/TradingCompetition/*"], // Maps TradingCompetition imports
+      "constants": ["./constants.ts"] // Maps 'constants' to ./constants.ts
     },
     "forceConsistentCasingInFileNames": true,
     "allowSyntheticDefaultImports": true,
     "noFallthroughCasesInSwitch": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "types": ["node", "react", "react-dom", "framer-motion"], // Added framer-motion types
-    "baseUrl": ".",
+    "types": ["node", "react", "react-dom", "framer-motion"], // Removed 'firebase'
     "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": true // Allows .ts/.tsx in imports
   },
@@ -33,7 +34,8 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    "app/TradingCompetition/**/*" // Explicitly include TradingCompetition dir
+    "app/TradingCompetition/**/*", // Explicitly include TradingCompetition dir
+    "lib/**/*" // Explicitly include lib directory for firebase.ts
   ],
   "exclude": ["node_modules"]
 }
