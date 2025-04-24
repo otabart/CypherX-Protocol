@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import Image from 'next/image';
 
@@ -57,8 +57,6 @@ const PartnerItem = React.memo(({ partner }: { partner: Partner }) => (
 ));
 
 export default function PartnersScroller() {
-  const [isPaused, setIsPaused] = React.useState<boolean>(false);
-
   // Responsive animation duration
   const animationDuration = useMemo(() => {
     const totalPartners = partners.length * 2; // Duplicated for seamless scroll
@@ -66,10 +64,6 @@ export default function PartnersScroller() {
     const speedFactor = isMobile ? 0.5 : 1; // 0.5s/partner on mobile (min 2s), 1s/partner on desktop (min 5s)
     return Math.max(isMobile ? 2 : 5, totalPartners * speedFactor);
   }, []);
-
-  // Memoized hover handlers
-  const handleMouseEnter = useCallback(() => setIsPaused(true), []);
-  const handleMouseLeave = useCallback(() => setIsPaused(false), []);
 
   return (
     <div
@@ -84,17 +78,12 @@ export default function PartnersScroller() {
       <motion.div
         className="flex space-x-6 sm:space-x-16 md:space-x-18 lg:space-x-24 whitespace-nowrap w-max"
         initial={{ x: 0 }}
-        animate={isPaused ? { x: 0 } : { x: '-50%' }}
+        animate={{ x: '-50%' }}
         transition={{
           repeat: Infinity,
           duration: animationDuration,
           ease: 'linear',
         }}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        onFocus={handleMouseEnter}
-        onBlur={handleMouseLeave}
-        tabIndex={0}
       >
         {/* First set of partners */}
         {partners.map((partner, idx) => (
@@ -108,9 +97,3 @@ export default function PartnersScroller() {
     </div>
   );
 }
-
-
-
-
-
-

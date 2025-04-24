@@ -1,14 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
-import { doc, setDoc, getDoc } from "firebase/firestore"; // Added getDoc import
-import { auth, db } from "@/lib/firebase";
+import { createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, OAuthProvider } from "firebase/auth";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { auth, db, listenToAuthState } from "@/lib/firebase";
 
-// Use same styles as login page
 const COLORS = {
   white: "#FFFFFF",
   black: "#000000",
@@ -129,6 +128,17 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: "pointer",
     marginBottom: "15px",
   },
+  loadingButton: {
+    width: "100%",
+    padding: "10px",
+    backgroundColor: COLORS.gray,
+    color: COLORS.white,
+    border: "none",
+    borderRadius: "4px",
+    fontSize: "16px",
+    cursor: "not-allowed",
+    marginBottom: "15px",
+  },
   links: {
     display: "flex",
     justifyContent: "space-between",
@@ -172,30 +182,79 @@ export default function SignupPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState<null | object>(null);
   const router = useRouter();
 
-  // Ensure user exists in Firestore users collection
+  // Redirect if already signed in
+  useEffect(() => {
+    const unsubscribe = listenToAuthState((currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        router.push("/account/dashboard");
+      }
+    });
+    return () => unsubscribe();
+  }, [router]);
+
   const ensureUserInFirestore = async (user: any) => {
     const userRef = doc(db, "users", user.uid);
-    const userSnap = await getDoc(userRef); // getDoc is now imported
+    const userSnap = await getDoc(userRef);
 
     if (!userSnap.exists()) {
       await setDoc(userRef, {
         uid: user.uid,
         email: user.email,
         displayName: user.displayName || null,
+        photoURL: user.photoURL || null,
         createdAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString(),
       });
+    } else {
+      // Update last login time
+      await setDoc(userRef, { lastLoginAt: new Date().toISOString() }, { merge: true });
     }
   };
 
-  // Handle email/password signup
+  const validatePasswordStrength = (pwd: string) => {
+    const minLength = 8;
+    const hasUpperCase = /[A-Z]/.test(pwd);
+    const hasLowerCase = /[a-z]/.test(pwd);
+    const hasNumbers = /\d/.test(pwd);
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(pwd);
+
+    if (pwd.length < minLength) {
+      return "Password must be at least 8 characters long.";
+    }
+    if (!hasUpperCase || !hasLowerCase || !hasNumbers || !hasSpecialChar) {
+      return "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character.";
+    }
+    return null;
+  };
+
   const handleEmailSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setLoading(true);
+
+    // Basic email validation
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError("Please enter a valid email address.");
+      setLoading(false);
+      return;
+    }
+
+    // Password validation
+    const passwordError = validatePasswordStrength(password);
+    if (passwordError) {
+      setError(passwordError);
+      setLoading(false);
+      return;
+    }
 
     if (password !== confirmPassword) {
-      setError("Passwords do not match");
+      setError("Passwords do not match.");
+      setLoading(false);
       return;
     }
 
@@ -204,22 +263,24 @@ export default function SignupPage() {
       await ensureUserInFirestore(userCredential.user);
       router.push("/account/dashboard");
     } catch (err: any) {
-      // Map Firebase errors to user-friendly messages
       if (err.code === "auth/email-already-in-use") {
         setError("Email already in use. Please log in or use a different email.");
       } else if (err.code === "auth/invalid-email") {
         setError("Invalid email address. Please check your email and try again.");
       } else if (err.code === "auth/weak-password") {
         setError("Password is too weak. Please use a stronger password.");
+      } else if (err.code === "auth/too-many-requests") {
+        setError("Too many attempts. Please try again later.");
       } else {
         setError("Failed to sign up. Please try again.");
       }
+      setLoading(false);
     }
   };
 
-  // Handle Google SSO signup
   const handleGoogleSignup = async () => {
     setError(null);
+    setLoading(true);
     try {
       const provider = new GoogleAuthProvider();
       const userCredential = await signInWithPopup(auth, provider);
@@ -231,20 +292,44 @@ export default function SignupPage() {
       } else {
         setError("Failed to sign up with Google. Please try again.");
       }
+      setLoading(false);
     }
   };
 
+  const handleAppleSignup = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const provider = new OAuthProvider("apple.com");
+      provider.addScope("email");
+      const userCredential = await signInWithPopup(auth, provider);
+      await ensureUserInFirestore(userCredential.user);
+      router.push("/account/dashboard");
+    } catch (err: any) {
+      if (err.code === "auth/popup-closed-by-user") {
+        setError("Sign-up cancelled. Please try again.");
+      } else {
+        setError("Failed to sign up with Apple. Please try again.");
+      }
+      setLoading(false);
+    }
+  };
+
+  if (user) {
+    return <div>Redirecting...</div>;
+  }
+
   return (
     <div style={styles.pageContainer}>
-      {/* Header */}
       <header style={styles.header}>
         <Link href="/">
           <Image
-            src="/https://i.imgur.com/OML2njS.png"
+            src="/logo.png"
             alt="Homebase Logo"
             width={120}
             height={30}
             style={styles.logo}
+            priority
           />
         </Link>
         <div style={styles.headerLinks}>
@@ -257,26 +342,34 @@ export default function SignupPage() {
         </div>
       </header>
 
-      {/* Main Content */}
       <div style={styles.container}>
         <div style={styles.formContainer}>
           <h1 style={styles.formHeader}>Sign up for Homebase</h1>
 
-          {/* SSO Buttons */}
-          <button style={styles.ssoButton} onClick={handleGoogleSignup}>
+          <button
+            style={styles.ssoButton}
+            onClick={handleGoogleSignup}
+            disabled={loading}
+            aria-label="Continue with Google"
+          >
             <Image
               src="https://www.google.com/favicon.ico"
-              alt="Google"
+              alt="Google Icon"
               width={20}
               height={20}
               style={styles.icon}
             />
             Continue with Google
           </button>
-          <button style={styles.ssoButton}>
+          <button
+            style={styles.ssoButton}
+            onClick={handleAppleSignup}
+            disabled={loading}
+            aria-label="Continue with Apple"
+          >
             <Image
               src="https://www.apple.com/favicon.ico"
-              alt="Apple"
+              alt="Apple Icon"
               width={20}
               height={20}
               style={styles.icon}
@@ -284,17 +377,14 @@ export default function SignupPage() {
             Continue with Apple
           </button>
 
-          {/* Divider */}
           <div style={styles.divider}>
             <div style={styles.dividerLine}></div>
             <span style={styles.dividerText}>OR</span>
             <div style={styles.dividerLine}></div>
           </div>
 
-          {/* Error Message */}
           {error && <p style={styles.error}>{error}</p>}
 
-          {/* Email/Password Form */}
           <form onSubmit={handleEmailSignup}>
             <div>
               <input
@@ -304,6 +394,7 @@ export default function SignupPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 style={styles.input}
                 required
+                aria-label="Email address"
               />
             </div>
             <div style={styles.passwordContainer}>
@@ -314,10 +405,12 @@ export default function SignupPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 style={styles.input}
                 required
+                aria-label="Password"
               />
               <span
                 style={styles.showPassword}
                 onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
               >
                 {showPassword ? "Hide" : "Show"}
               </span>
@@ -330,14 +423,19 @@ export default function SignupPage() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 style={styles.input}
                 required
+                aria-label="Confirm Password"
               />
             </div>
-            <button type="submit" style={styles.signupButton}>
-              Sign up
+            <button
+              type="submit"
+              style={loading ? styles.loadingButton : styles.signupButton}
+              disabled={loading}
+              aria-label="Sign up with email and password"
+            >
+              {loading ? "Signing up..." : "Sign up"}
             </button>
           </form>
 
-          {/* Links */}
           <div style={styles.links}>
             <Link href="/account" style={styles.link}>
               Log in
@@ -352,7 +450,6 @@ export default function SignupPage() {
         </div>
       </div>
 
-      {/* Footer */}
       <footer style={styles.footer}>
         <div style={styles.footerLinks}>
           <Link href="/support" style={styles.footerLink}>

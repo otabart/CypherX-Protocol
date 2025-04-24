@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "baseUrl": ".",
     "target": "ESNext",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
@@ -7,8 +8,8 @@
     "strict": true,
     "noEmit": true,
     "esModuleInterop": true,
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "esnext",
+    "moduleResolution": "bundler", // Changed to "bundler" for Next.js compatibility
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "preserve",
@@ -16,24 +17,25 @@
     "plugins": [{ "name": "next" }],
     "paths": {
       "@/*": ["./*"],
-      "~/TradingCompetition/*": ["./app/TradingCompetition/*"]
+      "~/TradingCompetition/*": ["./app/TradingCompetition/*"],
+      "constants": ["./constants.ts"]
     },
     "forceConsistentCasingInFileNames": true,
     "allowSyntheticDefaultImports": true,
     "noFallthroughCasesInSwitch": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "types": ["node", "react", "react-dom", "framer-motion"], // Added framer-motion types
-    "baseUrl": ".",
+    "types": ["node", "react", "react-dom", "framer-motion", "next"],
     "verbatimModuleSyntax": true,
-    "allowImportingTsExtensions": true // Allows .ts/.tsx in imports
+    "allowImportingTsExtensions": true
   },
   "include": [
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    "app/TradingCompetition/**/*" // Explicitly include TradingCompetition dir
+    "app/TradingCompetition/**/*",
+    "lib/**/*"
   ],
   "exclude": ["node_modules"]
 }

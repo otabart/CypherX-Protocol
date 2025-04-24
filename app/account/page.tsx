@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
+import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, OAuthProvider } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+import { auth, db, listenToAuthState } from "@/lib/firebase";
 
 const COLORS = {
   white: "#FFFFFF",
@@ -128,6 +128,17 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: "pointer",
     marginBottom: "15px",
   },
+  loadingButton: {
+    width: "100%",
+    padding: "10px",
+    backgroundColor: COLORS.gray,
+    color: COLORS.white,
+    border: "none",
+    borderRadius: "4px",
+    fontSize: "16px",
+    cursor: "not-allowed",
+    marginBottom: "15px",
+  },
   links: {
     display: "flex",
     justifyContent: "space-between",
@@ -170,7 +181,20 @@ export default function AccountPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState<null | object>(null);
   const router = useRouter();
+
+  // Redirect if already signed in
+  useEffect(() => {
+    const unsubscribe = listenToAuthState((currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        router.push("/account/dashboard");
+      }
+    });
+    return () => unsubscribe();
+  }, [router]);
 
   const ensureUserInFirestore = async (user: any) => {
     const userRef = doc(db, "users", user.uid);
@@ -181,14 +205,34 @@ export default function AccountPage() {
         uid: user.uid,
         email: user.email,
         displayName: user.displayName || null,
+        photoURL: user.photoURL || null,
         createdAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString(),
       });
+    } else {
+      // Update last login time
+      await setDoc(userRef, { lastLoginAt: new Date().toISOString() }, { merge: true });
     }
   };
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setLoading(true);
+
+    // Basic email validation
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError("Please enter a valid email address.");
+      setLoading(false);
+      return;
+    }
+
+    if (!password || password.length < 6) {
+      setError("Password must be at least 6 characters long.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       await ensureUserInFirestore(userCredential.user);
@@ -198,14 +242,18 @@ export default function AccountPage() {
         setError("Invalid email or password. Please try again.");
       } else if (err.code === "auth/invalid-email") {
         setError("Invalid email address. Please check your email and try again.");
+      } else if (err.code === "auth/too-many-requests") {
+        setError("Too many attempts. Please try again later.");
       } else {
         setError("Failed to log in. Please try again.");
       }
+      setLoading(false);
     }
   };
 
   const handleGoogleLogin = async () => {
     setError(null);
+    setLoading(true);
     try {
       const provider = new GoogleAuthProvider();
       const userCredential = await signInWithPopup(auth, provider);
@@ -217,19 +265,44 @@ export default function AccountPage() {
       } else {
         setError("Failed to log in with Google. Please try again.");
       }
+      setLoading(false);
     }
   };
+
+  const handleAppleLogin = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const provider = new OAuthProvider("apple.com");
+      provider.addScope("email");
+      const userCredential = await signInWithPopup(auth, provider);
+      await ensureUserInFirestore(userCredential.user);
+      router.push("/account/dashboard");
+    } catch (err: any) {
+      if (err.code === "auth/popup-closed-by-user") {
+        setError("Login cancelled. Please try again.");
+      } else {
+        setError("Failed to log in with Apple. Please try again.");
+      }
+      setLoading(false);
+    }
+  };
+
+  if (user) {
+    return <div>Redirecting...</div>;
+  }
 
   return (
     <div style={styles.pageContainer}>
       <header style={styles.header}>
         <Link href="/">
           <Image
-            src="/https://i.imgur.com/OML2njS.png"
+            src="/logo.png"
             alt="Homebase Logo"
             width={120}
             height={30}
             style={styles.logo}
+            priority
           />
         </Link>
         <div style={styles.headerLinks}>
@@ -246,20 +319,30 @@ export default function AccountPage() {
         <div style={styles.formContainer}>
           <h1 style={styles.formHeader}>Log in to Homebase</h1>
 
-          <button style={styles.ssoButton} onClick={handleGoogleLogin}>
+          <button
+            style={styles.ssoButton}
+            onClick={handleGoogleLogin}
+            disabled={loading}
+            aria-label="Continue with Google"
+          >
             <Image
               src="https://www.google.com/favicon.ico"
-              alt="Google"
+              alt="Google Icon"
               width={20}
               height={20}
               style={styles.icon}
             />
             Continue with Google
           </button>
-          <button style={styles.ssoButton}>
+          <button
+            style={styles.ssoButton}
+            onClick={handleAppleLogin}
+            disabled={loading}
+            aria-label="Continue with Apple"
+          >
             <Image
               src="https://www.apple.com/favicon.ico"
-              alt="Apple"
+              alt="Apple Icon"
               width={20}
               height={20}
               style={styles.icon}
@@ -284,6 +367,7 @@ export default function AccountPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 style={styles.input}
                 required
+                aria-label="Email address"
               />
             </div>
             <div style={styles.passwordContainer}>
@@ -294,16 +378,23 @@ export default function AccountPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 style={styles.input}
                 required
+                aria-label="Password"
               />
               <span
                 style={styles.showPassword}
                 onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
               >
                 {showPassword ? "Hide" : "Show"}
               </span>
             </div>
-            <button type="submit" style={styles.loginButton}>
-              Log in
+            <button
+              type="submit"
+              style={loading ? styles.loadingButton : styles.loginButton}
+              disabled={loading}
+              aria-label="Log in with email and password"
+            >
+              {loading ? "Logging in..." : "Log in"}
             </button>
           </form>
 

@@ -28,7 +28,7 @@ export type TokenData = {
 export type BaseAiToken = {
   symbol: string;
   address: string;
-  weight: string; // stored as a string with a "%" symbol
+  weight: string;
 };
 
 // ====== STATIC LIST ======
@@ -55,12 +55,17 @@ const containerVariants = {
   },
 };
 
+const imageVariants = {
+  hidden: { opacity: 0, scale: 0.8 },
+  visible: { opacity: 1, scale: 1, transition: { duration: 0.5 } },
+};
+
 // ====== DOWNLOAD ICON (Heroicons Style) ======
 function DownloadIcon() {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      className="h-6 w-6"
+      className="h-6 w-6 text-primaryBlue"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -172,7 +177,6 @@ export default function BaseAiIndex() {
       const dataUrl = await domToImage.toPng(indexRef.current, {
         quality: 1,
         style: { backgroundColor: "#fff" },
-        // crossOrigin: "anonymous", // if needed
       });
       const link = document.createElement("a");
       link.download = "base-ai-index.png";
@@ -186,12 +190,12 @@ export default function BaseAiIndex() {
   }
 
   if (loading) {
-    return <div className="p-4 text-center">Loading Base AI Index...</div>;
+    return <div className="p-4 text-center text-gray-500">Loading Base AI Index...</div>;
   }
 
   return (
     <motion.div
-      className={isMobile ? "p-2" : "p-4"}
+      className="p-4 md:p-6"
       initial="hidden"
       whileInView="visible"
       viewport={{ once: true, amount: 0.5 }}
@@ -200,62 +204,101 @@ export default function BaseAiIndex() {
       {/* Unified container (banner + table) */}
       <motion.div
         ref={indexRef}
-        className="relative shadow-lg overflow-hidden"
-        initial={{ opacity: 0, y: 10 }}
+        className="relative bg-white rounded-xl shadow-lg overflow-hidden w-full max-w-md md:max-w-5xl mx-auto"
+        initial={{ opacity: 0, y: 20 }}
         whileInView={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
         viewport={{ once: true, amount: 0.5 }}
+        style={{ perspective: "1000px" }}
       >
         {/* Download Button */}
-        <button
+        <motion.button
           onClick={handleDownloadImage}
           className={
-            isMobile
-              ? "absolute top-1 right-1 p-2 rounded-full bg-white shadow hover:bg-gray-100"
-              : "absolute top-3 right-3 p-2 rounded-full bg-white shadow hover:bg-gray-100"
+            "absolute top-3 right-3 p-2 rounded-full bg-white shadow-md hover:bg-gray-50 transition-all"
           }
           title="Download Image"
+          whileHover={{ scale: 1.1, boxShadow: "0 8px 16px rgba(0,0,0,0.2)" }}
+          whileTap={{ scale: 0.95 }}
+          transition={{ type: "spring", stiffness: 300 }}
         >
           <DownloadIcon />
-        </button>
+        </motion.button>
 
         {/* Blue Stats Banner */}
-        <div className="bg-[#0052FF] text-white p-4 w-full">
-          <h2 className="text-2xl font-bold mb-2 text-center">Base AI Index</h2>
-          <div className="flex flex-col sm:flex-row justify-around text-sm">
-            <div title="Weighted Average 24h Price Change">
-              <span className="font-medium">24h Change: </span>
-              {aggStats.overallPriceChange !== undefined
-                ? `${aggStats.overallPriceChange.toFixed(2)}%`
-                : "N/A"}
+        <div className="bg-gradient-to-r from-primaryBlue to-blue-500 text-white p-4 md:p-6 w-full">
+          <h2 className="text-2xl md:text-3xl font-extrabold mb-3 md:mb-4 text-center">
+            Base AI Index
+          </h2>
+          <div className="flex flex-col md:flex-row justify-around text-sm md:text-base space-y-2 md:space-y-0 md:space-x-4">
+            <div
+              className="flex items-center justify-center space-x-2"
+              title="Weighted Average 24h Price Change"
+            >
+              <span className="font-semibold">24h Change:</span>
+              <span
+                className={
+                  aggStats.overallPriceChange !== undefined
+                    ? aggStats.overallPriceChange >= 0
+                      ? "text-green-300"
+                      : "text-red-300"
+                    : ""
+                }
+              >
+                {aggStats.overallPriceChange !== undefined
+                  ? `${aggStats.overallPriceChange.toFixed(2)}%`
+                  : "N/A"}
+              </span>
             </div>
-            <div title="Total 24h Trading Volume">
-              <span className="font-medium">24h Volume: </span>
-              {aggStats.totalVolume
-                ? `$${aggStats.totalVolume.toLocaleString()}`
-                : "N/A"}
+            <div
+              className="flex items-center justify-center space-x-2"
+              title="Total 24h Trading Volume"
+            >
+              <span className="font-semibold">24h Volume:</span>
+              <span>
+                {aggStats.totalVolume
+                  ? `$${aggStats.totalVolume.toLocaleString()}`
+                  : "N/A"}
+              </span>
             </div>
-            <div title="Total Market Capitalization">
-              <span className="font-medium">Market Cap: </span>
-              {aggStats.totalMarketCap
-                ? `$${aggStats.totalMarketCap.toLocaleString()}`
-                : "N/A"}
+            <div
+              className="flex items-center justify-center space-x-2"
+              title="Total Market Capitalization"
+            >
+              <span className="font-semibold">Market Cap:</span>
+              <span>
+                {aggStats.totalMarketCap
+                  ? `$${aggStats.totalMarketCap.toLocaleString()}`
+                  : "N/A"}
+              </span>
             </div>
           </div>
         </div>
 
         {/* White Table Section */}
-        <div className="bg-white p-4">
+        <div className="bg-white p-4 md:p-6">
           <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-gray-100">
+            <table className="w-full text-left text-xs md:text-sm">
+              <thead className="bg-gray-50">
                 <tr>
-                  <th className="border p-2">Token</th>
-                  <th className="border p-2">Weight</th>
-                  <th className="border p-2">Price (USD)</th>
-                  <th className="border p-2">24h Change</th>
-                  <th className="border p-2">Volume (24h)</th>
-                  <th className="border p-2">Market Cap</th>
+                  <th className="p-2 md:p-4 text-primaryBlue font-semibold uppercase tracking-wide">
+                    Token
+                  </th>
+                  <th className="p-2 md:p-4 text-primaryBlue font-semibold uppercase tracking-wide">
+                    Weight
+                  </th>
+                  <th className="p-2 md:p-4 text-primaryBlue font-semibold uppercase tracking-wide">
+                    Price (USD)
+                  </th>
+                  <th className="p-2 md:p-4 text-primaryBlue font-semibold uppercase tracking-wide">
+                    24h Change
+                  </th>
+                  <th className="p-2 md:p-4 text-primaryBlue font-semibold uppercase tracking-wide">
+                    Volume (24h)
+                  </th>
+                  <th className="p-2 md:p-4 text-primaryBlue font-semibold uppercase tracking-wide">
+                    Market Cap
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -264,47 +307,62 @@ export default function BaseAiIndex() {
                   return (
                     <motion.tr
                       key={token.address}
-                      className="border-t hover:bg-blue-50 transition-colors"
-                      // Animate once each row hits 10% visibility
+                      className="border-t border-gray-100 hover:bg-blue-50 transition-all duration-300"
                       initial={{ opacity: 0, y: 10 }}
                       whileInView={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.4, delay: idx * 0.1 }}
-                      viewport={{ once: false, amount: 0.1 }} 
+                      viewport={{ once: false, amount: 0.1 }}
                     >
-                      <td className="border p-2 flex items-center space-x-2">
+                      <td className="p-2 md:p-4 flex items-center space-x-2">
                         {d?.info?.imageUrl ? (
-                          <img
+                          <motion.img
                             src={d.info.imageUrl}
                             alt={token.symbol}
-                            className="w-6 h-6 rounded-full"
+                            className="w-6 h-6 md:w-8 md:h-8 rounded-full border border-gray-200 shadow-sm"
+                            variants={imageVariants}
+                            initial="hidden"
+                            whileInView="visible"
+                            viewport={{ once: true }}
                           />
                         ) : (
-                          <div className="w-6 h-6 rounded-full bg-gray-300" />
+                          <div className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-gray-200 shadow-sm" />
                         )}
                         <span
-                          className={disableTruncation ? "" : "truncate max-w-[80px]"}
+                          className={
+                            disableTruncation
+                              ? "text-gray-800 font-medium"
+                              : "text-gray-800 font-medium truncate max-w-[60px] md:max-w-[100px]"
+                          }
                           title={token.symbol}
                         >
                           {token.symbol}
                         </span>
                       </td>
-                      <td className="border p-2" title="Pre-defined weight">
+                      <td className="p-2 md:p-4 text-gray-700 font-medium" title="Pre-defined weight">
                         {token.weight}
                       </td>
-                      <td className="border p-2">
+                      <td className="p-2 md:p-4 text-gray-700 font-medium">
                         {d ? `$${Number(d.priceUsd).toFixed(4)}` : "N/A"}
                       </td>
-                      <td className="border p-2">
-                        {d && d.priceChange?.h24 !== undefined
-                          ? `${d.priceChange.h24.toFixed(2)}%`
-                          : "N/A"}
+                      <td className="p-2 md:p-4 font-medium">
+                        {d && d.priceChange?.h24 !== undefined ? (
+                          <span
+                            className={
+                              d.priceChange.h24 >= 0 ? "text-green-600" : "text-red-600"
+                            }
+                          >
+                            {`${d.priceChange.h24.toFixed(2)}%`}
+                          </span>
+                        ) : (
+                          "N/A"
+                        )}
                       </td>
-                      <td className="border p-2">
+                      <td className="p-2 md:p-4 text-gray-700 font-medium">
                         {d && d.volume?.h24
                           ? `$${d.volume.h24.toLocaleString()}`
                           : "N/A"}
                       </td>
-                      <td className="border p-2">
+                      <td className="p-2 md:p-4 text-gray-700 font-medium">
                         {d && d.marketCap
                           ? `$${d.marketCap.toLocaleString()}`
                           : "N/A"}

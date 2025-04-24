@@ -1,0 +1,9 @@
+export const MIN_LIQUIDITY = 20_000;
+export const DECAY_CONSTANT = 7;
+export const COOLDOWN_PERIOD = 300_000; // 5 minutes
+export const PRICE_CHECK_INTERVAL = 60_000; // 1 minute
+export const ETH_STATS_INTERVAL = 900_000; // 15 minutes
+export const TOP_MOVERS_LOSERS_INTERVAL = 3_600_000; // 1 hour
+export const NO_LIQUIDITY_WARNING_TOKENS = ["bork", "fabiene", "munchi", "kevin", "paradox"];
+export const SUPPORTED_CHAINS = ["base"];
+export const DEFAULT_PAGE_SIZE = 25;

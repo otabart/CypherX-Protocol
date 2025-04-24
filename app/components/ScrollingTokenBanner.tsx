@@ -22,7 +22,7 @@ interface Prices {
 
 // Default token list
 const BASE_TOKENS: Token[] = [
-  { id: 'brett', name: 'BRETT' }, // Based Brett on Base chain
+  { id: 'brett', name: 'BRETT' },
   { id: 'toshi', name: 'TOSHI' },
   { id: 'aixbt', name: 'AIXBT' },
   { id: 'ski-mask-dog', name: 'SKI' },
@@ -65,7 +65,6 @@ export default function ScrollingTokenBanner({ tokens = BASE_TOKENS }: Scrolling
   const [displayPrices, setDisplayPrices] = useState<Prices>({});
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [isPaused, setIsPaused] = useState<boolean>(false);
 
   const fetchPrices = async () => {
     setIsLoading(true);
@@ -86,10 +85,10 @@ export default function ScrollingTokenBanner({ tokens = BASE_TOKENS }: Scrolling
       if (missingTokens.length > 0) {
         console.warn('Missing token data for:', missingTokens.map((t) => t.id));
         setError(`Some tokens failed to load: ${missingTokens.map((t) => t.name).join(', ')}`);
-        setDisplayPrices((prev) => ({ ...prev, ...data })); // Use partial data
+        setDisplayPrices((prev) => ({ ...prev, ...data }));
       } else {
         setDisplayPrices(data);
-        setError(null); // Clear error if fully successful
+        setError(null);
       }
 
       if (typeof window !== 'undefined') {
@@ -137,10 +136,7 @@ export default function ScrollingTokenBanner({ tokens = BASE_TOKENS }: Scrolling
       {error && !isLoading && Object.keys(displayPrices).length === 0 && (
         <div className="text-center text-red-300 py-1">
           {error}
-          <button
-            className="ml-2 text-blue-300 underline"
-            onClick={fetchPrices}
-          >
+          <button className="ml-2 text-blue-300 underline" onClick={fetchPrices}>
             Retry
           </button>
         </div>
@@ -159,31 +155,19 @@ export default function ScrollingTokenBanner({ tokens = BASE_TOKENS }: Scrolling
         <motion.div
           className="flex space-x-10 whitespace-nowrap w-max"
           initial={{ x: 0 }}
-          animate={isPaused ? { x: 0 } : { x: '-100%' }}
+          animate={{ x: '-100%' }}
           transition={{
             repeat: Infinity,
             duration: animationDuration,
             ease: 'linear',
           }}
-          onMouseEnter={() => setIsPaused(true)}
-          onMouseLeave={() => setIsPaused(false)}
-          onFocus={() => setIsPaused(true)}
-          onBlur={() => setIsPaused(false)}
-          tabIndex={0}
         >
           {[...tokens, ...tokens].map((token, index) => {
             const tokenData = displayPrices[token.id] || {};
             const price = tokenData.usd || 0;
             const change = tokenData.usd_24h_change || 0;
 
-            return (
-              <TokenItem
-                key={index}
-                token={token}
-                price={price}
-                change={change}
-              />
-            );
+            return <TokenItem key={index} token={token} price={price} change={change} />;
           })}
         </motion.div>
       )}
