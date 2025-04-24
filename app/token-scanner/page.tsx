@@ -5,10 +5,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { FaTrophy, FaBolt, FaStar, FaSearch, FaBell, FaClipboard, FaShieldAlt, FaPlusCircle, FaLock } from "react-icons/fa";
-import { tokenMapping } from "../tokenMapping.js";
 import debounce from "lodash/debounce";
 import { onAuthStateChanged } from "firebase/auth";
-import { auth, db } from "@/lib/firebase.ts";
+import { auth, db } from "@/lib/firebase";
 import { collection, query, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp, getDocs, setDoc } from "firebase/firestore";
 import { Chart as ChartJS, LineElement, PointElement, LinearScale, TimeScale, Title, Tooltip, Legend } from "chart.js";
 import { Line } from "react-chartjs-2";
@@ -31,6 +30,7 @@ export type TokenData = {
   };
   priceUsd: string;
   priceChange?: {
+    m5?: number;
     h1?: number;
     h6?: number;
     h24?: number;
@@ -48,15 +48,29 @@ export type TokenData = {
   info?: {
     imageUrl?: string;
   };
+  txns: {
+    h1: { buys: number; sells: number };
+    h6: { buys: number; sells: number };
+    h24: { buys: number; sells: number };
+  };
 };
 
 export type BaseAiToken = {
   symbol: string;
   address: string;
   weight: string;
+  pairAddress?: string;
 };
 
-// ====== STATIC BASE AI TOKENS LIST ======
+type Alert = {
+  type: "price_spike" | "price_spike_long" | "volume_spike" | "mover" | "loser" | "boost";
+  message: string;
+  timestamp: string;
+  pairAddress?: string;
+  priceChangePercent?: number;
+};
+
+// ====== STATIC BASE AI TOKENS LIST (for Base AI Index component/view) ======
 const baseAiTokens: BaseAiToken[] = [
   { symbol: "GAME", address: "0x1C4CcA7C5DB003824208aDDA61Bd749e55F463a3", weight: "4.86%" },
   { symbol: "BANKR", address: "0x22aF33FE49fD1Fa80c7149773dDe5890D3c76F3b", weight: "5.24%" },
@@ -70,7 +84,17 @@ const baseAiTokens: BaseAiToken[] = [
   { symbol: "AIXBT", address: "0x4F9Fd6Be4a90f2620860d680c0d4d5Fb53d1A825", weight: "10.5%" },
 ];
 
-// Utility Functions
+// ====== CONSTANTS ======
+const DECAY_CONSTANT = 7;
+const COOLDOWN_PERIOD = 300_000; // 5 minutes
+const LONG_COOLDOWN_PERIOD = 1_800_000; // 30 minutes
+const PRICE_CHECK_INTERVAL = 300_000; // 5 minutes
+const TOP_MOVERS_LOSERS_INTERVAL = 3_600_000; // 1 hour
+const NOTIFICATION_EXPIRY = 3 * 60 * 60 * 1000; // 3 hours
+const MAX_NOTIFICATIONS_PER_HOUR = 18;
+const BASE_AI_TOKEN_SYMBOLS = baseAiTokens.map((token) => token.symbol.toUpperCase());
+
+// ====== UTILITY FUNCTIONS ======
 function getColorClass(value: number): string {
   return value >= 0 ? "text-green-500" : "text-red-500";
 }
@@ -88,17 +112,6 @@ function getTxns24h(token: DexToken): number {
   const { buys, sells } = token.txns.h24;
   return buys + sells;
 }
-
-const MIN_LIQUIDITY = 20000;
-const DECAY_CONSTANT = 7;
-const COOLDOWN_PERIOD = 300_000; // 5 minutes
-const LONG_COOLDOWN_PERIOD = 1_800_000; // 30 minutes
-const PRICE_CHECK_INTERVAL = 300_000; // 5 minutes (adjusted for ~2–3 alerts)
-const TOP_MOVERS_LOSERS_INTERVAL = 3_600_000; // 1 hour
-const NOTIFICATION_EXPIRY = 3 * 60 * 60 * 1000; // 3 hours
-const MAX_NOTIFICATIONS_PER_HOUR = 18; // Allows ~3 alerts/5 min
-const NO_LIQUIDITY_WARNING_TOKENS = ["bork", "fabiene", "munchi", "kevin", "paradox"];
-const BASE_AI_TOKEN_SYMBOLS = baseAiTokens.map((token) => token.symbol.toUpperCase());
 
 function computeTrending(token: DexToken, boostValue: number): number {
   const txns = getTxns24h(token);
@@ -122,6 +135,11 @@ function computeTrending(token: DexToken, boostValue: number): number {
   const consistencyBonus =
     priceChange1h > 0 && priceChange6h > 0 && priceChange24h > 0 ? 10 : 0;
 
+  const volumeToMarketCap = token.marketCap
+    ? (token.volume?.h24 || 0) / token.marketCap
+    : 0;
+  const volumeMarketCapScore = Math.log10(volumeToMarketCap + 1) * 2;
+
   const boostScore = boostValue || 0;
 
   const pairAgeDays = token.pairCreatedAt
@@ -129,31 +147,49 @@ function computeTrending(token: DexToken, boostValue: number): number {
     : 0;
   const ageDecay = Math.max(0.3, Math.exp(-pairAgeDays / DECAY_CONSTANT));
 
-  return (txnScore + volumeScore + liquidityScore + priceMovementScore + consistencyBonus + boostScore) * ageDecay;
+  return (txnScore + volumeScore + liquidityScore + priceMovementScore + consistencyBonus + volumeMarketCapScore + boostScore) * ageDecay;
 }
 
-// Types
-interface DexToken extends TokenData {
-  txns: {
-    h1: { buys: number; sells: number };
-    h6: { buys: number; sells: number };
-    h24: { buys: number; sells: number };
+interface DexToken {
+  chainId: string;
+  dexId: string;
+  pairAddress: string;
+  baseToken: {
+    address: string;
+    name: string;
+    symbol: string;
   };
-  trendingScore?: number;
+  quoteToken: {
+    address: string;
+    name: string;
+    symbol: string;
+  };
+  priceUsd: string;
+  txns: {
+    [key: string]: { buys: number; sells: number };
+  };
+  priceChange: {
+    [key: string]: number;
+  };
+  volume: {
+    [key: string]: number;
+  };
+  liquidity: {
+    usd: number;
+  };
+  marketCap?: number;
+  fdv?: number;
+  pairCreatedAt?: number;
+  info?: {
+    imageUrl?: string;
+  };
+  isIncomplete?: boolean;
   boosted?: boolean;
   boostValue?: number;
-  weight?: number; // Added for Base AI Index
+  weight?: number;
 }
 
-interface Alert {
-  type: "volume_spike" | "price_spike" | "price_spike_long" | "mover" | "loser" | "boost";
-  message: string;
-  timestamp: string;
-  priceChangePercent?: number;
-  pairAddress?: string;
-}
-
-// Trophy & Marketing Icons
+// ====== UI COMPONENTS ======
 function getTrophy(rank: number): JSX.Element | null {
   if (rank === 1)
     return <FaTrophy size={16} className="text-[#FFD700]" title="Gold Trophy (Rank 1)" />;
@@ -201,7 +237,6 @@ export default function TokenScanner() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [selectedAlerts, setSelectedAlerts] = useState<Alert[] | null>(null);
   const [notificationCount, setNotificationCount] = useState(0);
-  const [hourStart, setHourStart] = useState(Date.now());
   const [indexHistory, setIndexHistory] = useState<{ timestamp: Date; value: number }[]>([]);
 
   // Submission State
@@ -212,25 +247,132 @@ export default function TokenScanner() {
   const [submissionSuccess, setSubmissionSuccess] = useState(false);
   const [showBoostModal, setShowBoostModal] = useState(false);
 
-  // Check Authentication and Fetch Favorites
+  // Check Authentication
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
       if (currentUser) {
-        setUser(currentUser);
         const favoritesQuery = query(collection(db, `users/${currentUser.uid}/favorites`));
         onSnapshot(favoritesQuery, (snapshot) => {
-          const favoriteList = snapshot.docs.map((doc) => doc.data().pairAddress as string);
-          setFavorites(favoriteList);
-        }, (err) => {
-          console.error("Error fetching favorites:", err);
-          setToast("Failed to load favorites");
-          setTimeout(() => setToast(""), 2000);
+          const favs = snapshot.docs.map((doc) => doc.id);
+          setFavorites(favs);
         });
-      } else {
-        setUser(null);
-        setFavorites([]);
       }
     });
+    return () => unsubscribe();
+  }, []);
+
+  // Fetch Tokens from Firebase and DexScreener
+  useEffect(() => {
+    const tokensQuery = query(collection(db, "tokens"));
+    const unsubscribe = onSnapshot(tokensQuery, async (snapshot) => {
+      try {
+        setLoading(true);
+        setError("");
+
+        const tokenList = snapshot.docs.map((doc) => ({
+          pool: doc.data().pool as string,
+          symbol: doc.data().symbol as string,
+          address: doc.data().address as string,
+          name: doc.data().name as string | undefined,
+        }));
+
+        const validTokens = tokenList.filter((token) => /^0x[a-fA-F0-9]{40}$/.test(token.address));
+        if (validTokens.length === 0) {
+          setError("No valid token addresses found in Firebase.");
+          setTokens([]);
+          setLoading(false);
+          return;
+        }
+
+        const tokenChunks: string[][] = [];
+        for (let i = 0; i < validTokens.length; i += 10) {
+          tokenChunks.push(validTokens.slice(i, i + 10).map((t) => t.address));
+        }
+
+        const allResults: DexToken[] = [];
+        for (const chunk of tokenChunks) {
+          const joinedChunk = chunk.join(",");
+          const res = await fetch(`https://api.dexscreener.com/tokens/v1/base/${encodeURIComponent(joinedChunk)}`, {
+            headers: { Accept: "application/json" },
+          });
+          if (!res.ok) {
+            console.error(`API fetch failed for chunk: ${joinedChunk}, status: ${res.status}`);
+            continue;
+          }
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            allResults.push(
+              ...data.map((pair: any) => {
+                const firestoreToken = validTokens.find(
+                  (t) => t.address.toLowerCase() === pair.baseToken.address.toLowerCase()
+                );
+                return {
+                  chainId: pair.chainId || "base",
+                  dexId: pair.dexId || "",
+                  pairAddress: pair.pairAddress || "",
+                  baseToken: {
+                    address: pair.baseToken.address || "",
+                    name: firestoreToken?.name || pair.baseToken.name || "Unknown",
+                    symbol: firestoreToken?.symbol || pair.baseToken.symbol || "UNK",
+                  },
+                  quoteToken: {
+                    address: pair.quoteToken.address || "",
+                    name: pair.quoteToken.name || "WETH",
+                    symbol: pair.quoteToken.symbol || "WETH",
+                  },
+                  priceUsd: pair.priceUsd || "0",
+                  txns: pair.txns || { h1: { buys: 0, sells: 0 }, h6: { buys: 0, sells: 0 }, h24: { buys: 0, sells: 0 } },
+                  priceChange: pair.priceChange || { m5: 0, h1: 0, h6: 0, h24: 0 },
+                  volume: pair.volume || { h1: 0, h24: 0 },
+                  liquidity: pair.liquidity || { usd: 0 },
+                  marketCap: pair.marketCap || 0,
+                  fdv: pair.fdv || 0,
+                  pairCreatedAt: pair.pairCreatedAt || 0,
+                  info: pair.info ? { imageUrl: pair.info.imageUrl } : undefined,
+                  isIncomplete: !pair.priceUsd || !pair.liquidity.usd,
+                };
+              })
+            );
+          }
+        }
+
+        if (allResults.length === 0) {
+          setTokens(
+            validTokens.map((token) => ({
+              chainId: "base",
+              dexId: "",
+              pairAddress: token.pool || "",
+              baseToken: {
+                address: token.address,
+                name: token.name || "Unknown",
+                symbol: token.symbol || "UNK",
+              },
+              quoteToken: { address: "", name: "WETH", symbol: "WETH" },
+              priceUsd: "0",
+              txns: { h1: { buys: 0, sells: 0 }, h6: { buys: 0, sells: 0 }, h24: { buys: 0, sells: 0 } },
+              priceChange: { m5: 0, h1: 0, h6: 0, h24: 0 },
+              volume: { h1: 0, h24: 0 },
+              liquidity: { usd: 0 },
+              marketCap: 0,
+              fdv: 0,
+              pairCreatedAt: 0,
+              info: { imageUrl: undefined },
+              isIncomplete: true,
+            }))
+          );
+        } else {
+          setTokens(allResults);
+        }
+      } catch (err) {
+        setError("Failed to load tokens from DexScreener API");
+        console.error(err);
+        setTokens([]);
+      } finally {
+        setLoading(false);
+      }
+    });
+
     return () => unsubscribe();
   }, []);
 
@@ -240,159 +382,55 @@ export default function TokenScanner() {
     const unsubscribe = onSnapshot(alertsQuery, (snapshot) => {
       const now = Date.now();
       const newAlerts: Alert[] = [];
-      let count = 0;
-
-      if (now - hourStart >= 60 * 60 * 1000) {
-        setNotificationCount(0);
-        setHourStart(now);
-      }
+      const alertsPerToken: { [pairAddress: string]: Alert[] } = {};
 
       snapshot.forEach((doc) => {
         const alert = doc.data() as Alert;
         const alertTime = new Date(alert.timestamp).getTime();
 
         if (now - alertTime <= NOTIFICATION_EXPIRY) {
-          if (count < MAX_NOTIFICATIONS_PER_HOUR) {
-            newAlerts.push(alert);
-            count++;
+          const pairAddress = alert.pairAddress || "unknown";
+          if (!alertsPerToken[pairAddress]) {
+            alertsPerToken[pairAddress] = [];
           }
+          alertsPerToken[pairAddress].push(alert);
         } else {
           deleteDoc(doc.ref).catch((err) => console.error(`Failed to delete alert: ${err}`));
         }
       });
 
+      Object.keys(alertsPerToken).forEach((pairAddress) => {
+        const tokenAlerts = alertsPerToken[pairAddress];
+        tokenAlerts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        const limitedAlerts = tokenAlerts.slice(0, MAX_NOTIFICATIONS_PER_HOUR);
+        newAlerts.push(...limitedAlerts);
+      });
+
       setAlerts(newAlerts);
-      setNotificationCount(count);
+      setNotificationCount(newAlerts.length);
     }, (err) => {
       console.error("Error fetching alerts:", err);
       setToast("Failed to load alerts");
       setTimeout(() => setToast(""), 2000);
     });
     return () => unsubscribe();
-  }, [hourStart]);
-
-  // Simulate live viewer count
-  useEffect(() => {
-    const currentCount = Number(localStorage.getItem("viewerCount") || 0);
-    const newCount = currentCount + 1;
-    localStorage.setItem("viewerCount", newCount.toString());
-    setViewerCount(newCount);
-
-    const handleUnload = () => {
-      const currentCount = Number(localStorage.getItem("viewerCount") || 0);
-      const newCount = Math.max(currentCount - 1, 0);
-      localStorage.setItem("viewerCount", newCount.toString());
-      setViewerCount(newCount);
-    };
-
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "viewerCount") {
-        setViewerCount(Number(e.newValue || 0));
-      }
-    };
-
-    window.addEventListener("beforeunload", handleUnload);
-    window.addEventListener("storage", handleStorageChange);
-
-    return () => {
-      window.removeEventListener("beforeunload", handleUnload);
-      window.removeEventListener("storage", handleStorageChange);
-      handleUnload();
-    };
   }, []);
 
-  // Fetch Tokens
+  // Simulate Live Viewer Count
   useEffect(() => {
-    async function fetchTokens() {
-      setLoading(true);
+    const fetchViewerCount = async () => {
       try {
-        const tokenList = Object.values(tokenMapping) as string[];
-        if (tokenList.length === 0) {
-          setError("Token mapping is empty");
-          setLoading(false);
-          return;
-        }
-
-        const tokenChunks: string[][] = [];
-        for (let i = 0; i < tokenList.length; i += 30) {
-          tokenChunks.push(tokenList.slice(i, i + 30));
-        }
-
-        let allResults: DexToken[] = [];
-        let hasAtLeastOneSuccess = false;
-        let errorMessages: string[] = [];
-
-        const fetchPromises = tokenChunks.map(async (chunk, chunkIndex) => {
-          const joinedChunk = chunk.join(",");
-          try {
-            const res = await fetch(`/api/tokens?chainId=base&tokenAddresses=${joinedChunk}`);
-            if (!res.ok) {
-              const errorText = await res.text();
-              errorMessages.push(
-                `Chunk ${chunkIndex} (${joinedChunk}) failed with status ${res.status}: ${errorText}`
-              );
-              return [];
-            }
-            const data = await res.json();
-            if (Array.isArray(data) && data.length > 0) {
-              hasAtLeastOneSuccess = true;
-              return data as DexToken[];
-            }
-            return [];
-          } catch (err) {
-            errorMessages.push(`Chunk ${chunkIndex} (${joinedChunk}) threw an error: ${err}`);
-            return [];
-          }
-        });
-
-        const chunkResults = await Promise.all(fetchPromises);
-        allResults = chunkResults.flat();
-
-        if (allResults.length > 0) {
-          const boostedTokens = await getDocs(collection(db, "boosts"));
-          const boostMap: { [pairAddress: string]: number } = {};
-          boostedTokens.forEach((doc) => {
-            const data = doc.data();
-            boostMap[data.pairAddress.toLowerCase()] = data.boostValue;
-          });
-
-          let tokensWithScores = allResults.map((tk) => {
-            const lowerPairAddress = tk.pairAddress.toLowerCase();
-            const aiToken = baseAiTokens.find(
-              (t) => t.symbol.toUpperCase() === tk.baseToken.symbol.toUpperCase()
-            );
-            const weight = aiToken ? parseFloat(aiToken.weight) / 100 : 0;
-            return {
-              ...tk,
-              liquidity: { usd: tk.liquidity?.usd || 0 },
-              volume: { h24: tk.volume?.h24 || 0, h1: tk.volume?.h1 || 0 },
-              pairCreatedAt: tk.pairCreatedAt || 0,
-              boosted: !!boostMap[lowerPairAddress],
-              boostValue: boostMap[lowerPairAddress] || 0,
-              trendingScore: computeTrending(tk, boostMap[lowerPairAddress] || 0),
-              weight,
-            };
-          });
-
-          tokensWithScores.sort((a, b) => (b.trendingScore ?? 0) - (a.trendingScore ?? 0));
-          setTokens(tokensWithScores);
-          setError("");
-        } else {
-          if (!hasAtLeastOneSuccess) {
-            setError("Error fetching token data: All chunks failed");
-          } else {
-            setError("Some token data could not be fetched");
-          }
-        }
+        const res = await fetch("/api/viewer-count");
+        const data = await res.json();
+        setViewerCount(data.count || 0);
       } catch (err) {
-        setError("Error fetching token data");
-      } finally {
-        setLoading(false);
+        console.error("Failed to fetch viewer count:", err);
+        setViewerCount(Math.floor(Math.random() * 50) + 1); // Fallback
       }
-    }
+    };
 
-    fetchTokens();
-    const interval = setInterval(fetchTokens, 120_000);
+    fetchViewerCount();
+    const interval = setInterval(fetchViewerCount, 60000); // Update every minute
     return () => clearInterval(interval);
   }, []);
 
@@ -432,7 +470,6 @@ export default function TokenScanner() {
             timestamp: new Date().toISOString(),
             pairAddress,
           };
-          console.log("Volume alert triggered:", alert);
           newAlerts.push(alert);
           addDoc(collection(db, "notifications"), {
             ...alert,
@@ -460,7 +497,6 @@ export default function TokenScanner() {
             priceChangePercent,
             pairAddress,
           };
-          console.log("Price alert triggered:", alert);
           newAlerts.push(alert);
           addDoc(collection(db, "notifications"), {
             ...alert,
@@ -486,7 +522,6 @@ export default function TokenScanner() {
             priceChangePercent: priceChange6h,
             pairAddress,
           };
-          console.log("Long-term price alert triggered:", alert);
           newAlerts.push(alert);
           addDoc(collection(db, "notifications"), {
             ...alert,
@@ -531,11 +566,10 @@ export default function TokenScanner() {
             timestamp: new Date().toISOString(),
             pairAddress: token.pairAddress,
           }))
-          .slice(0, 1); // Limit to 1 boost alert per cycle
+          .slice(0, 1);
 
         if (boostAlerts.length > 0) {
-          console.log("Boost alerts triggered:", boostAlerts);
-          setAlerts((prev) => [...prev, ...boostAlerts]);
+          setAlerts((prev) => [...prev_digest, ...boostAlerts]);
           for (const alert of boostAlerts) {
             await addDoc(collection(db, "notifications"), {
               ...alert,
@@ -589,7 +623,6 @@ export default function TokenScanner() {
             timestamp: new Date().toISOString(),
             pairAddress: token.pairAddress,
           };
-          console.log("Mover alert triggered:", alert);
           newAlerts.push(alert);
           addDoc(collection(db, "notifications"), {
             ...alert,
@@ -608,7 +641,6 @@ export default function TokenScanner() {
             timestamp: new Date().toISOString(),
             pairAddress: token.pairAddress,
           };
-          console.log("Loser alert triggered:", alert);
           newAlerts.push(alert);
           addDoc(collection(db, "notifications"), {
             ...alert,
@@ -621,17 +653,12 @@ export default function TokenScanner() {
       setAlerts((prev) => [...prev, ...newAlerts]);
     }
 
-    const currentTime = new Date();
-    if (currentTime.getMinutes() % 5 === 0) {
-      checkTopMoversAndLosers();
-    }
-
     const interval = setInterval(() => {
       const currentTime = new Date();
       if (currentTime.getMinutes() % 5 === 0) {
         checkTopMoversAndLosers();
       }
-    }, 300_000); // Every 5 minutes
+    }, TOP_MOVERS_LOSERS_INTERVAL);
     return () => clearInterval(interval);
   }, [tokens, notificationCount]);
 
@@ -642,22 +669,30 @@ export default function TokenScanner() {
         return sum + (parseFloat(token.priceUsd || "0") * (token.weight || 0));
       }, 0);
       setIndexHistory((prev) => [
-        ...prev.slice(-59), // Keep last 60 points (5 min intervals for 5 hours)
+        ...prev.slice(-59),
         { timestamp: new Date(), value: indexValue },
       ]);
     };
     updateIndexHistory();
-    const interval = setInterval(updateIndexHistory, 300_000); // 5 minutes
+    const interval = setInterval(updateIndexHistory, 300_000);
     return () => clearInterval(interval);
+  }, [tokens]);
+
+  // Apply Trending Scores
+  const tokensWithTrending = useMemo(() => {
+    return tokens.map((token) => ({
+      ...token,
+      trendingScore: computeTrending(token, token.boostValue || 0),
+    }));
   }, [tokens]);
 
   // Sorting & Filtering
   const filteredTokens = useMemo(() => {
-    let tokenList = tokens;
+    let tokenList = tokensWithTrending;
     if (viewMode === "favorites") {
-      tokenList = tokens.filter((token) => favorites.includes(token.pairAddress));
+      tokenList = tokenList.filter((token) => favorites.includes(token.pairAddress));
     } else if (viewMode === "baseAI") {
-      tokenList = tokens.filter((token) => BASE_AI_TOKEN_SYMBOLS.includes(token.baseToken.symbol.toUpperCase()));
+      tokenList = tokenList.filter((token) => BASE_AI_TOKEN_SYMBOLS.includes(token.baseToken.symbol.toUpperCase()));
     } else if (viewMode === "new") {
       tokenList = [];
     }
@@ -666,20 +701,21 @@ export default function TokenScanner() {
         ? (Date.now() - token.pairCreatedAt) / (1000 * 60 * 60 * 24)
         : 0;
       return (
-        token.liquidity.usd >= filters.minLiquidity &&
-        (token.volume?.h24 || 0) >= filters.minVolume &&
-        ageDays >= filters.minAge &&
+        token.liquidity.usd >= (filters.minLiquidity || 0) &&
+        (token.volume?.h24 || 0) >= (filters.minVolume || 0) &&
+        ageDays >= (filters.minAge || 0) &&
         (filters.maxAge === Infinity || ageDays <= filters.maxAge)
       );
     });
-  }, [tokens, filters, viewMode, favorites]);
+  }, [tokensWithTrending, filters, viewMode, favorites]);
 
   const sortedTokens = useMemo(() => {
     const copy = [...filteredTokens];
     if (viewMode === "baseAI") {
-      copy.sort((a, b) => (b.weight || 0) - (a.weight || 0)); // Sort by weight for Base AI
-      return copy.slice(0, 10); // Limit to top 10 tokens
+      copy.sort((a, b) => (b.weight || 0) - (a.weight || 0));
+      return copy.slice(0, 10);
     } else if (sortFilter === "trending") {
+      copy.sort((a, b) => (b.trendingScore || 0) - (a.trendingScore || 0));
       return sortDirection === "asc" ? copy.reverse() : copy;
     } else if (sortFilter === "volume") {
       copy.sort((a, b) =>
@@ -700,8 +736,9 @@ export default function TokenScanner() {
         sortDirection === "desc" ? (b.pairCreatedAt ?? 0) - (a.pairCreatedAt ?? 0) : (a.pairCreatedAt ?? 0) - (b.pairCreatedAt ?? 0)
       );
     } else {
-      let key: "h1" | "h6" | "h24" = "h1";
-      if (sortFilter === "6h") key = "h6";
+      let key: "m5" | "h1" | "h6" | "h24" = "h1";
+      if (sortFilter === "5m") key = "m5";
+      else if (sortFilter === "6h") key = "h6";
       else if (sortFilter === "24h") key = "h24";
       copy.sort((a, b) => {
         const aVal = a.priceChange?.[key] ?? 0;
@@ -1109,7 +1146,7 @@ export default function TokenScanner() {
                   ●
                 </motion.span>
                 <div className="text-xs sm:text-base text-white font-mono">
-                  Live{" "}
+                  LIVE{" "}
                   <motion.span
                     className="text-blue-400"
                     initial={{ scale: 1 }}
@@ -1292,918 +1329,727 @@ export default function TokenScanner() {
                   <Line data={chartData} options={chartOptions} />
                 </div>
               </div>
-              {filteredTokens.length === 0 ? (
+              {loading ? (
+                <div className="p-4 text-center text-gray-400">Loading tokens...</div>
+              ) : filteredTokens.length === 0 ? (
                 <div className="p-4 text-center text-gray-400">
-                  No tokens in the Base AI Index match your filters.
+                  No tokens in the Base AI Index match your filters. Try adjusting filters or check Firebase data.
                 </div>
               ) : (
-                <div className="hidden md:block">
-                  <table className="table-auto w-full whitespace-nowrap text-sm">
-                    <thead className="bg-gray-900 text-gray-300 sticky top-0 z-10">
-                      <tr>
-                        <th
-                          className="p-2 text-left cursor-pointer w-[150px]"
-                          onClick={() => handleFilterChange("trending")}
-                          title="Sort by trending score"
-                        >
-                          #{sortFilter === "trending" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                        </th>
-                        <th className="p-2 text-left" title="Token Pair">
-                          POOL
-                        </th>
-                        <th className="p-2 text-right" title="Price in USD">
-                          PRICE
-                        </th>
-                        <th
-                          className="p-2 text-right cursor-pointer"
-                          onClick={() => handleFilterChange("age")}
-                          title="Age of the token pair"
-                        >
-                          AGE{sortFilter === "age" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                        </th>
-                        <th className="p-2 text-right" title="Total transactions in 24 hours">
-                          TXN
-                        </th>
-                        <th
-                          className="p-2 text-right cursor-pointer"
-                          onClick={() => handleFilterChange("1h")}
-                          title="Price change in last 1 hour"
-                        >
-                          1H{sortFilter === "1h" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                        </th>
-                        <th
-                          className="p-2 text-right cursor-pointer"
-                          onClick={() => handleFilterChange("6h")}
-                          title="Price change in last 6 hours"
-                        >
-                          6H{sortFilter === "6h" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                        </th>
-                        <th
-                          className="p-2 text-right cursor-pointer"
-                          onClick={() => handleFilterChange("24h")}
-                          title="Price change in last 24 hours"
-                        >
-                          24H{sortFilter === "24h" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                        </th>
-                        <th
-                          className="p-2 text-right cursor-pointer"
-                          onClick={() => handleFilterChange("volume")}
-                          title="Trading volume in last 24 hours"
-                        >
-                          VOLUME{sortFilter === "volume" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                        </th>
-                        <th className="p-2 text-right" title="Weight in Base AI Index">
-                          WEIGHT
-                        </th>
-                        <th
-                          className="p-2 text-right cursor-pointer"
-                          onClick={() => handleFilterChange("marketCap")}
-                          title="Market Capitalization"
-                        >
-                          MCAP{sortFilter === "marketCap" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                        </th>
-                        <th className="p-2 text-right" title="Fully Diluted Valuation">
-                          FDV
-                        </th>
-                        <th className="p-2 text-center align-middle" title="Alerts">
-                          ALERTS
-                        </th>
-                        <th className="p-2 text-right" title="Actions">
-                          ACTIONS
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {loading ? (
-                        Array.from({ length: 10 }).map((_, idx) => (
-                          <tr key={idx} className="border-b border-gray-700">
-                            <td colSpan={14} className="p-2">
-                              <div className="animate-pulse flex space-x-4">
-                                <div className="rounded-full bg-gray-700 h-10 w-10"></div>
-                                <div className="flex-1 space-y-4 py-1">
-                                  <div className="h-4 bg-gray-700 rounded w-3/4"></div>
-                                  <div className="space-y-2">
-                                    <div className="h-4 bg-gray-700 rounded"></div>
-                                    <div className="h-4 bg-gray-700 rounded w-5/6"></div>
-                                  </div>
-                                </div>
-                              </div>
+                <>
+                  {/* Desktop Table View */}
+                  <div className="hidden md:block">
+                    <table className="table-auto w-full whitespace-nowrap text-sm">
+                      <thead className="bg-gray-900 text-gray-300 sticky top-0 z-10">
+                        <tr>
+                          <th
+                            className="p-2 text-left cursor-pointer w-[150px]"
+                            onClick={() => handleFilterChange("trending")}
+                            title="Sort by trending score"
+                          >
+                            #{sortFilter === "trending" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                          </th>
+                          <th className="p-2 text-left" title="Token Pair">
+                            POOL
+                          </th>
+                          <th className="p-2 text-right" title="Price in USD">
+                            PRICE
+                          </th>
+                          <th
+                            className="p-2 text-right cursor-pointer"
+                            onClick={() => handleFilterChange("age")}
+                            title="Age of the token pair"
+                          >
+                            AGE{sortFilter === "age" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                          </th>
+                          <th className="p-2 text-right" title="Total transactions in 24 hours">
+                            TXN
+                          </th>
+                          <th
+                            className="p-2 text-right cursor-pointer"
+                            onClick={() => handleFilterChange("5m")}
+                            title="Price change in last 5 minutes"
+                          >
+                            5M{sortFilter === "5m" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                          </th>
+                          <th
+                            className="p-2 text-right cursor-pointer"
+                            onClick={() => handleFilterChange("1h")}
+                            title="Price change in last 1 hour"
+                          >
+                            1H{sortFilter === "1h" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                          </th>
+                          <th
+                            className="p-2 text-right cursor-pointer"
+                            onClick={() => handleFilterChange("6h")}
+                            title="Price change in last 6 hours"
+                          >
+                            6H{sortFilter === "6h" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                          </th>
+                          <th
+                            className="p-2 text-right cursor-pointer"
+                            onClick={() => handleFilterChange("24h")}
+                            title="Price change in last 24 hours"
+                          >
+                            24H{sortFilter === "24h" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                          </th>
+                          <th
+                            className="p-2 text-right cursor-pointer"
+                            onClick={() => handleFilterChange("volume")}
+                            title="Trading volume in last 24 hours"
+                          >
+                            VOLUME{sortFilter === "volume" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                          </th>
+                          <th
+                            className="p-2 text-right cursor-pointer"
+                            onClick={() => handleFilterChange("liquidity")}
+                            title="Liquidity in USD"
+                          >
+                            LIQUIDITY{sortFilter === "liquidity" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                          </th>
+                          <th
+                            className="p-2 text-right cursor-pointer"
+                            onClick={() => handleFilterChange("marketCap")}
+                            title="Market capitalization"
+                          >
+                            MKT CAP{sortFilter === "marketCap" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                          </th>
+                          <th className="p-2 text-center" title="Actions">
+                            ACTIONS
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {currentTokens.length === 0 ? (
+                          <tr>
+                            <td colSpan={13} className="p-4 text-center text-gray-400">
+                              No tokens match your criteria. Try adjusting filters or check Firebase/DexScreener data.
                             </td>
                           </tr>
-                        ))
-                      ) : currentTokens.length === 0 ? (
-                        <tr>
-                          <td colSpan={14} className="p-4 text-center text-gray-400">
-                            No tokens match your filters.
-                          </td>
-                        </tr>
-                      ) : (
-                        currentTokens.map((token, index) => {
-                          const rank = index + 1 + (currentPage - 1) * pageSize;
-                          const isTop3 = rank <= 3;
-                          const trophyIcon = isTop3 && sortFilter === "trending" ? getTrophy(rank) : null;
-                          const isBoosted = !!token.boosted;
-                          const boostValue = token.boostValue || 0;
-                          const tokenAlerts = alerts.filter((alert) => alert.pairAddress === token.pairAddress);
-
-                          return (
-                            <tr
-                              key={token.pairAddress}
-                              className="border-b border-gray-700 hover:bg-gray-800 transition-colors bg-gray-900"
-                            >
-                              <td className="p-2 text-left w-[150px]">
-                                <div className="flex items-center space-x-2">
-                                  {isTop3 ? (
-                                    <span className="cursor-help font-bold w-8 h-8 flex items-center justify-center bg-gray-700 rounded-full">
-                                      {trophyIcon}
-                                    </span>
-                                  ) : (
-                                    <span className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-700 font-bold">
-                                      {rank}
-                                    </span>
-                                  )}
-                                  {isBoosted && (
-                                    <div
-                                      className="flex items-center space-x-1 cursor-help"
-                                      title={`Boosted (+${boostValue})`}
-                                    >
-                                      <span className="text-blue-400 font-bold text-sm">+{boostValue}</span>
-                                      <MarketingIcon />
-                                    </div>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="p-2">
-                                <Link href={`/token-scanner/${token.pairAddress}/chart`}>
-                                  <div className="flex items-center space-x-2 cursor-pointer">
-                                    <img
-                                      src={token.info?.imageUrl || "/fallback.png"}
-                                      alt={token.baseToken.symbol}
-                                      className="w-5 h-5 rounded-full"
-                                    />
-                                    <div className="flex flex-col">
-                                      <span className="font-semibold">
-                                        {token.baseToken.name} / {token.quoteToken.symbol}
-                                      </span>
-                                      <span className="text-xs text-gray-400">{token.baseToken.symbol}</span>
-                                    </div>
+                        ) : (
+                          currentTokens.map((token, index) => {
+                            const rank = indexOfFirstToken + index + 1;
+                            const tokenAlerts = alerts.filter((alert) => alert.pairAddress === token.pairAddress);
+                            return (
+                              <tr
+                                key={token.pairAddress}
+                                className="border-b border-gray-800 hover:bg-gray-800"
+                              >
+                                <td className="p-2 flex items-center space-x-2">
+                                  <div className="flex items-center">
+                                    {getTrophy(rank)}
+                                    <span className="ml-1 bg-gray-600 rounded-full px-2 py-1">{rank}</span>
                                   </div>
-                                </Link>
-                              </td>
-                              <td className="p-2 text-right">${Number(token.priceUsd).toFixed(5)}</td>
-                              <td className="p-2 text-right">{getAge(token.pairCreatedAt)}</td>
-                              <td className="p-2 text-right">{getTxns24h(token)}</td>
-                              <td className={`p-2 text-right ${getColorClass(token.priceChange?.h1 ?? 0)}`}>
-                                {token.priceChange?.h1 !== undefined
-                                  ? token.priceChange.h1.toFixed(2)
-                                  : "N/A"}
-                                %
-                              </td>
-                              <td className={`p-2 text-right ${getColorClass(token.priceChange?.h6 ?? 0)}`}>
-                                {token.priceChange?.h6 !== undefined
-                                  ? token.priceChange.h6.toFixed(2)
-                                  : "N/A"}
-                                %
-                              </td>
-                              <td className={`p-2 text-right ${getColorClass(token.priceChange?.h24 ?? 0)}`}>
-                                {token.priceChange?.h24 !== undefined
-                                  ? token.priceChange.h24.toFixed(2)
-                                  : "N/A"}
-                                %
-                              </td>
-                              <td className="p-2 text-right">${(token.volume?.h24 || 0).toLocaleString()}</td>
-                              <td className="p-2 text-right">
-                                {token.weight ? `${(token.weight * 100).toFixed(2)}%` : "N/A"}
-                              </td>
-                              <td className="p-2 text-right">
-                                {token.marketCap ? `$${token.marketCap.toLocaleString()}` : "N/A"}
-                              </td>
-                              <td className="p-2 text-right">
-                                {token.fdv ? `$${token.fdv.toLocaleString()}` : "N/A"}
-                              </td>
-                              <td className="p-2 text-center align-middle">
-                                {tokenAlerts.length > 0 ? (
-                                  <motion.button
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                    onClick={() => setSelectedAlerts(tokenAlerts)}
-                                    className={`text-white px-3 py-1 rounded-full text-xs flex items-center justify-center gap-1.5 shadow-md hover:brightness-110 transition-colors ${getAlertButtonColor(
-                                      tokenAlerts
-                                    )}`}
-                                    title="View Alerts"
-                                  >
-                                    <FaBell className="w-4 h-4 animate-pulse" />
-                                    <span>
-                                      {tokenAlerts.length} Alert{tokenAlerts.length > 1 ? "s" : ""}
-                                    </span>
-                                  </motion.button>
-                                ) : (
-                                  <span className="text-gray-400">None</span>
-                                )}
-                              </td>
-                              <td className="p-2 text-right">
-                                <div className="flex items-center justify-end gap-3">
+                                  {token.boosted && <MarketingIcon />}
+                                </td>
+                                <td className="p-2">
+                                  <Link href={`/token-scanner/${token.pairAddress}/chart`}>
+                                    <div className="flex items-center space-x-2">
+                                      <img
+                                        src={token.info?.imageUrl || "/fallback.png"}
+                                        alt={token.baseToken.symbol}
+                                        className="w-6 h-6 rounded-full"
+                                      />
+                                      <span className="truncate">
+                                        {token.baseToken.symbol}/{token.quoteToken.symbol}
+                                      </span>
+                                    </div>
+                                  </Link>
+                                </td>
+                                <td className="p-2 text-right">
+                                  ${Number(token.priceUsd).toFixed(5)}
+                                </td>
+                                <td className="p-2 text-right">{getAge(token.pairCreatedAt)}</td>
+                                <td className="p-2 text-right">{getTxns24h(token).toLocaleString()}</td>
+                                <td className={`p-2 text-right ${getColorClass(token.priceChange?.m5 ?? 0)}`}>
+                                  {(token.priceChange?.m5 ?? 0).toFixed(2)}%
+                                </td>
+                                <td className={`p-2 text-right ${getColorClass(token.priceChange?.h1 ?? 0)}`}>
+                                  {(token.priceChange?.h1 ?? 0).toFixed(2)}%
+                                </td>
+                                <td className={`p-2 text-right ${getColorClass(token.priceChange?.h6 ?? 0)}`}>
+                                  {(token.priceChange?.h6 ?? 0).toFixed(2)}%
+                                </td>
+                                <td className={`p-2 text-right ${getColorClass(token.priceChange?.h24 ?? 0)}`}>
+                                  {(token.priceChange?.h24 ?? 0).toFixed(2)}%
+                                </td>
+                                <td className="p-2 text-right">
+                                  ${(token.volume?.h24 || 0).toLocaleString()}
+                                </td>
+                                <td className="p-2 text-right">
+                                  ${token.liquidity.usd.toLocaleString()}
+                                </td>
+                                <td className="p-2 text-right">
+                                  ${(token.marketCap || 0).toLocaleString()}
+                                </td>
+                                <td className="p-2 text-center flex justify-center space-x-2">
                                   <motion.button
                                     whileHover={{ scale: 1.1 }}
-                                    whileTap={{ scale: 0.9 }}
                                     onClick={() => toggleFavorite(token.pairAddress)}
-                                    className={
-                                      favorites.includes(token.pairAddress)
-                                        ? "text-yellow-400 hover:text-yellow-500"
-                                        : "text-gray-400 hover:text-gray-300"
-                                    }
-                                    title={
-                                      favorites.includes(token.pairAddress)
-                                        ? "Remove from Favorites"
-                                        : "Add to Favorites"
-                                    }
+                                    className="text-yellow-400"
+                                    title={favorites.includes(token.pairAddress) ? "Remove from Favorites" : "Add to Favorites"}
                                   >
                                     <FaStar
-                                      size={16}
-                                      className={
-                                        favorites.includes(token.pairAddress)
-                                          ? "fill-current stroke-white stroke-2"
-                                          : "fill-none stroke-white stroke-2"
-                                      }
+                                      className={favorites.includes(token.pairAddress) ? "text-yellow-400" : "text-gray-400"}
                                     />
                                   </motion.button>
                                   <motion.button
                                     whileHover={{ scale: 1.1 }}
-                                    whileTap={{ scale: 0.9 }}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleCopy(token.baseToken.address);
-                                    }}
-                                    className="text-gray-400 hover:text-gray-300"
-                                    title="Copy Address"
+                                    onClick={() => handleCopy(token.pairAddress)}
+                                    className="text-gray-400"
+                                    title="Copy Pair Address"
                                   >
-                                    <FaClipboard size={16} />
+                                    <FaClipboard />
                                   </motion.button>
                                   <motion.button
                                     whileHover={{ scale: 1.1 }}
-                                    whileTap={{ scale: 0.9 }}
-                                    onClick={() => handleScan(token.baseToken.address)}
-                                    className="text-gray-400 hover:text-gray-300"
-                                    title="Scan Contract in Terminal"
+                                    onClick={() => handleScan(token.pairAddress)}
+                                    className="text-blue-400"
+                                    title="Scan Token"
                                   >
-                                    <FaShieldAlt size={16} />
+                                    <FaSearch />
                                   </motion.button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                                                })
-                                              )}
-                                            </tbody>
-                                          </table>
-                                        </div>
-                                      )}
-                                      {filteredTokens.length > 0 && (
-                                        <div className="block md:hidden p-2">
-                                          {currentTokens.map((token, index) => {
-                                            const rank = index + 1 + (currentPage - 1) * pageSize;
-                                            const isTop3 = rank <= 3;
-                                            const trophyIcon = isTop3 && sortFilter === "trending" ? getTrophy(rank) : null;
-                                            const isBoosted = !!token.boosted;
-                                            const boostValue = token.boostValue || 0;
-                                            const tokenAlerts = alerts.filter((alert) => alert.pairAddress === token.pairAddress);
-                          
-                                            return (
-                                              <div
-                                                key={token.pairAddress}
-                                                className="bg-gray-900 p-3 rounded-lg mb-2 border border-gray-700"
-                                              >
-                                                <div className="flex justify-between items-center mb-2">
-                                                  <div className="flex items-center space-x-2">
-                                                    {isTop3 ? (
-                                                      <span className="cursor-help font-bold w-6 h-6 flex items-center justify-center bg-gray-700 rounded-full text-xs">
-                                                        {trophyIcon}
-                                                      </span>
-                                                    ) : (
-                                                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-700 font-bold text-xs">
-                                                        {rank}
-                                                      </span>
-                                                    )}
-                                                    {isBoosted && (
-                                                      <div
-                                                        className="flex items-center space-x-1 cursor-help"
-                                                        title={`Boosted (+${boostValue})`}
-                                                      >
-                                                        <span className="text-blue-400 font-bold text-xs">+{boostValue}</span>
-                                                        <MarketingIcon />
-                                                      </div>
-                                                    )}
-                                                  </div>
-                                                  <div className="flex items-center gap-2">
-                                                    <motion.button
-                                                      whileHover={{ scale: 1.1 }}
-                                                      whileTap={{ scale: 0.9 }}
-                                                      onClick={() => toggleFavorite(token.pairAddress)}
-                                                      className={
-                                                        favorites.includes(token.pairAddress)
-                                                          ? "text-yellow-400 hover:text-yellow-500"
-                                                          : "text-gray-400 hover:text-gray-300"
-                                                      }
-                                                      title={
-                                                        favorites.includes(token.pairAddress)
-                                                          ? "Remove from Favorites"
-                                                          : "Add to Favorites"
-                                                      }
-                                                    >
-                                                      <FaStar
-                                                        size={14}
-                                                        className={
-                                                          favorites.includes(token.pairAddress)
-                                                            ? "fill-current stroke-white stroke-2"
-                                                            : "fill-none stroke-white stroke-2"
-                                                        }
-                                                      />
-                                                    </motion.button>
-                                                    <motion.button
-                                                      whileHover={{ scale: 1.1 }}
-                                                      whileTap={{ scale: 0.9 }}
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleCopy(token.baseToken.address);
-                                                      }}
-                                                      className="text-gray-400 hover:text-gray-300"
-                                                      title="Copy Address"
-                                                    >
-                                                      <FaClipboard size={14} />
-                                                    </motion.button>
-                                                    <motion.button
-                                                      whileHover={{ scale: 1.1 }}
-                                                      whileTap={{ scale: 0.9 }}
-                                                      onClick={() => handleScan(token.baseToken.address)}
-                                                      className="text-gray-400 hover:text-gray-300"
-                                                      title="Scan Contract in Terminal"
-                                                    >
-                                                      <FaShieldAlt size={14} />
-                                                    </motion.button>
-                                                  </div>
-                                                </div>
-                                                <Link href={`/token-scanner/${token.pairAddress}/chart`}>
-                                                  <div className="flex items-center space-x-2 mb-2 cursor-pointer">
-                                                    <img
-                                                      src={token.info?.imageUrl || "/fallback.png"}
-                                                      alt={token.baseToken.symbol}
-                                                      className="w-6 h-6 rounded-full"
-                                                    />
-                                                    <div>
-                                                      <span className="font-semibold text-sm">
-                                                        {token.baseToken.name} / {token.quoteToken.symbol}
-                                                      </span>
-                                                      <div className="text-xs text-gray-400">{token.baseToken.symbol}</div>
-                                                    </div>
-                                                  </div>
-                                                </Link>
-                                                <div className="grid grid-cols-2 gap-2 text-xs">
-                                                  <div>
-                                                    <span className="text-gray-400">Price:</span>{" "}
-                                                    ${Number(token.priceUsd).toFixed(5)}
-                                                  </div>
-                                                  <div>
-                                                    <span className="text-gray-400">Age:</span> {getAge(token.pairCreatedAt)}
-                                                  </div>
-                                                  <div>
-                                                    <span className="text-gray-400">TXN (24h):</span> {getTxns24h(token)}
-                                                  </div>
-                                                  <div className={`text-${getColorClass(token.priceChange?.h1 ?? 0)}`}>
-                                                    <span className="text-gray-400">1h:</span>{" "}
-                                                    {token.priceChange?.h1 !== undefined
-                                                      ? token.priceChange.h1.toFixed(2)
-                                                      : "N/A"}
-                                                    %
-                                                  </div>
-                                                  <div className={`text-${getColorClass(token.priceChange?.h6 ?? 0)}`}>
-                                                    <span className="text-gray-400">6h:</span>{" "}
-                                                    {token.priceChange?.h6 !== undefined
-                                                      ? token.priceChange.h6.toFixed(2)
-                                                      : "N/A"}
-                                                    %
-                                                  </div>
-                                                  <div className={`text-${getColorClass(token.priceChange?.h24 ?? 0)}`}>
-                                                    <span className="text-gray-400">24h:</span>{" "}
-                                                    {token.priceChange?.h24 !== undefined
-                                                      ? token.priceChange.h24.toFixed(2)
-                                                      : "N/A"}
-                                                    %
-                                                  </div>
-                                                  <div>
-                                                    <span className="text-gray-400">Volume (24h):</span>{" "}
-                                                    ${(token.volume?.h24 || 0).toLocaleString()}
-                                                  </div>
-                                                  <div>
-                                                    <span className="text-gray-400">Weight:</span>{" "}
-                                                    {token.weight ? `${(token.weight * 100).toFixed(2)}%` : "N/A"}
-                                                  </div>
-                                                  <div>
-                                                    <span className="text-gray-400">Market Cap:</span>{" "}
-                                                    {token.marketCap ? `$${token.marketCap.toLocaleString()}` : "N/A"}
-                                                  </div>
-                                                  <div>
-                                                    <span className="text-gray-400">FDV:</span>{" "}
-                                                    {token.fdv ? `$${token.fdv.toLocaleString()}` : "N/A"}
-                                                  </div>
-                                                  <div className="col-span-2">
-                                                    <span className="text-gray-400">Alerts:</span>{" "}
-                                                    {tokenAlerts.length > 0 ? (
-                                                      <motion.button
-                                                        whileHover={{ scale: 1.05 }}
-                                                        whileTap={{ scale: 0.95 }}
-                                                        onClick={() => setSelectedAlerts(tokenAlerts)}
-                                                        className={`text-white px-2 py-1 rounded-full text-xs flex items-center gap-1 ${getAlertButtonColor(
-                                                          tokenAlerts
-                                                        )}`}
-                                                      >
-                                                        <FaBell className="w-3 h-3 animate-pulse" />
-                                                        {tokenAlerts.length} Alert{tokenAlerts.length > 1 ? "s" : ""}
-                                                      </motion.button>
-                                                    ) : (
-                                                      <span className="text-gray-400">None</span>
-                                                    )}
-                                                  </div>
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      )}
-                                    </>
-                                  ) : (
-                                    <>
-                                      {filteredTokens.length === 0 ? (
-                                        <div className="p-4 text-center text-gray-400">
-                                          No tokens match your filters.
-                                        </div>
-                                      ) : (
-                                        <div className="hidden md:block">
-                                          <table className="table-auto w-full whitespace-nowrap text-sm">
-                                            <thead className="bg-gray-900 text-gray-300 sticky top-0 z-10">
-                                              <tr>
-                                                <th
-                                                  className="p-2 text-left cursor-pointer w-[150px]"
-                                                  onClick={() => handleFilterChange("trending")}
-                                                  title="Sort by trending score"
-                                                >
-                                                  #{sortFilter === "trending" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                                                </th>
-                                                <th className="p-2 text-left" title="Token Pair">
-                                                  POOL
-                                                </th>
-                                                <th className="p-2 text-right" title="Price in USD">
-                                                  PRICE
-                                                </th>
-                                                <th
-                                                  className="p-2 text-right cursor-pointer"
-                                                  onClick={() => handleFilterChange("age")}
-                                                  title="Age of the token pair"
-                                                >
-                                                  AGE{sortFilter === "age" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                                                </th>
-                                                <th className="p-2 text-right" title="Total transactions in 24 hours">
-                                                  TXN
-                                                </th>
-                                                <th
-                                                  className="p-2 text-right cursor-pointer"
-                                                  onClick={() => handleFilterChange("1h")}
-                                                  title="Price change in last 1 hour"
-                                                >
-                                                  1H{sortFilter === "1h" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                                                </th>
-                                                <th
-                                                  className="p-2 text-right cursor-pointer"
-                                                  onClick={() => handleFilterChange("6h")}
-                                                  title="Price change in last 6 hours"
-                                                >
-                                                  6H{sortFilter === "6h" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                                                </th>
-                                                <th
-                                                  className="p-2 text-right cursor-pointer"
-                                                  onClick={() => handleFilterChange("24h")}
-                                                  title="Price change in last 24 hours"
-                                                >
-                                                  24H{sortFilter === "24h" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                                                </th>
-                                                <th
-                                                  className="p-2 text-right cursor-pointer"
-                                                  onClick={() => handleFilterChange("volume")}
-                                                  title="Trading volume in last 24 hours"
-                                                >
-                                                  VOLUME{sortFilter === "volume" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                                                </th>
-                                                <th
-                                                  className="p-2 text-right cursor-pointer"
-                                                  onClick={() => handleFilterChange("liquidity")}
-                                                  title="Liquidity in USD"
-                                                >
-                                                  LIQUIDITY{sortFilter === "liquidity" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                                                </th>
-                                                <th
-                                                  className="p-2 text-right cursor-pointer"
-                                                  onClick={() => handleFilterChange("marketCap")}
-                                                  title="Market Capitalization"
-                                                >
-                                                  MCAP{sortFilter === "marketCap" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                                                </th>
-                                                <th className="p-2 text-right" title="Fully Diluted Valuation">
-                                                  FDV
-                                                </th>
-                                                <th className="p-2 text-center align-middle" title="Alerts">
-                                                  ALERTS
-                                                </th>
-                                                <th className="p-2 text-right" title="Actions">
-                                                  ACTIONS
-                                                </th>
-                                              </tr>
-                                            </thead>
-                                            <tbody>
-                                              {loading ? (
-                                                Array.from({ length: pageSize }).map((_, idx) => (
-                                                  <tr key={idx} className="border-b border-gray-700">
-                                                    <td colSpan={14} className="p-2">
-                                                      <div className="animate-pulse flex space-x-4">
-                                                        <div className="rounded-full bg-gray-700 h-10 w-10"></div>
-                                                        <div className="flex-1 space-y-4 py-1">
-                                                          <div className="h-4 bg-gray-700 rounded w-3/4"></div>
-                                                          <div className="space-y-2">
-                                                            <div className="h-4 bg-gray-700 rounded"></div>
-                                                            <div className="h-4 bg-gray-700 rounded w-5/6"></div>
-                                                          </div>
-                                                        </div>
-                                                      </div>
-                                                    </td>
-                                                  </tr>
-                                                ))
-                                              ) : currentTokens.length === 0 ? (
-                                                <tr>
-                                                  <td colSpan={14} className="p-4 text-center text-gray-400">
-                                                    No tokens match your filters.
-                                                  </td>
-                                                </tr>
-                                              ) : (
-                                                currentTokens.map((token, index) => {
-                                                  const rank = index + 1 + (currentPage - 1) * pageSize;
-                                                  const isTop3 = rank <= 3;
-                                                  const trophyIcon = isTop3 && sortFilter === "trending" ? getTrophy(rank) : null;
-                                                  const isBoosted = !!token.boosted;
-                                                  const boostValue = token.boostValue || 0;
-                                                  const tokenAlerts = alerts.filter((alert) => alert.pairAddress === token.pairAddress);
-                          
-                                                  return (
-                                                    <tr
-                                                      key={token.pairAddress}
-                                                      className="border-b border-gray-700 hover:bg-gray-800 transition-colors bg-gray-900"
-                                                    >
-                                                      <td className="p-2 text-left w-[150px]">
-                                                        <div className="flex items-center space-x-2">
-                                                          {isTop3 ? (
-                                                            <span className="cursor-help font-bold w-8 h-8 flex items-center justify-center bg-gray-700 rounded-full">
-                                                              {trophyIcon}
-                                                            </span>
-                                                          ) : (
-                                                            <span className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-700 font-bold">
-                                                              {rank}
-                                                            </span>
-                                                          )}
-                                                          {isBoosted && (
-                                                            <div
-                                                              className="flex items-center space-x-1 cursor-help"
-                                                              title={`Boosted (+${boostValue})`}
-                                                            >
-                                                              <span className="text-blue-400 font-bold text-sm">+{boostValue}</span>
-                                                              <MarketingIcon />
-                                                            </div>
-                                                          )}
-                                                        </div>
-                                                      </td>
-                                                      <td className="p-2">
-                                                        <Link href={`/token-scanner/${token.pairAddress}/chart`}>
-                                                          <div className="flex items-center space-x-2 cursor-pointer">
-                                                            <img
-                                                              src={token.info?.imageUrl || "/fallback.png"}
-                                                              alt={token.baseToken.symbol}
-                                                              className="w-5 h-5 rounded-full"
-                                                            />
-                                                            <div className="flex flex-col">
-                                                              <span className="font-semibold">
-                                                                {token.baseToken.name} / {token.quoteToken.symbol}
-                                                              </span>
-                                                              <span className="text-xs text-gray-400">{token.baseToken.symbol}</span>
-                                                            </div>
-                                                          </div>
-                                                        </Link>
-                                                      </td>
-                                                      <td className="p-2 text-right">${Number(token.priceUsd).toFixed(5)}</td>
-                                                      <td className="p-2 text-right">{getAge(token.pairCreatedAt)}</td>
-                                                      <td className="p-2 text-right">{getTxns24h(token)}</td>
-                                                      <td className={`p-2 text-right ${getColorClass(token.priceChange?.h1 ?? 0)}`}>
-                                                        {token.priceChange?.h1 !== undefined
-                                                          ? token.priceChange.h1.toFixed(2)
-                                                          : "N/A"}
-                                                        %
-                                                      </td>
-                                                      <td className={`p-2 text-right ${getColorClass(token.priceChange?.h6 ?? 0)}`}>
-                                                        {token.priceChange?.h6 !== undefined
-                                                          ? token.priceChange.h6.toFixed(2)
-                                                          : "N/A"}
-                                                        %
-                                                      </td>
-                                                      <td className={`p-2 text-right ${getColorClass(token.priceChange?.h24 ?? 0)}`}>
-                                                        {token.priceChange?.h24 !== undefined
-                                                          ? token.priceChange.h24.toFixed(2)
-                                                          : "N/A"}
-                                                        %
-                                                      </td>
-                                                      <td className="p-2 text-right">${(token.volume?.h24 || 0).toLocaleString()}</td>
-                                                      <td className="p-2 text-right">${token.liquidity.usd.toLocaleString()}</td>
-                                                      <td className="p-2 text-right">
-                                                        {token.marketCap ? `$${token.marketCap.toLocaleString()}` : "N/A"}
-                                                      </td>
-                                                      <td className="p-2 text-right">
-                                                        {token.fdv ? `$${token.fdv.toLocaleString()}` : "N/A"}
-                                                      </td>
-                                                      <td className="p-2 text-center align-middle">
-                                                        {tokenAlerts.length > 0 ? (
-                                                          <motion.button
-                                                            whileHover={{ scale: 1.05 }}
-                                                            whileTap={{ scale: 0.95 }}
-                                                            onClick={() => setSelectedAlerts(tokenAlerts)}
-                                                            className={`text-white px-3 py-1 rounded-full text-xs flex items-center justify-center gap-1.5 shadow-md hover:brightness-110 transition-colors ${getAlertButtonColor(
-                                                              tokenAlerts
-                                                            )}`}
-                                                            title="View Alerts"
-                                                          >
-                                                            <FaBell className="w-4 h-4 animate-pulse" />
-                                                            <span>
-                                                              {tokenAlerts.length} Alert{tokenAlerts.length > 1 ? "s" : ""}
-                                                            </span>
-                                                          </motion.button>
-                                                        ) : (
-                                                          <span className="text-gray-400">None</span>
-                                                        )}
-                                                      </td>
-                                                      <td className="p-2 text-right">
-                                                        <div className="flex items-center justify-end gap-3">
-                                                          <motion.button
-                                                            whileHover={{ scale: 1.1 }}
-                                                            whileTap={{ scale: 0.9 }}
-                                                            onClick={() => toggleFavorite(token.pairAddress)}
-                                                            className={
-                                                              favorites.includes(token.pairAddress)
-                                                                ? "text-yellow-400 hover:text-yellow-500"
-                                                                : "text-gray-400 hover:text-gray-300"
-                                                            }
-                                                            title={
-                                                              favorites.includes(token.pairAddress)
-                                                                ? "Remove from Favorites"
-                                                                : "Add to Favorites"
-                                                            }
-                                                          >
-                                                            <FaStar
-                                                              size={16}
-                                                              className={
-                                                                favorites.includes(token.pairAddress)
-                                                                  ? "fill-current stroke-white stroke-2"
-                                                                  : "fill-none stroke-white stroke-2"
-                                                              }
-                                                            />
-                                                          </motion.button>
-                                                          <motion.button
-                                                            whileHover={{ scale: 1.1 }}
-                                                            whileTap={{ scale: 0.9 }}
-                                                            onClick={(e) => {
-                                                              e.stopPropagation();
-                                                              handleCopy(token.baseToken.address);
-                                                            }}
-                                                            className="text-gray-400 hover:text-gray-300"
-                                                            title="Copy Address"
-                                                          >
-                                                            <FaClipboard size={16} />
-                                                          </motion.button>
-                                                          <motion.button
-                                                            whileHover={{ scale: 1.1 }}
-                                                            whileTap={{ scale: 0.9 }}
-                                                            onClick={() => handleScan(token.baseToken.address)}
-                                                            className="text-gray-400 hover:text-gray-300"
-                                                            title="Scan Contract in Terminal"
-                                                          >
-                                                            <FaShieldAlt size={16} />
-                                                          </motion.button>
-                                                        </div>
-                                                      </td>
-                                                    </tr>
-                                                  );
-                                                })
-                                              )}
-                                            </tbody>
-                                          </table>
-                                        </div>
-                                      )}
-                                      {filteredTokens.length > 0 && (
-                                        <div className="block md:hidden p-2">
-                                          {currentTokens.map((token, index) => {
-                                            const rank = index + 1 + (currentPage - 1) * pageSize;
-                                            const isTop3 = rank <= 3;
-                                            const trophyIcon = isTop3 && sortFilter === "trending" ? getTrophy(rank) : null;
-                                            const isBoosted = !!token.boosted;
-                                            const boostValue = token.boostValue || 0;
-                                            const tokenAlerts = alerts.filter((alert) => alert.pairAddress === token.pairAddress);
-                          
-                                            return (
-                                              <div
-                                                key={token.pairAddress}
-                                                className="bg-gray-900 p-3 rounded-lg mb-2 border border-gray-700"
-                                              >
-                                                <div className="flex justify-between items-center mb-2">
-                                                  <div className="flex items-center space-x-2">
-                                                    {isTop3 ? (
-                                                      <span className="cursor-help font-bold w-6 h-6 flex items-center justify-center bg-gray-700 rounded-full text-xs">
-                                                        {trophyIcon}
-                                                      </span>
-                                                    ) : (
-                                                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-700 font-bold text-xs">
-                                                        {rank}
-                                                      </span>
-                                                    )}
-                                                    {isBoosted && (
-                                                      <div
-                                                        className="flex items-center space-x-1 cursor-help"
-                                                        title={`Boosted (+${boostValue})`}
-                                                      >
-                                                        <span className="text-blue-400 font-bold text-xs">+{boostValue}</span>
-                                                        <MarketingIcon />
-                                                      </div>
-                                                    )}
-                                                  </div>
-                                                  <div className="flex items-center gap-2">
-                                                    <motion.button
-                                                      whileHover={{ scale: 1.1 }}
-                                                      whileTap={{ scale: 0.9 }}
-                                                      onClick={() => toggleFavorite(token.pairAddress)}
-                                                      className={
-                                                        favorites.includes(token.pairAddress)
-                                                          ? "text-yellow-400 hover:text-yellow-500"
-                                                          : "text-gray-400 hover:text-gray-300"
-                                                      }
-                                                      title={
-                                                        favorites.includes(token.pairAddress)
-                                                          ? "Remove from Favorites"
-                                                          : "Add to Favorites"
-                                                      }
-                                                    >
-                                                      <FaStar
-                                                        size={14}
-                                                        className={
-                                                          favorites.includes(token.pairAddress)
-                                                            ? "fill-current stroke-white stroke-2"
-                                                            : "fill-none stroke-white stroke-2"
-                                                        }
-                                                      />
-                                                    </motion.button>
-                                                    <motion.button
-                                                      whileHover={{ scale: 1.1 }}
-                                                      whileTap={{ scale: 0.9 }}
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleCopy(token.baseToken.address);
-                                                      }}
-                                                      className="text-gray-400 hover:text-gray-300"
-                                                      title="Copy Address"
-                                                    >
-                                                      <FaClipboard size={14} />
-                                                    </motion.button>
-                                                    <motion.button
-                                                      whileHover={{ scale: 1.1 }}
-                                                      whileTap={{ scale: 0.9 }}
-                                                      onClick={() => handleScan(token.baseToken.address)}
-                                                      className="text-gray-400 hover:text-gray-300"
-                                                      title="Scan Contract in Terminal"
-                                                    >
-                                                      <FaShieldAlt size={14} />
-                                                    </motion.button>
-                                                  </div>
-                                                </div>
-                                                <Link href={`/token-scanner/${token.pairAddress}/chart`}>
-                                                  <div className="flex items-center space-x-2 mb-2 cursor-pointer">
-                                                    <img
-                                                      src={token.info?.imageUrl || "/fallback.png"}
-                                                      alt={token.baseToken.symbol}
-                                                      className="w-6 h-6 rounded-full"
-                                                    />
-                                                    <div>
-                                                      <span className="font-semibold text-sm">
-                                                        {token.baseToken.name} / {token.quoteToken.symbol}
-                                                      </span>
-                                                      <div className="text-xs text-gray-400">{token.baseToken.symbol}</div>
-                                                    </div>
-                                                  </div>
-                                                </Link>
-                                                <div className="grid grid-cols-2 gap-2 text-xs">
-                                                  <div>
-                                                    <span className="text-gray-400">Price:</span>{" "}
-                                                    ${Number(token.priceUsd).toFixed(5)}
-                                                  </div>
-                                                  <div>
-                                                    <span className="text-gray-400">Age:</span> {getAge(token.pairCreatedAt)}
-                                                  </div>
-                                                  <div>
-                                                    <span className="text-gray-400">TXN (24h):</span> {getTxns24h(token)}
-                                                  </div>
-                                                  <div className={`text-${getColorClass(token.priceChange?.h1 ?? 0)}`}>
-                                                    <span className="text-gray-400">1h:</span>{" "}
-                                                    {token.priceChange?.h1 !== undefined
-                                                      ? token.priceChange.h1.toFixed(2)
-                                                      : "N/A"}
-                                                    %
-                                                  </div>
-                                                  <div className={`text-${getColorClass(token.priceChange?.h6 ?? 0)}`}>
-                                                    <span className="text-gray-400">6h:</span>{" "}
-                                                    {token.priceChange?.h6 !== undefined
-                                                      ? token.priceChange.h6.toFixed(2)
-                                                      : "N/A"}
-                                                    %
-                                                  </div>
-                                                  <div className={`text-${getColorClass(token.priceChange?.h24 ?? 0)}`}>
-                                                    <span className="text-gray-400">24h:</span>{" "}
-                                                    {token.priceChange?.h24 !== undefined
-                                                      ? token.priceChange.h24.toFixed(2)
-                                                      : "N/A"}
-                                                    %
-                                                  </div>
-                                                  <div>
-                                                    <span className="text-gray-400">Volume (24h):</span>{" "}
-                                                    ${(token.volume?.h24 || 0).toLocaleString()}
-                                                  </div>
-                                                  <div>
-                                                    <span className="text-gray-400">Liquidity:</span>{" "}
-                                                    ${token.liquidity.usd.toLocaleString()}
-                                                  </div>
-                                                  <div>
-                                                    <span className="text-gray-400">Market Cap:</span>{" "}
-                                                    {token.marketCap ? `$${token.marketCap.toLocaleString()}` : "N/A"}
-                                                  </div>
-                                                  <div>
-                                                    <span className="text-gray-400">FDV:</span>{" "}
-                                                    {token.fdv ? `$${token.fdv.toLocaleString()}` : "N/A"}
-                                                  </div>
-                                                  <div className="col-span-2">
-                                                    <span className="text-gray-400">Alerts:</span>{" "}
-                                                    {tokenAlerts.length > 0 ? (
-                                                      <motion.button
-                                                        whileHover={{ scale: 1.05 }}
-                                                        whileTap={{ scale: 0.95 }}
-                                                        onClick={() => setSelectedAlerts(tokenAlerts)}
-                                                        className={`text-white px-2 py-1 rounded-full text-xs flex items-center gap-1 ${getAlertButtonColor(
-                                                          tokenAlerts
-                                                        )}`}
-                                                      >
-                                                        <FaBell className="w-3 h-3 animate-pulse" />
-                                                        {tokenAlerts.length} Alert{tokenAlerts.length > 1 ? "s" : ""}
-                                                      </motion.button>
-                                                    ) : (
-                                                      <span className="text-gray-400">None</span>
-                                                    )}
-                                                  </div>
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      )}
-                                    </>
+                                  {tokenAlerts.length > 0 && (
+                                    <motion.button
+                                      whileHover={{ scale: 1.1 }}
+                                      onClick={() => setSelectedAlerts(tokenAlerts)}
+                                      className={`text-white p-1 rounded ${getAlertButtonColor(tokenAlerts)}`}
+                                      title="View Alerts"
+                                    >
+                                      <FaBell />
+                                    </motion.button>
                                   )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Mobile Card View */}
+                  <div className="md:hidden p-4 space-y-4">
+                    {currentTokens.length === 0 ? (
+                      <div className="text-center text-gray-400">
+                        No tokens match your criteria. Try adjusting filters or check Firebase/DexScreener data.
+                      </div>
+                    ) : (
+                      currentTokens.map((token, index) => {
+                        const rank = indexOfFirstToken + index + 1;
+                        const tokenAlerts = alerts.filter((alert) => alert.pairAddress === token.pairAddress);
+                        return (
+                          <div
+                            key={token.pairAddress}
+                            className="bg-gray-800 p-4 rounded-lg shadow"
+                          >
+                            <div className="flex justify-between items-center mb-2">
+                              <div className="flex items-center space-x-2">
+                                <div className="flex items-center">
+                                  {getTrophy(rank)}
+                                  <span className="ml-1 bg-gray-600 rounded-full px-2 py-1">#{rank}</span>
                                 </div>
-                          
-                                {filteredTokens.length > 0 && (
-                                  <div className="p-4 flex justify-between items-center bg-gray-900">
-                                    <div>
-                                      Showing {indexOfFirstToken + 1} to{" "}
-                                      {Math.min(indexOfLastToken, filteredTokens.length)} of {filteredTokens.length}{" "}
-                                      tokens
-                                    </div>
-                                    <div className="flex space-x-2">
-                                      <motion.button
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
-                                        onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                                        disabled={currentPage === 1}
-                                        className="bg-gray-800 text-white px-3 py-1 rounded disabled:opacity-50"
-                                      >
-                                        Previous
-                                      </motion.button>
-                                      <motion.button
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
-                                        onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                                        disabled={currentPage === totalPages}
-                                        className="bg-gray-800 text-white px-3 py-1 rounded disabled:opacity-50"
-                                      >
-                                        Next
-                                      </motion.button>
-                                    </div>
-                                  </div>
+                                {token.boosted && <MarketingIcon />}
+                              </div>
+                              <div className="flex space-x-2">
+                                <motion.button
+                                  whileHover={{ scale: 1.1 }}
+                                  onClick={() => toggleFavorite(token.pairAddress)}
+                                  className="text-yellow-400"
+                                  title={favorites.includes(token.pairAddress) ? "Remove from Favorites" : "Add to Favorites"}
+                                >
+                                  <FaStar
+                                    className={favorites.includes(token.pairAddress) ? "text-yellow-400" : "text-gray-400"}
+                                  />
+                                </motion.button>
+                                <motion.button
+                                  whileHover={{ scale: 1.1 }}
+                                  onClick={() => handleCopy(token.pairAddress)}
+                                  className="text-gray-400"
+                                  title="Copy Pair Address"
+                                >
+                                  <FaClipboard />
+                                </motion.button>
+                                <motion.button
+                                  whileHover={{ scale: 1.1 }}
+                                  onClick={() => handleScan(token.pairAddress)}
+                                  className="text-blue-400"
+                                  title="Scan Token"
+                                >
+                                  <FaSearch />
+                                </motion.button>
+                                {tokenAlerts.length > 0 && (
+                                  <motion.button
+                                    whileHover={{ scale: 1.1 }}
+                                    onClick={() => setSelectedAlerts(tokenAlerts)}
+                                    className={`text-white p-1 rounded ${getAlertButtonColor(tokenAlerts)}`}
+                                    title="View Alerts"
+                                  >
+                                    <FaBell />
+                                  </motion.button>
                                 )}
                               </div>
                             </div>
-                          );
+                            <Link href={`/token-scanner/${token.pairAddress}/chart`}>
+                              <div className="flex items-center space-x-2 mb-2">
+                                <img
+                                  src={token.info?.imageUrl || "/fallback.png"}
+                                  alt={token.baseToken.symbol}
+                                  className="w-8 h-8 rounded-full"
+                                />
+                                <span className="truncate">
+                                  {token.baseToken.symbol}/{token.quoteToken.symbol}
+                                </span>
+                              </div>
+                            </Link>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div>
+                                <span className="text-gray-400">Price:</span>{" "}
+                                ${Number(token.priceUsd).toFixed(5)}
+                              </div>
+                              <div>
+                                <span className="text-gray-400">Age:</span>{" "}
+                                {getAge(token.pairCreatedAt)}
+                              </div>
+                              <div>
+                                <span className="text-gray-400">Txn 24h:</span>{" "}
+                                {getTxns24h(token).toLocaleString()}
+                              </div>
+                              <div>
+                                <span className="text-gray-400">5m:</span>{" "}
+                                <span className={getColorClass(token.priceChange?.m5 ?? 0)}>
+                                  {(token.priceChange?.m5 ?? 0).toFixed(2)}%
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-gray-400">1h:</span>{" "}
+                                <span className={getColorClass(token.priceChange?.h1 ?? 0)}>
+                                  {(token.priceChange?.h1 ?? 0).toFixed(2)}%
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-gray-400">6h:</span>{" "}
+                                <span className={getColorClass(token.priceChange?.h6 ?? 0)}>
+                                  {(token.priceChange?.h6 ?? 0).toFixed(2)}%
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-gray-400">24h:</span>{" "}
+                                <span className={getColorClass(token.priceChange?.h24 ?? 0)}>
+                                  {(token.priceChange?.h24 ?? 0).toFixed(2)}%
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-gray-400">Volume:</span>{" "}
+                                ${(token.volume?.h24 || 0).toLocaleString()}
+                              </div>
+                              <div>
+                                <span className="text-gray-400">Liquidity:</span>{" "}
+                                ${token.liquidity.usd.toLocaleString()}
+                              </div>
+                              <div>
+                                <span className="text-gray-400">Mkt Cap:</span>{" "}
+                                ${(token.marketCap || 0).toLocaleString()}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                                    {/* Pagination */}
+                                    {totalPages > 1 && (
+                    <div className="p-4 flex justify-center items-center space-x-2">
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                        disabled={currentPage === 1}
+                        className="bg-gray-700 hover:bg-gray-600 text-white py-1 px-3 rounded disabled:opacity-50"
+                      >
+                        Previous
+                      </motion.button>
+                      <span className="text-gray-400">
+                        Page {currentPage} of {totalPages}
+                      </span>
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                        disabled={currentPage === totalPages}
+                        className="bg-gray-700 hover:bg-gray-600 text-white py-1 px-3 rounded disabled:opacity-50"
+                      >
+                        Next
+                      </motion.button>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              {loading ? (
+                <div className="p-4 text-center text-gray-400">Loading tokens...</div>
+              ) : filteredTokens.length === 0 ? (
+                <div className="p-4 text-center text-gray-400">
+                  No tokens match your filters. Try adjusting filters or check Firebase data.
+                </div>
+              ) : (
+                <>
+                  {/* Desktop Table View */}
+                  <div className="hidden md:block">
+                    <table className="table-auto w-full whitespace-nowrap text-sm">
+                      <thead className="bg-gray-900 text-gray-300 sticky top-0 z-10">
+                        <tr>
+                          <th
+                            className="p-2 text-left cursor-pointer w-[150px]"
+                            onClick={() => handleFilterChange("trending")}
+                            title="Sort by trending score"
+                          >
+                            #{sortFilter === "trending" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                          </th>
+                          <th className="p-2 text-left" title="Token Pair">
+                            POOL
+                          </th>
+                          <th className="p-2 text-right" title="Price in USD">
+                            PRICE
+                          </th>
+                          <th
+                            className="p-2 text-right cursor-pointer"
+                            onClick={() => handleFilterChange("age")}
+                            title="Age of the token pair"
+                          >
+                            AGE{sortFilter === "age" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                          </th>
+                          <th className="p-2 text-right" title="Total transactions in 24 hours">
+                            TXN
+                          </th>
+                          <th
+                            className="p-2 text-right cursor-pointer"
+                            onClick={() => handleFilterChange("5m")}
+                            title="Price change in last 5 minutes"
+                          >
+                            5M{sortFilter === "5m" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                          </th>
+                          <th
+                            className="p-2 text-right cursor-pointer"
+                            onClick={() => handleFilterChange("1h")}
+                            title="Price change in last 1 hour"
+                          >
+                            1H{sortFilter === "1h" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                          </th>
+                          <th
+                            className="p-2 text-right cursor-pointer"
+                            onClick={() => handleFilterChange("6h")}
+                            title="Price change in last 6 hours"
+                          >
+                            6H{sortFilter === "6h" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                          </th>
+                          <th
+                            className="p-2 text-right cursor-pointer"
+                            onClick={() => handleFilterChange("24h")}
+                            title="Price change in last 24 hours"
+                          >
+                            24H{sortFilter === "24h" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                          </th>
+                          <th
+                            className="p-2 text-right cursor-pointer"
+                            onClick={() => handleFilterChange("volume")}
+                            title="Trading volume in last 24 hours"
+                          >
+                            VOLUME{sortFilter === "volume" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                          </th>
+                          <th
+                            className="p-2 text-right cursor-pointer"
+                            onClick={() => handleFilterChange("liquidity")}
+                            title="Liquidity in USD"
+                          >
+                            LIQUIDITY{sortFilter === "liquidity" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                          </th>
+                          <th
+                            className="p-2 text-right cursor-pointer"
+                            onClick={() => handleFilterChange("marketCap")}
+                            title="Market capitalization"
+                          >
+                            MKT CAP{sortFilter === "marketCap" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                          </th>
+                          <th className="p-2 text-center" title="Actions">
+                            ACTIONS
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {currentTokens.length === 0 ? (
+                          <tr>
+                            <td colSpan={13} className="p-4 text-center text-gray-400">
+                              No tokens match your criteria. Try adjusting filters or check Firebase/DexScreener data.
+                            </td>
+                          </tr>
+                        ) : (
+                          currentTokens.map((token, index) => {
+                            const rank = indexOfFirstToken + index + 1;
+                            const tokenAlerts = alerts.filter((alert) => alert.pairAddress === token.pairAddress);
+                            return (
+                              <tr
+                                key={token.pairAddress}
+                                className="border-b border-gray-800 hover:bg-gray-800"
+                              >
+                                <td className="p-2 flex items-center space-x-2">
+                                  <div className="flex items-center">
+                                    {getTrophy(rank)}
+                                    <span className="ml-1 bg-gray-600 rounded-full px-2 py-1">{rank}</span>
+                                  </div>
+                                  {token.boosted && <MarketingIcon />}
+                                </td>
+                                <td className="p-2">
+                                  <Link href={`/token-scanner/${token.pairAddress}/chart`}>
+                                    <div className="flex items-center space-x-2">
+                                      <img
+                                        src={token.info?.imageUrl || "/fallback.png"}
+                                        alt={token.baseToken.symbol}
+                                        className="w-6 h-6 rounded-full"
+                                      />
+                                      <span className="truncate">
+                                        {token.baseToken.symbol}/{token.quoteToken.symbol}
+                                      </span>
+                                    </div>
+                                  </Link>
+                                </td>
+                                <td className="p-2 text-right">
+                                  ${Number(token.priceUsd).toFixed(5)}
+                                </td>
+                                <td className="p-2 text-right">{getAge(token.pairCreatedAt)}</td>
+                                <td className="p-2 text-right">{getTxns24h(token).toLocaleString()}</td>
+                                <td className={`p-2 text-right ${getColorClass(token.priceChange?.m5 ?? 0)}`}>
+                                  {(token.priceChange?.m5 ?? 0).toFixed(2)}%
+                                </td>
+                                <td className={`p-2 text-right ${getColorClass(token.priceChange?.h1 ?? 0)}`}>
+                                  {(token.priceChange?.h1 ?? 0).toFixed(2)}%
+                                </td>
+                                <td className={`p-2 text-right ${getColorClass(token.priceChange?.h6 ?? 0)}`}>
+                                  {(token.priceChange?.h6 ?? 0).toFixed(2)}%
+                                </td>
+                                <td className={`p-2 text-right ${getColorClass(token.priceChange?.h24 ?? 0)}`}>
+                                  {(token.priceChange?.h24 ?? 0).toFixed(2)}%
+                                </td>
+                                <td className="p-2 text-right">
+                                  ${(token.volume?.h24 || 0).toLocaleString()}
+                                </td>
+                                <td className="p-2 text-right">
+                                  ${token.liquidity.usd.toLocaleString()}
+                                </td>
+                                <td className="p-2 text-right">
+                                  ${(token.marketCap || 0).toLocaleString()}
+                                </td>
+                                <td className="p-2 text-center flex justify-center space-x-2">
+                                  <motion.button
+                                    whileHover={{ scale: 1.1 }}
+                                    onClick={() => toggleFavorite(token.pairAddress)}
+                                    className="text-yellow-400"
+                                    title={favorites.includes(token.pairAddress) ? "Remove from Favorites" : "Add to Favorites"}
+                                  >
+                                    <FaStar
+                                      className={favorites.includes(token.pairAddress) ? "text-yellow-400" : "text-gray-400"}
+                                    />
+                                  </motion.button>
+                                  <motion.button
+                                    whileHover={{ scale: 1.1 }}
+                                    onClick={() => handleCopy(token.pairAddress)}
+                                    className="text-gray-400"
+                                    title="Copy Pair Address"
+                                  >
+                                    <FaClipboard />
+                                  </motion.button>
+                                  <motion.button
+                                    whileHover={{ scale: 1.1 }}
+                                    onClick={() => handleScan(token.pairAddress)}
+                                    className="text-blue-400"
+                                    title="Scan Token"
+                                  >
+                                    <FaSearch />
+                                  </motion.button>
+                                  {tokenAlerts.length > 0 && (
+                                    <motion.button
+                                      whileHover={{ scale: 1.1 }}
+                                      onClick={() => setSelectedAlerts(tokenAlerts)}
+                                      className={`text-white p-1 rounded ${getAlertButtonColor(tokenAlerts)}`}
+                                      title="View Alerts"
+                                    >
+                                      <FaBell />
+                                    </motion.button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Mobile Card View */}
+                  <div className="md:hidden p-4 space-y-4">
+                    {currentTokens.length === 0 ? (
+                      <div className="text-center text-gray-400">
+                        No tokens match your criteria. Try adjusting filters or check Firebase/DexScreener data.
+                      </div>
+                    ) : (
+                      currentTokens.map((token, index) => {
+                        const rank = indexOfFirstToken + index + 1;
+                        const tokenAlerts = alerts.filter((alert) => alert.pairAddress === token.pairAddress);
+                        return (
+                          <div
+                            key={token.pairAddress}
+                            className="bg-gray-800 p-4 rounded-lg shadow"
+                          >
+                            <div className="flex justify-between items-center mb-2">
+                              <div className="flex items-center space-x-2">
+                                <div className="flex items-center">
+                                  {getTrophy(rank)}
+                                  <span className="ml-1 bg-gray-600 rounded-full px-2 py-1">#{rank}</span>
+                                </div>
+                                {token.boosted && <MarketingIcon />}
+                              </div>
+                              <div className="flex space-x-2">
+                                <motion.button
+                                  whileHover={{ scale: 1.1 }}
+                                  onClick={() => toggleFavorite(token.pairAddress)}
+                                  className="text-yellow-400"
+                                  title={favorites.includes(token.pairAddress) ? "Remove from Favorites" : "Add to Favorites"}
+                                >
+                                  <FaStar
+                                    className={favorites.includes(token.pairAddress) ? "text-yellow-400" : "text-gray-400"}
+                                  />
+                                </motion.button>
+                                <motion.button
+                                  whileHover={{ scale: 1.1 }}
+                                  onClick={() => handleCopy(token.pairAddress)}
+                                  className="text-gray-400"
+                                  title="Copy Pair Address"
+                                >
+                                  <FaClipboard />
+                                </motion.button>
+                                <motion.button
+                                  whileHover={{ scale: 1.1 }}
+                                  onClick={() => handleScan(token.pairAddress)}
+                                  className="text-blue-400"
+                                  title="Scan Token"
+                                >
+                                  <FaSearch />
+                                </motion.button>
+                                {tokenAlerts.length > 0 && (
+                                  <motion.button
+                                    whileHover={{ scale: 1.1 }}
+                                    onClick={() => setSelectedAlerts(tokenAlerts)}
+                                    className={`text-white p-1 rounded ${getAlertButtonColor(tokenAlerts)}`}
+                                    title="View Alerts"
+                                  >
+                                    <FaBell />
+                                  </motion.button>
+                                )}
+                              </div>
+                            </div>
+                            <Link href={`/token-scanner/${token.pairAddress}/chart`}>
+                              <div className="flex items-center space-x-2 mb-2">
+                                <img
+                                  src={token.info?.imageUrl || "/fallback.png"}
+                                  alt={token.baseToken.symbol}
+                                  className="w-8 h-8 rounded-full"
+                                />
+                                <span className="truncate">
+                                  {token.baseToken.symbol}/{token.quoteToken.symbol}
+                                </span>
+                              </div>
+                            </Link>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div>
+                                <span className="text-gray-400">Price:</span>{" "}
+                                ${Number(token.priceUsd).toFixed(5)}
+                              </div>
+                              <div>
+                                <span className="text-gray-400">Age:</span>{" "}
+                                {getAge(token.pairCreatedAt)}
+                              </div>
+                              <div>
+                                <span className="text-gray-400">Txn 24h:</span>{" "}
+                                {getTxns24h(token).toLocaleString()}
+                              </div>
+                              <div>
+                                <span className="text-gray-400">5m:</span>{" "}
+                                <span className={getColorClass(token.priceChange?.m5 ?? 0)}>
+                                  {(token.priceChange?.m5 ?? 0).toFixed(2)}%
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-gray-400">1h:</span>{" "}
+                                <span className={getColorClass(token.priceChange?.h1 ?? 0)}>
+                                  {(token.priceChange?.h1 ?? 0).toFixed(2)}%
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-gray-400">6h:</span>{" "}
+                                <span className={getColorClass(token.priceChange?.h6 ?? 0)}>
+                                  {(token.priceChange?.h6 ?? 0).toFixed(2)}%
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-gray-400">24h:</span>{" "}
+                                <span className={getColorClass(token.priceChange?.h24 ?? 0)}>
+                                  {(token.priceChange?.h24 ?? 0).toFixed(2)}%
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-gray-400">Volume:</span>{" "}
+                                ${(token.volume?.h24 || 0).toLocaleString()}
+                              </div>
+                              <div>
+                                <span className="text-gray-400">Liquidity:</span>{" "}
+                                ${token.liquidity.usd.toLocaleString()}
+                              </div>
+                              <div>
+                                <span className="text-gray-400">Mkt Cap:</span>{" "}
+                                ${(token.marketCap || 0).toLocaleString()}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Pagination */}
+                  {totalPages > 1 && (
+                    <div className="p-4 flex justify-center items-center space-x-2">
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                        disabled={currentPage === 1}
+                        className="bg-gray-700 hover:bg-gray-600 text-white py-1 px-3 rounded disabled:opacity-50"
+                      >
+                        Previous
+                      </motion.button>
+                      <span className="text-gray-400">
+                        Page {currentPage} of {totalPages}
+                      </span>
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                        disabled={currentPage === totalPages}
+                        className="bg-gray-700 hover:bg-gray-600 text-white py-1 px-3 rounded disabled:opacity-50"
+                      >
+                        Next
+                      </motion.button>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

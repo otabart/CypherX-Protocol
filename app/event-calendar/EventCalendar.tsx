@@ -13,15 +13,15 @@ import {
   arrayRemove,
   addDoc,
   getDoc,
+  type DocumentData,
+  type CollectionReference,
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { auth } from '../../lib/firebase';
-import { User } from 'firebase/auth';
+import { type User } from 'firebase/auth';
 import { Timestamp } from 'firebase/firestore';
 import {
   FiCalendar,
   FiThumbsUp,
-  FiMessageSquare,
   FiPlus,
   FiLink,
   FiFilter,
@@ -58,6 +58,15 @@ interface Project {
   ticker: string;
 }
 
+interface PendingProject {
+  name: string;
+  ticker: string;
+  description: string;
+  contractAddress: string;
+  website: string;
+  proofOfOwnership: string;
+}
+
 interface EventCalendarProps {
   user: User | null;
   followedProjects: string[];
@@ -65,14 +74,15 @@ interface EventCalendarProps {
 
 function timestampToDateString(timestamp: Timestamp): string {
   const date = timestamp.toDate();
-  return date.toISOString().split('T')[0];
+  return date.toISOString().split('T')[0]; // e.g., "2025-04-25"
 }
 
 function getCurrentWeekDates(): { day: string; date: string; fullDate: string }[] {
   const today = new Date();
   const dayOfWeek = today.getDay();
   const startOfWeek = new Date(today);
-  startOfWeek.setDate(today.getDate() - dayOfWeek + 1);
+  startOfWeek.setDate(today.getDate() - dayOfWeek + 1); // Monday
+  startOfWeek.setUTCHours(0, 0, 0, 0); // Start of day in UTC
 
   const days = [];
   const dayNames = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
@@ -81,10 +91,11 @@ function getCurrentWeekDates(): { day: string; date: string; fullDate: string }[
     currentDay.setDate(startOfWeek.getDate() + i);
     days.push({
       day: dayNames[i],
-      date: currentDay.getDate().toString(),
+      date: currentDay.getUTCDate().toString(),
       fullDate: currentDay.toISOString().split('T')[0],
     });
   }
+  console.log('weekDates:', days);
   return days;
 }
 
@@ -95,6 +106,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
   const [error, setError] = useState<string | null>(null);
   const [comment, setComment] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showSubmitProjectModal, setShowSubmitProjectModal] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [newEvent, setNewEvent] = useState({
     projectId: '',
@@ -103,6 +115,14 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
     date: '',
     eventType: 'AMA',
     link: '',
+  });
+  const [newProject, setNewProject] = useState<PendingProject>({
+    name: '',
+    ticker: '',
+    description: '',
+    contractAddress: '',
+    website: '',
+    proofOfOwnership: '',
   });
   const [eventTypeFilter, setEventTypeFilter] = useState<string>('All');
 
@@ -118,6 +138,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
           name: doc.data().name || 'Unknown',
           ticker: doc.data().ticker || 'N/A',
         }));
+        console.log('Fetched projects for dropdown:', projectList);
         setProjects(projectList);
       } catch (error) {
         console.error('Error fetching projects:', error);
@@ -127,90 +148,121 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
   }, []);
 
   useEffect(() => {
-    async function fetchEventData() {
-      setLoading(true);
-      setError(null);
-      try {
-        const startDate = weekDates[0].fullDate;
-        const endDate = weekDates[6].fullDate;
+    fetchEventData();
+  }, [user, followedProjects, eventTypeFilter]);
 
-        const startTimestamp = Timestamp.fromDate(new Date(startDate));
-        const endTimestamp = Timestamp.fromDate(new Date(endDate + 'T23:59:59.999Z'));
+  async function fetchEventData() {
+    setLoading(true);
+    setError(null);
+    try {
+      const startDate = new Date(weekDates[0].fullDate + 'T00:00:00.000Z');
+      const endDate = new Date(weekDates[6].fullDate + 'T23:59:59.999Z');
+      const startTimestamp = Timestamp.fromDate(startDate);
+      const endTimestamp = Timestamp.fromDate(endDate);
 
-        let q = query(
-          collection(db, 'projectEvents'),
+      console.log('Querying events from:', startTimestamp.toDate().toISOString(), 'to:', endTimestamp.toDate().toISOString());
+      console.log('followedProjects contents:', followedProjects);
+      console.log('eventTypeFilter:', eventTypeFilter);
+
+      // Fetch projects
+      const projectMap: { [key: string]: { name: string; ticker: string } } = {};
+      const projectCollection = collection(db, 'tokenLaunch') as CollectionReference<DocumentData>;
+      let projectQuery = projectCollection;
+      if (user && followedProjects.length > 0) {
+        projectQuery = query(projectCollection, where('__name__', 'in', followedProjects));
+      }
+      const projectSnapshot = await getDocs(projectQuery);
+      console.log('Fetched projects:', projectSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      projectSnapshot.forEach((doc) => {
+        projectMap[doc.id] = {
+          name: doc.data().name || 'Unknown',
+          ticker: doc.data().ticker || 'N/A',
+        };
+      });
+
+      // Fetch events
+      const eventCollection = collection(db, 'projectEvents') as CollectionReference<DocumentData>;
+      let q = query(
+        eventCollection,
+        where('date', '>=', startTimestamp),
+        where('date', '<=', endTimestamp)
+      );
+      if (user && followedProjects.length > 0) {
+        q = query(
+          eventCollection,
           where('date', '>=', startTimestamp),
-          where('date', '<=', endTimestamp)
+          where('date', '<=', endTimestamp),
+          where('projectId', 'in', followedProjects)
         );
+      }
+      console.log('Firestore query:', q);
 
-        if (user && followedProjects.length > 0) {
-          q = query(
-            collection(db, 'projectEvents'),
-            where('date', '>=', startTimestamp),
-            where('date', '<=', endTimestamp),
-            where('projectId', 'in', followedProjects)
-          );
+      const querySnapshot = await getDocs(q);
+      console.log('Query snapshot size:', querySnapshot.size);
+      querySnapshot.forEach((doc) => {
+        console.log('Event:', doc.id, doc.data());
+      });
+
+      if (querySnapshot.empty) {
+        console.warn('No events found for this week.');
+        if (followedProjects.length > 0) {
+          setError('No events found for your followed projects this week.');
+        } else {
+          setError('No events scheduled this week.');
+        }
+        setLoading(false);
+        return;
+      }
+
+      const fetchedData: { [key: string]: DayEvents } = {};
+      for (const doc of querySnapshot.docs) {
+        const data = doc.data();
+        const eventDateString = timestampToDateString(data.date);
+        console.log('Processing event:', doc.id, 'Date:', eventDateString);
+
+        const event: Event = {
+          id: doc.id,
+          projectId: data.projectId,
+          projectName: projectMap[data.projectId]?.name || 'Unknown',
+          projectTicker: projectMap[data.projectId]?.ticker || 'N/A',
+          title: data.title,
+          description: data.description,
+          date: eventDateString,
+          createdBy: data.createdBy,
+          eventType: data.eventType,
+          link: data.link,
+          reactions: data.reactions || { likes: [], comments: [] },
+        };
+
+        if (eventTypeFilter !== 'All' && event.eventType !== eventTypeFilter) {
+          console.log('Event filtered out by eventType:', event.title, event.eventType);
+          continue;
         }
 
-        const querySnapshot = await getDocs(q);
-
-        if (querySnapshot.empty) {
-          console.warn('No events found in projectEvents collection for this week.');
-          setError('No events found for this week. Check back later!');
-          setLoading(false);
-          return;
+        if (!fetchedData[eventDateString]) {
+          fetchedData[eventDateString] = { events: [] };
         }
+        fetchedData[eventDateString].events.push(event);
+      }
 
-        const fetchedData: { [key: string]: DayEvents } = {};
-        for (const doc of querySnapshot.docs) {
-          const data = doc.data();
-          const eventDateString = timestampToDateString(data.date);
-
-          // Fetch project details
-          const projectDoc = await getDoc(doc(db, 'tokenLaunch', data.projectId));
-          const projectData = projectDoc.exists() ? projectDoc.data() : { name: 'Unknown', ticker: 'N/A' };
-
-          const event: Event = {
-            id: doc.id,
-            projectId: data.projectId,
-            projectName: projectData.name || 'Unknown',
-            projectTicker: projectData.ticker || 'N/A',
-            title: data.title,
-            description: data.description,
-            date: eventDateString,
-            createdBy: data.createdBy,
-            eventType: data.eventType,
-            link: data.link,
-            reactions: data.reactions || { likes: [], comments: [] },
-          };
-
-          if (eventTypeFilter !== 'All' && event.eventType !== eventTypeFilter) {
-            continue;
-          }
-
-          if (!fetchedData[eventDateString]) {
-            fetchedData[eventDateString] = { events: [] };
-          }
-          fetchedData[eventDateString].events.push(event);
-        }
-
-        const newEventData = weekDates.map((dayInfo) => ({
+      const newEventData = weekDates.map((dayInfo) => {
+        console.log('Mapping day:', dayInfo.fullDate, 'Events:', fetchedData[dayInfo.fullDate]?.events || []);
+        return {
           day: dayInfo.day,
           date: dayInfo.date,
           events: fetchedData[dayInfo.fullDate] || { events: [] },
-        }));
+        };
+      });
 
-        setEventData(newEventData);
-      } catch (error) {
-        console.error('Error fetching event data:', error);
-        setError('Failed to load event data. Please try again later.');
-      } finally {
-        setLoading(false);
-      }
+      console.log('Final eventData:', JSON.stringify(newEventData, null, 2));
+      setEventData([...newEventData]);
+    } catch (error) {
+      console.error('Error fetching event data:', error);
+      setError('Failed to load event data. Please try again later.');
+    } finally {
+      setLoading(false);
     }
-
-    fetchEventData();
-  }, [user, followedProjects, eventTypeFilter]);
+  }
 
   const handleLike = async (event: Event) => {
     if (!user) {
@@ -331,18 +383,21 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
         link: newEvent.link || null,
         reactions: { likes: [], comments: [] },
       };
-      await addDoc(collection(db, 'projectEvents'), eventData);
+      console.log('Creating event:', eventData);
+      const docRef = await addDoc(collection(db, 'projectEvents'), eventData);
+      console.log('Event created with ID:', docRef.id);
       setShowCreateModal(false);
       setNewEvent({ projectId: '', title: '', description: '', date: '', eventType: 'AMA', link: '' });
 
-      // Simulate notifying followers
+      // Notify followers
       const projectDoc = await getDoc(doc(db, 'tokenLaunch', newEvent.projectId));
       if (projectDoc.exists()) {
-        const projectData = projectDoc.data();
+        const projectData = projectDoc.data() as { name: string; followers?: string[] };
+        console.log('Project data:', projectData);
         const followers = projectData.followers || [];
         if (Notification.permission === 'granted') {
           followers.forEach((followerId: string) => {
-            if (followerId === user.uid) return; // Skip the creator
+            if (followerId === user.uid) return;
             new Notification(`New Event for ${projectData.name}`, {
               body: `${newEvent.title} - ${newEvent.description.slice(0, 50)}...`,
             });
@@ -358,85 +413,51 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
     }
   };
 
-  const fetchEventData = async () => {
-    setLoading(true);
-    setError(null);
+  const handleSubmitProject = async () => {
+    if (!user) {
+      alert('Please sign in to submit a project!');
+      return;
+    }
+    if (
+      !newProject.name ||
+      !newProject.ticker ||
+      !newProject.description ||
+      !newProject.contractAddress ||
+      !newProject.website ||
+      !newProject.proofOfOwnership
+    ) {
+      alert('Please fill in all required fields.');
+      return;
+    }
     try {
-      const startDate = weekDates[0].fullDate;
-      const endDate = weekDates[6].fullDate;
-
-      const startTimestamp = Timestamp.fromDate(new Date(startDate));
-      const endTimestamp = Timestamp.fromDate(new Date(endDate + 'T23:59:59.999Z'));
-
-      let q = query(
-        collection(db, 'projectEvents'),
-        where('date', '>=', startTimestamp),
-        where('date', '<=', endTimestamp)
-      );
-
-      if (user && followedProjects.length > 0) {
-        q = query(
-          collection(db, 'projectEvents'),
-          where('date', '>=', startTimestamp),
-          where('date', '<=', endTimestamp),
-          where('projectId', 'in', followedProjects)
-        );
-      }
-
-      const querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) {
-        console.warn('No events found in projectEvents collection for this week.');
-        setError('No events found for this week. Check back later!');
-        setLoading(false);
-        return;
-      }
-
-      const fetchedData: { [key: string]: DayEvents } = {};
-      for (const doc of querySnapshot.docs) {
-        const data = doc.data();
-        const eventDateString = timestampToDateString(data.date);
-
-        // Fetch project details
-        const projectDoc = await getDoc(doc(db, 'tokenLaunch', data.projectId));
-        const projectData = projectDoc.exists() ? projectDoc.data() : { name: 'Unknown', ticker: 'N/A' };
-
-        const event: Event = {
-          id: doc.id,
-          projectId: data.projectId,
-          projectName: projectData.name || 'Unknown',
-          projectTicker: projectData.ticker || 'N/A',
-          title: data.title,
-          description: data.description,
-          date: eventDateString,
-          createdBy: data.createdBy,
-          eventType: data.eventType,
-          link: data.link,
-          reactions: data.reactions || { likes: [], comments: [] },
-        };
-
-        if (eventTypeFilter !== 'All' && event.eventType !== eventTypeFilter) {
-          continue;
-        }
-
-        if (!fetchedData[eventDateString]) {
-          fetchedData[eventDateString] = { events: [] };
-        }
-        fetchedData[eventDateString].events.push(event);
-      }
-
-      const newEventData = weekDates.map((dayInfo) => ({
-        day: dayInfo.day,
-        date: dayInfo.date,
-        events: fetchedData[dayInfo.fullDate] || { events: [] },
-      }));
-
-      setEventData(newEventData);
+      const projectData = {
+        name: newProject.name,
+        ticker: newProject.ticker,
+        description: newProject.description,
+        contractAddress: newProject.contractAddress,
+        website: newProject.website,
+        proofOfOwnership: newProject.proofOfOwnership,
+        submitterId: user.uid,
+        submittedAt: Timestamp.fromDate(new Date()),
+        status: 'pending',
+        adminNotes: '',
+      };
+      console.log('Submitting project:', projectData);
+      const docRef = await addDoc(collection(db, 'pendingProjects'), projectData);
+      console.log('Project submitted with ID:', docRef.id);
+      setShowSubmitProjectModal(false);
+      setNewProject({
+        name: '',
+        ticker: '',
+        description: '',
+        contractAddress: '',
+        website: '',
+        proofOfOwnership: '',
+      });
+      alert('Project submitted for review!');
     } catch (error) {
-      console.error('Error fetching event data:', error);
-      setError('Failed to load event data. Please try again later.');
-    } finally {
-      setLoading(false);
+      console.error('Error submitting project:', error);
+      alert('Failed to submit project: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   };
 
@@ -461,38 +482,32 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
             </select>
             <FiFilter className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 w-4 h-4" />
           </div>
-          {(user?.email === 'homebasemarkets@gmail.com' || true) && ( // Replace true with hasRole('moderator') check
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              onClick={() => setShowCreateModal(true)}
-              className="px-4 py-2 bg-[#0052FF] text-white rounded-md hover:bg-[#0042CC] transition text-sm sm:text-base flex items-center gap-1"
-            >
-              <FiPlus className="w-4 h-4 sm:w-5 sm:h-5" />
-              Create Event
-            </motion.button>
+          {(user?.email === 'homebasemarkets@gmail.com' || true) && (
+            <>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                onClick={() => setShowCreateModal(true)}
+                className="px-4 py-2 bg-[#0052FF] text-white rounded-md hover:bg-[#0042CC] transition text-sm sm:text-base flex items-center gap-1"
+              >
+                <FiPlus className="w-4 h-4 sm:w-5 sm:h-5" />
+                Create Event
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                onClick={() => setShowSubmitProjectModal(true)}
+                className="px-4 py-2 bg-[#0052FF] text-white rounded-md hover:bg-[#0042CC] transition text-sm sm:text-base flex items-center gap-1"
+              >
+                <FiPlus className="w-4 h-4 sm:w-5 sm:h-5" />
+                Submit Project
+              </motion.button>
+            </>
           )}
         </div>
       </div>
       <div className="bg-white p-6 sm:p-8 rounded-xl shadow-xl border border-gray-200">
         {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 sm:gap-6">
-            {Array.from({ length: 7 }).map((_, index) => (
-              <div
-                key={index}
-                className="bg-white p-4 rounded-lg shadow-md border border-gray-200 min-h-80 flex flex-col animate-pulse"
-              >
-                <div className="h-6 bg-gray-200 rounded w-1/3 mx-auto mb-2"></div>
-                <div className="h-4 bg-gray-200 rounded w-1/4 mx-auto mb-4"></div>
-                <div className="flex-grow space-y-4">
-                  <div className="bg-gray-100 p-3 rounded-md">
-                    <div className="h-4 bg-gray-300 rounded w-1/2 mx-auto mb-2"></div>
-                    <div className="grid grid-cols-1 gap-2">
-                      <div className="bg-white p-2 rounded-md h-16"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
+          <div className="text-center py-6">
+            <p className="text-gray-500">Loading events...</p>
           </div>
         ) : error ? (
           <div className="text-center text-red-500 py-6">
@@ -503,6 +518,16 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
             >
               Retry
             </button>
+          </div>
+        ) : eventData.every((day) => day.events.events.length === 0) ? (
+          <div className="text-center text-gray-500 py-6">
+            <p>No events scheduled for this week.</p>
+            {followedProjects.length > 0 && (
+              <p>Try clearing the project filter to see all events.</p>
+            )}
+            {eventTypeFilter !== 'All' && (
+              <p>Try setting the event type filter to "All".</p>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 sm:gap-6">
@@ -528,7 +553,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                       <FiCalendar className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
                       Events
                     </h3>
-                    {day.events.events.length === 0 ? (
+                    {day.events?.events?.length === 0 ? (
                       <p className="text-xs sm:text-sm text-gray-500 text-center">
                         No events scheduled
                       </p>
@@ -786,6 +811,120 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                 className="w-full bg-[#0052FF] text-white py-2 rounded-md hover:bg-[#0042CC] transition text-sm sm:text-base"
               >
                 Create Event
+              </motion.button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Submit Project Modal */}
+      {showSubmitProjectModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md sm:max-w-lg relative mx-4 my-8"
+          >
+            <button
+              onClick={() => setShowSubmitProjectModal(false)}
+              className="absolute top-3 right-3 text-gray-600 text-lg hover:text-gray-800"
+            >
+              ×
+            </button>
+            <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-4">
+              Submit New Project
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Project Name
+                </label>
+                <input
+                  type="text"
+                  value={newProject.name}
+                  onChange={(e) =>
+                    setNewProject({ ...newProject, name: e.target.value })
+                  }
+                  placeholder="e.g., Homebase Project"
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm sm:text-base"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Ticker
+                </label>
+                <input
+                  type="text"
+                  value={newProject.ticker}
+                  onChange={(e) =>
+                    setNewProject({ ...newProject, ticker: e.target.value })
+                  }
+                  placeholder="e.g., HMB"
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm sm:text-base"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Description
+                </label>
+                <textarea
+                  value={newProject.description}
+                  onChange={(e) =>
+                    setNewProject({ ...newProject, description: e.target.value })
+                  }
+                  placeholder="Describe your project..."
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm sm:text-base h-24"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Contract Address
+                </label>
+                <input
+                  type="text"
+                  value={newProject.contractAddress}
+                  onChange={(e) =>
+                    setNewProject({ ...newProject, contractAddress: e.target.value })
+                  }
+                  placeholder="e.g., 0x..."
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm sm:text-base"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Website
+                </label>
+                <input
+                  type="url"
+                  value={newProject.website}
+                  onChange={(e) =>
+                    setNewProject({ ...newProject, website: e.target.value })
+                  }
+                  placeholder="e.g., https://project.com"
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm sm:text-base"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Proof of Ownership
+                </label>
+                <input
+                  type="text"
+                  value={newProject.proofOfOwnership}
+                  onChange={(e) =>
+                    setNewProject({ ...newProject, proofOfOwnership: e.target.value })
+                  }
+                  placeholder="e.g., Link to verified contract or admin proof"
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm sm:text-base"
+                />
+              </div>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                onClick={handleSubmitProject}
+                className="w-full bg-[#0052FF] text-white py-2 rounded-md hover:bg-[#0042CC] transition text-sm sm:text-base"
+              >
+                Submit Project
               </motion.button>
             </div>
           </motion.div>

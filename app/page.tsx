@@ -2,9 +2,8 @@
 
 import { useState, useEffect } from "react";
 import type { FC } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import RoadmapSection from "./components/RoadmapSection.tsx";
 import ScrollingTokenBanner from "./components/ScrollingTokenBanner.tsx";
 import Header from "./components/Header.tsx";
 import Footer from "./components/Footer.tsx";
@@ -236,6 +235,12 @@ function LatestBlocks({ blocks }: { blocks: Block[] }) {
     visible: { opacity: 1, y: 0 },
   };
 
+  const blockVariants = {
+    initial: { opacity: 0, y: 10 },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -10 },
+  };
+
   return (
     <motion.div
       className="w-full font-mono bg-gray-100 rounded-xl shadow-md p-2 sm:p-4 md:p-6"
@@ -244,47 +249,62 @@ function LatestBlocks({ blocks }: { blocks: Block[] }) {
       animate="visible"
       transition={{ duration: 0.5 }}
     >
-      <h2 className="text-base sm:text-lg md:text-xl font-semibold text-blue-600 mb-2 sm:mb-3 md:mb-4 text-black">
+      <h2 className="text-base sm:text-lg md:text-xl font-semibold text-blue-600 text-black mb-2 sm:mb-3 md:mb-4">
         [ LATEST BLOCKS ]
       </h2>
       <div className="space-y-2 sm:space-y-3">
-        {blocks.slice(0, 3).map((block: Block) => (
-          <div
-            key={block.number}
-            className="rounded-lg bg-gray-200 shadow-md p-2 sm:p-3 md:p-4 border border-gray-300"
-          >
-            <div className="flex flex-col gap-1 sm:gap-0 sm:flex-row sm:justify-between sm:items-center mb-1 sm:mb-2">
-              <div className="flex items-center space-x-1 sm:space-x-2 flex-wrap">
-                <BlockIcon className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
-                <span className="text-sm sm:text-base font-bold text-blue-600 text-black">
-                  {block.number}
-                </span>
-                <span className="px-1 py-0.5 sm:px-1.5 sm:py-0.5 bg-green-50 text-green-700 text-xs sm:text-xs font-semibold rounded-full whitespace-nowrap">
-                  [ {block.status} ]
+        <AnimatePresence>
+          {blocks.slice(0, 3).map((block: Block) => (
+            <motion.div
+              key={block.number}
+              className="rounded-lg bg-gray-200 shadow-md p-2 sm:p-3 md:p-4 border border-gray-300"
+              variants={blockVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={{ duration: 0.3 }}
+            >
+              <div className="flex flex-col gap-1 sm:gap-0 sm:flex-row sm:justify-between sm:items-center mb-1 sm:mb-2">
+                <div className="flex items-center space-x-1 sm:space-x-2 flex-wrap">
+                  <BlockIcon className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
+                  <span className="text-sm sm:text-base font-bold text-blue-600 text-black">
+                    {block.number}
+                  </span>
+                  <span className="px-1 py-0.5 sm:px-1.5 sm:py-0.5 bg-green-50 text-green-700 text-xs sm:text-xs font-semibold rounded-full whitespace-nowrap">
+                    [ {block.status} ]
+                  </span>
+                </div>
+                <span className="text-xs sm:text-sm text-gray-500">
+                  {block.timestamp}
                 </span>
               </div>
-              <span className="text-xs sm:text-sm text-gray-500">
-                {block.timestamp}
-              </span>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs sm:text-sm text-gray-500 break-words">
-                <span className="font-semibold text-blue-600">BLOCK HASH:</span>{" "}
-                {block.hash}
-              </p>
-              <p className="text-xs sm:text-sm text-gray-500 flex flex-wrap items-center gap-1">
-                <span className="font-semibold text-blue-600">TXNS:</span>{" "}
-                {block.transactions}
-                <Link
-                  href={`/latest/block/${block.number}`}
-                  className="text-blue-600 hover:underline whitespace-nowrap"
-                >
-                  View on Homescan
-                </Link>
-              </p>
-            </div>
-          </div>
-        ))}
+              <div className="space-y-1">
+                <p className="text-xs sm:text-sm text-gray-500 break-words">
+                  <span className="font-semibold text-blue-600">BLOCK HASH:</span>{" "}
+                  {block.hash}
+                </p>
+                <p className="text-xs sm:text-sm text-gray-500 flex flex-wrap items-center gap-1">
+                  <span className="font-semibold text-blue-600">TXNS:</span>{" "}
+                  {block.transactions}
+                  <Link
+                    href={`/latest/block/${block.number}`}
+                    className="text-blue-600 hover:underline whitespace-nowrap"
+                  >
+                    View on Homescan
+                  </Link>
+                </p>
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+      <div className="text-center mt-4">
+        <Link
+          href="/latest/block"
+          className="text-primaryBlue font-semibold text-sm md:text-base hover:underline"
+        >
+          View Latest Blocks →
+        </Link>
       </div>
     </motion.div>
   );
@@ -377,25 +397,8 @@ function HomePage() {
   const isMobile = useIsMobile();
   const scrollProps = getScrollAnimationProps(isMobile);
 
-  // Mock data for testing
-  const mockStats = {
-    price: 2500.75,
-    volume: 15000000000,
-    latestBlock: 12345678,
-  };
-
-  // Toggle for API vs. mock data
-  const useApi = true;
-
   // Fetch live ETH data and block info
   useEffect(() => {
-    if (!useApi) {
-      console.log("Using mock stats:", mockStats);
-      setStats(mockStats);
-      setLoading(false);
-      return;
-    }
-
     async function fetchData() {
       try {
         console.log("Starting fetchData...");
@@ -407,8 +410,7 @@ function HomePage() {
             coingeckoUrl,
             alchemyUrl,
           });
-          setStats(mockStats);
-          setError("Missing API configuration. Using mock data.");
+          setError("API configuration missing. Please try again later.");
           return;
         }
 
@@ -500,8 +502,7 @@ function HomePage() {
         setError("");
       } catch (error) {
         console.error("Error in fetchData:", error);
-        setError("Failed to fetch data. Using mock data.");
-        setStats(mockStats);
+        setError("Failed to fetch data. Please try again later.");
       } finally {
         setLoading(false);
       }
@@ -510,7 +511,7 @@ function HomePage() {
     fetchData();
     const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
-  }, [useApi]);
+  }, []);
 
   // Fetch latest news articles
   useEffect(() => {
@@ -562,26 +563,20 @@ function HomePage() {
           <svg className="w-full h-full" viewBox="0 0 1440 320" fill="none">
             <path
               stroke="white"
-              strokeOpacity="0.4"
-              d="M100 100 L300 200 M300 200 L500 150 M500 150 L700 250 M700 250 L900 100 M900 100 L1100 200 M1100 200 L1300 150 M200 120 L400 220 M400 220 L600 170 M600 170 L800 260 M800 260 L1000 110 M1000 110 L1200 210"
+              strokeOpacity="0.5"
+              strokeWidth="1"
+              d="M100 100 L400 200 M500 150 L800 250 M900 120 L1200 220"
             />
-            <circle cx="100" cy="100" r="4" fill="white" fillOpacity="0.6" />
-            <circle cx="200" cy="120" r="3" fill="white" fillOpacity="0.6" />
-            <circle cx="300" cy="200" r="4" fill="white" fillOpacity="0.6" />
-            <circle cx="400" cy="220" r="3" fill="white" fillOpacity="0.6" />
-            <circle cx="500" cy="150" r="4" fill="white" fillOpacity="0.6" />
-            <circle cx="600" cy="170" r="3" fill="white" fillOpacity="0.6" />
-            <circle cx="700" cy="250" r="4" fill="white" fillOpacity="0.6" />
-            <circle cx="800" cy="260" r="3" fill="white" fillOpacity="0.6" />
-            <circle cx="900" cy="100" r="4" fill="white" fillOpacity="0.6" />
-            <circle cx="1000" cy="110" r="3" fill="white" fillOpacity="0.6" />
-            <circle cx="1100" cy="200" r="4" fill="white" fillOpacity="0.6" />
-            <circle cx="1200" cy="210" r="3" fill="white" fillOpacity="0.6" />
-            <circle cx="1300" cy="150" r="4" fill="white" fillOpacity="0.6" />
+            <circle cx="100" cy="100" r="3" fill="white" fillOpacity="0.7" />
+            <circle cx="400" cy="200" r="3" fill="white" fillOpacity="0.7" />
+            <circle cx="500" cy="150" r="3" fill="white" fillOpacity="0.7" />
+            <circle cx="800" cy="250" r="3" fill="white" fillOpacity="0.7" />
+            <circle cx="900" cy="120" r="3" fill="white" fillOpacity="0.7" />
+            <circle cx="1200" cy="220" r="3" fill="white" fillOpacity="0.7" />
           </svg>
         </motion.div>
         <h1 className="text-4xl md:text-6xl font-extrabold mb-4 leading-tight relative z-10 px-4">
-          Stay Ahead of Base Markets with Homebase
+          Stay Ahead of the Market with Homebase
         </h1>
         <p className="text-base md:text-lg mb-8 md:mb-10 max-w-md md:max-w-2xl mx-auto leading-relaxed relative z-10 px-4">
           Dive into Base Chain Markets with powerful trading tools, real-time insights, and on-chain analytics—all in one place.
@@ -589,7 +584,7 @@ function HomePage() {
         <div className="flex flex-col md:flex-row justify-center space-y-4 md:space-y-0 md:space-x-4 relative z-10 px-4">
           <Link href="/docs">
             <motion.button
-              className="px-6 py-2.5 border border-white text-white font-semibold rounded-md bg-transparent hover:bg-primaryBlue hover:border-primaryBlue transition-all duration-300 w-full md:w-auto"
+              className="px-8 py-3 border border-white text-white bg-transparent font-semibold rounded-xl hover:bg-white hover:text-blue-600 transition-all duration-300 w-full md:w-auto"
               whileHover={isMobile ? {} : { scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               transition={{ type: "spring", stiffness: 300 }}
@@ -599,7 +594,7 @@ function HomePage() {
           </Link>
           <Link href="/terminal">
             <motion.button
-              className="px-6 py-2.5 border border-white text-white font-semibold rounded-md bg-transparent hover:bg-primaryBlue hover:border-primaryBlue transition-all duration-300 w-full md:w-auto"
+              className="px-8 py-3 border border-white text-white bg-transparent font-semibold rounded-xl hover:bg-white hover:text-blue-600 transition-all duration-300 w-full md:w-auto"
               whileHover={isMobile ? {} : { scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               transition={{ type: "spring", stiffness: 300 }}
@@ -637,7 +632,7 @@ function HomePage() {
         <div className="max-w-md md:max-w-5xl mx-auto px-4">
           <h2 className="text-3xl md:text-5xl font-extrabold mb-6 leading-tight">
             <span className="text-gray-800">What is</span>{" "}
-            <span className="text-primaryBlue">Base?</span>
+            <span className="text-primaryBlue">Base</span>?
           </h2>
           <p className="text-gray-600 max-w-md md:max-w-2xl mx-auto mb-8 md:mb-10 text-base md:text-lg leading-relaxed">
             Base is an Ethereum Layer 2 solution designed to make transactions faster, cheaper, and more scalable while leveraging Ethereum’s security.
@@ -743,15 +738,15 @@ function HomePage() {
           </svg>
         </div>
         <div className="max-w-md md:max-w-5xl mx-auto px-4 relative z-10">
-          <h2 className="text-3xl md:text-5xl font-extrabold mb-6 md:mb-8 text-primaryBlue leading-tight">
-            How Homebase Powers Base
+          <h2 className="text-3xl md:text-5xl font-extrabold mb-6 md:mb-8 leading-tight">
+            How Home<span className="text-primaryBlue">base</span> Powers <span className="text-primaryBlue">Base</span>
           </h2>
           <p className="text-gray-600 max-w-md md:max-w-3xl mx-auto mb-6 md:mb-8 text-base md:text-lg leading-relaxed">
             Homebase provides cutting-edge tools to track on-chain data, monitor whale movements, and stay ahead of token launches on Base.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
             <motion.div
-              className="p-4 md:p-6 bg-white border border-gray-200 rounded-xl shadow-md transition-all duration-300 group"
+              className="p-4 md:p-6 bg-white border border-gray-200 rounded-xl shadow-md transition-all duration-300 group flex flex-col items-center"
               whileHover={
                 isMobile
                   ? {}
@@ -762,14 +757,14 @@ function HomePage() {
             >
               <ChartIcon className="w-10 h-10 mx-auto mb-4 text-gray-600 group-hover:scale-110 transition-transform duration-300" />
               <h3 className="text-lg md:text-xl font-bold text-gray-800 mb-2">
-                Homebase Screener
+                Home<span className="text-primaryBlue">base</span> Screener
               </h3>
-              <p className="text-sm md:text-base text-gray-600 leading-relaxed mb-4">
+              <p className="text-sm md:text-base text-gray-600 leading-relaxed mb-4 flex-grow">
                 Get real-time coin prices and find the hottest base pairs.
               </p>
               <Link href="/token-scanner">
                 <motion.button
-                  className="px-5 py-2 bg-primaryBlue text-white font-semibold rounded-md hover:bg-blue-500 transition-all duration-300 shadow-sm w-full md:w-auto"
+                  className="px-8 py-3 bg-gradient-to-r from-blue-500 to-blue-700 text-white font-semibold rounded-lg hover:from-blue-600 hover:to-blue-800 transition-all duration-300 shadow-md w-full md:w-auto"
                   whileHover={isMobile ? {} : { scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
@@ -778,7 +773,7 @@ function HomePage() {
               </Link>
             </motion.div>
             <motion.div
-              className="p-4 md:p-6 bg-white border border-gray-200 rounded-xl shadow-md transition-all duration-300 group"
+              className="p-4 md:p-6 bg-white border border-gray-200 rounded-xl shadow-md transition-all duration-300 group flex flex-col items-center"
               whileHover={
                 isMobile
                   ? {}
@@ -791,12 +786,12 @@ function HomePage() {
               <h3 className="text-lg md:text-xl font-bold text-gray-800 mb-2">
                 Whale Watchers
               </h3>
-              <p className="text-sm md:text-base text-gray-600 leading-relaxed mb-4">
+              <p className="text-sm md:text-base text-gray-600 leading-relaxed mb-4 flex-grow">
                 Track large wallet movements and detect potential market shifts.
               </p>
               <Link href="/whale-watcher">
                 <motion.button
-                  className="px-5 py-2 bg-primaryBlue text-white font-semibold rounded-md hover:bg-blue-500 transition-all duration-300 shadow-sm w-full md:w-auto"
+                  className="px-8 py-3 bg-gradient-to-r from-blue-500 to-blue-700 text-white font-semibold rounded-lg hover:from-blue-600 hover:to-blue-800 transition-all duration-300 shadow-md w-full md:w-auto"
                   whileHover={isMobile ? {} : { scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
@@ -805,7 +800,7 @@ function HomePage() {
               </Link>
             </motion.div>
             <motion.div
-              className="p-4 md:p-6 bg-white border border-gray-200 rounded-xl shadow-md transition-all duration-300 group"
+              className="p-4 md:p-6 bg-white border border-gray-200 rounded-xl shadow-md transition-all duration-300 group flex flex-col items-center"
               whileHover={
                 isMobile
                   ? {}
@@ -818,12 +813,12 @@ function HomePage() {
               <h3 className="text-lg md:text-xl font-bold text-gray-800 mb-2">
                 Token Launch Calendar
               </h3>
-              <p className="text-sm md:text-base text-gray-600 leading-relaxed mb-4">
+              <p className="text-sm md:text-base text-gray-600 leading-relaxed mb-4 flex-grow">
                 Stay ahead with upcoming token launches and market trends.
               </p>
               <Link href="/launch-calendar">
                 <motion.button
-                  className="px-5 py-2 bg-primaryBlue text-white font-semibold rounded-md hover:bg-blue-500 transition-all duration-300 shadow-sm w-full md:w-auto"
+                  className="px-8 py-3 bg-gradient-to-r from-blue-500 to-blue-700 text-white font-semibold rounded-lg hover:from-blue-600 hover:to-blue-800 transition-all duration-300 shadow-md w-full md:w-auto"
                   whileHover={isMobile ? {} : { scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
@@ -834,9 +829,6 @@ function HomePage() {
           </div>
         </div>
       </motion.section>
-
-      {/* Roadmap Section */}
-      <RoadmapSection />
 
       {/* Latest News Section */}
       {loading ? (

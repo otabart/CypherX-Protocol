@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore as getClientFirestore } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import { getAuth, onAuthStateChanged, type User } from "firebase/auth";
 
 // Client-side Firebase configuration
 const firebaseConfig = {
@@ -49,28 +49,16 @@ console.log("Client-side Firestore initialized:", clientDb ? "Success" : "Failed
 const auth = getAuth(clientApp);
 console.log("Client-side Auth initialized:", auth ? "Success" : "Failed");
 
-// Server-side Firebase Admin
-let adminDb: ReturnType<typeof import("firebase-admin/firestore").getFirestore>;
+// Export a function to listen to auth state changes
+const listenToAuthState = (callback: (user: User | null) => void) => {
+  return onAuthStateChanged(auth, (user) => {
+    console.log("Auth state changed:", user ? `User ${user.uid} signed in` : "No user signed in");
+    callback(user);
+  });
+};
 
-// Function to normalize private key
-function normalizePrivateKey(key: string | undefined): string | undefined {
-  if (!key) {
-    console.error("FIREBASE_PRIVATE_KEY is undefined or empty");
-    return undefined;
-  }
-  let normalizedKey = key
-    .replace(/\\n/g, "\n")
-    .replace(/\\r/g, "")
-    .replace(/\n+/g, "\n")
-    .trim();
-  if (!normalizedKey.startsWith("-----BEGIN PRIVATE KEY-----\n")) {
-    normalizedKey = "-----BEGIN PRIVATE KEY-----\n" + normalizedKey;
-  }
-  if (!normalizedKey.endsWith("\n-----END PRIVATE KEY-----\n")) {
-    normalizedKey = normalizedKey + "\n-----END PRIVATE KEY-----\n";
-  }
-  return normalizedKey;
-}
+// Server-side Firebase Admin
+let adminDb: any = {};
 
 if (typeof window === "undefined") {
   try {
@@ -88,6 +76,26 @@ if (typeof window === "undefined") {
     const { initializeApp: initializeAdminApp, getApps: getAdminApps } = await import("firebase-admin/app");
     const { getFirestore: getAdminFirestore } = await import("firebase-admin/firestore");
     const { cert } = await import("firebase-admin/app");
+
+    // Function to normalize private key
+    const normalizePrivateKey = (key: string | undefined): string | undefined => {
+      if (!key) {
+        console.error("FIREBASE_PRIVATE_KEY is undefined or empty");
+        return undefined;
+      }
+      let normalizedKey = key
+        .replace(/\\n/g, "\n")
+        .replace(/\\r/g, "")
+        .replace(/\n+/g, "\n")
+        .trim();
+      if (!normalizedKey.startsWith("-----BEGIN PRIVATE KEY-----\n")) {
+        normalizedKey = "-----BEGIN PRIVATE KEY-----\n" + normalizedKey;
+      }
+      if (!normalizedKey.endsWith("\n-----END PRIVATE KEY-----\n")) {
+        normalizedKey = normalizedKey + "\n-----END PRIVATE KEY-----\n";
+      }
+      return normalizedKey;
+    };
 
     const privateKey = normalizePrivateKey(process.env.FIREBASE_PRIVATE_KEY);
     console.log("FIREBASE_PRIVATE_KEY length:", privateKey?.length || 0);
@@ -122,11 +130,9 @@ if (typeof window === "undefined") {
         get: async () => ({ docs: [], forEach: () => {}, size: 0 }),
         add: async () => ({ id: "mock-id" }),
       }),
-    } as any;
+    };
     console.warn("Using mock adminDb to prevent app crash. Firestore operations will be limited.");
   }
-} else {
-  adminDb = {} as any;
 }
 
-export { clientDb, clientDb as db, auth, adminDb };
+export { clientDb, clientDb as db, auth, adminDb, listenToAuthState };

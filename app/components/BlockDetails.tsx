@@ -157,7 +157,7 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
         <div className={`flex items-center justify-between px-4 py-3 ${themeClasses.headerBg}`}>
           <div className="flex items-center space-x-3">
             <Link
-              href="/homescan"
+              href="/latest/block"
               className={`inline-flex items-center px-2 py-1 ${themeClasses.buttonBg} ${themeClasses.text} ${themeClasses.buttonHover} transition-colors ${themeClasses.shadow} text-sm`}
             >
               <svg

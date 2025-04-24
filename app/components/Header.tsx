@@ -7,8 +7,8 @@ import Image from "next/image";
 
 // Firebase
 import { signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase"; // your path
-import { useAuth } from "@/app/providers"; // your AuthProvider
+import { auth } from "@/lib/firebase.ts";
+import { useAuth } from "@/app/providers.tsx";
 
 const Header = () => {
   const router = useRouter();
@@ -73,7 +73,7 @@ const Header = () => {
             </span>
           </Link>
 
-          {/* Desktop Navigation (Unchanged) */}
+          {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center space-x-6">
             {/* Whale Watchers */}
             <IconLink
@@ -134,6 +134,19 @@ const Header = () => {
               }
             />
 
+            {/* Homescan (New) */}
+            <IconLink
+              href="/latest/block"
+              label="Homescan"
+              svg={
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M4 6h16M4 12h16M4 18h7"
+                />
+              }
+            />
+
             {/* Tournaments */}
             <IconLink
               href="/TradingCompetition"
@@ -160,7 +173,7 @@ const Header = () => {
                       fill="none"
                       stroke="currentColor"
                       strokeWidth={2}
-                      viewBox="0 0 24 -ACCOUNT24"
+                      viewBox="0 0 24 24" // Fixed viewBox
                     >
                       <path
                         strokeLinecap="round"
@@ -356,10 +369,33 @@ const Header = () => {
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      d="M12 8v4m0 4h.01M20.205 7.697l-7.2-3.6a1.3 1.3 0 00-1.01 0l-7.2 3.6A1.3 1.3 0 004 8.848v6.304a1.3 1.3 0 00.795 1.151l7.2 3.6c.315.158.694.158 1.01 0l7.2-3.6A1.3 1.3 0 0020 15.152V8.848a1.3 1.3 0 00-.795-1.151z"
+                      d="M12 8v4m0 4h.01M20.205 7.697l-7.2-3.6a1.3 1.3 0 00-1.01 0l-7.2 3.6A1.3 1.3 0 004 8.848v6.304a1.3 1.3 0 00.795 1.151l7.2 3.6c.315.158.694.158 1.01 0l7.2-3.6A1.3 1.3 0 0020 15.152V8.848a1.3 0 00-.795-1.151z"
                     />
                   </svg>
                   <span>Honeypot Scanner</span>
+                </Link>
+              </li>
+              <li className="border-t border-gray-300 mx-[-1.5rem]"></li>
+              <li>
+                <Link
+                  href="/latest/block"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="flex items-center gap-2 py-2 text-gray-800 hover:text-[#0052FF] transition-colors"
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M4 6h16M4 12h16M4 18h7"
+                    />
+                  </svg>
+                  <span>Homescan</span>
                 </Link>
               </li>
             </ul>

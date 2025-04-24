@@ -28,6 +28,7 @@ const sections = [
   },
   { id: "getting-started", title: "Getting Started" },
   { id: "api-docs", title: "API Documentation" },
+  { id: "roadmap", title: "Roadmap" },
   { id: "company-updates", title: "Company Updates" },
 ];
 
