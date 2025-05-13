@@ -1,14 +1,14 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import type { FC } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import Link from "next/link";
-import ScrollingTokenBanner from "./components/ScrollingTokenBanner.tsx";
-import Header from "./components/Header.tsx";
-import Footer from "./components/Footer.tsx";
-import PartnersScroller from "./components/PartnersScroller.tsx";
-import BaseAiIndex from "./components/Indexes.tsx";
+import { useState, useEffect } from 'react';
+import type { FC } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import Link from 'next/link';
+import ScrollingTokenBanner from './components/ScrollingTokenBanner.tsx';
+import Header from './components/Header.tsx';
+import Footer from './components/Footer.tsx';
+import PartnersScroller from './components/PartnersScroller.tsx';
+import BaseAiIndex from './components/Indexes.tsx';
 
 // Type definitions
 type NewsArticle = {
@@ -36,19 +36,18 @@ function useIsMobile() {
       setIsMobile(window.innerWidth < 768);
     };
     checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
   }, []);
   return isMobile;
 }
 
-// Helper for scroll animation props
 function getScrollAnimationProps(isMobile: boolean) {
   return {
     initial: { opacity: 0, y: isMobile ? 50 : 30 },
     whileInView: { opacity: 1, y: 0 },
     viewport: { once: true },
-    transition: { duration: isMobile ? 0.8 : 0.6, ease: "easeOut" },
+    transition: { duration: isMobile ? 0.8 : 0.6, ease: 'circOut' },
   };
 }
 
@@ -63,12 +62,12 @@ function CoinIcon() {
       xmlns="http://www.w3.org/2000/svg"
       className="mx-auto mb-2"
     >
-      <path fill="#2563EB" d="M127.9,0L124.7,11.2V274.6l3.2,3.3l127.9-68.8L127.9,0z" />
-      <path fill="#3B82F6" d="M127.9,0L0,209.1l127.9,68.8V0z" />
-      <path fill="#60A5FA" d="M127.9,311.3l-2.3,2.3V414.8l2.3,2.2l128.1-76.1L127.9,311.3z" />
-      <path fill="#3B82F6" d="M127.9,414.8V311.3L256,239.7L127.9,414.8z" />
-      <path fill="#1D4ED8" d="M127.9,277.9l127.9-68.8l-127.9-59.6V277.9z" />
-      <path fill="#2563EB" d="M0,209.1l127.9,68.8V218.3L0,209.1z" />
+      <path fill="#3B82F6" d="M127.9,0L124.7,11.2V274.6l3.2,3.3l127.9-68.8L127.9,0z" />
+      <path fill="#60A5FA" d="M127.9,0L0,209.1l127.9,68.8V0z" />
+      <path fill="#93C5FD" d="M127.9,311.3l-2.3,2.3V414.8l2.3,2.2l128.1-76.1L127.9,311.3z" />
+      <path fill="#60A5FA" d="M127.9,414.8V311.3L256,239.7L127.9,414.8z" />
+      <path fill="#2563EB" d="M127.9,277.9l127.9-68.8l-127.9-59.6V277.9z" />
+      <path fill="#3B82F6" d="M0,209.1l127.9,68.8V218.3L0,209.1z" />
     </svg>
   );
 }
@@ -80,11 +79,11 @@ function VolumeIcon() {
       height="32"
       viewBox="0 0 24 24"
       fill="none"
-      stroke="currentColor"
+      stroke="#3B82F6"
       strokeWidth="1.8"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="text-primaryBlue mx-auto mb-2"
+      className="mx-auto mb-2"
     >
       <rect x="4" y="10" width="4" height="8" />
       <rect x="10" y="6" width="4" height="12" />
@@ -100,7 +99,7 @@ function BlockIcon({ className }: IconProps) {
       height="36"
       viewBox="0 0 24 24"
       fill="none"
-      stroke="#2563EB"
+      stroke="#3B82F6"
       strokeWidth="1.8"
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -120,11 +119,11 @@ function LightningIcon() {
       height="42"
       fill="none"
       viewBox="0 0 24 24"
-      stroke="currentColor"
+      stroke="#3B82F6"
       strokeWidth="1.8"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="text-primaryBlue mx-auto mb-3"
+      className="mx-auto mb-3"
     >
       <path d="M13 2L3 14h9l-1 8 9-12h-9l2-8z" />
     </svg>
@@ -138,11 +137,11 @@ function CodeIcon() {
       height="42"
       fill="none"
       viewBox="0 0 24 24"
-      stroke="currentColor"
+      stroke="#3B82F6"
       strokeWidth="1.8"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="text-primaryBlue mx-auto mb-3"
+      className="mx-auto mb-3"
     >
       <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" />
     </svg>
@@ -156,11 +155,11 @@ function ShieldIcon() {
       height="42"
       fill="none"
       viewBox="0 0 24 24"
-      stroke="currentColor"
+      stroke="#3B82F6"
       strokeWidth="1.8"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="text-primaryBlue mx-auto mb-3"
+      className="mx-auto mb-3"
     >
       <path d="M12 2l7 4v6c0 5.25-3.48 10-7 10s-7-4.75-7-10V6l7-4z" />
       <path d="M9.5 12l1.5 1.5L14.5 10" />
@@ -179,7 +178,7 @@ const ChartIcon: FC<IconProps> = ({ className }) => {
       height="42"
       viewBox="0 0 24 24"
       fill="none"
-      stroke="currentColor"
+      stroke="#3B82F6"
       strokeWidth="1.8"
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -198,7 +197,7 @@ const InsightIcon: FC<IconProps> = ({ className }) => {
       height="42"
       viewBox="0 0 24 24"
       fill="none"
-      stroke="currentColor"
+      stroke="#3B82F6"
       strokeWidth="1.8"
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -217,7 +216,7 @@ const ToolIcon: FC<IconProps> = ({ className }) => {
       height="42"
       viewBox="0 0 24 24"
       fill="none"
-      stroke="currentColor"
+      stroke="#3B82F6"
       strokeWidth="1.8"
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -231,66 +230,63 @@ const ToolIcon: FC<IconProps> = ({ className }) => {
 
 function LatestBlocks({ blocks }: { blocks: Block[] }) {
   const cardVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0 },
+    hidden: { opacity: 0 },
+    visible: { opacity: 1, transition: { duration: 0.5 } },
   };
 
   const blockVariants = {
-    initial: { opacity: 0, y: 10 },
-    animate: { opacity: 1, y: 0 },
-    exit: { opacity: 0, y: -10 },
+    initial: { opacity: 0, scale: 0.95 },
+    animate: { opacity: 1, scale: 1 },
+    exit: { opacity: 0, scale: 0.95 },
   };
 
   return (
     <motion.div
-      className="w-full font-mono bg-gray-100 rounded-xl shadow-md p-2 sm:p-4 md:p-6"
+      className="w-full font-mono bg-gray-950 rounded-xl shadow-lg p-4 sm:p-6 md:p-8 border border-blue-500/20"
       variants={cardVariants}
       initial="hidden"
       animate="visible"
-      transition={{ duration: 0.5 }}
     >
-      <h2 className="text-base sm:text-lg md:text-xl font-semibold text-blue-600 text-black mb-2 sm:mb-3 md:mb-4">
+      <h2 className="text-lg sm:text-xl md:text-2xl font-semibold text-gray-200 mb-4 sm:mb-6 md:mb-8">
         [ LATEST BLOCKS ]
       </h2>
-      <div className="space-y-2 sm:space-y-3">
+      <div className="space-y-4 sm:space-y-6">
         <AnimatePresence>
-          {blocks.slice(0, 3).map((block: Block) => (
+          {blocks.slice(0, 3).map((block: Block, index) => (
             <motion.div
               key={block.number}
-              className="rounded-lg bg-gray-200 shadow-md p-2 sm:p-3 md:p-4 border border-gray-300"
+              className="rounded-lg bg-gray-950 shadow-md p-3 sm:p-4 md:p-6 border border-blue-500/20 transition-all duration-300 hover:shadow-xl"
               variants={blockVariants}
               initial="initial"
               animate="animate"
               exit="exit"
-              transition={{ duration: 0.3 }}
+              transition={{ duration: 0.4, delay: index * 0.2 }}
             >
-              <div className="flex flex-col gap-1 sm:gap-0 sm:flex-row sm:justify-between sm:items-center mb-1 sm:mb-2">
-                <div className="flex items-center space-x-1 sm:space-x-2 flex-wrap">
-                  <BlockIcon className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
-                  <span className="text-sm sm:text-base font-bold text-blue-600 text-black">
+              <div className="flex flex-col gap-2 sm:gap-0 sm:flex-row sm:justify-between sm:items-center mb-2 sm:mb-4">
+                <div className="flex items-center space-x-2 sm:space-x-3 flex-wrap">
+                  <BlockIcon className="w-5 h-5 sm:w-6 sm:h-6 text-gray-200" />
+                  <span className="text-sm sm:text-base md:text-lg font-bold text-gray-200">
                     {block.number}
                   </span>
-                  <span className="px-1 py-0.5 sm:px-1.5 sm:py-0.5 bg-green-50 text-green-700 text-xs sm:text-xs font-semibold rounded-full whitespace-nowrap">
+                  <span className="px-2 py-1 sm:px-2 sm:py-1 bg-blue-500/20 text-blue-400 text-xs sm:text-sm font-semibold rounded-full whitespace-nowrap">
                     [ {block.status} ]
                   </span>
                 </div>
-                <span className="text-xs sm:text-sm text-gray-500">
-                  {block.timestamp}
-                </span>
+                <span className="text-xs sm:text-sm text-gray-400">{block.timestamp}</span>
               </div>
-              <div className="space-y-1">
-                <p className="text-xs sm:text-sm text-gray-500 break-words">
-                  <span className="font-semibold text-blue-600">BLOCK HASH:</span>{" "}
+              <div className="space-y-2">
+                <p className="text-xs sm:text-sm text-gray-400 break-words">
+                  <span className="font-semibold text-gray-200">BLOCK HASH:</span>{' '}
                   {block.hash}
                 </p>
-                <p className="text-xs sm:text-sm text-gray-500 flex flex-wrap items-center gap-1">
-                  <span className="font-semibold text-blue-600">TXNS:</span>{" "}
+                <p className="text-xs sm:text-sm text-gray-400 flex flex-wrap items-center gap-1">
+                  <span className="font-semibold text-gray-200">TXNS:</span>{' '}
                   {block.transactions}
                   <Link
-                    href={`/latest/block/${block.number}`}
-                    className="text-blue-600 hover:underline whitespace-nowrap"
+                    href={`/explorer/latest/block/${block.number}`}
+                    className="text-blue-400 hover:text-blue-300 whitespace-nowrap"
                   >
-                    View on Homescan
+                    View on Cypherscsan
                   </Link>
                 </p>
               </div>
@@ -298,10 +294,10 @@ function LatestBlocks({ blocks }: { blocks: Block[] }) {
           ))}
         </AnimatePresence>
       </div>
-      <div className="text-center mt-4">
+      <div className="text-center mt-6">
         <Link
-          href="/latest/block"
-          className="text-primaryBlue font-semibold text-sm md:text-base hover:underline"
+          href="/explorer/latest/block"
+          className="text-blue-400 font-semibold text-sm md:text-base hover:text-blue-300"
         >
           View Latest Blocks →
         </Link>
@@ -316,12 +312,12 @@ function NetworkInsights({
   stats: { price: number; volume: number; latestBlock: number } | null;
 }) {
   useEffect(() => {
-    console.log("NetworkInsights received stats:", stats);
+    console.log('NetworkInsights received stats:', stats);
   }, [stats]);
 
   if (!stats) {
     return (
-      <div className="text-center text-gray-500 py-12">
+      <div className="text-center text-gray-400 py-12">
         Loading network stats...
       </div>
     );
@@ -330,53 +326,72 @@ function NetworkInsights({
   const { price = 0, volume = 0, latestBlock = 0 } = stats;
 
   return (
-    <section className="px-4 py-12 md:py-16 flex flex-col items-center bg-gradient-to-b from-white to-gray-50">
-      <h2 className="text-3xl md:text-4xl font-extrabold text-primaryBlue mb-8 md:mb-10 text-center">
-        Ethereum Network Stats
-      </h2>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-md sm:max-w-4xl">
-        {[
-          {
-            title: "ETH Price (USD)",
-            value: price,
-            suffix: "$",
-            icon: <CoinIcon />,
-            decimals: 2,
-          },
-          {
-            title: "24h Volume",
-            value: volume,
-            suffix: "$",
-            icon: <VolumeIcon />,
-            decimals: 0,
-          },
-          {
-            title: "Latest Block",
-            value: latestBlock,
-            suffix: "",
-            icon: <BlockIcon className="" />,
-            decimals: 0,
-          },
-        ].map((stat, index) => (
-          <div
-            key={index}
-            className="bg-white border border-gray-200 rounded-xl shadow-lg flex flex-col items-center p-4 min-h-[120px]"
-          >
-            <div className="mb-2 flex items-center justify-center h-10">
-              {stat.icon}
-            </div>
-            <h2 className="text-xs font-semibold text-gray-600 text-center uppercase tracking-wide">
-              {stat.title}
-            </h2>
-            <p className="text-lg font-bold text-black mt-1">
-              {stat.value === 0
-                ? "N/A"
-                : `${stat.value.toLocaleString(undefined, {
-                    minimumFractionDigits: stat.decimals,
-                  })}${stat.suffix}`}
-            </p>
-          </div>
-        ))}
+    <section className="px-4 py-12 md:py-16 flex flex-col items-center bg-gray-950 relative">
+      <div className="relative z-10">
+        <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-gray-200 mb-4 md:mb-6 text-center">
+          Base Chain Stats
+        </h2>
+        <p className="text-sm sm:text-base md:text-lg text-gray-400 max-w-md md:max-w-2xl mx-auto mb-8 md:mb-10 text-center">
+          Real-time insights into Ethereum and Base chain performance.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 w-full max-w-md sm:max-w-5xl">
+          {[
+            {
+              title: 'ETH Price (USD)',
+              value: price,
+              suffix: '$',
+              icon: <CoinIcon />,
+              decimals: 2,
+              change: '+2.5%', // Example price change
+            },
+            {
+              title: '24h Volume',
+              value: volume,
+              suffix: '$',
+              icon: <VolumeIcon />,
+              decimals: 0,
+              change: '-1.2%', // Example volume change
+            },
+            {
+              title: 'Latest Block',
+              value: latestBlock,
+              suffix: '',
+              icon: <BlockIcon className="" />,
+              decimals: 0,
+              change: null,
+            },
+          ].map((stat, index) => (
+            <motion.div
+              key={index}
+              className="bg-gray-950 border border-blue-500/20 rounded-xl shadow-lg flex flex-col items-center p-4 sm:p-6 min-h-[140px] transition-all duration-300 hover:shadow-xl hover:-translate-y-1"
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <div className="mb-3 flex items-center justify-center h-10">
+                {stat.icon}
+              </div>
+              <h2 className="text-xs sm:text-sm font-semibold text-gray-400 text-center uppercase tracking-wide">
+                {stat.title}
+              </h2>
+              <p className="text-lg sm:text-xl font-bold text-gray-200 mt-1">
+                {stat.value === 0
+                  ? 'N/A'
+                  : `${stat.value.toLocaleString(undefined, {
+                      minimumFractionDigits: stat.decimals,
+                    })}${stat.suffix}`}
+              </p>
+              {stat.change && (
+                <p
+                  className={`text-xs sm:text-sm mt-1 ${
+                    stat.change.includes('+') ? 'text-green-400' : 'text-red-400'
+                  }`}
+                >
+                  {stat.change}
+                </p>
+              )}
+            </motion.div>
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -392,7 +407,7 @@ function HomePage() {
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [latestArticles, setLatestArticles] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
 
   const isMobile = useIsMobile();
   const scrollProps = getScrollAnimationProps(isMobile);
@@ -401,27 +416,27 @@ function HomePage() {
   useEffect(() => {
     async function fetchData() {
       try {
-        console.log("Starting fetchData...");
+        console.log('Starting fetchData...');
         const coingeckoUrl = process.env.NEXT_PUBLIC_COINGECKO_API_URL;
         const alchemyUrl = process.env.NEXT_PUBLIC_ALCHEMY_API_URL;
 
         if (!coingeckoUrl || !alchemyUrl) {
-          console.error("Missing environment variables:", {
+          console.error('Missing environment variables:', {
             coingeckoUrl,
             alchemyUrl,
           });
-          setError("API configuration missing. Please try again later.");
+          setError('API configuration missing. Please try again later.');
           return;
         }
 
         // Fetch Alchemy block number
-        console.log("Fetching Alchemy block number...");
+        console.log('Fetching Alchemy block number...');
         const alchemyBlockRes = await fetch(alchemyUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            jsonrpc: "2.0",
-            method: "eth_blockNumber",
+            jsonrpc: '2.0',
+            method: 'eth_blockNumber',
             params: [],
             id: 1,
           }),
@@ -432,25 +447,25 @@ function HomePage() {
         }
 
         const alchemyBlockData = await alchemyBlockRes.json();
-        console.log("Alchemy block response:", alchemyBlockData);
+        console.log('Alchemy block response:', alchemyBlockData);
 
         if (!alchemyBlockData?.result) {
-          throw new Error("Invalid Alchemy block number response");
+          throw new Error('Invalid Alchemy block number response');
         }
 
         const latestBlock = parseInt(alchemyBlockData.result, 16) || 0;
 
         // Fetch blocks
         const fetchedBlocks: Block[] = [];
-        console.log("Fetching latest 10 blocks...");
+        console.log('Fetching latest 10 blocks...');
         for (let i = 0; i < 10; i++) {
           const blockNumber = latestBlock - i;
           const blockRes = await fetch(alchemyUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              jsonrpc: "2.0",
-              method: "eth_getBlockByNumber",
+              jsonrpc: '2.0',
+              method: 'eth_getBlockByNumber',
               params: [`0x${blockNumber.toString(16)}`, false],
               id: 1,
             }),
@@ -469,19 +484,19 @@ function HomePage() {
             const timeAgo = Math.floor((Date.now() - timestamp.getTime()) / 1000);
             fetchedBlocks.push({
               number: blockNumber,
-              status: "Finalized",
-              timestamp: `${timeAgo} SEC${timeAgo === 1 ? "" : "S"} AGO`,
+              status: 'Finalized',
+              timestamp: `${timeAgo} SEC${timeAgo === 1 ? '' : 'S'} AGO`,
               hash: block.hash,
               transactions: block.transactions?.length || 0,
             });
           }
         }
-        console.log("Fetched blocks:", fetchedBlocks);
+        console.log('Fetched blocks:', fetchedBlocks);
 
         // Fetch CoinGecko data
-        console.log("Fetching CoinGecko data...");
+        console.log('Fetching CoinGecko data...');
         const coingeckoRes = await fetch(`${coingeckoUrl}/coins/ethereum`, {
-          headers: { Accept: "application/json" },
+          headers: { Accept: 'application/json' },
         });
 
         if (!coingeckoRes.ok) {
@@ -489,20 +504,20 @@ function HomePage() {
         }
 
         const coingeckoData = await coingeckoRes.json();
-        console.log("CoinGecko response:", coingeckoData);
+        console.log('CoinGecko response:', coingeckoData);
 
         const price = coingeckoData?.market_data?.current_price?.usd || 0;
         const volume = coingeckoData?.market_data?.total_volume?.usd || 0;
 
         // Ensure stats are set
         const newStats = { price, volume, latestBlock };
-        console.log("Setting stats:", newStats);
+        console.log('Setting stats:', newStats);
         setStats(newStats);
         setBlocks(fetchedBlocks);
-        setError("");
+        setError('');
       } catch (error) {
-        console.error("Error in fetchData:", error);
-        setError("Failed to fetch data. Please try again later.");
+        console.error('Error in fetchData:', error);
+        setError('Failed to fetch data. Please try again later.');
       } finally {
         setLoading(false);
       }
@@ -517,9 +532,9 @@ function HomePage() {
   useEffect(() => {
     async function fetchArticles() {
       try {
-        const res = await fetch("/api/news");
+        const res = await fetch('/api/news');
         if (!res.ok) {
-          setError("Failed to fetch articles");
+          setError('Failed to fetch articles');
           setLoading(false);
           return;
         }
@@ -530,8 +545,8 @@ function HomePage() {
         );
         setLatestArticles(sortedArticles.slice(0, 3));
       } catch (err) {
-        console.error("Error fetching articles:", err);
-        setError("Error fetching articles");
+        console.error('Error fetching articles:', err);
+        setError('Error fetching articles');
       } finally {
         setLoading(false);
       }
@@ -540,7 +555,7 @@ function HomePage() {
   }, []);
 
   return (
-    <div className="flex flex-col min-h-screen bg-white text-black">
+    <div className="flex flex-col min-h-screen bg-gray-950 text-gray-200">
       {/* Scrolling Token Banner */}
       <motion.div className="relative overflow-hidden">
         <ScrollingTokenBanner />
@@ -551,53 +566,43 @@ function HomePage() {
 
       {/* Hero Section */}
       <motion.section
-        className="text-center py-12 md:py-24 bg-gradient-to-r from-blue-400 to-blue-600 text-white relative overflow-hidden"
+        className="text-center py-12 sm:py-16 md:py-24 text-gray-200 relative overflow-hidden"
         {...scrollProps}
+        style={{
+          backgroundImage: 'url(https://i.imgur.com/YVycXUz.jpeg)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        }}
       >
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-blue-500 opacity-30"></div>
-        <motion.div
-          className="absolute inset-0 opacity-20"
-          animate={{ opacity: [0.2, 0.3, 0.2] }}
-          transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-        >
-          <svg className="w-full h-full" viewBox="0 0 1440 320" fill="none">
-            <path
-              stroke="white"
-              strokeOpacity="0.5"
-              strokeWidth="1"
-              d="M100 100 L400 200 M500 150 L800 250 M900 120 L1200 220"
-            />
-            <circle cx="100" cy="100" r="3" fill="white" fillOpacity="0.7" />
-            <circle cx="400" cy="200" r="3" fill="white" fillOpacity="0.7" />
-            <circle cx="500" cy="150" r="3" fill="white" fillOpacity="0.7" />
-            <circle cx="800" cy="250" r="3" fill="white" fillOpacity="0.7" />
-            <circle cx="900" cy="120" r="3" fill="white" fillOpacity="0.7" />
-            <circle cx="1200" cy="220" r="3" fill="white" fillOpacity="0.7" />
-          </svg>
-        </motion.div>
-        <h1 className="text-4xl md:text-6xl font-extrabold mb-4 leading-tight relative z-10 px-4">
-          Stay Ahead of the Market with Homebase
+        {/* Text and Buttons */}
+        <h1 className="text-3xl sm:text-4xl md:text-6xl font-extrabold mb-6 leading-tight relative z-10 px-4 text-gray-200">
+          Navigate the Trenches with CypherX
         </h1>
-        <p className="text-base md:text-lg mb-8 md:mb-10 max-w-md md:max-w-2xl mx-auto leading-relaxed relative z-10 px-4">
-          Dive into Base Chain Markets with powerful trading tools, real-time insights, and on-chain analytics—all in one place.
+        <p className="text-sm sm:text-base md:text-xl mb-8 md:mb-10 max-w-md sm:max-w-lg md:max-w-2xl mx-auto leading-relaxed relative z-10 px-4 text-gray-400">
+          The Intelligence Layer for Base Chain - Trading tools, real-time insights, and on-chain analytics—all in one place.
         </p>
-        <div className="flex flex-col md:flex-row justify-center space-y-4 md:space-y-0 md:space-x-4 relative z-10 px-4">
+        <div className="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4 relative z-10 px-4">
           <Link href="/docs">
             <motion.button
-              className="px-8 py-3 border border-white text-white bg-transparent font-semibold rounded-xl hover:bg-white hover:text-blue-600 transition-all duration-300 w-full md:w-auto"
+              className={`${
+                isMobile ? 'px-4 py-2 text-sm max-w-[160px]' : 'px-6 py-3 text-base'
+              } border border-blue-500/30 text-blue-400 bg-blue-500/20 font-semibold rounded-xl hover:bg-blue-500/40 transition-all duration-300 w-full sm:w-auto mx-auto sm:mx-0`}
               whileHover={isMobile ? {} : { scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              transition={{ type: "spring", stiffness: 300 }}
+              transition={{ type: 'spring', stiffness: 300 }}
             >
               Read Docs
             </motion.button>
           </Link>
           <Link href="/terminal">
             <motion.button
-              className="px-8 py-3 border border-white text-white bg-transparent font-semibold rounded-xl hover:bg-white hover:text-blue-600 transition-all duration-300 w-full md:w-auto"
+              className={`${
+                isMobile ? 'px-4 py-2 text-sm max-w-[160px]' : 'px-6 py-3 text-base'
+              } bg-blue-500/20 text-blue-400 font-semibold rounded-xl hover:bg-blue-500/40 border border-blue-500/30 transition-all duration-300 w-full sm:w-auto mx-auto sm:mx-0`}
               whileHover={isMobile ? {} : { scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              transition={{ type: "spring", stiffness: 300 }}
+              transition={{ type: 'spring', stiffness: 300 }}
             >
               Launch Terminal
             </motion.button>
@@ -610,97 +615,97 @@ function HomePage() {
         <PartnersScroller />
       </motion.div>
 
-      {/* Ethereum Stats Section */}
+      {/* Base Chain Stats Section */}
       <NetworkInsights stats={stats} />
 
       {/* Latest Blocks Section */}
       <motion.section
-        className="px-4 py-12 md:py-16 flex flex-col items-center bg-white"
+        className="px-4 py-12 md:py-16 flex flex-col items-center bg-gray-950"
         {...scrollProps}
       >
-        <div className="w-full max-w-md md:max-w-5xl">
+        <div className="w-full max-w-md sm:max-w-5xl">
           <LatestBlocks blocks={blocks} />
         </div>
       </motion.section>
 
       {/* What is Base? Section */}
       <motion.section
-        className="w-full py-12 md:py-16 bg-gradient-to-b from-gray-50 to-blue-50 text-center relative"
+        className="w-full py-12 md:py-16 text-center bg-gray-950 relative"
         {...scrollProps}
-        style={{ perspective: "1000px" }}
+        style={{ perspective: '1000px' }}
       >
-        <div className="max-w-md md:max-w-5xl mx-auto px-4">
-          <h2 className="text-3xl md:text-5xl font-extrabold mb-6 leading-tight">
-            <span className="text-gray-800">What is</span>{" "}
-            <span className="text-primaryBlue">Base</span>?
+        <div className="max-w-md sm:max-w-5xl mx-auto px-4 relative z-10">
+          <h2 className="text-2xl sm:text-3xl md:text-5xl font-extrabold mb-6 leading-tight">
+            <span className="text-gray-200">What is</span>{' '}
+            <span className="text-blue-400">Base</span>?
           </h2>
-          <p className="text-gray-600 max-w-md md:max-w-2xl mx-auto mb-8 md:mb-10 text-base md:text-lg leading-relaxed">
+          <p className="text-gray-400 max-w-md sm:max-w-2xl mx-auto mb-8 md:mb-10 text-base sm:text-lg leading-relaxed">
             Base is an Ethereum Layer 2 solution designed to make transactions faster, cheaper, and more scalable while leveraging Ethereum’s security.
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-8">
             <motion.div
-              className="p-4 md:p-6 bg-white rounded-xl shadow-lg border border-gray-200"
-              style={{ transform: "translateZ(20px)" }}
+              className="p-4 sm:p-6 bg-gray-950 rounded-xl shadow-lg border border-blue-500/20"
+              style={{ transform: 'translateZ(20px)' }}
               whileHover={
                 isMobile
                   ? {}
                   : {
-                      transform: "translateZ(40px)",
-                      boxShadow: "0 10px 20px rgba(0,0,0,0.15)",
+                      transform: 'translateZ(40px)',
+                      boxShadow: '0 10px 20px rgba(255,255,255,0.1)',
                     }
               }
               whileTap={isMobile ? { scale: 0.95 } : {}}
-              transition={{ type: "spring", stiffness: 300 }}
+              transition={{ type: 'spring', stiffness: 300 }}
             >
               <LightningIcon />
-              <h3 className="text-lg md:text-xl font-bold text-primaryBlue mb-2 md:mb-3">
+              <h3 className="text-lg sm:text-xl font-bold text-blue-400 mb-2 sm:mb-3">
                 Faster Transactions
               </h3>
-              <p className="text-sm md:text-sm text-gray-600 leading-relaxed">
+              <p className="text-sm sm:text-base text-gray-400 leading-relaxed">
                 Base reduces Ethereum’s congestion, offering near-instant confirmations and lower fees.
               </p>
             </motion.div>
             <motion.div
-              className="p-4 md:p-6 bg-white rounded-xl shadow-lg border border-gray-200"
-              style={{ transform: "translateZ(20px)" }}
+              className="p-4 sm:p-6 bg-gray-950 rounded-xl shadow-lg border border-blue-500/20"
+              style={{ transform: 'translateZ(20px)' }}
               whileHover={
                 isMobile
                   ? {}
                   : {
-                      transform: "translateZ(40px)",
-                      boxShadow: "0 10px 20px rgba(0,0,0,0.15)",
+                      transform: 'translateZ(40px)',
+                      boxShadow: '0 10px 20px rgba(255,255,255,0.1)',
                     }
               }
               whileTap={isMobile ? { scale: 0.95 } : {}}
-              transition={{ type: "spring", stiffness: 300 }}
+              transition={{ type: 'spring', stiffness: 300 }}
             >
               <CodeIcon />
-              <h3 className="text-lg md:text-xl font-bold text-primaryBlue mb-2 md:mb-3">
+              <h3 className="text-lg sm:text-xl font-bold text-blue-400 mb-2 sm:mb-3">
                 EVM-Compatible
               </h3>
-              <p className="text-sm md:text-sm text-gray-600 leading-relaxed">
+              <p className="text-sm sm:text-base text-gray-400 leading-relaxed">
                 Seamlessly deploy your dApps with full Ethereum compatibility, leveraging Base’s efficiency.
               </p>
             </motion.div>
             <motion.div
-              className="p-4 md:p-6 bg-white rounded-xl shadow-lg border border-gray-200"
-              style={{ transform: "translateZ(20px)" }}
+              className="p-4 sm:p-6 bg-gray-950 rounded-xl shadow-lg border border-blue-500/20"
+              style={{ transform: 'translateZ(20px)' }}
               whileHover={
                 isMobile
                   ? {}
                   : {
-                      transform: "translateZ(40px)",
-                      boxShadow: "0 10px 20px rgba(0,0,0,0.15)",
+                      transform: 'translateZ(40px)',
+                      boxShadow: '0 10px 20px rgba(255,255,255,0.1)',
                     }
               }
               whileTap={isMobile ? { scale: 0.95 } : {}}
-              transition={{ type: "spring", stiffness: 300 }}
+              transition={{ type: 'spring', stiffness: 300 }}
             >
               <ShieldIcon />
-              <h3 className="text-lg md:text-xl font-bold text-primaryBlue mb-2 md:mb-3">
+              <h3 className="text-lg sm:text-xl font-bold text-blue-400 mb-2 sm:mb-3">
                 Secure & Scalable
               </h3>
-              <p className="text-sm md:text-sm text-gray-600 leading-relaxed">
+              <p className="text-sm sm:text-base text-gray-400 leading-relaxed">
                 Inherits Ethereum’s robust security while scaling to handle more transactions.
               </p>
             </motion.div>
@@ -710,61 +715,49 @@ function HomePage() {
 
       {/* Base AI Index Section */}
       {isMobile ? (
-        <section className="py-8 w-full px-4">
+        <section className="py-8 w-full px-4 bg-gray-950">
           <BaseAiIndex />
         </section>
       ) : (
-        <section className="py-12 container mx-auto px-4">
+        <section className="py-12 container mx-auto px-4 bg-gray-950">
           <BaseAiIndex />
         </section>
       )}
 
       {/* How Homebase Powers Base Section */}
       <motion.section
-        className="w-full py-12 md:py-16 bg-gray-50 text-center relative"
+        className="w-full py-12 md:py-16 text-center bg-gray-950 relative"
         {...scrollProps}
       >
-        <div className="absolute inset-0 w-full h-full bg-gray-50">
-          <svg
-            className="absolute bottom-0 left-0 w-full"
-            viewBox="0 0 1440 320"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              fill="white"
-              d="M0,256L120,245.3C240,235,480,213,720,181.3C960,149,1200,107,1320,85.3L1440,64V320H1320C1200,320,960,320,720,320C480,320,240,320,120,320H0Z"
-            />
-          </svg>
-        </div>
-        <div className="max-w-md md:max-w-5xl mx-auto px-4 relative z-10">
-          <h2 className="text-3xl md:text-5xl font-extrabold mb-6 md:mb-8 leading-tight">
-            How Home<span className="text-primaryBlue">base</span> Powers <span className="text-primaryBlue">Base</span>
+        <div className="max-w-md sm:max-w-5xl mx-auto px-4 relative z-10">
+          <h2 className="text-2xl sm:text-3xl md:text-5xl font-extrabold mb-6 sm:mb-8 leading-tight">
+            How <span className="text-blue-400">Cypher</span> Powers{' '}
+            <span className="text-blue-400">Base</span>
           </h2>
-          <p className="text-gray-600 max-w-md md:max-w-3xl mx-auto mb-6 md:mb-8 text-base md:text-lg leading-relaxed">
-            Homebase provides cutting-edge tools to track on-chain data, monitor whale movements, and stay ahead of token launches on Base.
+          <p className="text-gray-400 max-w-md sm:max-w-3xl mx-auto mb-6 sm:mb-8 text-base sm:text-lg leading-relaxed">
+            Cypher provides cutting-edge tools to track on-chain data, monitor whale movements, and stay ahead of token launches on Base.
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-8">
             <motion.div
-              className="p-4 md:p-6 bg-white border border-gray-200 rounded-xl shadow-md transition-all duration-300 group flex flex-col items-center"
+              className="p-4 sm:p-6 bg-gray-950 border border-blue-500/20 rounded-xl shadow-md transition-all duration-300 group flex flex-col items-center"
               whileHover={
                 isMobile
                   ? {}
-                  : { translateY: -5, boxShadow: "0 10px 20px rgba(0,0,0,0.15)" }
+                  : { translateY: -5, boxShadow: '0 10px 20px rgba(255,255,255,0.1)' }
               }
               whileTap={isMobile ? { scale: 0.95 } : {}}
-              transition={{ type: "spring", stiffness: 300 }}
+              transition={{ type: 'spring', stiffness: 300 }}
             >
-              <ChartIcon className="w-10 h-10 mx-auto mb-4 text-gray-600 group-hover:scale-110 transition-transform duration-300" />
-              <h3 className="text-lg md:text-xl font-bold text-gray-800 mb-2">
-                Home<span className="text-primaryBlue">base</span> Screener
+              <ChartIcon className="w-10 h-10 mx-auto mb-4 text-gray-200 group-hover:scale-110 transition-transform duration-300" />
+              <h3 className="text-lg sm:text-xl font-bold text-gray-200 mb-2">
+                Token Screener
               </h3>
-              <p className="text-sm md:text-base text-gray-600 leading-relaxed mb-4 flex-grow">
+              <p className="text-sm sm:text-base text-gray-400 leading-relaxed mb-4 flex-grow">
                 Get real-time coin prices and find the hottest base pairs.
               </p>
               <Link href="/token-scanner">
                 <motion.button
-                  className="px-8 py-3 bg-gradient-to-r from-blue-500 to-blue-700 text-white font-semibold rounded-lg hover:from-blue-600 hover:to-blue-800 transition-all duration-300 shadow-md w-full md:w-auto"
+                  className="px-6 py-3 bg-blue-500/20 text-blue-400 font-semibold rounded-lg hover:bg-blue-500/40 border border-blue-500/30 transition-all duration-300 shadow-md w-full sm:w-auto"
                   whileHover={isMobile ? {} : { scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
@@ -773,25 +766,25 @@ function HomePage() {
               </Link>
             </motion.div>
             <motion.div
-              className="p-4 md:p-6 bg-white border border-gray-200 rounded-xl shadow-md transition-all duration-300 group flex flex-col items-center"
+              className="p-4 sm:p-6 bg-gray-950 border border-blue-500/20 rounded-xl shadow-md transition-all duration-300 group flex flex-col items-center"
               whileHover={
                 isMobile
                   ? {}
-                  : { translateY: -5, boxShadow: "0 10px 20px rgba(0,0,0,0.15)" }
+                  : { translateY: -5, boxShadow: '0 10px 20px rgba(255,255,255,0.1)' }
               }
               whileTap={isMobile ? { scale: 0.95 } : {}}
-              transition={{ type: "spring", stiffness: 300 }}
+              transition={{ type: 'spring', stiffness: 300 }}
             >
-              <InsightIcon className="w-10 h-10 mx-auto mb-4 text-gray-600 group-hover:scale-110 transition-transform duration-300" />
-              <h3 className="text-lg md:text-xl font-bold text-gray-800 mb-2">
+              <InsightIcon className="w-10 h-10 mx-auto mb-4 text-gray-200 group-hover:scale-110 transition-transform duration-300" />
+              <h3 className="text-lg sm:text-xl font-bold text-gray-200 mb-2">
                 Whale Watchers
               </h3>
-              <p className="text-sm md:text-base text-gray-600 leading-relaxed mb-4 flex-grow">
+              <p className="text-sm sm:text-base text-gray-400 leading-relaxed mb-4 flex-grow">
                 Track large wallet movements and detect potential market shifts.
               </p>
               <Link href="/whale-watcher">
                 <motion.button
-                  className="px-8 py-3 bg-gradient-to-r from-blue-500 to-blue-700 text-white font-semibold rounded-lg hover:from-blue-600 hover:to-blue-800 transition-all duration-300 shadow-md w-full md:w-auto"
+                  className="px-6 py-3 bg-blue-500/20 text-blue-400 font-semibold rounded-lg hover:bg-blue-500/40 border border-blue-500/30 transition-all duration-300 shadow-md w-full sm:w-auto"
                   whileHover={isMobile ? {} : { scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
@@ -800,25 +793,25 @@ function HomePage() {
               </Link>
             </motion.div>
             <motion.div
-              className="p-4 md:p-6 bg-white border border-gray-200 rounded-xl shadow-md transition-all duration-300 group flex flex-col items-center"
+              className="p-4 sm:p-6 bg-gray-950 border border-blue-500/20 rounded-xl shadow-md transition-all duration-300 group flex flex-col items-center"
               whileHover={
                 isMobile
                   ? {}
-                  : { translateY: -5, boxShadow: "0 10px 20px rgba(0,0,0,0.15)" }
+                  : { translateY: -5, boxShadow: '0 10px 20px rgba(255,255,255,0.1)' }
               }
               whileTap={isMobile ? { scale: 0.95 } : {}}
-              transition={{ type: "spring", stiffness: 300 }}
+              transition={{ type: 'spring', stiffness: 300 }}
             >
-              <ToolIcon className="w-10 h-10 mx-auto mb-4 text-gray-600 group-hover:scale-110 transition-transform duration-300" />
-              <h3 className="text-lg md:text-xl font-bold text-gray-800 mb-2">
+              <ToolIcon className="w-10 h-10 mx-auto mb-4 text-gray-200 group-hover:scale-110 transition-transform duration-300" />
+              <h3 className="text-lg sm:text-xl font-bold text-gray-200 mb-2">
                 Token Launch Calendar
               </h3>
-              <p className="text-sm md:text-base text-gray-600 leading-relaxed mb-4 flex-grow">
+              <p className="text-sm sm:text-base text-gray-400 leading-relaxed mb-4 flex-grow">
                 Stay ahead with upcoming token launches and market trends.
               </p>
               <Link href="/launch-calendar">
                 <motion.button
-                  className="px-8 py-3 bg-gradient-to-r from-blue-500 to-blue-700 text-white font-semibold rounded-lg hover:from-blue-600 hover:to-blue-800 transition-all duration-300 shadow-md w-full md:w-auto"
+                  className="px-6 py-3 bg-blue-500/20 text-blue-400 font-semibold rounded-lg hover:bg-blue-500/40 border border-blue-500/30 transition-all duration-300 shadow-md w-full sm:w-auto"
                   whileHover={isMobile ? {} : { scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
@@ -832,56 +825,66 @@ function HomePage() {
 
       {/* Latest News Section */}
       {loading ? (
-        <motion.section className="py-8 md:py-12 container mx-auto px-4" {...scrollProps}>
-          <h2 className="text-2xl md:text-3xl font-extrabold mb-6 text-center text-primaryBlue">
+        <motion.section
+          className="py-8 sm:py-12 container mx-auto px-4 bg-gray-950"
+          {...scrollProps}
+        >
+          <h2 className="text-xl sm:text-2xl md:text-3xl font-extrabold mb-6 text-center text-gray-200">
             Latest News
           </h2>
-          <p className="text-center">Loading latest news...</p>
+          <p className="text-center text-gray-400">Loading latest news...</p>
         </motion.section>
       ) : error ? (
-        <motion.section className="py-8 md:py-12 container mx-auto px-4" {...scrollProps}>
-          <h2 className="text-2xl md:text-3xl font-extrabold mb-6 text-center text-primaryBlue">
+        <motion.section
+          className="py-8 sm:py-12 container mx-auto px-4 bg-gray-950"
+          {...scrollProps}
+        >
+          <h2 className="text-xl sm:text-2xl md:text-3xl font-extrabold mb-6 text-center text-gray-200">
             Latest News
           </h2>
-          <p className="text-center text-red-500">{error}</p>
+          <p className="text-center text-red-400">{error}</p>
         </motion.section>
       ) : (
-        <motion.section className="py-8 md:py-12 container mx-auto px-4" {...scrollProps}>
-          <h2 className="text-2xl md:text-3xl font-extrabold mb-6 text-center text-primaryBlue">
+        <motion.section
+          className="py-8 sm:py-12 container mx-auto px-4 bg-gray-950"
+          {...scrollProps}
+        >
+          <h2 className="text-xl sm:text-2xl md:text-3xl font-extrabold mb-6 text-center text-gray-200">
             Latest News
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {latestArticles.map((article) => (
               <motion.div
                 key={article.slug}
-                className="p-4 shadow-md border border-gray-200 rounded-xl bg-white"
+                className="p-4 shadow-md border border-blue-500/20 rounded-xl bg-gray-950"
                 whileHover={
                   isMobile
                     ? {}
-                    : { boxShadow: "0 8px 16px rgba(0,0,0,0.15)", translateY: -2 }
+                    : {
+                        boxShadow: '0 8px 16px rgba(255,255,255,0.1)',
+                        translateY: -2,
+                      }
                 }
                 whileTap={isMobile ? { scale: 0.95 } : {}}
-                transition={{ type: "spring", stiffness: 300 }}
+                transition={{ type: 'spring', stiffness: 300 }}
               >
-                <h3 className="text-lg md:text-xl font-bold text-primaryBlue">
-                  {article.title}
-                </h3>
-                <p className="text-sm md:text-sm mt-2 text-gray-600">
+                <h3 className="text-lg sm:text-xl font-bold text-blue-400">{article.title}</h3>
+                <p className="text-sm sm:text-base mt-2 text-gray-400">
                   {article.content.slice(0, 100)}...
                 </p>
                 <Link
                   href={`/base-chain-news/${article.slug}`}
-                  className="text-primaryBlue mt-3 md:mt-4 inline-block text-sm md:text-base font-semibold hover:underline"
+                  className="text-blue-400 mt-3 sm:mt-4 inline-block text-sm sm:text-base font-semibold hover:text-blue-300"
                 >
                   Read more
                 </Link>
               </motion.div>
             ))}
           </div>
-          <div className="text-center mt-6 md:mt-8">
+          <div className="text-center mt-6 sm:mt-8">
             <Link
               href="/base-chain-news"
-              className="text-primaryBlue font-semibold text-sm md:text-base px-4 py-2 rounded-full hover:bg-blue-50 transition-all"
+              className="text-blue-400 font-semibold text-sm sm:text-base px-4 py-2 rounded-full hover:bg-blue-500/20 transition-all"
             >
               View All News →
             </Link>

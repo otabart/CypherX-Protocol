@@ -1,12 +1,19 @@
-"use client";
+'use client';
 
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { CompetitionProvider } from "./TradingCompetition/CompetitionContext";
+import React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { CompetitionProvider } from './TradingCompetition/CompetitionContext';
 
 // -- FIREBASE IMPORTS --
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth, onAuthStateChanged, User } from "firebase/auth";
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import type { User } from 'firebase/auth'; // Use type-only import for User
+
+// -- WAGMI IMPORTS --
+import { WagmiProvider } from 'wagmi';
+import { RainbowKitProvider } from '@rainbow-me/rainbowkit';
+import { config } from '@/lib/wagmi';
+import '@rainbow-me/rainbowkit/styles.css';
 
 // 1. Create a Firebase config using env variables
 const firebaseConfig = {
@@ -53,15 +60,15 @@ export function Providers({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      {/* AuthContext provides user + loading to the entire app */}
-      <AuthContext.Provider value={{ user, loading }}>
-        <CompetitionProvider>
-          {children}
-        </CompetitionProvider>
-      </AuthContext.Provider>
-    </QueryClientProvider>
+    <WagmiProvider config={config}>
+      <QueryClientProvider client={queryClient}>
+        <RainbowKitProvider>
+          {/* AuthContext provides user + loading to the entire app */}
+          <AuthContext.Provider value={{ user, loading }}>
+            <CompetitionProvider>{children}</CompetitionProvider>
+          </AuthContext.Provider>
+        </RainbowKitProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
   );
 }
-
-

@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import React, { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
@@ -65,7 +65,7 @@ function DownloadIcon() {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      className="h-6 w-6 text-primaryBlue"
+      className="h-6 w-6 text-blue-400"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -176,7 +176,7 @@ export default function BaseAiIndex() {
       if (!indexRef.current) return;
       const dataUrl = await domToImage.toPng(indexRef.current, {
         quality: 1,
-        style: { backgroundColor: "#fff" },
+        style: { backgroundColor: "#1F2937" }, // Use gray-950 for screenshot
       });
       const link = document.createElement("a");
       link.download = "base-ai-index.png";
@@ -190,12 +190,12 @@ export default function BaseAiIndex() {
   }
 
   if (loading) {
-    return <div className="p-4 text-center text-gray-500">Loading Base AI Index...</div>;
+    return <div className="p-4 text-center text-gray-400">Loading Base AI Index...</div>;
   }
 
   return (
     <motion.div
-      className="p-4 md:p-6"
+      className="p-4 md:p-6 bg-gray-950"
       initial="hidden"
       whileInView="visible"
       viewport={{ once: true, amount: 0.5 }}
@@ -204,7 +204,7 @@ export default function BaseAiIndex() {
       {/* Unified container (banner + table) */}
       <motion.div
         ref={indexRef}
-        className="relative bg-white rounded-xl shadow-lg overflow-hidden w-full max-w-md md:max-w-5xl mx-auto"
+        className="relative bg-gray-950 rounded-xl shadow-lg overflow-hidden w-full max-w-md md:max-w-5xl mx-auto border border-blue-500/20"
         initial={{ opacity: 0, y: 20 }}
         whileInView={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
@@ -215,10 +215,10 @@ export default function BaseAiIndex() {
         <motion.button
           onClick={handleDownloadImage}
           className={
-            "absolute top-3 right-3 p-2 rounded-full bg-white shadow-md hover:bg-gray-50 transition-all"
+            "absolute top-3 right-3 p-2 rounded-full bg-gray-900 border border-blue-500/20 shadow-md hover:bg-blue-500/40 hover:border-blue-500/30 transition-all"
           }
           title="Download Image"
-          whileHover={{ scale: 1.1, boxShadow: "0 8px 16px rgba(0,0,0,0.2)" }}
+          whileHover={{ scale: 1.1, boxShadow: "0 8px 16px rgba(255,255,255,0.1)" }}
           whileTap={{ scale: 0.95 }}
           transition={{ type: "spring", stiffness: 300 }}
         >
@@ -226,7 +226,7 @@ export default function BaseAiIndex() {
         </motion.button>
 
         {/* Blue Stats Banner */}
-        <div className="bg-gradient-to-r from-primaryBlue to-blue-500 text-white p-4 md:p-6 w-full">
+        <div className="bg-blue-500/20 text-gray-200 p-4 md:p-6 w-full">
           <h2 className="text-2xl md:text-3xl font-extrabold mb-3 md:mb-4 text-center">
             Base AI Index
           </h2>
@@ -240,8 +240,8 @@ export default function BaseAiIndex() {
                 className={
                   aggStats.overallPriceChange !== undefined
                     ? aggStats.overallPriceChange >= 0
-                      ? "text-green-300"
-                      : "text-red-300"
+                      ? "text-green-400"
+                      : "text-red-400"
                     : ""
                 }
               >
@@ -275,28 +275,28 @@ export default function BaseAiIndex() {
           </div>
         </div>
 
-        {/* White Table Section */}
-        <div className="bg-white p-4 md:p-6">
+        {/* Table Section */}
+        <div className="bg-gray-950 p-4 md:p-6">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs md:text-sm">
-              <thead className="bg-gray-50">
+              <thead className="bg-gray-950 border-b border-blue-500/20">
                 <tr>
-                  <th className="p-2 md:p-4 text-primaryBlue font-semibold uppercase tracking-wide">
+                  <th className="p-2 md:p-4 text-blue-400 font-semibold uppercase tracking-wide">
                     Token
                   </th>
-                  <th className="p-2 md:p-4 text-primaryBlue font-semibold uppercase tracking-wide">
+                  <th className="p-2 md:p-4 text-blue-400 font-semibold uppercase tracking-wide">
                     Weight
                   </th>
-                  <th className="p-2 md:p-4 text-primaryBlue font-semibold uppercase tracking-wide">
+                  <th className="p-2 md:p-4 text-blue-400 font-semibold uppercase tracking-wide">
                     Price (USD)
                   </th>
-                  <th className="p-2 md:p-4 text-primaryBlue font-semibold uppercase tracking-wide">
+                  <th className="p-2 md:p-4 text-blue-400 font-semibold uppercase tracking-wide">
                     24h Change
                   </th>
-                  <th className="p-2 md:p-4 text-primaryBlue font-semibold uppercase tracking-wide">
+                  <th className="p-2 md:p-4 text-blue-400 font-semibold uppercase tracking-wide">
                     Volume (24h)
                   </th>
-                  <th className="p-2 md:p-4 text-primaryBlue font-semibold uppercase tracking-wide">
+                  <th className="p-2 md:p-4 text-blue-400 font-semibold uppercase tracking-wide">
                     Market Cap
                   </th>
                 </tr>
@@ -307,7 +307,7 @@ export default function BaseAiIndex() {
                   return (
                     <motion.tr
                       key={token.address}
-                      className="border-t border-gray-100 hover:bg-blue-50 transition-all duration-300"
+                      className="border-t border-blue-500/20 hover:bg-blue-500/20 transition-all duration-300"
                       initial={{ opacity: 0, y: 10 }}
                       whileInView={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.4, delay: idx * 0.1 }}
@@ -318,37 +318,37 @@ export default function BaseAiIndex() {
                           <motion.img
                             src={d.info.imageUrl}
                             alt={token.symbol}
-                            className="w-6 h-6 md:w-8 md:h-8 rounded-full border border-gray-200 shadow-sm"
+                            className="w-6 h-6 md:w-8 md:h-8 rounded-full border border-blue-500/20 shadow-sm"
                             variants={imageVariants}
                             initial="hidden"
                             whileInView="visible"
                             viewport={{ once: true }}
                           />
                         ) : (
-                          <div className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-gray-200 shadow-sm" />
+                          <div className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-gray-900 shadow-sm" />
                         )}
                         <span
                           className={
                             disableTruncation
-                              ? "text-gray-800 font-medium"
-                              : "text-gray-800 font-medium truncate max-w-[60px] md:max-w-[100px]"
+                              ? "text-gray-200 font-medium"
+                              : "text-gray-200 font-medium truncate max-w-[60px] md:max-w-[100px]"
                           }
                           title={token.symbol}
                         >
                           {token.symbol}
                         </span>
                       </td>
-                      <td className="p-2 md:p-4 text-gray-700 font-medium" title="Pre-defined weight">
+                      <td className="p-2 md:p-4 text-gray-400 font-medium" title="Pre-defined weight">
                         {token.weight}
                       </td>
-                      <td className="p-2 md:p-4 text-gray-700 font-medium">
+                      <td className="p-2 md:p-4 text-gray-400 font-medium">
                         {d ? `$${Number(d.priceUsd).toFixed(4)}` : "N/A"}
                       </td>
                       <td className="p-2 md:p-4 font-medium">
                         {d && d.priceChange?.h24 !== undefined ? (
                           <span
                             className={
-                              d.priceChange.h24 >= 0 ? "text-green-600" : "text-red-600"
+                              d.priceChange.h24 >= 0 ? "text-green-400" : "text-red-400"
                             }
                           >
                             {`${d.priceChange.h24.toFixed(2)}%`}
@@ -357,12 +357,12 @@ export default function BaseAiIndex() {
                           "N/A"
                         )}
                       </td>
-                      <td className="p-2 md:p-4 text-gray-700 font-medium">
+                      <td className="p-2 md:p-4 text-gray-400 font-medium">
                         {d && d.volume?.h24
                           ? `$${d.volume.h24.toLocaleString()}`
                           : "N/A"}
                       </td>
-                      <td className="p-2 md:p-4 text-gray-700 font-medium">
+                      <td className="p-2 md:p-4 text-gray-400 font-medium">
                         {d && d.marketCap
                           ? `$${d.marketCap.toLocaleString()}`
                           : "N/A"}

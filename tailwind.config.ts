@@ -9,7 +9,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        primaryBlue: "#2563EB", // Define primaryBlue to match your design
+        primaryBlue: "0052FF", // Define primaryBlue to match your design
       },
     },
   },

@@ -37,8 +37,8 @@ const TokenItem = React.memo(
     const isPositive = change >= 0;
     return (
       <div className="flex items-center space-x-3 px-4 group relative">
-        <span className="font-bold uppercase">{token.name}</span>
-        <span className="text-gray-300 transition-all duration-300 ease-in-out">
+        <span className="font-bold uppercase text-gray-200">{token.name}</span>
+        <span className="text-gray-400 transition-all duration-300 ease-in-out">
           {price ? `$${price.toFixed(4)}` : '$0.0000'}
         </span>
         <span
@@ -49,7 +49,7 @@ const TokenItem = React.memo(
           {isPositive ? <FiArrowUp className="mr-1" /> : <FiArrowDown className="mr-1" />}
           {change.toFixed(2)}%
         </span>
-        <div className="absolute hidden group-hover:block bg-gray-800 text-white text-xs p-2 rounded -top-10 left-1/2 transform -translate-x-1/2 z-10">
+        <div className="absolute hidden group-hover:block bg-gray-900 text-gray-200 text-xs p-2 rounded -top-10 left-1/2 transform -translate-x-1/2 z-10">
           {token.name} - ${price.toFixed(4)}
         </div>
       </div>
@@ -126,17 +126,17 @@ export default function ScrollingTokenBanner({ tokens = BASE_TOKENS }: Scrolling
 
   return (
     <div
-      className="overflow-hidden bg-primaryBlue text-white py-2 relative"
+      className="overflow-hidden bg-blue-500/20 text-gray-200 py-2 relative"
       role="marquee"
       aria-label="Scrolling token price banner"
     >
-      <div className="absolute top-0 bottom-0 left-0 w-12 bg-gradient-to-r from-primaryBlue to-transparent z-10 pointer-events-none" />
-      <div className="absolute top-0 bottom-0 right-0 w-12 bg-gradient-to-l from-primaryBlue to-transparent z-10 pointer-events-none" />
+      <div className="absolute top-0 bottom-0 left-0 w-12 bg-gradient-to-r from-blue-500/20 to-transparent z-10 pointer-events-none" />
+      <div className="absolute top-0 bottom-0 right-0 w-12 bg-gradient-to-l from-blue-500/20 to-transparent z-10 pointer-events-none" />
 
       {error && !isLoading && Object.keys(displayPrices).length === 0 && (
-        <div className="text-center text-red-300 py-1">
+        <div className="text-center text-red-400 py-1">
           {error}
-          <button className="ml-2 text-blue-300 underline" onClick={fetchPrices}>
+          <button className="ml-2 text-blue-400 hover:text-blue-300 underline" onClick={fetchPrices}>
             Retry
           </button>
         </div>

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { db } from "../../lib/firebase.ts";
+import { db, auth } from "../../../../../lib/firebase.ts";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 
 interface BlockDetailsProps {
@@ -41,6 +41,10 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
     setLoading(true);
     setError(null);
     try {
+      if (!db) {
+        throw new Error("Firestore is not initialized. Check Firebase configuration.");
+      }
+
       const blockRef = doc(db, "blocks", blockNumber);
       const blockSnap = await getDoc(blockRef);
 
@@ -51,25 +55,29 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
         return;
       }
 
-      const blockRes = await fetch(alchemyUrl, {
+      if (!alchemyUrl) {
+        throw new Error("Alchemy API URL is not configured.");
+      }
+
+      const response = await fetch(alchemyUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           jsonrpc: "2.0",
           method: "eth_getBlockByNumber",
-          params: [`0x${parseInt(blockNumber).toString(16)}`, true],
+          params: [`0x${parseInt(blockNumber, 10).toString(16)}`, true],
           id: 1,
         }),
       });
 
-      if (!blockRes.ok) {
-        const errorText = await blockRes.text();
-        throw new Error(`Alchemy API error: ${blockRes.status} - ${errorText}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Alchemy API error: ${response.status} - ${errorText}`);
       }
 
-      const blockData = await blockRes.json();
+      const blockData = await response.json();
       if (!blockData?.result) {
-        throw new Error("Block not found in response");
+        throw new Error("Block not found in Alchemy response");
       }
 
       const block = blockData.result;
@@ -80,58 +88,59 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
         number: parseInt(block.number, 16),
         status: "Finalized",
         timestamp: `${timeAgo} SEC${timeAgo === 1 ? "" : "S"} AGO`,
-        hash: block.hash,
+        hash: block.hash || "N/A",
         transactions: block.transactions?.length || 0,
-        parentHash: block.parentHash,
-        miner: block.miner,
-        gasUsed: parseInt(block.gasUsed, 16).toString(),
-        gasLimit: parseInt(block.gasLimit, 16).toString(),
+        parentHash: block.parentHash || "N/A",
+        miner: block.miner || "N/A",
+        gasUsed: parseInt(block.gasUsed, 16).toString() || "0",
+        gasLimit: parseInt(block.gasLimit, 16).toString() || "0",
         transactionList: block.transactions?.map((tx: any) => ({
-          hash: tx.hash,
-          from: tx.from,
-          to: tx.to,
-        })),
+          hash: tx.hash || "N/A",
+          from: tx.from || "N/A",
+          to: tx.to || "N/A",
+        })) || [],
       };
 
       setBlock(blockInfo);
-      await setDoc(blockRef, blockInfo);
-      console.log(`Block ${blockNumber} stored in Firestore`);
+
+      if (auth.currentUser) {
+        try {
+          await setDoc(blockRef, blockInfo);
+          console.log(`Block ${blockNumber} stored in Firestore`);
+        } catch (writeError: any) {
+          console.warn("Failed to write block to Firestore:", writeError.message);
+        }
+      } else {
+        console.log("Skipping Firestore write: User not authenticated");
+      }
     } catch (err: any) {
       console.error("Fetch block error:", err);
-      setError(err.message);
+      setError(`Failed to fetch block: ${err.message}`);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (!/^\d+$/.test(blockNumber)) {
+    if (!blockNumber) {
+      setError("Block number is missing");
+      return;
+    }
+
+    const blockNum = parseInt(blockNumber, 10);
+    if (isNaN(blockNum) || blockNum < 0) {
       setError("Invalid block number: Must be a positive integer");
       return;
     }
 
-    const blockNum = parseInt(blockNumber);
-    if (blockNum < 0) {
-      setError("Invalid block number: Cannot be negative");
-      return;
-    }
-
-    if (!db) {
-      setError("Firestore is not initialized");
-      return;
-    }
-
-    if (alchemyUrl) {
-      fetchBlock();
-    } else {
-      setError("Alchemy URL is not configured");
-    }
+    fetchBlock();
   }, [blockNumber]);
 
   const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(field);
-    setTimeout(() => setCopiedField(null), 2000);
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 2000);
+    });
   };
 
   const toggleTheme = () => {
@@ -157,7 +166,7 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
         <div className={`flex items-center justify-between px-4 py-3 ${themeClasses.headerBg}`}>
           <div className="flex items-center space-x-3">
             <Link
-              href="/latest/block"
+              href="/explorer/latest/block"
               className={`inline-flex items-center px-2 py-1 ${themeClasses.buttonBg} ${themeClasses.text} ${themeClasses.buttonHover} transition-colors ${themeClasses.shadow} text-sm`}
             >
               <svg
@@ -167,16 +176,11 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
                 viewBox="0 0 24 24"
                 xmlns="http://www.w3.org/2000/svg"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M15 19l-7-7 7-7"
-                />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
               </svg>
               BACK
             </Link>
-            <h1 className={`${themeClasses.text} text-lg font-semibold`}>Block #{blockNumber} - HomeScan</h1>
+            <h1 className={`${themeClasses.text} text-lg font-semibold`}>Block #{blockNumber} - CYPHERSCAN</h1>
           </div>
           <button
             onClick={toggleTheme}
@@ -225,17 +229,14 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
                 viewBox="0 0 24 24"
                 xmlns="http://www.w3.org/2000/svg"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M4 12a8 8 0 018-8v8h8a8 8 0 01-16 0z"
-                />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 12a8 8 0 018-8v8h8a8 8 0 01-16 0z" />
               </svg>
               <span className={`ml-2 ${themeClasses.secondaryText}`}>[LOADING...]</span>
             </div>
           ) : error ? (
-            <p className={`text-center py-6 ${themeClasses.errorText}`}>ERR: {error}</p>
+            <p className={`text-center py-6 ${themeClasses.errorText}`}>
+              Error: {error}. Please try a different block number or contact support.
+            </p>
           ) : block ? (
             <div className="space-y-6">
               <div>
@@ -283,12 +284,7 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
                             viewBox="0 0 24 24"
                             xmlns="http://www.w3.org/2000/svg"
                           >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth="2"
-                              d="M5 13l4 4L19 7"
-                            />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                           </svg>
                         ) : (
                           <svg
@@ -330,12 +326,7 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
                             viewBox="0 0 24 24"
                             xmlns="http://www.w3.org/2000/svg"
                           >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth="2"
-                              d="M5 13l4 4L19 7"
-                            />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                           </svg>
                         ) : (
                           <svg
@@ -377,12 +368,7 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
                             viewBox="0 0 24 24"
                             xmlns="http://www.w3.org/2000/svg"
                           >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth="2"
-                              d="M5 13l4 4L19 7"
-                            />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                           </svg>
                         ) : (
                           <svg
@@ -433,10 +419,7 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
                       </thead>
                       <tbody>
                         {block.transactionList.map((tx, index) => (
-                          <tr
-                            key={index}
-                            className={`border-b ${themeClasses.border} ${themeClasses.hoverBg} transition-colors`}
-                          >
+                          <tr key={index} className={`border-b ${themeClasses.border} ${themeClasses.hoverBg} transition-colors`}>
                             <td className="py-2 px-2 truncate">
                               <a
                                 href={`https://basescan.org/tx/${tx.hash}`}
@@ -478,7 +461,9 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
               </div>
             </div>
           ) : (
-            <p className={`text-center py-6 ${themeClasses.secondaryText} text-sm`}>[ NO BLOCK DATA DETECTED ]</p>
+            <p className={`text-center py-6 ${themeClasses.secondaryText} text-sm`}>
+              No block data available. Please check the block number or try again later.
+            </p>
           )}
         </div>
       </div>

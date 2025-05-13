@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
-import { FaBell, FaTimes, FaEye, FaEyeSlash, FaThumbtack } from "react-icons/fa";
+import { motion, AnimatePresence } from "framer-motion";
+import { FaBell, FaTimes, FaEye, FaEyeSlash, FaThumbtack, FaChevronDown, FaChevronUp } from "react-icons/fa";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, db } from "@/lib/firebase.ts";
 import {
@@ -20,7 +20,6 @@ import {
   where,
 } from "firebase/firestore";
 import debounce from "lodash/debounce";
-import { tokenMapping } from "@/app/tokenMapping.ts";
 
 // Types
 interface Notification {
@@ -52,12 +51,6 @@ interface SnoozedToken {
   expiry: number;
 }
 
-interface Plugin {
-  name: string;
-  description: string;
-  command: string;
-}
-
 interface DexToken {
   pairAddress: string;
   baseToken: { address: string; name: string; symbol: string };
@@ -77,58 +70,50 @@ interface DexToken {
   info?: { imageUrl?: string };
 }
 
-interface ScanResult {
-  token?: {
-    name?: string;
-    symbol?: string;
-  };
-  honeypotResult?: {
-    isHoneypot?: boolean;
-    honeypotReason?: string;
-  };
-  summary?: {
-    risk?: string;
-    riskLevel?: string;
-    flags?: { flag: string; description: string }[];
-  };
-  simulationResult?: {
-    buyTax?: number;
-    sellTax?: number;
-  };
+interface TerminalStyle {
+  background: string;
+  text: string;
+  accentText: string;
+  border: string;
+  separator: string;
+  panelBg: string;
+  panelBorder: string;
+  statusBarBg: string;
+  commandLineBg: string;
+  buttonBg: string;
+  buttonText: string;
+  inputBg: string;
 }
 
 // Constants
-const PRICE_CHECK_INTERVAL = 60_000; // 1 minute
-const ETH_STATS_INTERVAL = 1_800_000; // 30 minutes
-const AI_INDEX_INTERVAL = 14_400_000; // 4 hours
+const PRICE_CHECK_INTERVAL = 60_000;
+const ETH_STATS_INTERVAL = 1_800_000;
+const AI_INDEX_INTERVAL = 14_400_000;
 
 // Utility Functions
 const getColorClass = (type: string, theme: string): string => {
   if (theme === "hacker") {
-    return "text-green-500";
-  } else if (theme === "vintage") {
-    return "text-[#4A3728]";
-  } else {
-    switch (type) {
-      case "mover":
-        return "bg-green-800 text-blue-300";
-      case "loser":
-        return "bg-red-800 text-blue-300";
-      case "volume_spike":
-        return "bg-blue-800 text-blue-300";
-      case "price_spike":
-        return "bg-blue-800 text-blue-300";
-      case "news":
-        return "bg-teal-800 text-blue-300";
-      case "ai_index":
-        return "bg-blue-900 text-blue-300";
-      case "eth_stats":
-        return "bg-purple-800 text-blue-300";
-      case "new_token":
-        return "bg-orange-800 text-blue-300";
-      default:
-        return "bg-gray-800 text-blue-300";
-    }
+    return "bg-green-900/30 text-green-400 border-green-700/50";
+  }
+  switch (type) {
+    case "mover":
+      return "bg-green-900/30 text-green-400 border-green-700/50";
+    case "loser":
+      return "bg-red-900/30 text-red-400 border-red-700/50";
+    case "volume_spike":
+      return "bg-blue-900/30 text-blue-400 border-blue-700/50";
+    case "price_spike":
+      return "bg-blue-900/30 text-blue-400 border-blue-700/50";
+    case "news":
+      return "bg-teal-900/30 text-teal-400 border-teal-700/50";
+    case "ai_index":
+      return "bg-indigo-900/30 text-indigo-400 border-indigo-700/50";
+    case "eth_stats":
+      return "bg-purple-900/30 text-purple-400 border-purple-700/50";
+    case "new_token":
+      return "bg-orange-900/30 text-orange-400 border-orange-700/50";
+    default:
+      return "bg-gray-900/30 text-gray-400 border-gray-700/50";
   }
 };
 
@@ -140,36 +125,35 @@ const formatUptime = (startTime: number): string => {
   return `${hours}h ${minutes}m ${seconds}s`;
 };
 
-const terminalStyles = {
+// Terminal Styles
+const terminalStyles: Record<string, TerminalStyle> = {
   classic: {
-    background: "bg-gray-900",
+    background: "bg-[#1A2533]",
     text: "text-blue-300",
-    accentText: "text-blue-300",
-    border: "border-blue-600",
-    separator: "border-b-2 border-blue-600 !important",
-    panelBg: "bg-gray-900",
-    statusBarBg: "bg-gray-800",
-    commandLineBg: "bg-gray-800",
+    accentText: "text-blue-400",
+    border: "border-blue-600/50",
+    separator: "border-blue-600/50",
+    panelBg: "bg-[#1A2533]",
+    panelBorder: "border-blue-600/20",
+    statusBarBg: "bg-[#141C27]",
+    commandLineBg: "bg-[#141C27]",
+    buttonBg: "bg-blue-600/20 hover:bg-blue-600/40",
+    buttonText: "text-blue-300 hover:text-blue-200",
+    inputBg: "bg-[#141C27]",
   },
   hacker: {
-    background: "bg-black",
-    text: "text-green-500",
-    accentText: "text-green-500",
-    border: "border-green-500",
-    separator: "border-b-2 border-green-500 !important",
-    panelBg: "bg-black",
-    statusBarBg: "bg-black",
-    commandLineBg: "bg-black",
-  },
-  vintage: {
-    background: "bg-[#D2B48C]",
-    text: "text-[#4A3728]",
-    accentText: "text-[#4A3728]",
-    border: "border-[#8B4513]",
-    separator: "border-b-2 border-[#8B4513] !important",
-    panelBg: "bg-[#D2B48C]",
-    statusBarBg: "bg-[#D2B48C]",
-    commandLineBg: "bg-[#D2B48C]",
+    background: "bg-[#0F1A1F]",
+    text: "text-green-400",
+    accentText: "text-green-300",
+    border: "border-green-600/50",
+    separator: "border-green-600/50",
+    panelBg: "bg-[#0F1A1F]",
+    panelBorder: "border-green-600/20",
+    statusBarBg: "bg-[#0A1215]",
+    commandLineBg: "bg-[#0A1215]",
+    buttonBg: "bg-green-600/20 hover:bg-green-600/40",
+    buttonText: "text-green-400 hover:text-green-300",
+    inputBg: "bg-[#0A1215]",
   },
 };
 
@@ -193,16 +177,8 @@ export default function HomebaseTerminal() {
   const [lastCommand, setLastCommand] = useState("");
   const [isAlertSoundEnabled, setIsAlertSoundEnabled] = useState(true);
   const [showNotifications, setShowNotifications] = useState(true);
-  const [sysUpdates] = useState<string[]>([
-    "Checking system integrity...",
-    "Fetching security patches...",
-    "Optimizing database...",
-    "Syncing with blockchain...",
-    "Updating AI models...",
-    "Refreshing token data...",
-    "Clearing cache...",
-    "Finalizing updates...",
-  ]);
+  const [sysUpdates, setSysUpdates] = useState<string[]>([]);
+  const [bootSequenceComplete, setBootSequenceComplete] = useState(false);
   const [preferences, setPreferences] = useState<UserPreferences>({
     notifications: {
       mover: true,
@@ -226,8 +202,8 @@ export default function HomebaseTerminal() {
   const inputRef = useRef<HTMLInputElement>(null);
   const outputRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const notificationRef = useRef<HTMLDivElement>(null);
 
-  // Commands
   const commands = [
     "/menu",
     "/clear",
@@ -245,21 +221,56 @@ export default function HomebaseTerminal() {
     "/logout",
     "/settings",
     "/snooze",
-    "/plugin",
-    "/stats",
-    "/sync-alerts",
     "/status",
     "/history",
     "/notify-me",
+    "/ca",
   ];
 
-  // Debounced setNotifications to improve performance
   const debouncedSetNotifications = useCallback(
     debounce((newNotifications: Notification[]) => {
       setNotifications(newNotifications);
     }, 500),
     []
   );
+
+  // Memoize currentStyle to prevent unnecessary re-renders
+  const currentStyle = useMemo(
+    () =>
+      terminalStyles[
+        preferences.terminalStyle as keyof typeof terminalStyles
+      ] || terminalStyles.classic,
+    [preferences.terminalStyle]
+  );
+
+  // Boot-Up Sequence
+  useEffect(() => {
+    const bootSteps = [
+      "[INIT] Booting Homebase Terminal...",
+      "[SYS] Checking system integrity...",
+      "[SEC] Fetching security patches...",
+      "[DB] Optimizing database...",
+      "[CHAIN] Syncing with blockchain...",
+      "[AI] Updating AI models...",
+      "[DATA] Refreshing token data...",
+      "[CACHE] Clearing cache...",
+      "[FINAL] Finalizing updates...",
+      "[READY] System online.",
+    ];
+
+    let stepIndex = 0;
+    const interval = setInterval(() => {
+      if (stepIndex < bootSteps.length) {
+        setSysUpdates((prev) => [...prev, bootSteps[stepIndex]]);
+        stepIndex++;
+      } else {
+        setBootSequenceComplete(true);
+        clearInterval(interval);
+      }
+    }, 300);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Authentication, Preferences, and Persistent Filters
   useEffect(() => {
@@ -286,7 +297,8 @@ export default function HomebaseTerminal() {
         });
 
         const snoozeQuery = query(
-          collection(db, `users/${currentUser.uid}/snoozed`)
+          collection(db, `users/${currentUser.uid}/snoozed`),
+          limit(50)
         );
         onSnapshot(snoozeQuery, (snapshot) => {
           const snoozed: SnoozedToken[] = [];
@@ -300,7 +312,8 @@ export default function HomebaseTerminal() {
         });
 
         const favoritesQuery = query(
-          collection(db, `users/${currentUser.uid}/favorites`)
+          collection(db, `users/${currentUser.uid}/favorites`),
+          limit(50)
         );
         onSnapshot(favoritesQuery, (snapshot) => {
           const favoriteList = snapshot.docs.map(
@@ -332,7 +345,6 @@ export default function HomebaseTerminal() {
     return () => unsubscribe();
   }, []);
 
-  // Save notification filters to Firestore when they change
   useEffect(() => {
     if (user) {
       setDoc(
@@ -348,9 +360,9 @@ export default function HomebaseTerminal() {
     }
   }, [notificationFilter, user, preferences]);
 
-  // Fetch Tokens (Shared with Screener via Firestore)
+  // Fetch tokens from tokenDataCache collection
   useEffect(() => {
-    const tokenCacheQuery = query(collection(db, "tokenDataCache"));
+    const tokenCacheQuery = query(collection(db, "tokenDataCache"), limit(100));
     const unsubscribe = onSnapshot(tokenCacheQuery, (snapshot) => {
       const tokenList: DexToken[] = [];
       snapshot.forEach((doc) => {
@@ -362,7 +374,7 @@ export default function HomebaseTerminal() {
     return () => unsubscribe();
   }, []);
 
-  // Fetch Notifications from Firestore
+  // Fetch notifications
   useEffect(() => {
     const enabledTypes = Object.keys(preferences.notifications).filter(
       (type) => preferences.notifications[type]
@@ -418,7 +430,9 @@ export default function HomebaseTerminal() {
         (n) => !notificationCache.some((cached) => cached.id === n.id)
       );
       if (newAlerts.length > 0 && isAlertSoundEnabled && audioRef.current) {
-        audioRef.current.play().catch(() => {});
+        audioRef.current.play().catch((error) => {
+          console.error("Failed to play alert sound:", error);
+        });
       }
 
       setNotificationCache((prev) => {
@@ -437,11 +451,11 @@ export default function HomebaseTerminal() {
     preferences.notifications,
   ]);
 
-  // Fetch News (Terminal-Specific)
+  // Fetch news
   useEffect(() => {
     const fetchNews = debounce(async () => {
       try {
-        const newsQuery = query(collection(db, "news"));
+        const newsQuery = query(collection(db, "news"), limit(10));
         const snapshot = await getDocs(newsQuery);
         const newsItems = snapshot.docs.map((doc) => ({
           id: doc.id,
@@ -467,7 +481,7 @@ export default function HomebaseTerminal() {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch Base AI Index (Terminal-Specific)
+  // Fetch AI Index
   useEffect(() => {
     const fetchAIIndex = debounce(async () => {
       try {
@@ -493,7 +507,7 @@ export default function HomebaseTerminal() {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch Ethereum Stats (Terminal-Specific)
+  // Fetch ETH Stats
   useEffect(() => {
     const fetchEthStats = async () => {
       try {
@@ -519,11 +533,11 @@ export default function HomebaseTerminal() {
     return () => clearInterval(interval);
   }, []);
 
-  // Custom Price Alerts
   const [customAlerts, setCustomAlerts] = useState<
     { symbol: string; threshold: number; direction: "above" | "below" }[]
   >([]);
 
+  // Check custom alerts
   useEffect(() => {
     const checkCustomAlerts = () => {
       tokens.forEach((token) => {
@@ -565,7 +579,6 @@ export default function HomebaseTerminal() {
     return () => clearInterval(interval);
   }, [tokens, customAlerts]);
 
-  // Uptime and Online Status
   useEffect(() => {
     const updateUptime = () => setUptime(formatUptime(startTime));
     updateUptime();
@@ -584,7 +597,27 @@ export default function HomebaseTerminal() {
     };
   }, []);
 
-  // Command Handlers
+  // Fetch token address from Firebase
+  const fetchTokenAddress = useCallback(async (tokenSymbol: string): Promise<string | null> => {
+    try {
+      const tokensQuery = query(
+        collection(db, "tokens"),
+        where("symbol", "==", tokenSymbol),
+        limit(1)
+      );
+      const snapshot = await getDocs(tokensQuery);
+      if (snapshot.empty) {
+        return null;
+      }
+      const tokenDoc = snapshot.docs[0];
+      const tokenData = tokenDoc.data();
+      return tokenData.address || null;
+    } catch (err) {
+      console.error("Failed to fetch token address from Firebase:", err);
+      return null;
+    }
+  }, []);
+
   const handleCommand = useCallback(
     async (command: string) => {
       if (!command.trim()) return;
@@ -595,28 +628,26 @@ export default function HomebaseTerminal() {
       const [cmd, ...args] = command.trim().split(" ");
       const lowerCmd = cmd.toLowerCase();
 
-      // Handle dynamic /<tokenname>-stats command
       if (lowerCmd.endsWith("-stats")) {
         const tokenName = lowerCmd.replace(/-stats$/, "").replace("/", "");
         if (tokenName) {
           setOutput([`Fetching stats for ${tokenName.toUpperCase()}...`]);
           try {
-            // Map token name to address using tokenMapping
-            const tokenAddress = tokenMapping[tokenName.toUpperCase()];
+            const tokenAddress = await fetchTokenAddress(tokenName.toUpperCase());
             if (!tokenAddress) {
-              setOutput([`Token ${tokenName.toUpperCase()} not found in token mapping.`]);
+              setOutput([`Token ${tokenName.toUpperCase()} not found in tokens collection.`]);
               return;
             }
 
             const response = await fetch(
               `/api/tokens?chainId=base&tokenAddresses=${tokenAddress}`,
-              {
-                method: "GET",
-              }
+              { method: "GET" }
             );
             if (!response.ok) {
               const errorData = await response.json();
-              setOutput([`Failed to fetch stats for ${tokenName.toUpperCase()}: ${errorData.error || "Network error"}`]);
+              setOutput([
+                `Failed to fetch stats for ${tokenName.toUpperCase()}: ${errorData.error || "Network error"}`,
+              ]);
               return;
             }
             const data = await response.json();
@@ -636,7 +667,6 @@ export default function HomebaseTerminal() {
           } catch (err) {
             console.error("Failed to fetch token stats:", err);
             setOutput([`Failed to fetch stats for ${tokenName.toUpperCase()}: An error occurred.`]);
-            return;
           }
         }
         return;
@@ -656,20 +686,18 @@ export default function HomebaseTerminal() {
             "/tournaments - Navigate to Trading Competitions",
             "/whales - Navigate to Whale Watchers page",
             "/scan <token-address> - Audits the smart contract",
-            "/<tokenname>-stats - e.g. /CLANKER-stats to fetch stats",
+            "/<tokenname>-stats - e.g. /HIGHER-stats to fetch stats",
             "/screener - Open Token Scanner",
             "/setdisplay <name> - Set your display name",
             "/signup <email> <password> - Create a new account",
             "/login <email> <password> - Login to your account",
             "/logout - Logout of your account",
             "/settings <option> <value> - e.g. /settings notifications mover off",
-            "/snooze <symbol> <duration> - e.g. /snooze CLANKER 1h",
-            "/plugin - List user-contributed scripts",
-            "/stats - Show market trends",
-            "/sync-alerts - Fetch latest alerts instantly",
+            "/snooze <symbol> <duration> - e.g. /snooze HIGHER 1h",
             "/status - Show system status",
             "/history - Show command history",
             "/notify-me <symbol> <threshold> <above|below> - Set custom price alert",
+            "/ca <token-symbol> - Fetch contract address for a token (e.g., /ca HIGHER)",
             "",
             user ? `Available commands:` : `Please login to access all commands`,
           ]);
@@ -725,28 +753,18 @@ export default function HomebaseTerminal() {
                 setOutput([`Failed to scan token ${args[0]}: ${errorData.error || "Network error"}`]);
                 return;
               }
-              const result: ScanResult = await response.json();
+              const result = await response.json();
               const outputLines = [`Scan result for ${args[0]}:`];
               outputLines.push(
-                `Token: ${result.token?.name || "Unknown"} (${result.token?.symbol || "N/A"})`
+                `Token: ${result.tokenName || "Unknown"} (${result.tokenSymbol || "N/A"})`
               );
-              if (result.honeypotResult?.isHoneypot) {
+              if (result.IsHoneypot) {
                 outputLines.push("⚠️ WARNING: Potential honeypot detected!");
-                if (result.honeypotResult.honeypotReason) {
-                  outputLines.push(`Reason: ${result.honeypotResult.honeypotReason}`);
+                if (result.honeypotReason) {
+                  outputLines.push(`Reason: ${result.honeypotReason}`);
                 }
               } else {
                 outputLines.push("✅ No honeypot detected.");
-              }
-              if (result.summary) {
-                outputLines.push(`Risk: ${result.summary.risk || "N/A"}`);
-                outputLines.push(`Risk Level: ${result.summary.riskLevel || "N/A"}`);
-                if (result.summary.flags && result.summary.flags.length > 0) {
-                  outputLines.push("Flags:");
-                  result.summary.flags.forEach((flag) => {
-                    outputLines.push(`- ${flag.flag}: ${flag.description}`);
-                  });
-                }
               }
               if (result.simulationResult) {
                 outputLines.push(`Buy Tax: ${result.simulationResult.buyTax !== undefined ? `${result.simulationResult.buyTax}%` : "N/A"}`);
@@ -891,7 +909,7 @@ export default function HomebaseTerminal() {
           }
           if (args.length < 2) {
             setOutput([
-              "Usage: /snooze <symbol> <duration> (e.g., /snooze CLANKER 1h)",
+              "Usage: /snooze <symbol> <duration> (e.g., /snooze HIGHER 1h)",
             ]);
             return;
           }
@@ -909,59 +927,6 @@ export default function HomebaseTerminal() {
               expiry
             ).toLocaleString()}.`,
           ]);
-          break;
-
-        case "/plugin":
-          try {
-            const pluginsSnapshot = await getDocs(collection(db, "plugins"));
-            const plugins = pluginsSnapshot.docs.map(
-              (doc) => doc.data() as Plugin
-            );
-            if (plugins.length === 0) {
-              setOutput(["No plugins available. Check back later!"]);
-            } else {
-              setOutput([
-                "User-Contributed Plugins:",
-                ...plugins.map(
-                  (p) => `${p.name}: ${p.description} (Run: ${p.command})`
-                ),
-              ]);
-            }
-          } catch (err) {
-            console.error("Failed to fetch plugins:", err);
-            setOutput(["No plugins available at this time."]);
-          }
-          break;
-
-        case "/stats":
-          try {
-            const movers = notifications
-              .filter((n) => n.type === "mover")
-              .slice(0, 1);
-            const losers = notifications
-              .filter((n) => n.type === "loser")
-              .slice(0, 1);
-            const volumes = notifications
-              .filter((n) => n.type === "volume_spike")
-              .slice(0, 1);
-            setOutput([
-              "Market Trends:",
-              ...movers.map((n) => `Top Mover: ${n.message}`),
-              ...losers.map((n) => `Top Loser: ${n.message}`),
-              ...volumes.map((n) => `Most Active: ${n.message}`),
-            ]);
-          } catch (err) {
-            console.error("Failed to fetch stats:", err);
-            setOutput(["No market trends available."]);
-          }
-          break;
-
-        case "/sync-alerts":
-          setOutput(["Syncing alerts..."]);
-          setNotifications([]);
-          setNotificationCache([]);
-          setPinnedNotifications([]);
-          setOutput(["Notifications synced: Check Notification Center."]);
           break;
 
         case "/status":
@@ -1003,19 +968,31 @@ export default function HomebaseTerminal() {
           ]);
           break;
 
-        default:
-          const pluginMatch = commands.find((c) => c === command);
-          if (pluginMatch) {
-            setOutput([
-              `Running plugin: ${command}`,
-              "Result: Custom analysis complete.",
-            ]);
-          } else {
-            setOutput([
-              `Command not found: ${command}`,
-              "Type /menu for available commands.",
-            ]);
+        case "/ca":
+          if (args.length < 1) {
+            setOutput(["Usage: /ca <token-symbol> (e.g., /ca HIGHER)"]);
+            return;
           }
+          const tokenSymbol = args[0].toUpperCase();
+          setOutput([`Fetching contract address for ${tokenSymbol}...`]);
+          try {
+            const contractAddress = await fetchTokenAddress(tokenSymbol);
+            if (!contractAddress) {
+              setOutput([`Token ${tokenSymbol} not found in tokens collection.`]);
+              return;
+            }
+            setOutput([`Contract Address for ${tokenSymbol}: ${contractAddress}`]);
+          } catch (err) {
+            console.error("Failed to fetch contract address:", err);
+            setOutput([`Failed to fetch contract address for ${tokenSymbol}: An error occurred.`]);
+          }
+          break;
+
+        default:
+          setOutput([
+            `Command not found: ${command}`,
+            "Type /menu for available commands.",
+          ]);
       }
     },
     [
@@ -1030,11 +1007,11 @@ export default function HomebaseTerminal() {
       lastCommand,
       history,
       customAlerts,
+      fetchTokenAddress,
     ]
   );
 
-  // Autocomplete and Keyboard Shortcuts
-  const handleInputChange = (value: string) => {
+  const handleInputChange = useCallback((value: string) => {
     setInput(value);
     if (value.startsWith("/")) {
       const matchingCommands = commands.filter((cmd) =>
@@ -1044,9 +1021,9 @@ export default function HomebaseTerminal() {
     } else {
       setSuggestions([]);
     }
-  };
+  }, []);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       handleCommand(input);
       setInput("");
@@ -1075,24 +1052,27 @@ export default function HomebaseTerminal() {
       e.preventDefault();
       handleCommand("/clear");
     }
-  };
+  }, [handleCommand, input, suggestions, history, historyIndex]);
 
-  // Auto-scroll to bottom
   useEffect(() => {
     if (outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
-  }, [output, notifications]);
+  }, [output]);
 
-  // Focus input on mount
+  useEffect(() => {
+    if (notificationRef.current) {
+      notificationRef.current.scrollTop = notificationRef.current.scrollHeight;
+    }
+  }, [notifications]);
+
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus();
     }
   }, []);
 
-  // Terminal Style Handler
-  const handleStyleChange = async (style: string) => {
+  const handleStyleChange = useCallback(async (style: string) => {
     if (user) {
       await setDoc(
         doc(db, `users/${user.uid}`),
@@ -1107,32 +1087,24 @@ export default function HomebaseTerminal() {
     } else {
       setPreferences((prev) => ({ ...prev, terminalStyle: style }));
     }
-  };
+  }, [user, preferences]);
 
-  const currentStyle =
-    terminalStyles[
-      preferences.terminalStyle as keyof typeof terminalStyles
-    ] || terminalStyles.classic;
-
-  // Notification Filter Handlers
-  const toggleExcludeType = (type: string) => {
+  const toggleExcludeType = useCallback((type: string) => {
     setNotificationFilter((prev) => ({
       ...prev,
       excludeTypes: prev.excludeTypes.includes(type)
         ? prev.excludeTypes.filter((t) => t !== type)
         : [...prev.excludeTypes, type],
     }));
-  };
+  }, []);
 
-  // Clear All Notifications
-  const handleClearAllNotifications = () => {
+  const handleClearAllNotifications = useCallback(() => {
     setNotifications([]);
     setNotificationCache([]);
     setPinnedNotifications([]);
-  };
+  }, []);
 
-  // Pin/Unpin Notification
-  const togglePinNotification = (id: string) => {
+  const togglePinNotification = useCallback((id: string) => {
     setPinnedNotifications((prev) => {
       const isPinned = prev.includes(id);
       if (isPinned) {
@@ -1154,10 +1126,9 @@ export default function HomebaseTerminal() {
         return [notification, ...others];
       }
     });
-  };
+  }, [pinnedNotifications]);
 
-  // Snooze Notification for 1 Hour
-  const handleSnoozeNotification = async (symbol: string) => {
+  const handleSnoozeNotification = useCallback(async (symbol: string) => {
     if (!user) {
       setOutput(["Please login to snooze notifications."]);
       return;
@@ -1171,100 +1142,141 @@ export default function HomebaseTerminal() {
         expiry
       ).toLocaleString()}.`,
     ]);
-  };
+  }, [user]);
 
-  // Dismiss Notification
-  const handleDismissNotification = (id: string) => {
+  const handleDismissNotification = useCallback((id: string) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
     setPinnedNotifications((prev) => prev.filter((pid) => pid !== id));
-  };
+  }, []);
 
-  // Section Header Component with Full-Width Grey Background and Theme-Based Separator
-  const SectionHeader = ({ title }: { title: string }) => (
-    <div className="mb-4 mx-[-16px] mt-[-16px] border-0">
-      <div className="w-full bg-gray-700 py-2 px-4 relative flex justify-between items-center border-b-0">
+  // Section Header Component
+  interface SectionHeaderProps {
+    title: string;
+    showDots?: boolean;
+    currentStyle: TerminalStyle;
+  }
+
+  const SectionHeader = ({ title, showDots = false, currentStyle }: SectionHeaderProps) => (
+    <div className="mb-4 -mx-4 -mt-4">
+      <div className={`w-full py-2 px-4 flex justify-between items-center border-b ${currentStyle.separator}`}>
         <h2 className={`text-lg font-bold ${currentStyle.accentText}`}>
           {title.replace("_", " ")}
         </h2>
-        <div className="flex items-center space-x-2">
-          <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-          <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-          <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-        </div>
+        {showDots && (
+          <div className="flex items-center space-x-1.5">
+            <div className="w-3 h-3 bg-red-500 rounded-full opacity-80 hover:opacity-100 transition-opacity duration-200" />
+            <div className="w-3 h-3 bg-yellow-500 rounded-full opacity-80 hover:opacity-100 transition-opacity duration-200" />
+            <div className="w-3 h-3 bg-green-500 rounded-full opacity-80 hover:opacity-100 transition-opacity duration-200" />
+          </div>
+        )}
       </div>
-      <div className={`w-full ${currentStyle.separator}`} />
     </div>
   );
 
   return (
     <div
-      className={`w-screen h-screen ${currentStyle.background} ${currentStyle.text} font-mono m-0 p-0 overflow-hidden flex flex-col`}
+      className={`w-screen h-screen ${currentStyle.background} ${currentStyle.text} font-mono m-0 p-0 overflow-hidden flex flex-col touch-none select-none`}
     >
       <audio ref={audioRef} src="/alert.mp3" preload="auto" />
 
       {/* Desktop Layout: Three Columns */}
       <div className="hidden md:flex flex-1 w-full h-[calc(100vh-80px)]">
-        {/* SYS_UPDATE Panel */}
+        {/* SYS_UPDATE Panel with Boot Sequence */}
         <div
-          className={`w-[35%] h-full border-r ${currentStyle.panelBg} p-4 overflow-y-auto`}
+          className={`w-[35%] h-full border-r ${currentStyle.panelBg} ${currentStyle.panelBorder} p-4 overflow-y-auto shadow-lg overscroll-contain`}
         >
-          <SectionHeader title="SYS_UPDATE" />
-          <div className="space-y-2">
+          <SectionHeader title="SYS_UPDATE" showDots={true} currentStyle={currentStyle} />
+          <div className="space-y-3">
             {sysUpdates.map((update, idx) => (
-              <p key={idx} className="text-sm">{update}</p>
-            ))}
-          </div>
-          <p className="text-sm mt-4">Last update: 5 mins ago</p>
-          <div className="mt-4 space-y-3">
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium">Terminal Style:</label>
-              <select
-                value={preferences.terminalStyle}
-                onChange={(e) => handleStyleChange(e.target.value)}
-                className={`rounded p-1 text-sm border focus:outline-none focus:ring-1 focus:ring-blue-500 ${
-                  preferences.terminalStyle === "classic"
-                    ? "bg-gray-800 text-blue-300 border-gray-600"
-                    : preferences.terminalStyle === "hacker"
-                    ? "bg-black text-green-500 border-green-500"
-                    : "bg-[#D2B48C] text-[#4A3728] border-[#F5F5DC]"
-                }`}
+              <motion.p
+                key={idx}
+                initial={{ x: -20, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                transition={{ duration: 0.2 }}
+                className={`text-sm ${
+                  update && typeof update === "string" && update.includes("[READY]")
+                    ? currentStyle.accentText
+                    : "opacity-90"
+                } hover:opacity-100 transition-opacity duration-200`}
               >
-                <option value="classic">Classic</option>
-                <option value="hacker">Hacker</option>
-                <option value="vintage">Vintage</option>
-              </select>
-            </div>
+                {update}
+              </motion.p>
+            ))}
+            {bootSequenceComplete && (
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.2 }}
+                className="text-sm opacity-70"
+              >
+                Last update: 5 mins ago
+              </motion.p>
+            )}
           </div>
+          {bootSequenceComplete && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.2 }}
+              className="mt-4 space-y-3"
+            >
+              <div className="flex items-center space-x-3">
+                <label className="text-sm font-medium">Terminal Style:</label>
+                <select
+                  value={preferences.terminalStyle}
+                  onChange={(e) => handleStyleChange(e.target.value)}
+                  className={`rounded-lg px-3 py-1.5 text-sm border focus:outline-none transition-all duration-200 ${currentStyle.inputBg} ${currentStyle.text}`}
+                >
+                  <option value="classic">Classic</option>
+                  <option value="hacker">Hacker</option>
+                </select>
+              </div>
+            </motion.div>
+          )}
         </div>
 
-        {/* Separator (Vertical, thinner and theme-based) */}
+        {/* Separator */}
         <div className={`w-px h-full ${currentStyle.separator}`} />
 
         {/* TERMINAL_OUTPUT Panel */}
         <div
-          className={`w-2/5 h-full border-r ${currentStyle.panelBg} p-4 flex flex-col`}
+          className={`w-2/5 h-full border-r ${currentStyle.panelBg} p-4 flex flex-col shadow-lg overscroll-contain`} // Removed panelBorder
         >
-          <SectionHeader title="TERMINAL_OUTPUT" />
-          <div ref={outputRef} className="flex-1 overflow-y-auto">
-            {output.map((line, idx) => (
-              <p key={idx} className="text-sm">{line}</p>
-            ))}
+          <SectionHeader title="TERMINAL_OUTPUT" currentStyle={currentStyle} />
+          <div ref={outputRef} className="flex-1 overflow-y-auto space-y-2">
+            <AnimatePresence>
+              {output.map((line, idx) => (
+                <motion.p
+                  key={idx}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.1 }}
+                  className="text-sm opacity-90 hover:opacity-100 transition-opacity duration-200"
+                >
+                  {line}
+                </motion.p>
+              ))}
+            </AnimatePresence>
           </div>
         </div>
 
-        {/* Separator (Vertical, thinner and theme-based) */}
-        <div className={`w-px h-full ${currentStyle.separator}`} />
-
-        {/* NOTIFICATION_CENTER Panel */}
+        {/* NOTIFICATION_CENTER Panel (Removed Separator) */}
         <div
-          className={`w-1/4 h-full ${currentStyle.panelBg} p-4 overflow-y-auto`}
+          className={`w-1/4 h-full ${currentStyle.panelBg} ${currentStyle.panelBorder} p-4 overflow-y-auto shadow-lg overscroll-contain`}
+          ref={notificationRef}
         >
-          <SectionHeader title="NOTIFICATION_CENTER" />
-          <div className="mb-4 space-y-3">
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2">
+          <SectionHeader title="NOTIFICATION_CENTER" currentStyle={currentStyle} />
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.2 }}
+            className="mb-4 space-y-4"
+          >
+            <div className="space-y-3">
+              <div className="flex items-center space-x-3">
                 <label className="text-sm font-medium">Exclude Types:</label>
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1.5">
                   {[
                     "mover",
                     "loser",
@@ -1274,33 +1286,28 @@ export default function HomebaseTerminal() {
                     "ai_index",
                     "eth_stats",
                     "new_token",
-                  ].map((type) => (
-                    <button
+                  ].map((type, idx) => (
+                    <motion.button
                       key={type}
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ delay: idx * 0.02, duration: 0.1 }}
                       onClick={() => toggleExcludeType(type)}
-                      className={`text-xs px-2 py-1 rounded-full transition-colors duration-200 flex items-center space-x-1 ${
+                      className={`text-xs px-3 py-1 rounded-full border transition-all duration-200 flex items-center space-x-1.5 ${currentStyle.buttonBg} ${currentStyle.buttonText} ${
                         notificationFilter.excludeTypes.includes(type)
-                          ? preferences.terminalStyle === "classic"
-                            ? "bg-red-600 text-white"
-                            : preferences.terminalStyle === "hacker"
-                            ? "bg-green-700 text-white"
-                            : "bg-[#4A3728] text-[#D2B48C]"
-                          : preferences.terminalStyle === "classic"
-                          ? "bg-gray-700 text-blue-300 hover:bg-gray-600"
-                          : preferences.terminalStyle === "hacker"
-                          ? "bg-gray-800 text-green-500 hover:bg-gray-700"
-                          : "bg-[#F5F5DC] text-[#4A3728] hover:bg-[#C2A47C]"
+                          ? "bg-red-600/30 text-red-300 border-red-600/50"
+                          : ""
                       }`}
                     >
                       <span>{type.replace("_", " ")}</span>
                       {notificationFilter.excludeTypes.includes(type) && (
                         <FaTimes className="w-3 h-3" />
                       )}
-                    </button>
+                    </motion.button>
                   ))}
                 </div>
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-3">
                 <label className="text-sm font-medium">Show Only:</label>
                 <select
                   value={notificationFilter.type}
@@ -1310,13 +1317,7 @@ export default function HomebaseTerminal() {
                       type: e.target.value,
                     }))
                   }
-                  className={`rounded p-1 text-sm border focus:outline-none focus:ring-1 focus:ring-blue-500 ${
-                    preferences.terminalStyle === "classic"
-                      ? "bg-gray-800 text-blue-300 border-gray-600"
-                      : preferences.terminalStyle === "hacker"
-                      ? "bg-black text-green-500 border-green-500"
-                      : "bg-[#D2B48C] text-[#4A3728] border-[#F5F5DC]"
-                  }`}
+                  className={`rounded-lg px-3 py-1.5 text-sm border focus:outline-none transition-all duration-200 ${currentStyle.inputBg} ${currentStyle.text}`}
                 >
                   <option value="all">All</option>
                   <option value="mover">Movers</option>
@@ -1329,58 +1330,54 @@ export default function HomebaseTerminal() {
                   <option value="new_token">New Tokens</option>
                 </select>
               </div>
-              <div className="flex items-center justify-between space-x-2">
+              <div className="flex items-center justify-between space-x-3">
                 <div className="flex items-center space-x-2">
                   <label className="text-sm font-medium">Alert Sound:</label>
                   <input
                     type="checkbox"
                     checked={isAlertSoundEnabled}
                     onChange={(e) => setIsAlertSoundEnabled(e.target.checked)}
-                    className={`w-4 h-4 rounded focus:ring-blue-500 ${
-                      preferences.terminalStyle === "classic"
-                        ? "text-blue-600 bg-gray-800 border-gray-600"
-                        : preferences.terminalStyle === "hacker"
-                        ? "text-green-500 bg-black border-green-500"
-                        : "text-[#4A3728] bg-[#D2B48C] border-[#F5F5DC]"
-                    }`}
+                    className={`w-4 h-4 rounded focus:outline-none transition-all duration-200 ${currentStyle.inputBg}`}
                   />
                 </div>
                 <button
                   onClick={handleClearAllNotifications}
-                  className={`text-sm px-3 py-1 rounded transition-colors duration-200 ${
-                    preferences.terminalStyle === "classic"
-                      ? "bg-gray-700 text-blue-300 hover:bg-gray-600"
-                      : preferences.terminalStyle === "hacker"
-                      ? "bg-gray-800 text-green-500 hover:bg-gray-700"
-                      : "bg-[#F5F5DC] text-[#4A3728] hover:bg-[#C2A47C]"
-                  }`}
+                  className={`text-sm px-4 py-1.5 rounded-lg transition-all duration-200 ${currentStyle.buttonBg} ${currentStyle.buttonText}`}
                 >
                   Clear All
                 </button>
               </div>
             </div>
-          </div>
+          </motion.div>
           <div className="space-y-2">
             {notifications.length === 0 ? (
-              <p className="text-sm">No notifications.</p>
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.2 }}
+                className="text-sm opacity-70"
+              >
+                No notifications.
+              </motion.p>
             ) : (
               notifications.map((notification) => (
                 <motion.div
                   key={notification.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.1 }}
                   className={`text-xs ${getColorClass(
                     notification.type,
                     preferences.terminalStyle
-                  )} flex p-1.5 rounded-md transition-colors duration-200 hover:brightness-110 cursor-pointer relative min-h-[60px]`}
+                  )} flex p-2 rounded-lg border transition-all duration-200 hover:brightness-125 cursor-pointer relative shadow-sm min-h-[60px]`}
                 >
-                  <div className="flex items-start space-x-1.5 flex-1">
-                    <FaBell className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                  <div className="flex items-start space-x-2 flex-1">
+                    <FaBell className="w-4 h-4 mt-0.5 flex-shrink-0 opacity-80" />
                     <div className="flex-1">
                       <p className="font-semibold leading-tight">
                         {notification.message}
                       </p>
-                      <div className="mt-0.5">
+                      <div className="mt-1">
                         <p className="text-xs opacity-80 leading-tight">
                           {new Date(notification.timestamp).toLocaleString()}
                         </p>
@@ -1391,13 +1388,7 @@ export default function HomebaseTerminal() {
                                 `/app/token-scanner/${notification.pairAddress}/chart/page.tsx`
                               )
                             }
-                            className={`text-xs underline transition-colors duration-200 mt-0.5 ${
-                              preferences.terminalStyle === "classic"
-                                ? "text-blue-300 hover:text-blue-400"
-                                : preferences.terminalStyle === "hacker"
-                                ? "text-green-500 hover:text-green-400"
-                                : "text-[#4A3728] hover:text-[#C2A47C]"
-                            }`}
+                            className={`text-xs underline mt-1 transition-all duration-200 ${currentStyle.buttonText}`}
                           >
                             View Chart
                           </button>
@@ -1405,34 +1396,40 @@ export default function HomebaseTerminal() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex flex-col items-center space-y-0.5 ml-1">
-                    <button
+                  <div className="flex flex-col items-center space-y-1 ml-2">
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
                       onClick={() => togglePinNotification(notification.id)}
-                      className={`p-0.5 rounded-full transition-colors duration-200 ${
+                      className={`p-1 rounded-full transition-all duration-200 ${
                         pinnedNotifications.includes(notification.id)
                           ? "text-yellow-400"
                           : "text-gray-400 hover:text-yellow-400"
                       }`}
                       title={pinnedNotifications.includes(notification.id) ? "Unpin" : "Pin"}
                     >
-                      <FaThumbtack className="w-3 h-3" />
-                    </button>
-                    <button
+                      <FaThumbtack className="w-4 h-4" />
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
                       onClick={() =>
                         handleSnoozeNotification(notification.message.split(" ")[0])
                       }
-                      className="p-0.5 rounded-full text-gray-400 hover:text-blue-400 transition-colors duration-200"
+                      className="p-1 rounded-full text-gray-400 hover:text-blue-400 transition-all duration-200"
                       title="Snooze for 1h"
                     >
                       <span className="text-xs">Snooze</span>
-                    </button>
-                    <button
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
                       onClick={() => handleDismissNotification(notification.id)}
-                      className="p-0.5 rounded-full text-gray-400 hover:text-red-400 transition-colors duration-200"
+                      className="p-1 rounded-full text-gray-400 hover:text-red-400 transition-all duration-200"
                       title="Dismiss"
                     >
                       <span className="text-xs">Dismiss</span>
-                    </button>
+                    </motion.button>
                   </div>
                 </motion.div>
               ))
@@ -1441,125 +1438,236 @@ export default function HomebaseTerminal() {
         </div>
       </div>
 
-            {/* Mobile Layout: Stacked with Collapsible Notifications */}
-            <div className="md:hidden flex-1 w-full h-[calc(100vh-80px)] p-4 flex flex-col">
-        <SectionHeader title="TERMINAL_OUTPUT" />
-        <div ref={outputRef} className="flex-1 overflow-y-auto">
-          {output.map((line, idx) => (
-            <p key={idx} className="text-sm">{line}</p>
-          ))}
-        </div>
-        <div className="mt-4">
-          <button
-            onClick={() => setShowNotifications(!showNotifications)}
-            className={`flex items-center space-x-2 text-sm px-3 py-1 rounded transition-colors duration-200 ${
-              preferences.terminalStyle === "classic"
-                ? "bg-gray-700 text-blue-300 hover:bg-gray-600"
-                : preferences.terminalStyle === "hacker"
-                ? "bg-gray-800 text-green-500 hover:bg-gray-700"
-                : "bg-[#F5F5DC] text-[#4A3728] hover:bg-[#C2A47C]"
-            }`}
+      {/* Mobile Layout: Stacked with Collapsible Notifications */}
+      <div className="md:hidden flex-1 w-full h-screen flex flex-col relative">
+        {/* TERMINAL_OUTPUT Panel */}
+        <div className="flex-1 p-4 pb-[128px]">
+          <SectionHeader title="TERMINAL_OUTPUT" currentStyle={currentStyle} />
+          <div
+            ref={outputRef}
+            className="h-[calc(100vh-250px)] overflow-y-auto space-y-2 overscroll-contain"
           >
-            {showNotifications ? (
-              <>
-                <FaEyeSlash className="w-4 h-4" />
-                <span>Hide Notifications</span>
-              </>
-            ) : (
-              <>
-                <FaEye className="w-4 h-4" />
-                <span>Show Notifications</span>
-              </>
-            )}
-          </button>
-          {showNotifications && (
-            <div className="mt-2 space-y-2">
-              {notifications.length === 0 ? (
-                <p className="text-sm">No notifications.</p>
+            <AnimatePresence>
+              {output.map((line, idx) => (
+                <motion.p
+                  key={idx}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.1 }}
+                  className="text-sm opacity-90 hover:opacity-100 transition-opacity duration-200"
+                >
+                  {line}
+                </motion.p>
+              ))}
+            </AnimatePresence>
+          </div>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.2 }}
+            className="mt-4"
+          >
+            <button
+              onClick={() => setShowNotifications(!showNotifications)}
+              className={`flex items-center justify-center space-x-2 text-sm px-4 py-2 rounded-lg w-full transition-all duration-200 ${currentStyle.buttonBg} ${currentStyle.buttonText}`}
+            >
+              {showNotifications ? (
+                <>
+                  <FaEyeSlash className="w-4 h-4" />
+                  <span>Hide Notifications</span>
+                </>
               ) : (
-                notifications.map((notification) => (
-                  <motion.div
-                    key={notification.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`text-xs ${getColorClass(
-                      notification.type,
-                      preferences.terminalStyle
-                    )} flex p-1.5 rounded-md transition-colors duration-200 hover:brightness-110 cursor-pointer relative min-h-[60px]`}
-                  >
-                    <div className="flex items-start space-x-1.5 flex-1">
-                      <FaBell className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                      <div className="flex-1">
-                        <p className="font-semibold leading-tight">
-                          {notification.message}
-                        </p>
-                        <div className="mt-0.5">
-                          <p className="text-xs opacity-80 leading-tight">
-                            {new Date(notification.timestamp).toLocaleString()}
-                          </p>
-                          {notification.pairAddress && (
-                            <button
-                              onClick={() =>
-                                router.push(
-                                  `/app/token-scanner/${notification.pairAddress}/chart/page.tsx`
-                                )
-                              }
-                              className={`text-xs underline transition-colors duration-200 mt-0.5 ${
-                                preferences.terminalStyle === "classic"
-                                  ? "text-blue-300 hover:text-blue-400"
-                                  : preferences.terminalStyle === "hacker"
-                                  ? "text-green-500 hover:text-green-400"
-                                  : "text-[#4A3728] hover:text-[#C2A47C]"
-                              }`}
-                            >
-                              View Chart
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-center space-y-0.5 ml-1">
-                      <button
-                        onClick={() => togglePinNotification(notification.id)}
-                        className={`p-0.5 rounded-full transition-colors duration-200 ${
-                          pinnedNotifications.includes(notification.id)
-                            ? "text-yellow-400"
-                            : "text-gray-400 hover:text-yellow-400"
-                        }`}
-                        title={pinnedNotifications.includes(notification.id) ? "Unpin" : "Pin"}
-                      >
-                        <FaThumbtack className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={() =>
-                          handleSnoozeNotification(notification.message.split(" ")[0])
-                        }
-                        className="p-0.5 rounded-full text-gray-400 hover:text-blue-400 transition-colors duration-200"
-                        title="Snooze for 1h"
-                      >
-                        <span className="text-xs">Snooze</span>
-                      </button>
-                      <button
-                        onClick={() => handleDismissNotification(notification.id)}
-                        className="p-0.5 rounded-full text-gray-400 hover:text-red-400 transition-colors duration-200"
-                        title="Dismiss"
-                      >
-                        <span className="text-xs">Dismiss</span>
-                      </button>
-                    </div>
-                  </motion.div>
-                ))
+                <>
+                  <FaEye className="w-4 h-4" />
+                  <span>Show Notifications</span>
+                </>
               )}
-            </div>
-          )}
+              {showNotifications ? (
+                <FaChevronUp className="w-4 h-4 ml-2" />
+              ) : (
+                <FaChevronDown className="w-4 h-4 ml-2" />
+              )}
+            </button>
+            <AnimatePresence>
+              {showNotifications && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="mt-2 space-y-2 overflow-hidden max-h-[150px] overflow-y-auto overscroll-contain"
+                >
+                  {notifications.length === 0 ? (
+                    <motion.p
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.2 }}
+                      className="text-sm opacity-70"
+                    >
+                      No notifications.
+                    </motion.p>
+                  ) : (
+                    notifications.slice(0, 10).map((notification) => (
+                      <motion.div
+                        key={notification.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.1 }}
+                        className={`text-xs ${getColorClass(
+                          notification.type,
+                          preferences.terminalStyle
+                        )} flex p-2 rounded-lg border transition-all duration-200 hover:brightness-125 cursor-pointer relative shadow-sm min-h-[60px]`}
+                      >
+                        <div className="flex items-start space-x-2 flex-1">
+                          <FaBell className="w-4 h-4 mt-0.5 flex-shrink-0 opacity-80" />
+                          <div className="flex-1">
+                            <p className="font-semibold leading-tight">
+                              {notification.message}
+                            </p>
+                            <div className="mt-1">
+                              <p className="text-xs opacity-80 leading-tight">
+                                {new Date(notification.timestamp).toLocaleString()}
+                              </p>
+                              {notification.pairAddress && (
+                                <button
+                                  onClick={() =>
+                                    router.push(
+                                      `/app/token-scanner/${notification.pairAddress}/chart/page.tsx`
+                                    )
+                                  }
+                                  className={`text-xs underline mt-1 transition-all duration-200 ${currentStyle.buttonText}`}
+                                >
+                                  View Chart
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-center space-y-1 ml-2">
+                          <motion.button
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() => togglePinNotification(notification.id)}
+                            className={`p-1 rounded-full transition-all duration-200 ${
+                              pinnedNotifications.includes(notification.id)
+                                ? "text-yellow-400"
+                                : "text-gray-400 hover:text-yellow-400"
+                            }`}
+                            title={pinnedNotifications.includes(notification.id) ? "Unpin" : "Pin"}
+                          >
+                            <FaThumbtack className="w-4 h-4" />
+                          </motion.button>
+                          <motion.button
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() =>
+                              handleSnoozeNotification(notification.message.split(" ")[0])
+                            }
+                            className="p-1 rounded-full text-gray-400 hover:text-blue-400 transition-all duration-200"
+                            title="Snooze for 1h"
+                          >
+                            <span className="text-xs">Snooze</span>
+                          </motion.button>
+                          <motion.button
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() => handleDismissNotification(notification.id)}
+                            className="p-1 rounded-full text-gray-400 hover:text-red-400 transition-all duration-200"
+                            title="Dismiss"
+                          >
+                            <span className="text-xs">Dismiss</span>
+                          </motion.button>
+                        </div>
+                      </motion.div>
+                    ))
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
         </div>
+
+        {/* Command Line - Fixed to Bottom on Mobile */}
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.2 }}
+          className={`fixed bottom-12 left-0 right-0 h-12 flex items-center space-x-3 px-4 py-2 border-t border-b ${currentStyle.commandLineBg} ${currentStyle.separator} md:static md:bottom-auto md:border-b-0 z-10`}
+        >
+          <span className={`text-sm font-medium ${currentStyle.accentText}`}>
+            user@homebase ~ v1 $
+          </span>
+          <div className="relative flex-1">
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => handleInputChange(e.target.value)}
+              onKeyDown={handleKeyDown}
+              className={`w-full rounded-lg px-3 py-1.5 ${currentStyle.inputBg} ${currentStyle.text} focus:outline-none transition-all duration-200 text-sm placeholder-opacity-50`}
+              placeholder="Type command here..."
+            />
+            {suggestions.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                transition={{ duration: 0.1 }}
+                className={`absolute bottom-full left-0 w-full rounded-lg shadow-xl z-50 max-h-40 overflow-y-auto ${currentStyle.panelBg} ${currentStyle.text}`}
+              >
+                {suggestions.map((suggestion, idx) => (
+                  <motion.div
+                    key={idx}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: idx * 0.02, duration: 0.1 }}
+                    className={`p-2 cursor-pointer text-sm ${currentStyle.buttonBg} ${currentStyle.buttonText} rounded-lg`}
+                    onMouseDown={() => {
+                      setInput(suggestion);
+                      setSuggestions([]);
+                    }}
+                  >
+                    {suggestion}
+                  </motion.div>
+                ))}
+              </motion.div>
+            )}
+          </div>
+        </motion.div>
+
+        {/* Status Bar - Fixed to Bottom on Mobile */}
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.2 }}
+          className={`fixed bottom-0 left-0 right-0 ${currentStyle.statusBarBg} ${currentStyle.text} p-2 text-xs flex justify-between items-center ${currentStyle.separator} border-t md:static md:bottom-auto z-10`}
+        >
+          <span className="flex items-center space-x-2">
+            <span className="text-red-400 cursor-pointer hover:text-red-300 transition-colors duration-200">
+              O 1 ISSUE
+            </span>
+            <span className="text-green-400">X v1.0</span>
+          </span>
+          <span>OS: web</span>
+          <span>Uptime: {uptime}</span>
+          <span className="flex items-center space-x-1">
+            <span>Network: 1.2Mbps</span>
+            <span
+              className={`w-2 h-2 rounded-full ${isOnline ? "bg-green-400" : "bg-red-400"} animate-pulse`}
+            />
+          </span>
+        </motion.div>
       </div>
 
-      {/* Command Line (Above Status Bar) */}
-      <div
-        className={`w-full h-10 flex items-center space-x-2 px-4 py-2 border-t border-b ${currentStyle.commandLineBg} ${currentStyle.separator} border-t-[0.5px] border-b-[0.5px]`}
+      {/* Command Line - Desktop Only */}
+      <motion.div
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.2 }}
+        className={`hidden md:flex w-full h-12 items-center space-x-3 px-4 py-2 border-t border-b ${currentStyle.commandLineBg} ${currentStyle.separator}`}
       >
-        <span className={`text-sm ${currentStyle.accentText}`}>
+        <span className={`text-sm font-medium ${currentStyle.accentText}`}>
           user@homebase ~ v1 $
         </span>
         <div className="relative flex-1">
@@ -1569,54 +1677,59 @@ export default function HomebaseTerminal() {
             value={input}
             onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            className={`w-full bg-transparent ${currentStyle.text} focus:outline-none text-sm p-1`}
+            className={`w-full rounded-lg px-3 py-1.5 ${currentStyle.inputBg} ${currentStyle.text} focus:outline-none transition-all duration-200 text-sm placeholder-opacity-50`}
             placeholder="Type command here..."
           />
           {suggestions.length > 0 && (
-            <div
-              className={`absolute bottom-full left-0 w-full rounded shadow-lg z-50 max-h-40 overflow-y-auto ${
-                preferences.terminalStyle === "classic"
-                  ? "bg-gray-700 text-blue-300"
-                  : preferences.terminalStyle === "hacker"
-                  ? "bg-gray-800 text-green-500"
-                  : "bg-[#F5F5DC] text-[#4A3728]"
-              }`}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              transition={{ duration: 0.1 }}
+              className={`absolute bottom-full left-0 w-full rounded-lg shadow-xl z-50 max-h-40 overflow-y-auto ${currentStyle.panelBg} ${currentStyle.text}`}
             >
               {suggestions.map((suggestion, idx) => (
-                <div
+                <motion.div
                   key={idx}
-                  className={`p-1 cursor-pointer text-sm ${
-                    preferences.terminalStyle === "classic"
-                      ? "hover:bg-gray-600"
-                      : preferences.terminalStyle === "hacker"
-                      ? "hover:bg-gray-700"
-                      : "hover:bg-[#C2A47C]"
-                  }`}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: idx * 0.02, duration: 0.1 }}
+                  className={`p-2 cursor-pointer text-sm ${currentStyle.buttonBg} ${currentStyle.buttonText} rounded-lg`}
                   onMouseDown={() => {
                     setInput(suggestion);
                     setSuggestions([]);
                   }}
                 >
                   {suggestion}
-                </div>
+                </motion.div>
               ))}
-            </div>
+            </motion.div>
           )}
         </div>
-      </div>
+      </motion.div>
 
-      {/* Status Bar */}
-      <div
-        className={`w-full ${currentStyle.statusBarBg} ${currentStyle.text} p-2 text-xs flex justify-between items-center ${currentStyle.separator} border-t-[0.5px]`}
+      {/* Status Bar - Desktop Only */}
+      <motion.div
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.2 }}
+        className={`hidden md:flex w-full ${currentStyle.statusBarBg} ${currentStyle.text} p-2 text-xs justify-between items-center ${currentStyle.separator} border-t`}
       >
-        <span>
-          <span className="text-red-500">O</span> 1 ISSUE{" "}
-          <span className="text-green-500">X</span> v1.0
+        <span className="flex items-center space-x-2">
+          <span className="text-red-400 cursor-pointer hover:text-red-300 transition-colors duration-200">
+            O 1 ISSUE
+          </span>
+          <span className="text-green-400">X v1.0</span>
         </span>
         <span>OS: web</span>
         <span>Uptime: {uptime}</span>
-        <span>Network: 1.2Mbps</span>
-      </div>
+        <span className="flex items-center space-x-1">
+          <span>Network: 1.2Mbps</span>
+          <span
+            className={`w-2 h-2 rounded-full ${isOnline ? "bg-green-400" : "bg-red-400"} animate-pulse`}
+          />
+        </span>
+      </motion.div>
     </div>
   );
 }

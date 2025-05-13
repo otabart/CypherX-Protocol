@@ -1,30 +1,36 @@
 const Footer = () => {
   return (
-    <footer className="bg-primaryBlue text-white py-6">
+    <footer className="bg-gray-950 text-gray-200 py-6">
       <div className="container mx-auto flex flex-col md:flex-row justify-between items-center">
         {/* Logo and Description */}
         <div className="mb-4 md:mb-0 text-center md:text-left">
           <h2 className="text-2xl font-bold">Homebase</h2>
-          <p className="text-sm mt-2">
+          <p className="text-sm mt-2 text-gray-400">
             Your go-to platform for Base chain analytics and insights.
           </p>
         </div>
 
         {/* Links */}
         <div className="flex flex-col md:flex-row gap-4 text-center md:text-right">
-          <a href="/" className="hover:underline">
+          <a href="/" className="text-gray-200 hover:text-blue-400">
             Home
           </a>
-          <a href="/Competitions" className="hover:underline">
-            Competitions
+          <a href="/token-scanner" className="text-gray-200 hover:text-blue-400">
+            Token Screener
           </a>
-          <a href="/docs" className="hover:underline">
-            Docs
+          <a href="/marketplace" className="text-gray-200 hover:text-blue-400">
+            Marketplace
           </a>
-          <a href="/Terminal" className="hover:underline">
+          <a href="/TradingCompetition" className="text-gray-200 hover:text-blue-400">
+            Tournaments
+          </a>
+          <a href="/terminal" className="text-gray-200 hover:text-blue-400">
             Terminal
           </a>
-          <a href="mailto:homebasemarkets@gmail.com" className="hover:underline">
+          <a href="/docs" className="text-gray-200 hover:text-blue-400">
+            Docs
+          </a>
+          <a href="mailto:homebasemarkets@gmail.com" className="text-gray-200 hover:text-blue-400">
             Contact
           </a>
         </div>
@@ -43,7 +49,7 @@ const Footer = () => {
               viewBox="0 0 24 24"
               strokeWidth={1.5}
               stroke="currentColor"
-              className="w-6 h-6 hover:text-black"
+              className="w-6 h-6 text-gray-200 hover:text-blue-400"
             >
               <path
                 strokeLinecap="round"
@@ -64,7 +70,7 @@ const Footer = () => {
               viewBox="0 0 24 24"
               strokeWidth={1.5}
               stroke="currentColor"
-              className="w-6 h-6 hover:text-black"
+              className="w-6 h-6 text-gray-200 hover:text-blue-400"
             >
               <path
                 strokeLinecap="round"

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "../../../lib/firebase"; // Path is correct
+import { db } from "../../../lib/firebase";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
 
 interface NewsArticle {
@@ -9,6 +9,7 @@ interface NewsArticle {
   source: string;
   publishedAt: string;
   slug: string;
+  thumbnailUrl: string | undefined;
 }
 
 export async function GET(request: Request) {
@@ -20,15 +21,16 @@ export async function GET(request: Request) {
     querySnapshot.forEach((doc) => {
       const data = doc.data();
       articles.push({
-        title: data.title,
-        content: data.content,
-        author: data.author,
-        source: data.source,
-        publishedAt: data.publishedAt.toDate().toISOString(),
-        slug: data.slug,
+        title: data.title || "Untitled",
+        content: data.content || "",
+        author: data.author || "Unknown",
+        source: data.source || "Unknown",
+        publishedAt: data.publishedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+        slug: data.slug || doc.id,
+        thumbnailUrl: data.thumbnailUrl || undefined, // Correctly map thumbnailUrl
       });
     });
-    console.log("Articles from /api/news:", articles.map((a) => a.slug));
+    console.log("Articles from /api/news:", articles);
     return NextResponse.json(articles);
   } catch (error) {
     console.error("Error fetching articles:", error);

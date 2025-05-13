@@ -1,87 +1,172 @@
+console.log("Starting firebase.ts execution");
+
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore as getClientFirestore } from "firebase/firestore";
-import { getAuth, onAuthStateChanged, type User } from "firebase/auth";
+import { getFirestore as getClientFirestore, Firestore, doc, getDoc } from "firebase/firestore";
+import { getAuth, onAuthStateChanged, Auth } from "firebase/auth";
+import type { User } from "firebase/auth";
+import { getStorage } from "firebase/storage";
+import type { FirebaseStorage } from "firebase/storage";
 
 // Client-side Firebase configuration
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: "homebase-dapp.firebaseapp.com",
   projectId: "homebase-dapp",
-  storageBucket: "homebase-dapp.appspot.com",
+  storageBucket: "homebase-dapp.firebasestorage.app",
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Log the config to verify env vars
-console.log("Firebase Config:", {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ? "Set" : "Missing",
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ? "Set" : "Missing",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID ? "Set" : "Missing",
+// Log and validate client-side environment variables
+const logEnvStatus = (key: string, value: string | undefined) =>
+  value ? `${key}: Set` : `${key}: Missing`;
+console.log("Firebase Client Config:", {
+  apiKey: logEnvStatus("NEXT_PUBLIC_FIREBASE_API_KEY", process.env.NEXT_PUBLIC_FIREBASE_API_KEY),
+  messagingSenderId: logEnvStatus(
+    "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID",
+    process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+  ),
+  appId: logEnvStatus("NEXT_PUBLIC_FIREBASE_APP_ID", process.env.NEXT_PUBLIC_FIREBASE_APP_ID),
+  authDomain: logEnvStatus("authDomain", firebaseConfig.authDomain),
+  projectId: logEnvStatus("projectId", firebaseConfig.projectId),
+  storageBucket: logEnvStatus("storageBucket", firebaseConfig.storageBucket),
 });
 
-// Validate client-side environment variables
 const missingClientEnvVars = Object.entries({
   NEXT_PUBLIC_FIREBASE_API_KEY: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   NEXT_PUBLIC_FIREBASE_APP_ID: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 }).filter(([_key, value]) => !value);
-if (missingClientEnvVars.length > 0) {
-  console.error("Missing client-side Firebase environment variables:", missingClientEnvVars.map(([key]) => key));
-  throw new Error("Missing required client-side Firebase environment variables");
-}
 
 // Initialize client-side Firebase app
 let clientApp;
-try {
-  clientApp = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-  console.log("Client-side Firebase app initialized successfully:", !!clientApp);
-} catch (error: any) {
-  console.error("Client-side Firebase initialization error:", {
-    message: error.message,
-    stack: error.stack,
-  });
-  throw new Error("Failed to initialize client-side Firebase app");
+if (missingClientEnvVars.length > 0) {
+  console.error(
+    `Missing client-side Firebase environment variables: ${missingClientEnvVars
+      .map(([key]) => key)
+      .join(", ")}`
+  );
+  throw new Error("Firebase initialization failed: Missing environment variables");
+} else {
+  try {
+    clientApp = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+    console.log(
+      "Client-side Firebase app initialized:",
+      clientApp.name,
+      "Project ID:",
+      clientApp.options.projectId,
+      "Storage Bucket:",
+      clientApp.options.storageBucket
+    );
+  } catch (error: any) {
+    console.error("Client-side Firebase initialization error:", {
+      message: error.message,
+      code: error.code,
+      stack: error.stack,
+    });
+    throw new Error("Firebase initialization failed");
+  }
 }
 
-const clientDb = getClientFirestore(clientApp);
-console.log("Client-side Firestore initialized:", clientDb ? "Success" : "Failed");
+// Initialize client-side services
+let clientDb: Firestore;
+try {
+  clientDb = getClientFirestore(clientApp);
+  console.log("Client-side Firestore initialized: Success");
+} catch (error: any) {
+  console.error("Client-side Firestore initialization failed:", error.message);
+  throw new Error("Firestore initialization failed");
+}
 
-const auth = getAuth(clientApp);
-console.log("Client-side Auth initialized:", auth ? "Success" : "Failed");
+let auth: Auth;
+try {
+  auth = getAuth(clientApp);
+  console.log("Client-side Auth initialized: Success");
+} catch (error: any) {
+  console.error("Client-side Auth initialization failed:", error.message);
+  throw new Error("Auth initialization failed");
+}
 
-// Export a function to listen to auth state changes
-const listenToAuthState = (callback: (user: User | null) => void) => {
-  return onAuthStateChanged(auth, (user) => {
-    console.log("Auth state changed:", user ? `User ${user.uid} signed in` : "No user signed in");
-    callback(user);
+let storage: FirebaseStorage;
+try {
+  storage = getStorage(clientApp, "homebase-dapp.appspot.com");
+  console.log("Client-side Storage initialized: Success, Bucket:", firebaseConfig.storageBucket);
+} catch (error: any) {
+  console.error("Client-side Storage initialization failed:", {
+    message: error.message,
+    code: error.code,
+    stack: error.stack,
+  });
+  throw new Error("Storage initialization failed");
+}
+
+// Function to listen to auth state changes with role checking
+const listenToAuthState = (
+  callback: (user: User | null, roles?: { [key: string]: boolean }) => void
+) => {
+  if (!auth) {
+    console.error("Auth not initialized. Cannot listen to auth state.");
+    callback(null);
+    return () => {};
+  }
+  return onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      try {
+        const userDocRef = doc(clientDb, "users", user.uid);
+        const userDoc = await getDoc(userDocRef);
+        const roles = userDoc.exists() ? userDoc.data()?.roles || {} : {};
+        console.log(`Auth state changed: User ${user.uid} signed in, Roles:`, roles);
+        callback(user, roles);
+      } catch (error: any) {
+        console.error(`Error fetching roles for user ${user.uid}:`, error.message);
+        callback(user, {});
+      }
+    } else {
+      console.log("Auth state changed: No user signed in");
+      callback(null);
+    }
   });
 };
 
 // Server-side Firebase Admin
 let adminDb: any = {};
+let adminStorage: any = {};
 
 if (typeof window === "undefined") {
   try {
+    console.log("Starting Firebase Admin initialization...");
+    console.log("Raw Firebase Admin Env Vars:", {
+      FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || "Missing",
+      FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL || "Missing",
+      FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY ? "Set" : "Missing",
+    });
+
     const requiredEnvVars = {
       FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
       FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL,
       FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY,
     };
-    const missingAdminEnvVars = Object.entries(requiredEnvVars).filter(([_key, value]) => !value);
+    const missingAdminEnvVars = Object.entries(requiredEnvVars).filter(
+      ([_key, value]) => !value
+    );
     if (missingAdminEnvVars.length > 0) {
-      console.error("Missing server-side Firebase Admin environment variables:", missingAdminEnvVars.map(([key]) => key));
-      throw new Error("Missing required server-side environment variables for Firebase Admin");
+      const errorMessage = `Missing server-side Firebase Admin environment variables: ${missingAdminEnvVars
+        .map(([key]) => key)
+        .join(", ")}`;
+      console.error(errorMessage);
+      throw new Error(errorMessage);
     }
 
-    const { initializeApp: initializeAdminApp, getApps: getAdminApps } = await import("firebase-admin/app");
+    const { initializeApp: initializeAdminApp, getApps: getAdminApps } = await import(
+      "firebase-admin/app"
+    );
     const { getFirestore: getAdminFirestore } = await import("firebase-admin/firestore");
+    const { getStorage: getAdminStorage } = await import("firebase-admin/storage");
     const { cert } = await import("firebase-admin/app");
 
-    // Function to normalize private key
-    const normalizePrivateKey = (key: string | undefined): string | undefined => {
+    const normalizePrivateKey = (key: string | undefined): string => {
       if (!key) {
-        console.error("FIREBASE_PRIVATE_KEY is undefined or empty");
-        return undefined;
+        throw new Error("FIREBASE_PRIVATE_KEY is undefined or empty");
       }
       let normalizedKey = key
         .replace(/\\n/g, "\n")
@@ -94,45 +179,75 @@ if (typeof window === "undefined") {
       if (!normalizedKey.endsWith("\n-----END PRIVATE KEY-----\n")) {
         normalizedKey = normalizedKey + "\n-----END PRIVATE KEY-----\n";
       }
+      if (!normalizedKey.includes("PRIVATE KEY")) {
+        throw new Error(
+          "FIREBASE_PRIVATE_KEY is malformed: Missing expected key structure"
+        );
+      }
       return normalizedKey;
     };
 
     const privateKey = normalizePrivateKey(process.env.FIREBASE_PRIVATE_KEY);
-    console.log("FIREBASE_PRIVATE_KEY length:", privateKey?.length || 0);
-    console.log("FIREBASE_PRIVATE_KEY starts with:", privateKey?.substring(0, 30) + "..." || "undefined");
+    console.log(
+      "FIREBASE_PRIVATE_KEY validated: Length =",
+      privateKey.length,
+      "Starts with =",
+      privateKey.substring(0, 30)
+    );
 
+    let adminApp;
     if (!getAdminApps().length) {
-      initializeAdminApp({
+      adminApp = initializeAdminApp({
         credential: cert({
           projectId: process.env.FIREBASE_PROJECT_ID,
           clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
           privateKey,
         }),
+        storageBucket: "homebase-dapp.appspot.com", // Explicitly set storage bucket
       });
-      console.log("Firebase Admin initialized successfully");
+      console.log("Firebase Admin app initialized successfully");
     } else {
+      adminApp = getAdminApps()[0];
       console.log("Firebase Admin app already initialized");
     }
+
     adminDb = getAdminFirestore();
-    console.log("Admin Firestore initialized:", adminDb ? "Success" : "Failed");
+    console.log("Admin Firestore initialized: Success");
+
+    adminStorage = getAdminStorage(adminApp);
+    console.log("Admin Storage initialized: Success, Bucket:", adminStorage.bucket().name);
+
+    adminDb
+      .collection("test")
+      .doc("init-check")
+      .set({ timestamp: new Date() })
+      .then(() => console.log("Admin SDK connectivity test: Write successful"))
+      .catch((error: any) =>
+        console.error("Admin SDK connectivity test failed:", error.message)
+      );
+
+    // Test Storage connectivity
+    adminStorage
+      .bucket("homebase-dapp.appspot.com")
+      .getMetadata()
+      .then((metadata: any) => {
+        console.log("Admin Storage connectivity test: Metadata retrieved", {
+          bucket: metadata[0].name,
+          location: metadata[0].location,
+        });
+      })
+      .catch((error: any) =>
+        console.error("Admin Storage connectivity test failed:", error.message)
+      );
   } catch (error: any) {
     console.error("Firebase Admin initialization error:", {
       message: error.message,
-      stack: error.stack,
       code: error.code,
+      stack: error.stack,
     });
-    adminDb = {
-      collection: () => ({
-        doc: () => ({
-          set: async () => {},
-          get: async () => ({ exists: false, data: () => undefined }),
-        }),
-        get: async () => ({ docs: [], forEach: () => {}, size: 0 }),
-        add: async () => ({ id: "mock-id" }),
-      }),
-    };
-    console.warn("Using mock adminDb to prevent app crash. Firestore operations will be limited.");
+    // Log error but don't throw to prevent breaking unrelated functionality
+    console.warn("Continuing without full Admin Storage initialization");
   }
 }
 
-export { clientDb, clientDb as db, auth, adminDb, listenToAuthState };
+export { clientDb as db, auth, storage, adminDb, adminStorage, listenToAuthState };

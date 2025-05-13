@@ -39,6 +39,7 @@ interface Event {
   createdBy: string;
   eventType: string;
   link?: string;
+  status: string; // Added status field
   reactions: { likes: string[]; comments: { userId: string; text: string }[] };
 }
 
@@ -74,7 +75,7 @@ interface EventCalendarProps {
 
 function timestampToDateString(timestamp: Timestamp): string {
   const date = timestamp.toDate();
-  return date.toISOString().split('T')[0]; // e.g., "2025-04-25"
+  return date.toISOString().split('T')[0]; // e.g., "2025-05-07"
 }
 
 function getCurrentWeekDates(): { day: string; date: string; fullDate: string }[] {
@@ -98,6 +99,12 @@ function getCurrentWeekDates(): { day: string; date: string; fullDate: string }[
   console.log('weekDates:', days);
   return days;
 }
+
+// Utility to chunk arrays for Firestore 'in' query limit (30 items)
+const chunkArray = (array: string[], size: number) =>
+  Array.from({ length: Math.ceil(array.length / size) }, (_, i) =>
+    array.slice(i * size, (i + 1) * size)
+  );
 
 export default function EventCalendar({ user, followedProjects }: EventCalendarProps) {
   const [eventData, setEventData] = useState<EventDay[]>([]);
@@ -160,8 +167,9 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
       const startTimestamp = Timestamp.fromDate(startDate);
       const endTimestamp = Timestamp.fromDate(endDate);
 
-      console.log('Querying events from:', startTimestamp.toDate().toISOString(), 'to:', endTimestamp.toDate().toISOString());
-      console.log('followedProjects contents:', followedProjects);
+      console.log('Querying events from:', startTimestamp.toDate().toISOString());
+      console.log('Querying events to:', endTimestamp.toDate().toISOString());
+      console.log('followedProjects:', followedProjects);
       console.log('eventTypeFilter:', eventTypeFilter);
 
       // Fetch projects
@@ -172,7 +180,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
         projectQuery = query(projectCollection, where('__name__', 'in', followedProjects));
       }
       const projectSnapshot = await getDocs(projectQuery);
-      console.log('Fetched projects:', projectSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      console.log('Fetched projects:', projectSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
       projectSnapshot.forEach((doc) => {
         projectMap[doc.id] = {
           name: doc.data().name || 'Unknown',
@@ -182,40 +190,40 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
 
       // Fetch events
       const eventCollection = collection(db, 'projectEvents') as CollectionReference<DocumentData>;
-      let q = query(
-        eventCollection,
-        where('date', '>=', startTimestamp),
-        where('date', '<=', endTimestamp)
-      );
+      let querySnapshotDocs: DocumentData[] = [];
+
       if (user && followedProjects.length > 0) {
-        q = query(
+        // Handle Firestore 'in' query limit (30 items)
+        const chunks = chunkArray(followedProjects, 30);
+        for (const chunk of chunks) {
+          const q = query(
+            eventCollection,
+            where('date', '>=', startTimestamp),
+            where('date', '<=', endTimestamp),
+            where('projectId', 'in', chunk),
+            where('status', '==', 'approved') // Ensure only approved events
+          );
+          const snapshot = await getDocs(q);
+          snapshot.forEach((doc) => querySnapshotDocs.push(doc));
+        }
+      } else {
+        const q = query(
           eventCollection,
           where('date', '>=', startTimestamp),
           where('date', '<=', endTimestamp),
-          where('projectId', 'in', followedProjects)
+          where('status', '==', 'approved') // Ensure only approved events
         );
+        const snapshot = await getDocs(q);
+        querySnapshotDocs = snapshot.docs;
       }
-      console.log('Firestore query:', q);
 
-      const querySnapshot = await getDocs(q);
-      console.log('Query snapshot size:', querySnapshot.size);
-      querySnapshot.forEach((doc) => {
+      console.log('Query snapshot size:', querySnapshotDocs.length);
+      querySnapshotDocs.forEach((doc) => {
         console.log('Event:', doc.id, doc.data());
       });
 
-      if (querySnapshot.empty) {
-        console.warn('No events found for this week.');
-        if (followedProjects.length > 0) {
-          setError('No events found for your followed projects this week.');
-        } else {
-          setError('No events scheduled this week.');
-        }
-        setLoading(false);
-        return;
-      }
-
       const fetchedData: { [key: string]: DayEvents } = {};
-      for (const doc of querySnapshot.docs) {
+      for (const doc of querySnapshotDocs) {
         const data = doc.data();
         const eventDateString = timestampToDateString(data.date);
         console.log('Processing event:', doc.id, 'Date:', eventDateString);
@@ -231,6 +239,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
           createdBy: data.createdBy,
           eventType: data.eventType,
           link: data.link,
+          status: data.status || 'unknown', // Include status
           reactions: data.reactions || { likes: [], comments: [] },
         };
 
@@ -256,9 +265,22 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
 
       console.log('Final eventData:', JSON.stringify(newEventData, null, 2));
       setEventData([...newEventData]);
-    } catch (error) {
-      console.error('Error fetching event data:', error);
-      setError('Failed to load event data. Please try again later.');
+
+      if (newEventData.every((day) => day.events.events.length === 0)) {
+        console.warn('No events found for this week.');
+        setError(
+          followedProjects.length > 0
+            ? 'No approved events found for your followed projects this week.'
+            : 'No approved events scheduled this week.'
+        );
+      }
+    } catch (error: any) {
+      console.error('Error fetching event data:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack,
+      });
+      setError(`Failed to load event data: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -373,6 +395,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
       return;
     }
     try {
+      const isAdmin = user.email === 'homebasemarkets@gmail.com';
       const eventData = {
         projectId: newEvent.projectId,
         title: newEvent.title,
@@ -381,6 +404,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
         createdBy: user.uid,
         eventType: newEvent.eventType,
         link: newEvent.link || null,
+        status: isAdmin ? 'approved' : 'pending', // Set status based on user role
         reactions: { likes: [], comments: [] },
       };
       console.log('Creating event:', eventData);
@@ -389,27 +413,29 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
       setShowCreateModal(false);
       setNewEvent({ projectId: '', title: '', description: '', date: '', eventType: 'AMA', link: '' });
 
-      // Notify followers
-      const projectDoc = await getDoc(doc(db, 'tokenLaunch', newEvent.projectId));
-      if (projectDoc.exists()) {
-        const projectData = projectDoc.data() as { name: string; followers?: string[] };
-        console.log('Project data:', projectData);
-        const followers = projectData.followers || [];
-        if (Notification.permission === 'granted') {
-          followers.forEach((followerId: string) => {
-            if (followerId === user.uid) return;
-            new Notification(`New Event for ${projectData.name}`, {
-              body: `${newEvent.title} - ${newEvent.description.slice(0, 50)}...`,
+      // Notify followers (only for approved events)
+      if (eventData.status === 'approved') {
+        const projectDoc = await getDoc(doc(db, 'tokenLaunch', newEvent.projectId));
+        if (projectDoc.exists()) {
+          const projectData = projectDoc.data() as { name: string; followers?: string[] };
+          console.log('Project data:', projectData);
+          const followers = projectData.followers || [];
+          if (Notification.permission === 'granted') {
+            followers.forEach((followerId: string) => {
+              if (followerId === user.uid) return;
+              new Notification(`New Event for ${projectData.name}`, {
+                body: `${newEvent.title} - ${newEvent.description.slice(0, 50)}...`,
+              });
             });
-          });
+          }
         }
       }
 
       // Refresh events
       fetchEventData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating event:', error);
-      alert('Failed to create event: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      alert(`Failed to create event: ${error.message}`);
     }
   };
 
@@ -455,9 +481,9 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
         proofOfOwnership: '',
       });
       alert('Project submitted for review!');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error submitting project:', error);
-      alert('Failed to submit project: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      alert(`Failed to submit project: ${error.message}`);
     }
   };
 
@@ -472,7 +498,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
             <select
               value={eventTypeFilter}
               onChange={(e) => setEventTypeFilter(e.target.value)}
-              className="appearance-none px-3 py-2 border border-gray-300 rounded-md text-sm sm:text-base bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#0052FF] pr-8"
+              className="appearance-none px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white focus:outline-none focus:ring-2 focus:ring-[#0052FF] pr-8"
             >
               <option value="All">All Events</option>
               <option value="AMA">AMA</option>
@@ -480,7 +506,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
               <option value="Update">Update</option>
               <option value="Other">Other</option>
             </select>
-            <FiFilter className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 w-4 h-4" />
+            <FiFilter className="absolute right-2 top-1/2 transform -translate-y-1/2 text-white text-opacity-80 w-4 h-4" />
           </div>
           {(user?.email === 'homebasemarkets@gmail.com' || true) && (
             <>
@@ -504,24 +530,24 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
           )}
         </div>
       </div>
-      <div className="bg-white p-6 sm:p-8 rounded-xl shadow-xl border border-gray-200">
+      <div className="bg-black p-6 sm:p-8 rounded-xl shadow-xl border border-white border-opacity-10">
         {loading ? (
           <div className="text-center py-6">
-            <p className="text-gray-500">Loading events...</p>
+            <p className="text-white text-opacity-70">Loading events...</p>
           </div>
         ) : error ? (
           <div className="text-center text-red-500 py-6">
             <p>{error}</p>
             <button
               onClick={fetchEventData}
-              className="mt-2 text-blue-500 underline hover:text-blue-600"
+              className="mt-2 text-blue-500 underline hover:text-blue-400"
             >
               Retry
             </button>
           </div>
         ) : eventData.every((day) => day.events.events.length === 0) ? (
-          <div className="text-center text-gray-500 py-6">
-            <p>No events scheduled for this week.</p>
+          <div className="text-center text-white text-opacity-70 py-6">
+            <p>No approved events scheduled for this week.</p>
             {followedProjects.length > 0 && (
               <p>Try clearing the project filter to see all events.</p>
             )}
@@ -537,24 +563,24 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: index * 0.1, duration: 0.3 }}
-                className="bg-white p-4 rounded-lg shadow-md border border-gray-200 min-h-80 flex flex-col"
+                className="bg-black p-4 rounded-lg shadow-md border border-white border-opacity-10 min-h-80 flex flex-col"
               >
                 <div className="text-center">
                   <h2 className="text-lg sm:text-xl font-bold text-[#0052FF]">
                     {day.day}
                   </h2>
-                  <p className="text-gray-500 text-xs sm:text-sm">
+                  <p className="text-white text-opacity-70 text-xs sm:text-sm">
                     {day.date}
                   </p>
                 </div>
                 <div className="flex-grow mt-4">
-                  <div className="bg-gray-100 p-3 rounded-md border border-gray-200 flex-1">
-                    <h3 className="text-xs sm:text-sm font-semibold text-gray-700 text-center mb-2 flex items-center justify-center gap-1">
-                      <FiCalendar className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                  <div className="bg-[#1A1A1A] p-3 rounded-md border border-white border-opacity-10 flex-1">
+                    <h3 className="text-xs sm:text-sm font-semibold text-white text-opacity-90 text-center mb-2 flex items-center justify-center gap-1">
+                      <FiCalendar className="w-4 h-4 sm:w-5 sm:h-5 text-white text-opacity-80" />
                       Events
                     </h3>
                     {day.events?.events?.length === 0 ? (
-                      <p className="text-xs sm:text-sm text-gray-500 text-center">
+                      <p className="text-xs sm:text-sm text-white text-opacity-70 text-center">
                         No events scheduled
                       </p>
                     ) : (
@@ -562,14 +588,14 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                         {day.events.events.map((event, idx) => (
                           <motion.div
                             key={idx}
-                            className="bg-white p-2 rounded-md shadow-sm hover:bg-gray-50 transition-all cursor-pointer"
+                            className="bg-black p-2 rounded-md shadow-sm hover:bg-[#1A1A1A] transition-all cursor-pointer border border-white border-opacity-10"
                             whileHover={{ scale: 1.05 }}
                             onClick={() => setSelectedEvent(event)}
                           >
-                            <p className="text-xs sm:text-sm font-semibold text-gray-800 truncate w-full text-center">
+                            <p className="text-xs sm:text-sm font-semibold text-white truncate w-full text-center">
                               {event.title}
                             </p>
-                            <p className="text-[10px] sm:text-xs text-gray-500 text-center">
+                            <p className="text-[10px] sm:text-xs text-white text-opacity-70 text-center">
                               {event.projectName} ({event.projectTicker})
                             </p>
                             <span
@@ -580,7 +606,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                                   ? 'bg-green-500'
                                   : event.eventType === 'Update'
                                   ? 'bg-blue-500'
-                                  : 'bg-gray-500'
+                                  : 'bg-[#2A2A2A]'
                               }`}
                             >
                               {event.eventType}
@@ -599,33 +625,33 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
 
       {/* Event Details Modal */}
       {selectedEvent && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md sm:max-w-lg relative mx-4 my-8"
+            className="bg-black p-6 rounded-xl shadow-2xl w-full max-w-md sm:max-w-lg relative mx-4 my-8 border border-white border-opacity-10"
           >
             <button
               onClick={() => setSelectedEvent(null)}
-              className="absolute top-3 right-3 text-gray-600 text-lg hover:text-gray-800"
+              className="absolute top-3 right-3 text-white text-opacity-80 text-lg hover:text-white"
             >
               ×
             </button>
-            <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-4">
+            <h3 className="text-lg sm:text-xl font-bold text-white mb-4">
               {selectedEvent.title}
             </h3>
-            <p className="text-sm sm:text-base text-gray-600 mb-2">
+            <p className="text-sm sm:text-base text-white text-opacity-80 mb-2">
               <strong>Project:</strong> {selectedEvent.projectName} ({selectedEvent.projectTicker})
             </p>
-            <p className="text-sm sm:text-base text-gray-600 mb-2">
+            <p className="text-sm sm:text-base text-white text-opacity-80 mb-2">
               <strong>Date:</strong> {selectedEvent.date}
             </p>
-            <p className="text-sm sm:text-base text-gray-600 mb-2">
+            <p className="text-sm sm:text-base text-white text-opacity-80 mb-2">
               <strong>Type:</strong> {selectedEvent.eventType}
             </p>
             {selectedEvent.link && (
-              <p className="text-sm sm:text-base text-gray-600 mb-4">
+              <p className="text-sm sm:text-base text-white text-opacity-80 mb-4">
                 <strong>Link:</strong>{' '}
                 <a
                   href={selectedEvent.link}
@@ -638,7 +664,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                 </a>
               </p>
             )}
-            <p className="text-sm sm:text-base text-gray-600 mb-4 break-words">
+            <p className="text-sm sm:text-base text-white text-opacity-80 mb-4 break-words">
               <strong>Description:</strong> {selectedEvent.description}
             </p>
             <div className="flex flex-wrap justify-between mb-4 gap-2">
@@ -647,7 +673,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                 className={`flex items-center gap-1 px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base transition ${
                   user && selectedEvent.reactions.likes.includes(user.uid)
                     ? 'bg-blue-500 text-white hover:bg-blue-600'
-                    : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                    : 'bg-[#1A1A1A] text-white hover:bg-[#2A2A2A] border border-white border-opacity-10'
                 }`}
               >
                 <FiThumbsUp className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -655,7 +681,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
               </button>
             </div>
             <div className="mb-4">
-              <h4 className="text-sm sm:text-base font-semibold text-gray-800 mb-2">
+              <h4 className="text-sm sm:text-base font-semibold text-white mb-2">
                 Comments
               </h4>
               {selectedEvent.reactions.comments.length > 0 ? (
@@ -663,14 +689,14 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                   {selectedEvent.reactions.comments.map((c, idx) => (
                     <li
                       key={idx}
-                      className="text-xs sm:text-sm text-gray-600 border-b border-gray-200 pb-1 break-words"
+                      className="text-xs sm:text-sm text-white text-opacity-80 border-b border-white border-opacity-10 pb-1 break-words"
                     >
                       <strong>User {c.userId.slice(0, 8)}:</strong> {c.text}
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="text-xs sm:text-sm text-gray-500">
+                <p className="text-xs sm:text-sm text-white text-opacity-70">
                   No comments yet.
                 </p>
               )}
@@ -681,7 +707,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
                     placeholder="Add a comment..."
-                    className="flex-1 px-3 py-1 rounded-md border border-gray-300 text-sm sm:text-base"
+                    className="flex-1 px-3 py-1 rounded-md border border-white border-opacity-20 bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50 text-sm sm:text-base"
                   />
                   <button
                     onClick={() => handleCommentSubmit(selectedEvent)}
@@ -698,25 +724,25 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
 
       {/* Create Event Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md sm:max-w-lg relative mx-4 my-8"
+            className="bg-black p-6 rounded-xl shadow-2xl w-full max-w-md sm:max-w-lg relative mx-4 my-8 border border-white border-opacity-10"
           >
             <button
               onClick={() => setShowCreateModal(false)}
-              className="absolute top-3 right-3 text-gray-600 text-lg hover:text-gray-800"
+              className="absolute top-3 right-3 text-white text-opacity-80 text-lg hover:text-white"
             >
               ×
             </button>
-            <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-4">
+            <h3 className="text-lg sm:text-xl font-bold text-white mb-4">
               Create New Event
             </h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-white text-opacity-90">
                   Project
                 </label>
                 <select
@@ -724,7 +750,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                   onChange={(e) =>
                     setNewEvent({ ...newEvent, projectId: e.target.value })
                   }
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm sm:text-base"
+                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90"
                 >
                   <option value="">Select a project</option>
                   {projects.map((project) => (
@@ -735,7 +761,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-white text-opacity-90">
                   Event Title
                 </label>
                 <input
@@ -745,11 +771,11 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     setNewEvent({ ...newEvent, title: e.target.value })
                   }
                   placeholder="e.g., Community AMA"
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm sm:text-base"
+                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-white text-opacity-90">
                   Event Type
                 </label>
                 <select
@@ -757,7 +783,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                   onChange={(e) =>
                     setNewEvent({ ...newEvent, eventType: e.target.value })
                   }
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm sm:text-base"
+                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90"
                 >
                   <option value="AMA">AMA</option>
                   <option value="Giveaway">Giveaway</option>
@@ -766,7 +792,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-white text-opacity-90">
                   Description
                 </label>
                 <textarea
@@ -775,11 +801,11 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     setNewEvent({ ...newEvent, description: e.target.value })
                   }
                   placeholder="Describe the event..."
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm sm:text-base h-24"
+                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base h-24 bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-white text-opacity-90">
                   Date
                 </label>
                 <input
@@ -788,11 +814,11 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                   onChange={(e) =>
                     setNewEvent({ ...newEvent, date: e.target.value })
                   }
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm sm:text-base"
+                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-white text-opacity-90">
                   Link (Optional)
                 </label>
                 <input
@@ -802,7 +828,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     setNewEvent({ ...newEvent, link: e.target.value })
                   }
                   placeholder="e.g., Zoom or Discord link"
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm sm:text-base"
+                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50"
                 />
               </div>
               <motion.button
@@ -819,25 +845,25 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
 
       {/* Submit Project Modal */}
       {showSubmitProjectModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md sm:max-w-lg relative mx-4 my-8"
+            className="bg-black p-6 rounded-xl shadow-2xl w-full max-w-md sm:max-w-lg relative mx-4 my-8 border border-white border-opacity-10"
           >
             <button
               onClick={() => setShowSubmitProjectModal(false)}
-              className="absolute top-3 right-3 text-gray-600 text-lg hover:text-gray-800"
+              className="absolute top-3 right-3 text-white text-opacity-80 text-lg hover:text-white"
             >
               ×
             </button>
-            <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-4">
+            <h3 className="text-lg sm:text-xl font-bold text-white mb-4">
               Submit New Project
             </h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-white text-opacity-90">
                   Project Name
                 </label>
                 <input
@@ -847,11 +873,11 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     setNewProject({ ...newProject, name: e.target.value })
                   }
                   placeholder="e.g., Homebase Project"
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm sm:text-base"
+                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-white text-opacity-90">
                   Ticker
                 </label>
                 <input
@@ -861,11 +887,11 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     setNewProject({ ...newProject, ticker: e.target.value })
                   }
                   placeholder="e.g., HMB"
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm sm:text-base"
+                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-white text-opacity-90">
                   Description
                 </label>
                 <textarea
@@ -874,11 +900,11 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     setNewProject({ ...newProject, description: e.target.value })
                   }
                   placeholder="Describe your project..."
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm sm:text-base h-24"
+                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base h-24 bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-white text-opacity-90">
                   Contract Address
                 </label>
                 <input
@@ -888,11 +914,11 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     setNewProject({ ...newProject, contractAddress: e.target.value })
                   }
                   placeholder="e.g., 0x..."
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm sm:text-base"
+                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-white text-opacity-90">
                   Website
                 </label>
                 <input
@@ -902,11 +928,11 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     setNewProject({ ...newProject, website: e.target.value })
                   }
                   placeholder="e.g., https://project.com"
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm sm:text-base"
+                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-white text-opacity-90">
                   Proof of Ownership
                 </label>
                 <input
@@ -916,7 +942,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     setNewProject({ ...newProject, proofOfOwnership: e.target.value })
                   }
                   placeholder="e.g., Link to verified contract or admin proof"
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm sm:text-base"
+                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50"
                 />
               </div>
               <motion.button

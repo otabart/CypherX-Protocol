@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { db } from "../../../lib/firebase.ts";
+import { db } from "../../../../lib/firebase.ts";
 import { doc, getDoc, setDoc, query, where, getDocs, collection } from "firebase/firestore";
 
 interface Block {
@@ -17,7 +17,7 @@ interface Block {
 
 const alchemyUrl = process.env.NEXT_PUBLIC_ALCHEMY_API_URL || "";
 
-export default function HomeScanPage() {
+export default function CypherScanPage() {
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -138,7 +138,7 @@ export default function HomeScanPage() {
     setError(null);
     try {
       if (/^\d+$/.test(searchQuery)) {
-        router.push(`/latest/block/${searchQuery}`);
+        router.push(`/explorer/latest/block/${searchQuery}`);
       } else if (/^0x[a-fA-F0-9]{64}$/.test(searchQuery)) {
         const blocksRef = collection(db, "blocks");
         const q = query(blocksRef, where("hash", "==", searchQuery));
@@ -206,7 +206,7 @@ export default function HomeScanPage() {
     <div className={`min-h-screen w-full font-mono ${themeClasses.background} ${themeClasses.text}`}>
       <div className={`border ${themeClasses.border} ${themeClasses.shadow} w-full min-h-screen`}>
         <div className={`flex items-center justify-between px-4 py-3 sm:px-3 sm:py-2 ${themeClasses.headerBg}`}>
-          <h1 className={`${themeClasses.text} text-lg sm:text-base font-semibold`}>[ HOMESCAN ]</h1>
+          <h1 className={`${themeClasses.text} text-lg sm:text-base font-semibold`}>[ CYPHERSCAN ]</h1>
           <button
             onClick={toggleTheme}
             className={`p-2 sm:p-1 ${themeClasses.buttonBg} ${themeClasses.buttonHover} transition-colors ${themeClasses.shadow}`}
@@ -247,7 +247,7 @@ export default function HomeScanPage() {
         <div className="p-4 sm:p-3">
           <div className="flex flex-col space-y-4 sm:space-y-3 mb-4 sm:mb-3">
             <form onSubmit={handleSearch} className={`flex items-center w-full ${themeClasses.containerBg} border ${themeClasses.border} p-2 flex-wrap`}>
-              <span className="text-[#0052FF] mr-2 sm:mr-1 text-sm sm:text-xs shrink-0">user@homescan:~$</span>
+              <span className="text-[#0052FF] mr-2 sm:mr-1 text-sm sm:text-xs shrink-0">user@cypherscan:~$</span>
               <input
                 type="text"
                 placeholder="find block/hash..."
@@ -348,7 +348,7 @@ export default function HomeScanPage() {
                     >
                       <td className="py-2 px-2">
                         <Link
-                          href={`/latest/block/${block.number}`}
+                          href={`/explorer/latest/block/${block.number}`}
                           className="text-[#0052FF] hover:underline"
                         >
                           {block.number}

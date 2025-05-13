@@ -2,22 +2,55 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { motion } from "framer-motion";
-import { FaTrophy, FaBolt, FaStar, FaSearch, FaBell, FaClipboard, FaShieldAlt, FaPlusCircle, FaLock } from "react-icons/fa";
+import {
+  FaTrophy,
+  FaBolt,
+  FaStar,
+  FaBell,
+  FaClipboard,
+  FaPlusCircle,
+  FaUser,
+  FaSearch,
+} from "react-icons/fa";
 import debounce from "lodash/debounce";
 import { onAuthStateChanged } from "firebase/auth";
+import {
+  collection,
+  query,
+  onSnapshot,
+  addDoc,
+  deleteDoc,
+  doc,
+  serverTimestamp,
+  getDocs,
+  setDoc,
+} from "firebase/firestore";
+import type { Auth } from "firebase/auth";
+import type { Firestore } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { collection, query, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp, getDocs, setDoc } from "firebase/firestore";
-import { Chart as ChartJS, LineElement, PointElement, LinearScale, TimeScale, Title, Tooltip, Legend } from "chart.js";
+import {
+  Chart as ChartJS,
+  LineElement,
+  PointElement,
+  LinearScale,
+  TimeScale,
+  Title,
+  Tooltip,
+  Legend,
+} from "chart.js";
 import { Line } from "react-chartjs-2";
+
+// Explicitly type auth and db
+const firebaseAuth: Auth = auth;
+const firestoreDb: Firestore = db;
 
 // Register Chart.js components
 ChartJS.register(LineElement, PointElement, LinearScale, TimeScale, Title, Tooltip, Legend);
 
 // ====== TYPES ======
 export type TokenData = {
-  pairAddress: string;
+  pairAddress: string; // Maps to Firestore 'pool' field
   baseToken: {
     address: string;
     name: string;
@@ -53,6 +86,10 @@ export type TokenData = {
     h6: { buys: number; sells: number };
     h24: { buys: number; sells: number };
   };
+  trendingScore?: number;
+  boosted?: boolean;
+  boostValue?: number;
+  weight?: number;
 };
 
 export type BaseAiToken = {
@@ -63,14 +100,15 @@ export type BaseAiToken = {
 };
 
 type Alert = {
-  type: "price_spike" | "price_spike_long" | "volume_spike" | "mover" | "loser" | "boost";
+  id?: string;
+  type: "price_spike" | "price_spike_long" | "volume_spike" | "mover" | "loser" | "boost" | "new_token";
   message: string;
   timestamp: string;
   pairAddress?: string;
   priceChangePercent?: number;
 };
 
-// ====== STATIC BASE AI TOKENS LIST (for Base AI Index component/view) ======
+// ====== STATIC BASE AI TOKENS LIST ======
 const baseAiTokens: BaseAiToken[] = [
   { symbol: "GAME", address: "0x1C4CcA7C5DB003824208aDDA61Bd749e55F463a3", weight: "4.86%" },
   { symbol: "BANKR", address: "0x22aF33FE49fD1Fa80c7149773dDe5890D3c76F3b", weight: "5.24%" },
@@ -92,6 +130,7 @@ const PRICE_CHECK_INTERVAL = 300_000; // 5 minutes
 const TOP_MOVERS_LOSERS_INTERVAL = 3_600_000; // 1 hour
 const NOTIFICATION_EXPIRY = 3 * 60 * 60 * 1000; // 3 hours
 const MAX_NOTIFICATIONS_PER_HOUR = 18;
+const MAX_NOTIFICATIONS_PER_TOKEN = 5;
 const BASE_AI_TOKEN_SYMBOLS = baseAiTokens.map((token) => token.symbol.toUpperCase());
 
 // ====== UTILITY FUNCTIONS ======
@@ -107,89 +146,51 @@ function getAge(createdAt?: number): string {
   return `${days}d`;
 }
 
-function getTxns24h(token: DexToken): number {
+function getTxns24h(token: TokenData): number {
   if (!token.txns || !token.txns.h24) return 0;
   const { buys, sells } = token.txns.h24;
   return buys + sells;
 }
 
-function computeTrending(token: DexToken, boostValue: number): number {
+function formatPrice(price: string): string {
+  const numPrice = Number(price);
+  if (numPrice < 0.001) return `$${numPrice.toFixed(5)}`;
+  if (numPrice < 1) return `$${numPrice.toFixed(4)}`;
+  return `$${numPrice.toFixed(2)}`;
+}
+
+function computeTrending(token: TokenData, boostValue: number): number {
   const txns = getTxns24h(token);
   let txnScore = Math.log10(txns + 1) * 1.5;
-
   if (txns < 10) txnScore *= 0.3;
   else if (txns < 50) txnScore *= 0.7;
-
   const volumeScore = Math.log10((token.volume?.h24 || 0) + 1) * 0.5;
-  const liquidityScore = Math.log10(token.liquidity.usd + 1) * 0.3;
-
+  const liquidityScore = Math.log10((token.liquidity?.usd || 0) + 1) * 0.3;
   const priceChange1h = token.priceChange?.h1 ?? 0;
   const priceChange6h = token.priceChange?.h6 ?? 0;
   const priceChange24h = token.priceChange?.h24 ?? 0;
-
   const priceMovementScore =
     (priceChange1h > 0 ? Math.log10(Math.abs(priceChange1h) + 1) * 2 : 0) +
     (priceChange6h > 0 ? Math.log10(Math.abs(priceChange6h) + 1) * 2 : 0) +
     (priceChange24h > 0 ? Math.log10(Math.abs(priceChange24h) + 1) * 2 : 0);
-
-  const consistencyBonus =
-    priceChange1h > 0 && priceChange6h > 0 && priceChange24h > 0 ? 10 : 0;
-
-  const volumeToMarketCap = token.marketCap
-    ? (token.volume?.h24 || 0) / token.marketCap
-    : 0;
+  const consistencyBonus = priceChange1h > 0 && priceChange6h > 0 && priceChange24h > 0 ? 10 : 0;
+  const volumeToMarketCap = token.marketCap ? (token.volume?.h24 || 0) / token.marketCap : 0;
   const volumeMarketCapScore = Math.log10(volumeToMarketCap + 1) * 2;
-
   const boostScore = boostValue || 0;
-
-  const pairAgeDays = token.pairCreatedAt
-    ? (Date.now() - token.pairCreatedAt) / (1000 * 60 * 60 * 24)
-    : 0;
-  const ageDecay = Math.max(0.3, Math.exp(-pairAgeDays / DECAY_CONSTANT));
-
-  return (txnScore + volumeScore + liquidityScore + priceMovementScore + consistencyBonus + volumeMarketCapScore + boostScore) * ageDecay;
+  const ageDecay = token.pairCreatedAt
+    ? Math.max(0.3, Math.exp(-(Date.now() - token.pairCreatedAt) / (1000 * 60 * 60 * 24) / DECAY_CONSTANT))
+    : 0.5;
+  const baseScore =
+    txnScore +
+    volumeScore +
+    liquidityScore +
+    priceMovementScore +
+    consistencyBonus +
+    volumeMarketCapScore +
+    boostScore;
+  return token.pairCreatedAt ? baseScore * ageDecay : baseScore * 0.8;
 }
 
-interface DexToken {
-  chainId: string;
-  dexId: string;
-  pairAddress: string;
-  baseToken: {
-    address: string;
-    name: string;
-    symbol: string;
-  };
-  quoteToken: {
-    address: string;
-    name: string;
-    symbol: string;
-  };
-  priceUsd: string;
-  txns: {
-    [key: string]: { buys: number; sells: number };
-  };
-  priceChange: {
-    [key: string]: number;
-  };
-  volume: {
-    [key: string]: number;
-  };
-  liquidity: {
-    usd: number;
-  };
-  marketCap?: number;
-  fdv?: number;
-  pairCreatedAt?: number;
-  info?: {
-    imageUrl?: string;
-  };
-  isIncomplete?: boolean;
-  boosted?: boolean;
-  boostValue?: number;
-  weight?: number;
-}
-
-// ====== UI COMPONENTS ======
 function getTrophy(rank: number): JSX.Element | null {
   if (rank === 1)
     return <FaTrophy size={16} className="text-[#FFD700]" title="Gold Trophy (Rank 1)" />;
@@ -203,22 +204,106 @@ function getTrophy(rank: number): JSX.Element | null {
 function MarketingIcon(): JSX.Element {
   return (
     <span className="cursor-help" title="Boosted Token">
-      <FaBolt className="text-blue-400 w-4 h-4 md:w-5 md:h-5" />
+      <FaBolt className="text-[#0052FF] w-4 h-4 md:w-5 md:h-5" />
     </span>
   );
 }
 
-export default function TokenScanner() {
+function AdIcon(): JSX.Element {
+  return (
+    <span className="cursor-help" title="Sponsored Token">
+      <FaBolt className="text-[#FFD700] w-4 h-4 md:w-5 md:h-5" />
+    </span>
+  );
+}
+
+function SkeletonRow(): JSX.Element {
+  return (
+    <tr className="border-b border-[#222222]">
+      <td className="p-3">
+        <div className="h-6 bg-[#222222] rounded animate-pulse w-12"></div>
+      </td>
+      <td className="p-3">
+        <div className="flex items-center space-x-2">
+          <div className="w-6 h-6 bg-[#222222] rounded-full animate-pulse"></div>
+          <div className="h-6 bg-[#222222] rounded animate-pulse w-24"></div>
+        </div>
+      </td>
+      <td className="p-3 text-right">
+        <div className="h-6 bg-[#222222] rounded animate-pulse w-16 ml-auto"></div>
+      </td>
+      <td className="p-3 text-right">
+        <div className="h-6 bg-[#222222] rounded animate-pulse w-16 ml-auto"></div>
+      </td>
+      <td className="p-3 text-right">
+        <div className="h-6 bg-[#222222] rounded animate-pulse w-16 ml-auto"></div>
+      </td>
+      <td className="p-3 text-right">
+        <div className="h-6 bg-[#222222] rounded animate-pulse w-16 ml-auto"></div>
+      </td>
+      <td className="p-3 text-right">
+        <div className="h-6 bg-[#222222] rounded animate-pulse w-16 ml-auto"></div>
+      </td>
+      <td className="p-3 text-right">
+        <div className="h-6 bg-[#222222] rounded animate-pulse w-16 ml-auto"></div>
+      </td>
+      <td className="p-3 text-right">
+        <div className="h-6 bg-[#222222] rounded animate-pulse w-16 ml-auto"></div>
+      </td>
+      <td className="p-3 text-right">
+        <div className="h-6 bg-[#222222] rounded animate-pulse w-20 ml-auto"></div>
+      </td>
+      <td className="p-3 text-right">
+        <div className="h-6 bg-[#222222] rounded animate-pulse w-20 ml-auto"></div>
+      </td>
+      <td className="p-3 text-right">
+        <div className="h-6 bg-[#222222] rounded animate-pulse w-20 ml-auto"></div>
+      </td>
+      <td className="p-3 text-center">
+        <div className="h-6 bg-[#222222] rounded animate-pulse w-12 mx-auto"></div>
+      </td>
+      <td className="p-3 text-center">
+        <div className="h-6 bg-[#222222] rounded animate-pulse w-12 mx-auto"></div>
+      </td>
+    </tr>
+  );
+}
+
+function getBellColor(alerts: Alert[]): string {
+  if (alerts.length === 0) return "text-[#666666]";
+  const latestAlert = alerts.sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  )[0];
+  switch (latestAlert.type) {
+    case "price_spike":
+    case "price_spike_long":
+    case "mover":
+      return latestAlert.priceChangePercent && latestAlert.priceChangePercent >= 0
+        ? "text-green-500"
+        : "text-red-500";
+    case "loser":
+      return "text-red-500";
+    case "volume_spike":
+    case "boost":
+      return "text-[#0052FF]";
+    case "new_token":
+      return "text-purple-500";
+    default:
+      return "text-[#666666]";
+  }
+}
+
+// ====== MAIN COMPONENT ======
+export default function TokenScreener() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
-  const [tokens, setTokens] = useState<DexToken[]>([]);
+  const [tokens, setTokens] = useState<TokenData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [toast, setToast] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [viewMode, setViewMode] = useState<"all" | "favorites" | "baseAI" | "new">("all");
-  const pageSize = 25;
-  const [toast, setToast] = useState("");
+  const [viewMode, setViewMode] = useState<"all" | "favorites" | "baseAI" | "alerts" | "new">("all");
   const [sortFilter, setSortFilter] = useState("trending");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [searchQuery, setSearchQuery] = useState("");
@@ -232,27 +317,50 @@ export default function TokenScanner() {
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [previousPrices, setPreviousPrices] = useState<{ [symbol: string]: number }>({});
   const [lastAlertTimes, setLastAlertTimes] = useState<{
-    [symbol: string]: { volume: number; price: number; priceLong: number; boost: number };
+    [symbol: string]: { volume: number; price: number; priceLong: number; boost: number; new: number };
   }>({});
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [selectedAlerts, setSelectedAlerts] = useState<Alert[] | null>(null);
   const [notificationCount, setNotificationCount] = useState(0);
-  const [indexHistory, setIndexHistory] = useState<{ timestamp: Date; value: number }[]>([]);
-
-  // Submission State
   const [showModal, setShowModal] = useState(false);
   const [tokenSymbol, setTokenSymbol] = useState("");
   const [tokenAddress, setTokenAddress] = useState("");
   const [tokenLogo, setTokenLogo] = useState("");
   const [submissionSuccess, setSubmissionSuccess] = useState(false);
   const [showBoostModal, setShowBoostModal] = useState(false);
+  const [showFavoritePopup, setShowFavoritePopup] = useState(false);
+  const [indexHistory, setIndexHistory] = useState<{ timestamp: Date; value: number }[]>([]);
+  const [isMounted, setIsMounted] = useState(false);
+  const [initialTokenSnapshot, setInitialTokenSnapshot] = useState<string[]>([]);
+  const pageSize = 25;
+
+  // Boost Info Card Data
+  const boostInfo = [
+    { boost: 10, cost: 10, duration: "12HR" },
+    { boost: 20, cost: 15, duration: "12HR" },
+    { boost: 30, cost: 20, duration: "12HR" },
+    { boost: 40, cost: 25, duration: "12HR" },
+    { boost: 50, cost: 35, duration: "24HR" },
+    { boost: 100, cost: 50, duration: "24HR" },
+    { boost: 150, cost: 75, duration: "36HR" },
+    { boost: 200, cost: 90, duration: "36HR" },
+    { boost: 250, cost: 100, duration: "36HR" },
+    { boost: 500, cost: 175, duration: "48HR" },
+    { boost: 1000, cost: 300, duration: "48HR" },
+  ];
+  const adInfo = { cost: 50, type: "Banner Ad" };
+
+  // Ensure component is mounted on client
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   // Check Authentication
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(firebaseAuth, (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        const favoritesQuery = query(collection(db, `users/${currentUser.uid}/favorites`));
+        const favoritesQuery = query(collection(firestoreDb, `users/${currentUser.uid}/favorites`));
         onSnapshot(favoritesQuery, (snapshot) => {
           const favs = snapshot.docs.map((doc) => doc.id);
           setFavorites(favs);
@@ -262,9 +370,14 @@ export default function TokenScanner() {
     return () => unsubscribe();
   }, []);
 
+  // Fetch Viewer Count
+  useEffect(() => {
+    setViewerCount(0);
+  }, []);
+
   // Fetch Tokens from Firebase and DexScreener
   useEffect(() => {
-    const tokensQuery = query(collection(db, "tokens"));
+    const tokensQuery = query(collection(firestoreDb, "tokens"));
     const unsubscribe = onSnapshot(tokensQuery, async (snapshot) => {
       try {
         setLoading(true);
@@ -275,7 +388,14 @@ export default function TokenScanner() {
           symbol: doc.data().symbol as string,
           address: doc.data().address as string,
           name: doc.data().name as string | undefined,
+          createdAt: doc.data().createdAt?.toDate().getTime() || 0,
+          docId: doc.id,
         }));
+
+        // Store initial token IDs to avoid false new token alerts
+        if (initialTokenSnapshot.length === 0) {
+          setInitialTokenSnapshot(tokenList.map((token) => token.docId));
+        }
 
         const validTokens = tokenList.filter((token) => /^0x[a-fA-F0-9]{40}$/.test(token.address));
         if (validTokens.length === 0) {
@@ -290,12 +410,15 @@ export default function TokenScanner() {
           tokenChunks.push(validTokens.slice(i, i + 10).map((t) => t.address));
         }
 
-        const allResults: DexToken[] = [];
+        const allResults: TokenData[] = [];
         for (const chunk of tokenChunks) {
           const joinedChunk = chunk.join(",");
-          const res = await fetch(`https://api.dexscreener.com/tokens/v1/base/${encodeURIComponent(joinedChunk)}`, {
-            headers: { Accept: "application/json" },
-          });
+          const res = await fetch(
+            `https://api.dexscreener.com/tokens/v1/base/${encodeURIComponent(joinedChunk)}`,
+            {
+              headers: { Accept: "application/json" },
+            }
+          );
           if (!res.ok) {
             console.error(`API fetch failed for chunk: ${joinedChunk}, status: ${res.status}`);
             continue;
@@ -310,7 +433,7 @@ export default function TokenScanner() {
                 return {
                   chainId: pair.chainId || "base",
                   dexId: pair.dexId || "",
-                  pairAddress: pair.pairAddress || "",
+                  pairAddress: firestoreToken?.pool || "",
                   baseToken: {
                     address: pair.baseToken.address || "",
                     name: firestoreToken?.name || pair.baseToken.name || "Unknown",
@@ -322,13 +445,17 @@ export default function TokenScanner() {
                     symbol: pair.quoteToken.symbol || "WETH",
                   },
                   priceUsd: pair.priceUsd || "0",
-                  txns: pair.txns || { h1: { buys: 0, sells: 0 }, h6: { buys: 0, sells: 0 }, h24: { buys: 0, sells: 0 } },
+                  txns: pair.txns || {
+                    h1: { buys: 0, sells: 0 },
+                    h6: { buys: 0, sells: 0 },
+                    h24: { buys: 0, sells: 0 },
+                  },
                   priceChange: pair.priceChange || { m5: 0, h1: 0, h6: 0, h24: 0 },
                   volume: pair.volume || { h1: 0, h24: 0 },
                   liquidity: pair.liquidity || { usd: 0 },
                   marketCap: pair.marketCap || 0,
                   fdv: pair.fdv || 0,
-                  pairCreatedAt: pair.pairCreatedAt || 0,
+                  pairCreatedAt: firestoreToken?.createdAt || pair.pairCreatedAt || 0,
                   info: pair.info ? { imageUrl: pair.info.imageUrl } : undefined,
                   isIncomplete: !pair.priceUsd || !pair.liquidity.usd,
                 };
@@ -356,7 +483,7 @@ export default function TokenScanner() {
               liquidity: { usd: 0 },
               marketCap: 0,
               fdv: 0,
-              pairCreatedAt: 0,
+              pairCreatedAt: token.createdAt || 0,
               info: { imageUrl: undefined },
               isIncomplete: true,
             }))
@@ -374,64 +501,95 @@ export default function TokenScanner() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [initialTokenSnapshot]);
+
+  // Detect New Tokens and Generate Alerts
+  useEffect(() => {
+    const tokensQuery = query(collection(firestoreDb, "tokens"));
+    const unsubscribe = onSnapshot(tokensQuery, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === "added" && !initialTokenSnapshot.includes(change.doc.id)) {
+          const token = change.doc.data();
+          const now = Date.now();
+          const symbol = token.symbol;
+          const pairAddress = token.pool;
+
+          if (!lastAlertTimes[symbol]?.new || now - lastAlertTimes[symbol].new >= COOLDOWN_PERIOD) {
+            const alert: Alert = {
+              type: "new_token",
+              message: `${symbol} is a new token added to the platform!`,
+              timestamp: new Date().toISOString(),
+              pairAddress,
+            };
+
+            addDoc(collection(firestoreDb, "notifications"), {
+              ...alert,
+              createdAt: serverTimestamp(),
+            }).catch((err) => console.error(`Failed to save new token alert for ${symbol}:`, err));
+
+            setAlerts((prev) => [...prev, alert]);
+            setLastAlertTimes((prev) => ({
+              ...prev,
+              [symbol]: {
+                ...prev[symbol],
+                new: now,
+                volume: prev[symbol]?.volume || 0,
+                price: prev[symbol]?.price || 0,
+                priceLong: prev[symbol]?.priceLong || 0,
+                boost: prev[symbol]?.boost || 0,
+              },
+            }));
+            setNotificationCount((prev) => prev + 1);
+          }
+        }
+      });
+    });
+
+    return () => unsubscribe();
+  }, [initialTokenSnapshot, lastAlertTimes]);
 
   // Fetch Alerts from Firestore and Clean Up
   useEffect(() => {
-    const alertsQuery = query(collection(db, "notifications"));
-    const unsubscribe = onSnapshot(alertsQuery, (snapshot) => {
-      const now = Date.now();
-      const newAlerts: Alert[] = [];
-      const alertsPerToken: { [pairAddress: string]: Alert[] } = {};
+    const alertsQuery = query(collection(firestoreDb, "notifications"));
+    const unsubscribe = onSnapshot(
+      alertsQuery,
+      (snapshot) => {
+        const now = Date.now();
+        const newAlerts: Alert[] = [];
+        const alertsPerToken: { [pairAddress: string]: Alert[] } = {};
 
-      snapshot.forEach((doc) => {
-        const alert = doc.data() as Alert;
-        const alertTime = new Date(alert.timestamp).getTime();
+        snapshot.forEach((doc) => {
+          const alert = { id: doc.id, ...doc.data() } as Alert;
+          const alertTime = new Date(alert.timestamp).getTime();
 
-        if (now - alertTime <= NOTIFICATION_EXPIRY) {
-          const pairAddress = alert.pairAddress || "unknown";
-          if (!alertsPerToken[pairAddress]) {
-            alertsPerToken[pairAddress] = [];
+          if (now - alertTime <= NOTIFICATION_EXPIRY) {
+            const pairAddress = alert.pairAddress || "unknown";
+            if (!alertsPerToken[pairAddress]) {
+              alertsPerToken[pairAddress] = [];
+            }
+            alertsPerToken[pairAddress].push(alert);
+          } else {
+            deleteDoc(doc.ref).catch((err) => console.error(`Failed to delete alert: ${err}`));
           }
-          alertsPerToken[pairAddress].push(alert);
-        } else {
-          deleteDoc(doc.ref).catch((err) => console.error(`Failed to delete alert: ${err}`));
-        }
-      });
+        });
 
-      Object.keys(alertsPerToken).forEach((pairAddress) => {
-        const tokenAlerts = alertsPerToken[pairAddress];
-        tokenAlerts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        const limitedAlerts = tokenAlerts.slice(0, MAX_NOTIFICATIONS_PER_HOUR);
-        newAlerts.push(...limitedAlerts);
-      });
+        Object.keys(alertsPerToken).forEach((pairAddress) => {
+          const tokenAlerts = alertsPerToken[pairAddress];
+          tokenAlerts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          const limitedAlerts = tokenAlerts.slice(0, MAX_NOTIFICATIONS_PER_TOKEN);
+          newAlerts.push(...limitedAlerts);
+        });
 
-      setAlerts(newAlerts);
-      setNotificationCount(newAlerts.length);
-    }, (err) => {
-      console.error("Error fetching alerts:", err);
-      setToast("Failed to load alerts");
-      setTimeout(() => setToast(""), 2000);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Simulate Live Viewer Count
-  useEffect(() => {
-    const fetchViewerCount = async () => {
-      try {
-        const res = await fetch("/api/viewer-count");
-        const data = await res.json();
-        setViewerCount(data.count || 0);
-      } catch (err) {
-        console.error("Failed to fetch viewer count:", err);
-        setViewerCount(Math.floor(Math.random() * 50) + 1); // Fallback
+        setAlerts(newAlerts);
+        setNotificationCount(newAlerts.length);
+      },
+      (err) => {
+        console.error("Error fetching alerts:", err);
+        setToast("Failed to load alerts");
+        setTimeout(() => setToast(""), 2000);
       }
-    };
-
-    fetchViewerCount();
-    const interval = setInterval(fetchViewerCount, 60000); // Update every minute
-    return () => clearInterval(interval);
+    );
+    return () => unsubscribe();
   }, []);
 
   // Price Spike and Volume Spike Alerts
@@ -452,32 +610,43 @@ export default function TokenScanner() {
         const currentPrice = parseFloat(token.priceUsd || "0");
         const previousPrice = previousPrices[symbol] || currentPrice;
         const priceChange6h = token.priceChange?.h6 ?? 0;
+        const tokenAlerts = alerts.filter((a) => a.pairAddress === pairAddress).length;
+
+        if (tokenAlerts >= MAX_NOTIFICATIONS_PER_TOKEN) return;
 
         newPrices[symbol] = currentPrice;
 
-        const lastTimes = lastAlertTimes[symbol] || { volume: 0, price: 0, priceLong: 0, boost: 0 };
+        const lastTimes = lastAlertTimes[symbol] || { volume: 0, price: 0, priceLong: 0, boost: 0, new: 0 };
 
         const volumeSpikeThresholdMarketCap = marketCap * 0.1;
         const volumeSpikeThresholdLiquidity = liquidity * 0.5;
         if (
           (volumeH1 > volumeSpikeThresholdMarketCap || volumeH1 > volumeSpikeThresholdLiquidity) &&
           now - lastTimes.volume >= COOLDOWN_PERIOD &&
-          notificationCount < MAX_NOTIFICATIONS_PER_HOUR
+          notificationCount < MAX_NOTIFICATIONS_PER_HOUR &&
+          tokenAlerts < MAX_NOTIFICATIONS_PER_TOKEN
         ) {
-          const alert = {
-            type: "volume_spike" as const,
-            message: `${symbol} volume spike: $${volumeH1.toLocaleString()} in the last hour.`,
+          const alert: Alert = {
+            type: "volume_spike",
+            message: `${symbol} volume spiked to $${volumeH1.toLocaleString()} in the last hour.`,
             timestamp: new Date().toISOString(),
             pairAddress,
           };
           newAlerts.push(alert);
-          addDoc(collection(db, "notifications"), {
+          addDoc(collection(firestoreDb, "notifications"), {
             ...alert,
             createdAt: serverTimestamp(),
           }).catch((err) => console.error(`Failed to save volume alert for ${symbol}:`, err));
           setLastAlertTimes((prev) => ({
             ...prev,
-            [symbol]: { ...prev[symbol], volume: now, price: prev[symbol]?.price || 0, priceLong: prev[symbol]?.priceLong || 0, boost: prev[symbol]?.boost || 0 },
+            [symbol]: {
+              ...prev[symbol],
+              volume: now,
+              price: prev[symbol]?.price || 0,
+              priceLong: prev[symbol]?.priceLong || 0,
+              boost: prev[symbol]?.boost || 0,
+              new: prev[symbol]?.new || 0,
+            },
           }));
           setNotificationCount((prev) => prev + 1);
         }
@@ -488,23 +657,33 @@ export default function TokenScanner() {
           liquidity >= 50000 &&
           Math.abs(priceChangePercent) >= 3 &&
           now - lastTimes.price >= COOLDOWN_PERIOD &&
-          notificationCount < MAX_NOTIFICATIONS_PER_HOUR
+          notificationCount < MAX_NOTIFICATIONS_PER_HOUR &&
+          tokenAlerts < MAX_NOTIFICATIONS_PER_TOKEN
         ) {
-          const alert = {
-            type: "price_spike" as const,
-            message: `${symbol} price ${priceChangePercent > 0 ? "up" : "down"} ${Math.abs(priceChangePercent).toFixed(2)}% in the last 5 minutes.`,
+          const alert: Alert = {
+            type: "price_spike",
+            message: `${symbol} is ${priceChangePercent > 0 ? "up" : "down"} ${Math.abs(
+              priceChangePercent
+            ).toFixed(2)}% in the last 5 minutes.`,
             timestamp: new Date().toISOString(),
             priceChangePercent,
             pairAddress,
           };
           newAlerts.push(alert);
-          addDoc(collection(db, "notifications"), {
+          addDoc(collection(firestoreDb, "notifications"), {
             ...alert,
             createdAt: serverTimestamp(),
           }).catch((err) => console.error(`Failed to save price alert for ${symbol}:`, err));
           setLastAlertTimes((prev) => ({
             ...prev,
-            [symbol]: { ...prev[symbol], price: now, volume: prev[symbol]?.volume || 0, priceLong: prev[symbol]?.priceLong || 0, boost: prev[symbol]?.boost || 0 },
+            [symbol]: {
+              ...prev[symbol],
+              price: now,
+              volume: prev[symbol]?.volume || 0,
+              priceLong: prev[symbol]?.priceLong || 0,
+              boost: prev[symbol]?.boost || 0,
+              new: prev[symbol]?.new || 0,
+            },
           }));
           setNotificationCount((prev) => prev + 1);
         }
@@ -513,23 +692,33 @@ export default function TokenScanner() {
           liquidity >= 50000 &&
           Math.abs(priceChange6h) >= 10 &&
           now - lastTimes.priceLong >= LONG_COOLDOWN_PERIOD &&
-          notificationCount < MAX_NOTIFICATIONS_PER_HOUR
+          notificationCount < MAX_NOTIFICATIONS_PER_HOUR &&
+          tokenAlerts < MAX_NOTIFICATIONS_PER_TOKEN
         ) {
-          const alert = {
-            type: "price_spike_long" as const,
-            message: `${symbol} price ${priceChange6h > 0 ? "up" : "down"} ${Math.abs(priceChange6h).toFixed(2)}% in the last 6 hours.`,
+          const alert: Alert = {
+            type: "price_spike_long",
+            message: `${symbol} is ${priceChange6h > 0 ? "up" : "down"} ${Math.abs(priceChange6h).toFixed(
+              2
+            )}% in the last 6 hours.`,
             timestamp: new Date().toISOString(),
             priceChangePercent: priceChange6h,
             pairAddress,
           };
           newAlerts.push(alert);
-          addDoc(collection(db, "notifications"), {
+          addDoc(collection(firestoreDb, "notifications"), {
             ...alert,
             createdAt: serverTimestamp(),
           }).catch((err) => console.error(`Failed to save long-term price alert for ${symbol}:`, err));
           setLastAlertTimes((prev) => ({
             ...prev,
-            [symbol]: { ...prev[symbol], priceLong: now, volume: prev[symbol]?.volume || 0, price: prev[symbol]?.price || 0, boost: prev[symbol]?.boost || 0 },
+            [symbol]: {
+              ...prev[symbol],
+              priceLong: now,
+              volume: prev[symbol]?.volume || 0,
+              price: prev[symbol]?.price || 0,
+              boost: prev[symbol]?.boost || 0,
+              new: prev[symbol]?.new || 0,
+            },
           }));
           setNotificationCount((prev) => prev + 1);
         }
@@ -542,7 +731,7 @@ export default function TokenScanner() {
     checkPriceAndVolume();
     const interval = setInterval(checkPriceAndVolume, PRICE_CHECK_INTERVAL);
     return () => clearInterval(interval);
-  }, [tokens, previousPrices, lastAlertTimes, notificationCount]);
+  }, [tokens, previousPrices, lastAlertTimes, notificationCount, alerts]);
 
   // Boost Alerts
   useEffect(() => {
@@ -551,7 +740,7 @@ export default function TokenScanner() {
       if (notificationCount >= MAX_NOTIFICATIONS_PER_HOUR) return;
 
       try {
-        const boostedTokens = await getDocs(collection(db, "boosts"));
+        const boostedTokens = await getDocs(collection(firestoreDb, "boosts"));
         const boostMap: { [pairAddress: string]: number } = {};
         boostedTokens.forEach((doc) => {
           const data = doc.data();
@@ -569,9 +758,9 @@ export default function TokenScanner() {
           .slice(0, 1);
 
         if (boostAlerts.length > 0) {
-          setAlerts((prev) => [...prev_digest, ...boostAlerts]);
+          setAlerts((prev) => [...prev, ...boostAlerts]);
           for (const alert of boostAlerts) {
-            await addDoc(collection(db, "notifications"), {
+            await addDoc(collection(firestoreDb, "notifications"), {
               ...alert,
               createdAt: serverTimestamp(),
             }).catch((err) => console.error("Failed to save boost alert:", err));
@@ -616,15 +805,21 @@ export default function TokenScanner() {
 
       topMovers.forEach((token) => {
         const priceChange = token.priceChange?.h1 ?? 0;
-        if (priceChange > 0 && notificationCount < MAX_NOTIFICATIONS_PER_HOUR) {
-          const alert = {
-            type: "mover" as const,
-            message: `${token.baseToken.symbol} is a top gainer: +${priceChange.toFixed(2)}% this hour.`,
+        const tokenAlerts = alerts.filter((a) => a.pairAddress === token.pairAddress).length;
+        if (
+          priceChange > 0 &&
+          notificationCount < MAX_NOTIFICATIONS_PER_HOUR &&
+          tokenAlerts < MAX_NOTIFICATIONS_PER_TOKEN
+        ) {
+          const alert: Alert = {
+            type: "mover",
+            message: `${token.baseToken.symbol} is up ${priceChange.toFixed(2)}% in the last hour.`,
             timestamp: new Date().toISOString(),
             pairAddress: token.pairAddress,
+            priceChangePercent: priceChange,
           };
           newAlerts.push(alert);
-          addDoc(collection(db, "notifications"), {
+          addDoc(collection(firestoreDb, "notifications"), {
             ...alert,
             createdAt: serverTimestamp(),
           }).catch((err) => console.error(`Failed to save mover alert for ${token.baseToken.symbol}:`, err));
@@ -634,15 +829,21 @@ export default function TokenScanner() {
 
       topLosers.forEach((token) => {
         const priceChange = token.priceChange?.h1 ?? 0;
-        if (priceChange < 0 && notificationCount < MAX_NOTIFICATIONS_PER_HOUR) {
-          const alert = {
-            type: "loser" as const,
-            message: `${token.baseToken.symbol} is a top loser: ${priceChange.toFixed(2)}% this hour.`,
+        const tokenAlerts = alerts.filter((a) => a.pairAddress === token.pairAddress).length;
+        if (
+          priceChange < 0 &&
+          notificationCount < MAX_NOTIFICATIONS_PER_HOUR &&
+          tokenAlerts < MAX_NOTIFICATIONS_PER_TOKEN
+        ) {
+          const alert: Alert = {
+            type: "loser",
+            message: `${token.baseToken.symbol} is down ${Math.abs(priceChange).toFixed(2)}% in the last hour.`,
             timestamp: new Date().toISOString(),
             pairAddress: token.pairAddress,
+            priceChangePercent: priceChange,
           };
           newAlerts.push(alert);
-          addDoc(collection(db, "notifications"), {
+          addDoc(collection(firestoreDb, "notifications"), {
             ...alert,
             createdAt: serverTimestamp(),
           }).catch((err) => console.error(`Failed to save loser alert for ${token.baseToken.symbol}:`, err));
@@ -660,10 +861,11 @@ export default function TokenScanner() {
       }
     }, TOP_MOVERS_LOSERS_INTERVAL);
     return () => clearInterval(interval);
-  }, [tokens, notificationCount]);
+  }, [tokens, notificationCount, alerts]);
 
   // Update Base AI Index History
   useEffect(() => {
+    if (!isMounted) return;
     const updateIndexHistory = () => {
       const indexValue = tokens.reduce((sum, token) => {
         return sum + (parseFloat(token.priceUsd || "0") * (token.weight || 0));
@@ -676,7 +878,7 @@ export default function TokenScanner() {
     updateIndexHistory();
     const interval = setInterval(updateIndexHistory, 300_000);
     return () => clearInterval(interval);
-  }, [tokens]);
+  }, [tokens, isMounted]);
 
   // Apply Trending Scores
   const tokensWithTrending = useMemo(() => {
@@ -692,22 +894,43 @@ export default function TokenScanner() {
     if (viewMode === "favorites") {
       tokenList = tokenList.filter((token) => favorites.includes(token.pairAddress));
     } else if (viewMode === "baseAI") {
-      tokenList = tokenList.filter((token) => BASE_AI_TOKEN_SYMBOLS.includes(token.baseToken.symbol.toUpperCase()));
+      tokenList = tokenList.filter((token) =>
+        BASE_AI_TOKEN_SYMBOLS.includes(token.baseToken.symbol.toUpperCase())
+      );
+      tokenList = tokenList.map((token) => {
+        const baseAiToken = baseAiTokens.find(
+          (t) => t.symbol.toUpperCase() === token.baseToken.symbol.toUpperCase()
+        );
+        return {
+          ...token,
+          weight: baseAiToken ? parseFloat(baseAiToken.weight.replace("%", "")) : 0,
+        };
+      });
     } else if (viewMode === "new") {
-      tokenList = [];
+      tokenList = tokenList.filter(
+        (token) =>
+          token.pairCreatedAt && Date.now() - token.pairCreatedAt <= 24 * 60 * 60 * 1000
+      );
+    } else if (viewMode === "alerts") {
+      tokenList = tokenList.filter((token) =>
+        alerts.some((alert) => alert.pairAddress === token.pairAddress)
+      );
     }
     return tokenList.filter((token) => {
       const ageDays = token.pairCreatedAt
         ? (Date.now() - token.pairCreatedAt) / (1000 * 60 * 60 * 24)
         : 0;
       return (
-        token.liquidity.usd >= (filters.minLiquidity || 0) &&
+        (token.liquidity?.usd || 0) >= (filters.minLiquidity || 0) &&
         (token.volume?.h24 || 0) >= (filters.minVolume || 0) &&
         ageDays >= (filters.minAge || 0) &&
-        (filters.maxAge === Infinity || ageDays <= filters.maxAge)
+        (filters.maxAge === Infinity || ageDays <= filters.maxAge) &&
+        (searchQuery === "" ||
+          token.baseToken.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          token.baseToken.symbol.toLowerCase().includes(searchQuery.toLowerCase()))
       );
     });
-  }, [tokensWithTrending, filters, viewMode, favorites]);
+  }, [tokensWithTrending, filters, viewMode, favorites, searchQuery, alerts]);
 
   const sortedTokens = useMemo(() => {
     const copy = [...filteredTokens];
@@ -725,15 +948,21 @@ export default function TokenScanner() {
       );
     } else if (sortFilter === "liquidity") {
       copy.sort((a, b) =>
-        sortDirection === "desc" ? b.liquidity.usd - a.liquidity.usd : a.liquidity.usd - b.liquidity.usd
+        sortDirection === "desc"
+          ? (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0)
+          : (a.liquidity?.usd || 0) - (b.liquidity?.usd || 0)
       );
     } else if (sortFilter === "marketCap") {
       copy.sort((a, b) =>
-        sortDirection === "desc" ? (b.marketCap ?? 0) - (a.marketCap ?? 0) : (a.marketCap ?? 0) - (b.marketCap ?? 0)
+        sortDirection === "desc"
+          ? (b.marketCap ?? 0) - (a.marketCap ?? 0)
+          : (a.marketCap ?? 0) - (b.marketCap ?? 0)
       );
     } else if (sortFilter === "age") {
       copy.sort((a, b) =>
-        sortDirection === "desc" ? (b.pairCreatedAt ?? 0) - (a.pairCreatedAt ?? 0) : (a.pairCreatedAt ?? 0) - (b.pairCreatedAt ?? 0)
+        sortDirection === "desc"
+          ? (b.pairCreatedAt ?? 0) - (a.pairCreatedAt ?? 0)
+          : (a.pairCreatedAt ?? 0) - (b.pairCreatedAt ?? 0)
       );
     } else {
       let key: "m5" | "h1" | "h6" | "h24" = "h1";
@@ -780,8 +1009,8 @@ export default function TokenScanner() {
       {
         label: "Base AI Index Value",
         data: indexHistory.map((point) => ({ x: point.timestamp.getTime(), y: point.value })),
-        borderColor: "rgba(59, 130, 246, 1)",
-        backgroundColor: "rgba(59, 130, 246, 0.2)",
+        borderColor: "rgba(0, 82, 255, 1)",
+        backgroundColor: "rgba(0, 82, 255, 0.2)",
         fill: true,
       },
     ],
@@ -822,14 +1051,12 @@ export default function TokenScanner() {
   const toggleFavorite = useCallback(
     async (pairAddress: string) => {
       if (!user) {
-        setToast("Please sign in to manage favorites");
-        setTimeout(() => setToast(""), 2000);
-        router.push("/account");
+        setShowFavoritePopup(true);
         return;
       }
       const isFavorited = favorites.includes(pairAddress);
       try {
-        const favoriteDocRef = doc(db, `users/${user.uid}/favorites`, pairAddress);
+        const favoriteDocRef = doc(firestoreDb, `users/${user.uid}/favorites`, pairAddress);
         if (isFavorited) {
           setFavorites((prev) => prev.filter((fav) => fav !== pairAddress));
           await deleteDoc(favoriteDocRef);
@@ -842,17 +1069,50 @@ export default function TokenScanner() {
         }
       } catch (err) {
         console.error("Error toggling favorite:", err);
-        setFavorites((prev) => isFavorited ? [...prev, pairAddress] : prev.filter((fav) => fav !== pairAddress));
+        setFavorites((prev) => (isFavorited ? [...prev, pairAddress] : prev.filter((fav) => fav !== pairAddress)));
         setToast("Error updating favorites");
         setTimeout(() => setToast(""), 2000);
       }
     },
-    [user, favorites, router]
+    [user, favorites]
   );
 
-  const handleScan = useCallback((address: string) => {
-    router.push(`/terminal?command=/scan ${address}`);
-  }, [router]);
+  const handleTokenClick = useCallback(
+    (pool: string) => {
+      if (!pool || !/^0x[a-fA-F0-9]{40}$/.test(pool)) {
+        console.error("Invalid pool address for navigation:", pool);
+        setToast("Invalid token address. Please try again.");
+        setTimeout(() => setToast(""), 2000);
+        return;
+      }
+
+      const targetUrl = `/token-scanner/${pool}/chart`;
+      console.log("Attempting navigation to:", targetUrl);
+
+      try {
+        router.push(targetUrl);
+        console.log("Navigation initiated successfully to:", targetUrl);
+
+        setTimeout(() => {
+          if (window.location.pathname !== targetUrl) {
+            console.warn("Router navigation failed, falling back to window.location.href");
+            window.location.href = targetUrl;
+          }
+        }, 1000);
+      } catch (err) {
+        console.error("Navigation error:", err);
+        setToast("Failed to navigate to chart page. Using fallback navigation.");
+        setTimeout(() => setToast(""), 2000);
+        window.location.href = targetUrl;
+      }
+    },
+    [router]
+  );
+
+  const handleBoostNow = () => {
+    setShowBoostModal(false);
+    router.push("/marketplace");
+  };
 
   const handleReturn = useCallback(() => {
     router.back();
@@ -891,121 +1151,116 @@ export default function TokenScanner() {
     []
   );
 
+  const handleFilterChange = useCallback(
+    (filter: string) => {
+      if (sortFilter === filter) {
+        setSortDirection(sortDirection === "desc" ? "asc" : "desc");
+      } else {
+        setSortFilter(filter);
+        setSortDirection("desc");
+      }
+      setCurrentPage(1);
+    },
+    [sortFilter, sortDirection]
+  );
+
+  const debouncedSetCurrentPage = useCallback(
+    debounce((page: number) => setCurrentPage(page), 300),
+    []
+  );
+
   const indexOfLastToken = currentPage * pageSize;
   const indexOfFirstToken = indexOfLastToken - pageSize;
   const currentTokens = sortedTokens.slice(indexOfFirstToken, indexOfLastToken);
   const totalPages = Math.ceil(sortedTokens.length / pageSize);
 
-  function handleFilterChange(filter: string) {
-    if (sortFilter === filter) {
-      setSortDirection(sortDirection === "desc" ? "asc" : "desc");
-    } else {
-      setSortFilter(filter);
-      setSortDirection("desc");
-    }
-    setCurrentPage(1);
+  // Render
+  if (!isMounted) {
+    return (
+      <div className="w-screen h-screen bg-[#0A0A0A] text-[#A0A0A0] font-mono m-0 p-0 overflow-hidden">
+        <div className="flex flex-col w-full h-full">
+          <div className="sticky top-0 z-50 bg-[#1A1A1A] shadow-lg w-full border-b border-[#222222] h-16"></div>
+          <div className="bg-[#1A1A1A] p-3 sm:p-4 border-b border-[#222222] shadow-inner h-16"></div>
+          <div className="flex-1 flex flex-col overflow-x-auto overflow-y-auto">
+            <div className="p-4 text-center text-[#666666] font-mono">Loading...</div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
-  const getAlertButtonColor = (tokenAlerts: Alert[]): string => {
-    const hasPriceSpike = tokenAlerts.some((alert) => alert.type === "price_spike" || alert.type === "price_spike_long");
-    if (hasPriceSpike) {
-      const priceSpike = tokenAlerts.find((alert) => alert.type === "price_spike" || alert.type === "price_spike_long");
-      return priceSpike && priceSpike.priceChangePercent && priceSpike.priceChangePercent >= 0
-        ? "bg-green-800"
-        : "bg-red-800";
-    }
-    return "bg-blue-800";
-  };
-
-  // Boost Info Card Data
-  const boostInfo = [
-    { boost: 10, cost: 10, duration: "12HR" },
-    { boost: 20, cost: 15, duration: "12HR" },
-    { boost: 30, cost: 20, duration: "12HR" },
-    { boost: 40, cost: 25, duration: "12HR" },
-    { boost: 50, cost: 35, duration: "24HR" },
-    { boost: 100, cost: 50, duration: "24HR" },
-    { boost: 150, cost: 75, duration: "36HR" },
-    { boost: 200, cost: 90, duration: "36HR" },
-    { boost: 250, cost: 100, duration: "36HR" },
-    { boost: 500, cost: 175, duration: "48HR" },
-    { boost: 1000, cost: 300, duration: "48HR" },
-  ];
-  const adInfo = { cost: 50, type: "Banner Ad" };
-
   return (
-    <div className="w-screen h-screen bg-black text-white font-mono m-0 p-0 overflow-hidden">
-      {toast && (
-        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white py-2 px-4 rounded shadow">
-          {toast}
+    <div className="w-screen h-screen bg-[#0A0A0A] text-[#A0A0A0] font-mono m-0 p-0 overflow-hidden">
+      {error && (
+        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-[#1A1A1A] text-[#A0A0A0] font-mono py-2 px-4 rounded-lg shadow-xl z-50 border border-[#222222]">
+          {error}
+          <button onClick={() => setError("")} className="ml-2 text-sm font-bold">
+            ×
+          </button>
         </div>
       )}
 
-      {error && (
-        <div
-          className="fixed top-16 bg-red-800 text-white py-2 px-4 rounded shadow animate-fade-out"
-          style={{
-            left: "calc(100% - 15%)",
-            transform: "translateX(-50%)",
-            width: "fit-content",
-          }}
-        >
-          {error}
+      {toast && (
+        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-[#1A1A1A] text-[#A0A0A0] py-2 px-4 rounded-lg shadow-xl z-50 border border-[#222222]">
+          {toast}
         </div>
       )}
 
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="relative bg-white text-black p-6 rounded shadow-lg w-80">
-            <button onClick={closeModal} className="absolute top-2 right-2 text-xl font-bold">
+          <div className="relative bg-[#1A1A1A] text-[#A0A0A0] p-6 rounded-lg shadow-xl w-80 border border-[#222222]">
+            <button onClick={closeModal} className="absolute top-2 right-2 text-xl font-bold font-mono">
               ×
             </button>
             {!submissionSuccess ? (
               <>
-                <h2 className="text-xl font-bold mb-4">Submit Token Listing</h2>
+                <h2 className="text-xl font-bold mb-4 font-mono">Submit Token Listing</h2>
                 <form onSubmit={handleSubmitListing}>
                   <div className="mb-4">
-                    <label className="block mb-1">Token Symbol</label>
+                    <label className="block mb-1 font-mono">Token Symbol</label>
                     <input
                       type="text"
                       value={tokenSymbol}
                       onChange={(e) => setTokenSymbol(e.target.value)}
-                      className="w-full border border-gray-300 p-2 rounded"
+                      className="w-full border border-[#222222] p-2 rounded font-mono bg-[#1A1A1A] text-[#A0A0A0] focus:outline-none focus:ring-2 focus:ring-[#0052FF]"
                       required
+                      maxLength={10}
                     />
                   </div>
                   <div className="mb-4">
-                    <label className="block mb-1">Token Address</label>
+                    <label className="block mb-1 font-mono">Token Address</label>
                     <input
                       type="text"
                       value={tokenAddress}
                       onChange={(e) => setTokenAddress(e.target.value)}
-                      className="w-full border border-gray-300 p-2 rounded"
+                      className="w-full border border-[#222222] p-2 rounded font-mono bg-[#1A1A1A] text-[#A0A0A0] focus:outline-none focus:ring-2 focus:ring-[#0052FF]"
                       required
+                      placeholder="0x..."
                     />
                   </div>
                   <div className="mb-4">
-                    <label className="block mb-1">Logo URL</label>
+                    <label className="block mb-1 font-mono">Logo URL</label>
                     <input
-                      type="text"
+                      type="url"
                       value={tokenLogo}
                       onChange={(e) => setTokenLogo(e.target.value)}
-                      className="w-full border border-gray-300 p-2 rounded"
+                      className="w-full border border-[#222222] p-2 rounded font-mono bg-[#1A1A1A] text-[#A0A0A0] focus:outline-none focus:ring-2 focus:ring-[#0052FF]"
                       required
+                      placeholder="https://..."
                     />
                   </div>
                   <div className="flex justify-end space-x-2">
                     <button
                       type="button"
                       onClick={closeModal}
-                      className="bg-gray-300 hover:bg-gray-400 text-black py-2 px-4 rounded"
+                      className="bg-[#1A1A1A] hover:bg-[#222222] text-[#A0A0A0] py-2 px-4 rounded font-mono border border-[#222222]"
                     >
                       Cancel
                     </button>
                     <motion.button
                       whileHover={{ scale: 1.05 }}
                       type="submit"
-                      className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded"
+                      className="bg-[#0052FF] hover:bg-[#003087] text-[#0A0A0A] py-2 px-4 rounded font-mono"
                     >
                       Submit
                     </motion.button>
@@ -1014,14 +1269,14 @@ export default function TokenScanner() {
               </>
             ) : (
               <div className="text-center">
-                <h2 className="text-xl font-bold mb-4">Token Listing Submitted!</h2>
-                <p className="mb-4 text-sm">
+                <h2 className="text-xl font-bold mb-4 font-mono">Token Listing Submitted!</h2>
+                <p className="mb-4 text-sm font-mono">
                   Your token has been submitted for review. We’ll notify you once it’s listed!
                 </p>
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   onClick={closeModal}
-                  className="bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded"
+                  className="bg-[#0052FF] hover:bg-[#003087] text-[#0A0A0A] py-2 px-4 rounded font-mono"
                 >
                   Close
                 </motion.button>
@@ -1033,52 +1288,67 @@ export default function TokenScanner() {
 
       {showBoostModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="relative bg-gray-900 text-white p-6 rounded shadow-lg w-80">
-            <button
-              onClick={() => setShowBoostModal(false)}
-              className="absolute top-2 right-2 text-xl font-bold"
-            >
-              ×
-            </button>
-            <h2 className="text-xl font-bold mb-4">Boost Info</h2>
-            <p className="text-sm mb-4">
-              Purchase a boost with USDC on our website to increase your token's visibility. Boosts add a score to your token's trending rank:
+          <div className="relative bg-[#1A1A1A] text-[#A0A0A0] p-6 rounded-lg shadow-xl w-80 border border-[#222222]">
+            <h2 className="text-xl font-bold mb-4 font-mono">Boost Info</h2>
+            <p className="text-sm mb-4 font-mono">
+              Purchase a boost with USDC on our website to increase your token's visibility. Boosts add a score to your
+              token's trending rank:
             </p>
-            <ul className="text-sm mb-4 list-disc list-inside">
+            <ul className="text-sm mb-4 list-disc list-inside font-mono">
               {boostInfo.map((info) => (
-                <li key={info.boost}>
+                <li key={info.boost} className="font-mono">
                   Boost ({info.boost}) - {info.cost} USDC ({info.duration})
                 </li>
               ))}
-              <li>Ad ({adInfo.type}) - {adInfo.cost} USDC</li>
+              <li className="font-mono">Ad ({adInfo.type}) - {adInfo.cost} USDC</li>
             </ul>
-            <p className="text-sm mb-4">
+            <p className="text-sm mb-4 font-mono">
               Once the transaction is confirmed, your token will appear boosted in the screener!
             </p>
+            <div className="flex justify-end">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={handleBoostNow}
+                className="bg-[#0052FF] hover:bg-[#003087] text-[#0A0A0A] py-2 px-4 rounded font-mono"
+              >
+                Boost Now
+              </motion.button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showFavoritePopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="relative bg-[#1A1A1A] text-[#A0A0A0] p-6 rounded-lg shadow-xl w-80 border border-[#222222]">
+            <button
+              onClick={() => setShowFavoritePopup(false)}
+              className="absolute top-2 right-2 text-xl font-bold font-mono"
+            >
+              ×
+            </button>
+            <h2 className="text-xl font-bold mb-4 font-mono">Authentication Required</h2>
+            <p className="text-sm mb-4 font-mono">Please sign in to favorite a token.</p>
             <div className="flex flex-col space-y-2">
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => window.open("https://yourwebsite.com/boost", "_blank")}
-                className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-2 px-4 rounded w-full"
+                onClick={() => {
+                  setShowFavoritePopup(false);
+                  router.push("/login");
+                }}
+                className="bg-[#0052FF] hover:bg-[#003087] text-[#0A0A0A] py-2 px-4 rounded w-full font-mono"
               >
-                Boost Now
+                Sign In
               </motion.button>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => window.open("https://yourwebsite.com/boost-info", "_blank")}
-                className="bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded w-full"
+                onClick={() => setShowFavoritePopup(false)}
+                className="bg-[#1A1A1A] hover:bg-[#222222] text-[#A0A0A0] py-2 px-4 rounded w-full font-mono border border-[#222222]"
               >
-                Learn More
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setShowBoostModal(false)}
-                className="bg-gray-800 hover:bg-gray-700 text-white py-2 px-4 rounded w-full"
-              >
-                Close
+                Cancel
               </motion.button>
             </div>
           </div>
@@ -1087,43 +1357,46 @@ export default function TokenScanner() {
 
       {selectedAlerts && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-900 text-white p-6 rounded shadow-lg w-96">
-            <h2 className="text-xl font-bold mb-4">Alerts</h2>
-            <ul className="space-y-2">
+          <div className="bg-[#1A1A1A] text-[#A0A0A0] p-8 rounded-lg shadow-xl w-[448px] border border-[#222222]">
+            <h2 className="text-xl font-bold mb-4 font-mono">Alerts ({selectedAlerts.length})</h2>
+            <ul className="space-y-3 max-h-96 overflow-y-auto">
               {selectedAlerts.map((alert, idx) => {
-                const isPriceSpike = alert.type === "price_spike" || alert.type === "price_spike_long";
-                const isVolumeSpike = alert.type === "volume_spike";
-                const percentageMatch = isPriceSpike ? alert.message.match(/(\d+\.\d{2})%/) : null;
-                const percentage = percentageMatch ? percentageMatch[1] : null;
+                const token = tokens.find((t) => t.pairAddress === alert.pairAddress);
+                const colorClass =
+                  alert.type === "new_token"
+                    ? "text-purple-500"
+                    : alert.type === "volume_spike" || alert.type === "boost"
+                    ? "text-[#0052FF]"
+                    : alert.type === "mover" || (alert.priceChangePercent && alert.priceChangePercent >= 0)
+                    ? "text-green-500"
+                    : "text-red-500";
                 return (
-                  <li key={idx} className="text-sm">
-                    <span className="font-bold">{alert.type.replace("_", " ").toUpperCase()}:</span>{" "}
-                    {isPriceSpike && percentage && alert.priceChangePercent !== undefined ? (
-                      <>
-                        {alert.message.replace(percentage + "%", "")}
-                        <span className={alert.priceChangePercent >= 0 ? "text-green-500" : "text-red-500"}>
-                          {percentage}%
-                        </span>
-                      </>
-                    ) : isVolumeSpike ? (
-                      <span className="text-blue-400">{alert.message}</span>
-                    ) : (
-                      alert.message
+                  <li key={idx} className="text-sm font-mono flex items-center space-x-3">
+                    {token && token.info && (
+                      <img
+                        src={token.info.imageUrl || "/fallback.png"}
+                        alt={token.baseToken.symbol}
+                        className="w-6 h-6 rounded-full border border-[#222222]"
+                      />
                     )}
-                    <br />
-                    <span className="text-xs text-gray-400">
-                      {new Date(alert.timestamp).toLocaleString()}
-                    </span>
+                    <div>
+                      <span className="font-bold">{alert.type.replace("_", " ").toUpperCase()}:</span>{" "}
+                      <span className={colorClass}>{alert.message}</span>
+                      <br />
+                      <span className="text-xs text-[#666666] font-mono">
+                        {new Date(alert.timestamp).toLocaleString()}
+                      </span>
+                    </div>
                   </li>
                 );
               })}
             </ul>
-            <div className="mt-4 flex justify-end">
+            <div className="mt-6 flex justify-end">
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setSelectedAlerts(null)}
-                className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded"
+                className="bg-[#0052FF] hover:bg-[#003087] text-[#0A0A0A] py-2 px-4 rounded font-mono"
               >
                 Close
               </motion.button>
@@ -1133,70 +1406,61 @@ export default function TokenScanner() {
       )}
 
       <div className="flex flex-col w-full h-full">
-        <div className="sticky top-0 z-50 bg-[#0060FF] shadow-md w-full">
-          <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between px-2 py-2 space-y-1 sm:space-y-0">
-            <div className="flex flex-row items-center space-x-2">
-              <motion.div
-                className="flex items-center space-x-2 bg-gray-800 border border-gray-600 rounded px-3 py-1"
-                initial={{ opacity: 0.8 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 1, repeat: Infinity, repeatType: "reverse" }}
-              >
-                <motion.span className="text-green-400 animate-pulse" title="Live Pulse">
+        <div className="sticky top-0 z-50 bg-[#1A1A1A] shadow-lg w-full border-b border-[#222222]">
+          <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between px-4 py-3 space-y-2 sm:space-y-0">
+            <div className="flex flex-row items-center space-x-4">
+              <div className="flex items-center space-x-2 bg-[#1A1A1A] border border-[#222222] rounded-lg px-4 py-2 shadow-inner">
+                <span className="text-[#0052FF] animate-pulse font-mono" title="Live Pulse">
                   ●
-                </motion.span>
-                <div className="text-xs sm:text-base text-white font-mono">
-                  LIVE{" "}
-                  <motion.span
-                    className="text-blue-400"
-                    initial={{ scale: 1 }}
-                    animate={{ scale: [1, 1.1, 1] }}
-                    transition={{ duration: 1.5, repeat: Infinity }}
-                  >
-                    {viewerCount}
-                  </motion.span>{" "}
-                  Traders Screening...
+                </span>
+                <div className="text-sm sm:text-base text-[#A0A0A0] font-mono flex items-center space-x-2">
+                  <span>LIVE {viewerCount} Traders</span>
+                  <span className="flex items-center">
+                    <FaBell className={`inline mr-1 ${getBellColor(alerts)}`} />
+                    <span className={alerts.length === 0 ? "text-[#666666]" : ""}>{notificationCount}</span>
+                  </span>
                 </div>
-              </motion.div>
+              </div>
             </div>
-            <div className="flex items-center space-x-2 sm:space-x-4">
+            <div className="flex items-center space-x-4">
               <div className="relative w-full sm:w-80">
-                <div className="flex items-center bg-gray-800 rounded px-2 py-1 w-full h-8">
-                  <FaSearch className="text-gray-400 mr-2" />
+                <div className="flex items-center bg-[#1A1A1A] rounded-lg px-3 py-2 border border-[#222222] w-full h-9 shadow-sm">
+                  <FaSearch className="text-[#666666] mr-2" />
                   <input
                     type="text"
                     placeholder="Search tokens..."
                     onChange={(e) => debouncedSetSearchQuery(e.target.value)}
                     onFocus={() => setShowSearchDropdown(true)}
                     onBlur={() => setTimeout(() => setShowSearchDropdown(false), 200)}
-                    className="bg-transparent text-white focus:outline-none text-sm w-full p-1 touch-friendly h-6"
+                    className="bg-transparent text-[#A0A0A0] focus:outline-none text-sm font-mono w-full p-1 touch-friendly h-6 placeholder-[#666666]"
                   />
                 </div>
                 {showSearchDropdown && searchSuggestions.length > 0 && (
-                  <div className="absolute top-full left-0 mt-1 w-full bg-gray-900 rounded shadow-lg z-50 max-h-60 overflow-y-auto">
+                  <div className="absolute top-full left-0 mt-2 w-full bg-[#1A1A1A] rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto border border-[#222222]">
                     {searchSuggestions.map((token) => (
-                      <Link
+                      <div
                         key={token.pairAddress}
-                        href={`/token-scanner/${token.pairAddress}/chart`}
                         onClick={() => {
                           setSearchQuery("");
                           setShowSearchDropdown(false);
+                          handleTokenClick(token.pairAddress);
                         }}
+                        className="flex items-center space-x-3 p-3 hover:bg-[#222222] cursor-pointer transition-colors duration-150"
                       >
-                        <div className="flex items-center space-x-2 p-3 hover:bg-gray-800 cursor-pointer">
+                        {token.info && (
                           <img
-                            src={token.info?.imageUrl || "/fallback.png"}
+                            src={token.info.imageUrl || "/fallback.png"}
                             alt={token.baseToken.symbol}
-                            className="w-6 h-6 rounded-full"
+                            className="w-6 h-6 rounded-full border border-[#222222]"
                           />
-                          <span className="text-sm truncate">
-                            {token.baseToken.name} / {token.quoteToken.symbol} ({token.baseToken.symbol})
-                          </span>
-                          <span className="text-sm text-gray-400 ml-auto">
-                            ${Number(token.priceUsd).toFixed(5)}
-                          </span>
-                        </div>
-                      </Link>
+                        )}
+                        <span className="text-sm font-mono truncate text-[#A0A0A0]">
+                          {token.baseToken.name} / {token.quoteToken.symbol} ({token.baseToken.symbol})
+                        </span>
+                        <span className="text-sm text-[#666666] ml-auto font-mono">
+                          {formatPrice(token.priceUsd)}
+                        </span>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -1205,25 +1469,34 @@ export default function TokenScanner() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setShowBoostModal(true)}
-                className="flex items-center space-x-1 bg-gray-800 border border-gray-600 text-white text-xs sm:text-base font-mono whitespace-nowrap px-3 py-1 rounded hover:bg-gray-700 transition-colors"
+                className="flex items-center space-x-2 bg-[#1A1A1A] border border-[#222222] text-[#A0A0A0] text-sm font-mono whitespace-nowrap px-4 py-2 rounded-lg hover:bg-[#222222] transition-colors shadow-sm"
               >
-                <FaBolt className="text-blue-400" />
+                <FaBolt className="text-[#0052FF]" />
                 <span>[Boost Info]</span>
               </motion.button>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setShowModal(true)}
-                className="flex items-center space-x-1 bg-gray-800 border border-gray-600 text-white text-xs sm:text-base font-mono whitespace-nowrap px-3 py-1 rounded hover:bg-gray-700 transition-colors"
+                className="flex items-center space-x-2 bg-[#1A1A1A] border border-[#222222] text-[#A0A0A0] text-sm font-mono whitespace-nowrap px-4 py-2 rounded-lg hover:bg-[#222222] transition-colors shadow-sm"
               >
-                <FaPlusCircle className="text-green-400" />
+                <FaPlusCircle className="text-[#0052FF]" />
                 <span>[Submit Listing]</span>
               </motion.button>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
+                onClick={() => router.push("/account")}
+                className="flex items-center space-x-2 bg-[#1A1A1A] border border-[#222222] text-[#A0A0A0] text-sm font-mono whitespace-nowrap px-4 py-2 rounded-lg hover:bg-[#222222] transition-colors shadow-sm"
+              >
+                <FaUser className="text-[#A0A0A0]" />
+                <span>[Account]</span>
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={handleReturn}
-                className="flex items-center space-x-1 bg-gray-800 border border-gray-600 text-white text-xs sm:text-base font-mono whitespace-nowrap px-3 py-1 rounded hover:bg-gray-700 transition-colors"
+                className="flex items-center space-x-2 bg-[#1A1A1A] border border-[#222222] text-[#A0A0A0] text-sm font-mono whitespace-nowrap px-4 py-2 rounded-lg hover:bg-[#222222] transition-colors shadow-sm"
               >
                 <span>[Return]</span>
               </motion.button>
@@ -1231,820 +1504,817 @@ export default function TokenScanner() {
           </div>
         </div>
 
-        <div className="bg-gray-900 p-2 sm:p-4 flex flex-col sm:flex-row gap-2 sm:gap-4">
+        <div className="bg-[#1A1A1A] p-3 sm:p-4 flex flex-col sm:flex-row gap-3 sm:gap-4 border-b border-[#222222] shadow-inner">
           <div className="flex flex-col sm:flex-row gap-2 w-full items-center">
             <motion.button
               whileHover={{ scale: 1.05 }}
               onClick={() => setViewMode("all")}
-              className={`p-2 text-white rounded text-xs sm:text-sm w-full sm:w-auto ${
-                viewMode === "all" ? "bg-blue-500" : "bg-gray-600"
+              className={`p-2 text-[#A0A0A0] rounded-lg text-sm sm:text-base w-full sm:w-auto font-mono transition-colors shadow-sm border border-[#222222] truncate ${
+                viewMode === "all" ? "bg-[#0052FF] text-[#0A0A0A]" : "bg-[#1A1A1A] hover:bg-[#222222]"
               }`}
+              title="All Tokens"
             >
               All Tokens
             </motion.button>
             <motion.button
               whileHover={{ scale: 1.05 }}
               onClick={() => setViewMode("favorites")}
-              className={`p-2 text-white rounded text-xs sm:text-sm w-full sm:w-auto ${
-                viewMode === "favorites" ? "bg-blue-500" : "bg-gray-600"
+              className={`p-2 text-[#A0A0A0] rounded-lg text-sm sm:text-base w-full sm:w-auto font-mono transition-colors shadow-sm border border-[#222222] truncate ${
+                viewMode === "favorites" ? "bg-[#0052FF] text-[#0A0A0A]" : "bg-[#1A1A1A] hover:bg-[#222222]"
               }`}
+              title="Favorites"
             >
               Favorites
             </motion.button>
             <motion.button
               whileHover={{ scale: 1.05 }}
               onClick={() => setViewMode("baseAI")}
-              className={`p-2 text-white rounded text-xs sm:text-sm w-full sm:w-auto ${
-                viewMode === "baseAI" ? "bg-blue-500" : "bg-gray-600"
+              className={`p-2 text-[#A0A0A0] rounded-lg text-sm sm:text-base w-full sm:w-auto font-mono transition-colors shadow-sm border border-[#222222] truncate ${
+                viewMode === "baseAI" ? "bg-[#0052FF] text-[#0A0A0A]" : "bg-[#1A1A1A] hover:bg-[#222222]"
               }`}
+              title="Base AI Index"
             >
               Base AI Index
             </motion.button>
             <motion.button
               whileHover={{ scale: 1.05 }}
-              onClick={() => setViewMode("new")}
-              className="p-2 bg-blue-600 bg-opacity-75 text-white rounded text-xs sm:text-sm w-full sm:w-auto flex items-center justify-center gap-1 animate-gradient-x disabled:opacity-75 cursor-not-allowed"
-              disabled
-              title="Coming in v2"
+              onClick={() => setViewMode("alerts")}
+              className={`p-2 text-[#A0A0A0] rounded-lg text-sm sm:text-base w-full sm:w-auto font-mono transition-colors shadow-sm border border-[#222222] truncate ${
+                viewMode === "alerts" ? "bg-[#FF5555] text-[#0A0A0A]" : "bg-[#1A1A1A] hover:bg-[#222222]"
+              }`}
+              title="Alerts"
             >
-              <FaLock size={12} />
-              New Pairs (v2)
+              Alerts
             </motion.button>
-            <input
-              type="number"
-              placeholder="Min Liquidity ($)"
-              value={filters.minLiquidity || ""}
-              onChange={(e) => setFilters({ ...filters, minLiquidity: Number(e.target.value) })}
-              className="p-2 bg-gray-800 text-white border border-gray-700 rounded text-xs sm:text-sm w-full sm:w-auto"
-            />
-            <input
-              type="number"
-              placeholder="Min Volume ($)"
-              value={filters.minVolume || ""}
-              onChange={(e) => setFilters({ ...filters, minVolume: Number(e.target.value) })}
-              className="p-2 bg-gray-800 text-white border border-gray-700 rounded text-xs sm:text-sm w-full sm:w-auto"
-            />
-            <input
-              type="number"
-              placeholder="Min Age (days)"
-              value={filters.minAge || ""}
-              onChange={(e) => setFilters({ ...filters, minAge: Number(e.target.value) })}
-              className="p-2 bg-gray-800 text-white border border-gray-700 rounded text-xs sm:text-sm w-full sm:w-auto"
-            />
-            <input
-              type="number"
-              placeholder="Max Age (days)"
-              value={filters.maxAge === Infinity ? "" : filters.maxAge}
-              onChange={(e) =>
-                setFilters({
-                  ...filters,
-                  maxAge: e.target.value ? Number(e.target.value) : Infinity,
-                })
-              }
-              className="p-2 bg-gray-800 text-white border border-gray-700 rounded text-xs sm:text-sm w-full sm:w-auto"
-            />
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              onClick={() => setViewMode("new")}
+              className={`p-2 text-[#A0A0A0] rounded-lg text-sm sm:text-base w-full sm:w-auto font-mono transition-colors shadow-sm border border-[#222222] truncate ${
+                viewMode === "new" ? "bg-[#0052FF] text-[#0A0A0A]" : "bg-[#1A1A1A] hover:bg-[#222222]"
+              }`}
+              title="New Tokens"
+            >
+              New Tokens
+            </motion.button>
+            <motion.button
+              disabled
+              className="p-2 text-[#666666] rounded-lg text-sm sm:text-base w-full sm:w-auto font-mono transition-colors shadow-sm border border-[#222222] bg-[#1A1A1A] opacity-50 cursor-not-allowed truncate"
+              title="New Pairs v2 (Locked)"
+            >
+              New Pairs v2
+            </motion.button>
+
+            {/* Mobile Filters (Dropdowns) */}
+            <div className="sm:hidden flex flex-col gap-2 w-full">
+              <select
+                value={filters.minLiquidity || 0}
+                onChange={(e) => setFilters({ ...filters, minLiquidity: Number(e.target.value) })}
+                className="p-2 bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222] rounded-lg text-sm font-mono shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0052FF] w-full"
+                title="Minimum Liquidity ($)"
+              >
+                <option value={0}>Min Liq ($): Any</option>
+                <option value={1000}>$1,000</option>
+                <option value={5000}>$5,000</option>
+                <option value={10000}>$10,000</option>
+                <option value={50000}>$50,000</option>
+              </select>
+              <select
+                value={filters.minVolume || 0}
+                onChange={(e) => setFilters({ ...filters, minVolume: Number(e.target.value) })}
+                className="p-2 bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222] rounded-lg text-sm font-mono shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0052FF] w-full"
+                title="Minimum Volume ($)"
+              >
+                <option value={0}>Min Vol ($): Any</option>
+                <option value={1000}>$1,000</option>
+                <option value={5000}>$5,000</option>
+                <option value={10000}>$10,000</option>
+                <option value={50000}>$50,000</option>
+              </select>
+              <select
+                value={filters.minAge || 0}
+                onChange={(e) => setFilters({ ...filters, minAge: Number(e.target.value) })}
+                className="p-2 bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222] rounded-lg text-sm font-mono shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0052FF] w-full"
+                title="Minimum Age (days)"
+              >
+                <option value={0}>Min Age (d): Any</option>
+                <option value={1}>1 day</option>
+                <option value={7}>7 days</option>
+                <option value={30}>30 days</option>
+                <option value={90}>90 days</option>
+              </select>
+              <select
+                value={filters.maxAge === Infinity ? "Infinity" : filters.maxAge}
+                onChange={(e) =>
+                  setFilters({
+                    ...filters,
+                    maxAge: e.target.value === "Infinity" ? Infinity : Number(e.target.value),
+                  })
+                }
+                className="p-2 bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222] rounded-lg text-sm font-mono shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0052FF] w-full"
+                title="Maximum Age (days)"
+              >
+                <option value="Infinity">Max Age (d): Any</option>
+                <option value={1}>1 day</option>
+                <option value={7}>7 days</option>
+                <option value={30}>30 days</option>
+                <option value={90}>90 days</option>
+              </select>
+            </div>
+
+            {/* Desktop Filters (Inputs) */}
+            <div className="hidden sm:flex gap-2">
+              <input
+                type="number"
+                placeholder="Min Liq ($)"
+                value={filters.minLiquidity || ""}
+                onChange={(e) => setFilters({ ...filters, minLiquidity: Number(e.target.value) })}
+                className="p-2 bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222] rounded-lg text-sm sm:text-base w-full sm:w-32 font-mono placeholder-[#666666] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0052FF]"
+                title="Minimum Liquidity ($)"
+              />
+              <input
+                type="number"
+                placeholder="Min Vol ($)"
+                value={filters.minVolume || ""}
+                onChange={(e) => setFilters({ ...filters, minVolume: Number(e.target.value) })}
+                className="p-2 bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222] rounded-lg text-sm sm:text-base w-full sm:w-32 font-mono placeholder-[#666666] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0052FF]"
+                title="Minimum Volume ($)"
+              />
+              <input
+                type="number"
+                placeholder="Min Age (d)"
+                value={filters.minAge || ""}
+                onChange={(e) => setFilters({ ...filters, minAge: Number(e.target.value) })}
+                className="p-2 bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222] rounded-lg text-sm sm:text-base w-full sm:w-32 font-mono placeholder-[#666666] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0052FF]"
+                title="Minimum Age (days)"
+              />
+              <input
+                type="number"
+                placeholder="Max Age (d)"
+                value={filters.maxAge === Infinity ? "" : filters.maxAge}
+                onChange={(e) =>
+                  setFilters({
+                    ...filters,
+                    maxAge: e.target.value ? Number(e.target.value) : Infinity,
+                  })
+                }
+                className="p-2 bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222] rounded-lg text-sm sm:text-base w-full sm:w-32 font-mono placeholder-[#666666] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0052FF]"
+                title="Maximum Age (days)"
+              />
+            </div>
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col overflow-x-auto overflow-y-auto">
-          {viewMode === "new" ? (
-            <div className="p-4 text-center text-gray-400">
-              New Pairs coming soon in v2! Stay tuned for real-time token discovery.
-            </div>
-          ) : viewMode === "baseAI" ? (
-            <>
-              <div className="p-4">
-                <h2 className="text-xl font-bold mb-4">Base AI Index</h2>
-                <div className="mb-4 bg-gray-800 p-4 rounded">
-                  <h3 className="text-lg font-semibold mb-2">Index Stats</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <p>Total Volume (24h): ${indexMetrics.totalVolume.toLocaleString()}</p>
-                    <p>Avg Price Change (24h): {indexMetrics.avgPriceChange.toFixed(2)}%</p>
-                    <p>Total Market Cap: ${indexMetrics.totalMarketCap.toLocaleString()}</p>
-                    <p>Tokens in Index: {indexMetrics.tokenCount}</p>
-                  </div>
-                </div>
-                <div className="mb-4">
-                  <h3 className="text-lg font-semibold">Index Growth</h3>
-                  <Line data={chartData} options={chartOptions} />
-                </div>
+        {viewMode === "baseAI" && (
+          <div className="bg-[#1A1A1A] p-4 border-b border-[#222222] shadow-inner">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div className="bg-[#1A1A1A] p-3 rounded-lg border border-[#222222] shadow-sm">
+                <p className="text-sm font-mono text-[#666666]">Total Volume (24h)</p>
+                <p className="text-lg font-mono text-[#A0A0A0]">${indexMetrics.totalVolume.toLocaleString()}</p>
               </div>
-              {loading ? (
-                <div className="p-4 text-center text-gray-400">Loading tokens...</div>
-              ) : filteredTokens.length === 0 ? (
-                <div className="p-4 text-center text-gray-400">
-                  No tokens in the Base AI Index match your filters. Try adjusting filters or check Firebase data.
-                </div>
+              <div className="bg-[#1A1A1A] p-3 rounded-lg border border-[#222222] shadow-sm">
+                <p className="text-sm font-mono text-[#666666]">Total Market Cap</p>
+                <p className="text-lg font-mono text-[#A0A0A0]">${indexMetrics.totalMarketCap.toLocaleString()}</p>
+              </div>
+              <div className="bg-[#1A1A1A] p-3 rounded-lg border border-[#222222] shadow-sm">
+                <p className="text-sm font-mono text-[#666666]">Avg. Price Change (24h)</p>
+                <p className={`text-lg font-mono ${getColorClass(indexMetrics.avgPriceChange)}`}>
+                  {indexMetrics.avgPriceChange.toFixed(2)}%
+                </p>
+              </div>
+              <div className="bg-[#1A1A1A] p-3 rounded-lg border border-[#222222] shadow-sm">
+                <p className="text-sm font-mono text-[#666666]">Token Count</p>
+                <p className="text-lg font-mono text-[#A0A0A0]">{indexMetrics.tokenCount}</p>
+              </div>
+            </div>
+            <div className="mt-4">
+              <h3 className="text-lg font-semibold font-mono text-[#A0A0A0]">Index Growth</h3>
+              <Line data={chartData} options={chartOptions} />
+            </div>
+          </div>
+        )}
+
+        <div className="flex-1 flex flex-col overflow-x-auto overflow-y-auto">
+          {loading ? (
+            <div className="p-4">
+              <table className="table-auto w-full whitespace-nowrap text-sm font-mono">
+                <thead className="bg-[#1A1A1A] text-[#666666] sticky top-0 z-10 border-b border-[#222222]">
+                  <tr>
+                    <th className="p-3 text-left" title="Rank by trending score">
+                      #
+                    </th>
+                    <th className="p-3 text-left" title="Token Pair">
+                      POOL
+                    </th>
+                    <th className="p-3 text-right" title="Price in USD">
+                      PRICE
+                    </th>
+                    <th className="p-3 text-right" title="Age of the token pair">
+                      AGE
+                    </th>
+                    <th className="p-3 text-right" title="Total transactions in 24 hours">
+                      TXN
+                    </th>
+                    <th className="p-3 text-right" title="Price change in last 5 minutes">
+                      5M
+                    </th>
+                    <th className="p-3 text-right" title="Price change in last 1 hour">
+                      1H
+                    </th>
+                    <th className="p-3 text-right" title="Price change in last 6 hours">
+                      6H
+                    </th>
+                    <th className="p-3 text-right" title="Price change in last 24 hours">
+                      24H
+                    </th>
+                    <th className="p-3 text-right" title="Trading volume in last 24 hours">
+                      VOLUME
+                    </th>
+                    <th className="p-3 text-right" title="Liquidity in USD">
+                      LIQUIDITY
+                    </th>
+                    <th className="p-3 text-right" title="Market capitalization">
+                      MKT CAP
+                    </th>
+                    <th className="p-3 text-center" title="Alerts">
+                      ALERTS
+                    </th>
+                    <th className="p-3 text-center" title="Actions">
+                      ACTIONS
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: 10 }).map((_, index) => (
+                    <SkeletonRow key={index} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : filteredTokens.length === 0 && viewMode !== "alerts" ? (
+            <div className="p-4 text-center text-[#666666] font-mono">
+              No tokens match your filters. Try adjusting filters or check Firebase data.
+            </div>
+          ) : viewMode === "alerts" ? (
+            <div className="w-full h-full bg-[#1A1A1A] overflow-y-auto">
+              <div className="p-4 border-b border-[#666666]">
+                <h2 className="text-xl font-bold font-mono text-[#A0A0A0] uppercase">Alerts Feed</h2>
+              </div>
+              {alerts.length === 0 ? (
+                <p className="p-4 text-[#666666] font-mono">No recent alerts.</p>
               ) : (
-                <>
-                  {/* Desktop Table View */}
-                  <div className="hidden md:block">
-                    <table className="table-auto w-full whitespace-nowrap text-sm">
-                      <thead className="bg-gray-900 text-gray-300 sticky top-0 z-10">
-                        <tr>
-                          <th
-                            className="p-2 text-left cursor-pointer w-[150px]"
-                            onClick={() => handleFilterChange("trending")}
-                            title="Sort by trending score"
-                          >
-                            #{sortFilter === "trending" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                          </th>
-                          <th className="p-2 text-left" title="Token Pair">
-                            POOL
-                          </th>
-                          <th className="p-2 text-right" title="Price in USD">
-                            PRICE
-                          </th>
-                          <th
-                            className="p-2 text-right cursor-pointer"
-                            onClick={() => handleFilterChange("age")}
-                            title="Age of the token pair"
-                          >
-                            AGE{sortFilter === "age" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                          </th>
-                          <th className="p-2 text-right" title="Total transactions in 24 hours">
-                            TXN
-                          </th>
-                          <th
-                            className="p-2 text-right cursor-pointer"
-                            onClick={() => handleFilterChange("5m")}
-                            title="Price change in last 5 minutes"
-                          >
-                            5M{sortFilter === "5m" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                          </th>
-                          <th
-                            className="p-2 text-right cursor-pointer"
-                            onClick={() => handleFilterChange("1h")}
-                            title="Price change in last 1 hour"
-                          >
-                            1H{sortFilter === "1h" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                          </th>
-                          <th
-                            className="p-2 text-right cursor-pointer"
-                            onClick={() => handleFilterChange("6h")}
-                            title="Price change in last 6 hours"
-                          >
-                            6H{sortFilter === "6h" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                          </th>
-                          <th
-                            className="p-2 text-right cursor-pointer"
-                            onClick={() => handleFilterChange("24h")}
-                            title="Price change in last 24 hours"
-                          >
-                            24H{sortFilter === "24h" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                          </th>
-                          <th
-                            className="p-2 text-right cursor-pointer"
-                            onClick={() => handleFilterChange("volume")}
-                            title="Trading volume in last 24 hours"
-                          >
-                            VOLUME{sortFilter === "volume" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                          </th>
-                          <th
-                            className="p-2 text-right cursor-pointer"
-                            onClick={() => handleFilterChange("liquidity")}
-                            title="Liquidity in USD"
-                          >
-                            LIQUIDITY{sortFilter === "liquidity" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                          </th>
-                          <th
-                            className="p-2 text-right cursor-pointer"
-                            onClick={() => handleFilterChange("marketCap")}
-                            title="Market capitalization"
-                          >
-                            MKT CAP{sortFilter === "marketCap" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                          </th>
-                          <th className="p-2 text-center" title="Actions">
-                            ACTIONS
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {currentTokens.length === 0 ? (
-                          <tr>
-                            <td colSpan={13} className="p-4 text-center text-gray-400">
-                              No tokens match your criteria. Try adjusting filters or check Firebase/DexScreener data.
-                            </td>
-                          </tr>
-                        ) : (
-                          currentTokens.map((token, index) => {
-                            const rank = indexOfFirstToken + index + 1;
-                            const tokenAlerts = alerts.filter((alert) => alert.pairAddress === token.pairAddress);
-                            return (
-                              <tr
-                                key={token.pairAddress}
-                                className="border-b border-gray-800 hover:bg-gray-800"
-                              >
-                                <td className="p-2 flex items-center space-x-2">
-                                  <div className="flex items-center">
-                                    {getTrophy(rank)}
-                                    <span className="ml-1 bg-gray-600 rounded-full px-2 py-1">{rank}</span>
-                                  </div>
-                                  {token.boosted && <MarketingIcon />}
-                                </td>
-                                <td className="p-2">
-                                  <Link href={`/token-scanner/${token.pairAddress}/chart`}>
-                                    <div className="flex items-center space-x-2">
-                                      <img
-                                        src={token.info?.imageUrl || "/fallback.png"}
-                                        alt={token.baseToken.symbol}
-                                        className="w-6 h-6 rounded-full"
-                                      />
-                                      <span className="truncate">
-                                        {token.baseToken.symbol}/{token.quoteToken.symbol}
-                                      </span>
-                                    </div>
-                                  </Link>
-                                </td>
-                                <td className="p-2 text-right">
-                                  ${Number(token.priceUsd).toFixed(5)}
-                                </td>
-                                <td className="p-2 text-right">{getAge(token.pairCreatedAt)}</td>
-                                <td className="p-2 text-right">{getTxns24h(token).toLocaleString()}</td>
-                                <td className={`p-2 text-right ${getColorClass(token.priceChange?.m5 ?? 0)}`}>
-                                  {(token.priceChange?.m5 ?? 0).toFixed(2)}%
-                                </td>
-                                <td className={`p-2 text-right ${getColorClass(token.priceChange?.h1 ?? 0)}`}>
-                                  {(token.priceChange?.h1 ?? 0).toFixed(2)}%
-                                </td>
-                                <td className={`p-2 text-right ${getColorClass(token.priceChange?.h6 ?? 0)}`}>
-                                  {(token.priceChange?.h6 ?? 0).toFixed(2)}%
-                                </td>
-                                <td className={`p-2 text-right ${getColorClass(token.priceChange?.h24 ?? 0)}`}>
-                                  {(token.priceChange?.h24 ?? 0).toFixed(2)}%
-                                </td>
-                                <td className="p-2 text-right">
-                                  ${(token.volume?.h24 || 0).toLocaleString()}
-                                </td>
-                                <td className="p-2 text-right">
-                                  ${token.liquidity.usd.toLocaleString()}
-                                </td>
-                                <td className="p-2 text-right">
-                                  ${(token.marketCap || 0).toLocaleString()}
-                                </td>
-                                <td className="p-2 text-center flex justify-center space-x-2">
-                                  <motion.button
-                                    whileHover={{ scale: 1.1 }}
-                                    onClick={() => toggleFavorite(token.pairAddress)}
-                                    className="text-yellow-400"
-                                    title={favorites.includes(token.pairAddress) ? "Remove from Favorites" : "Add to Favorites"}
-                                  >
-                                    <FaStar
-                                      className={favorites.includes(token.pairAddress) ? "text-yellow-400" : "text-gray-400"}
-                                    />
-                                  </motion.button>
-                                  <motion.button
-                                    whileHover={{ scale: 1.1 }}
-                                    onClick={() => handleCopy(token.pairAddress)}
-                                    className="text-gray-400"
-                                    title="Copy Pair Address"
-                                  >
-                                    <FaClipboard />
-                                  </motion.button>
-                                  <motion.button
-                                    whileHover={{ scale: 1.1 }}
-                                    onClick={() => handleScan(token.pairAddress)}
-                                    className="text-blue-400"
-                                    title="Scan Token"
-                                  >
-                                    <FaSearch />
-                                  </motion.button>
-                                  {tokenAlerts.length > 0 && (
-                                    <motion.button
-                                      whileHover={{ scale: 1.1 }}
-                                      onClick={() => setSelectedAlerts(tokenAlerts)}
-                                      className={`text-white p-1 rounded ${getAlertButtonColor(tokenAlerts)}`}
-                                      title="View Alerts"
-                                    >
-                                      <FaBell />
-                                    </motion.button>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                <ul className="space-y-2">
+                  {alerts.map((alert, idx) => {
+                    const token = tokens.find((t) => t.pairAddress === alert.pairAddress);
+                    const colorClass =
+                      alert.type === "new_token"
+                        ? "text-purple-500"
+                        : alert.type === "volume_spike" || alert.type === "boost"
+                        ? "text-[#0052FF]"
+                        : alert.type === "mover" || (alert.priceChangePercent && alert.priceChangePercent >= 0)
+                        ? "text-green-500"
+                        : "text-red-500";
 
-                  {/* Mobile Card View */}
-                  <div className="md:hidden p-4 space-y-4">
-                    {currentTokens.length === 0 ? (
-                      <div className="text-center text-gray-400">
-                        No tokens match your criteria. Try adjusting filters or check Firebase/DexScreener data.
-                      </div>
-                    ) : (
-                      currentTokens.map((token, index) => {
-                        const rank = indexOfFirstToken + index + 1;
-                        const tokenAlerts = alerts.filter((alert) => alert.pairAddress === token.pairAddress);
-                        return (
-                          <div
-                            key={token.pairAddress}
-                            className="bg-gray-800 p-4 rounded-lg shadow"
-                          >
-                            <div className="flex justify-between items-center mb-2">
-                              <div className="flex items-center space-x-2">
-                                <div className="flex items-center">
-                                  {getTrophy(rank)}
-                                  <span className="ml-1 bg-gray-600 rounded-full px-2 py-1">#{rank}</span>
-                                </div>
-                                {token.boosted && <MarketingIcon />}
-                              </div>
-                              <div className="flex space-x-2">
-                                <motion.button
-                                  whileHover={{ scale: 1.1 }}
-                                  onClick={() => toggleFavorite(token.pairAddress)}
-                                  className="text-yellow-400"
-                                  title={favorites.includes(token.pairAddress) ? "Remove from Favorites" : "Add to Favorites"}
-                                >
-                                  <FaStar
-                                    className={favorites.includes(token.pairAddress) ? "text-yellow-400" : "text-gray-400"}
-                                  />
-                                </motion.button>
-                                <motion.button
-                                  whileHover={{ scale: 1.1 }}
-                                  onClick={() => handleCopy(token.pairAddress)}
-                                  className="text-gray-400"
-                                  title="Copy Pair Address"
-                                >
-                                  <FaClipboard />
-                                </motion.button>
-                                <motion.button
-                                  whileHover={{ scale: 1.1 }}
-                                  onClick={() => handleScan(token.pairAddress)}
-                                  className="text-blue-400"
-                                  title="Scan Token"
-                                >
-                                  <FaSearch />
-                                </motion.button>
-                                {tokenAlerts.length > 0 && (
-                                  <motion.button
-                                    whileHover={{ scale: 1.1 }}
-                                    onClick={() => setSelectedAlerts(tokenAlerts)}
-                                    className={`text-white p-1 rounded ${getAlertButtonColor(tokenAlerts)}`}
-                                    title="View Alerts"
-                                  >
-                                    <FaBell />
-                                  </motion.button>
-                                )}
-                              </div>
-                            </div>
-                            <Link href={`/token-scanner/${token.pairAddress}/chart`}>
-                              <div className="flex items-center space-x-2 mb-2">
-                                <img
-                                  src={token.info?.imageUrl || "/fallback.png"}
-                                  alt={token.baseToken.symbol}
-                                  className="w-8 h-8 rounded-full"
-                                />
-                                <span className="truncate">
-                                  {token.baseToken.symbol}/{token.quoteToken.symbol}
-                                </span>
-                              </div>
-                            </Link>
-                            <div className="grid grid-cols-2 gap-2 text-xs">
-                              <div>
-                                <span className="text-gray-400">Price:</span>{" "}
-                                ${Number(token.priceUsd).toFixed(5)}
-                              </div>
-                              <div>
-                                <span className="text-gray-400">Age:</span>{" "}
-                                {getAge(token.pairCreatedAt)}
-                              </div>
-                              <div>
-                                <span className="text-gray-400">Txn 24h:</span>{" "}
-                                {getTxns24h(token).toLocaleString()}
-                              </div>
-                              <div>
-                                <span className="text-gray-400">5m:</span>{" "}
-                                <span className={getColorClass(token.priceChange?.m5 ?? 0)}>
-                                  {(token.priceChange?.m5 ?? 0).toFixed(2)}%
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-gray-400">1h:</span>{" "}
-                                <span className={getColorClass(token.priceChange?.h1 ?? 0)}>
-                                  {(token.priceChange?.h1 ?? 0).toFixed(2)}%
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-gray-400">6h:</span>{" "}
-                                <span className={getColorClass(token.priceChange?.h6 ?? 0)}>
-                                  {(token.priceChange?.h6 ?? 0).toFixed(2)}%
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-gray-400">24h:</span>{" "}
-                                <span className={getColorClass(token.priceChange?.h24 ?? 0)}>
-                                  {(token.priceChange?.h24 ?? 0).toFixed(2)}%
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-gray-400">Volume:</span>{" "}
-                                ${(token.volume?.h24 || 0).toLocaleString()}
-                              </div>
-                              <div>
-                                <span className="text-gray-400">Liquidity:</span>{" "}
-                                ${token.liquidity.usd.toLocaleString()}
-                              </div>
-                              <div>
-                                <span className="text-gray-400">Mkt Cap:</span>{" "}
-                                ${(token.marketCap || 0).toLocaleString()}
-                              </div>
-                            </div>
+                    // Extract the numeric part (e.g., % change or $ spike) for coloring
+                    const messageParts = alert.message.split(/(\d+\.?\d*)/);
+                    const formattedMessage = messageParts.map((part, index) => {
+                      if (/^\d+\.?\d*$/.test(part)) {
+                        if (alert.type === "volume_spike") {
+                          return <span key={index} className="text-[#0052FF]">{part}</span>;
+                        }
+                        if (alert.priceChangePercent !== undefined) {
+                          return (
+                            <span key={index} className={getColorClass(alert.priceChangePercent)}>
+                              {part}
+                            </span>
+                          );
+                        }
+                      }
+                      return <span key={index}>{part}</span>;
+                    });
+
+                    return (
+                      <li
+                        key={idx}
+                        className="flex items-center justify-between p-3 hover:bg-[#222222] transition-colors duration-150 border-b border-[#666666]"
+                      >
+                        <div className="flex items-center space-x-3">
+                          {token && token.info && (
+                            <img
+                              src={token.info.imageUrl || "/fallback.png"}
+                              alt={token.baseToken.symbol}
+                              className="w-6 h-6 rounded-full border border-[#222222]"
+                            />
+                          )}
+                          <div>
+                            <p className="text-sm font-mono">
+                              <span className="font-bold">{alert.type.replace("_", " ").toUpperCase()}:</span>{" "}
+                              {formattedMessage}
+                            </p>
+                            <p className="text-xs text-[#666666] font-mono">
+                              {new Date(alert.timestamp).toLocaleString()}
+                            </p>
                           </div>
-                        );
-                      })
-                    )}
-                  </div>
-
-                                    {/* Pagination */}
-                                    {totalPages > 1 && (
-                    <div className="p-4 flex justify-center items-center space-x-2">
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                        disabled={currentPage === 1}
-                        className="bg-gray-700 hover:bg-gray-600 text-white py-1 px-3 rounded disabled:opacity-50"
-                      >
-                        Previous
-                      </motion.button>
-                      <span className="text-gray-400">
-                        Page {currentPage} of {totalPages}
-                      </span>
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                        disabled={currentPage === totalPages}
-                        className="bg-gray-700 hover:bg-gray-600 text-white py-1 px-3 rounded disabled:opacity-50"
-                      >
-                        Next
-                      </motion.button>
-                    </div>
-                  )}
-                </>
+                        </div>
+                        {token && (
+                          <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => handleTokenClick(token.pairAddress)}
+                            className="bg-[#0052FF] hover:bg-[#003087] text-[#0A0A0A] px-3 py-1 rounded font-mono text-sm"
+                          >
+                            View
+                          </motion.button>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
-            </>
+            </div>
           ) : (
             <>
-              {loading ? (
-                <div className="p-4 text-center text-gray-400">Loading tokens...</div>
-              ) : filteredTokens.length === 0 ? (
-                <div className="p-4 text-center text-gray-400">
-                  No tokens match your filters. Try adjusting filters or check Firebase data.
-                </div>
-              ) : (
-                <>
-                  {/* Desktop Table View */}
-                  <div className="hidden md:block">
-                    <table className="table-auto w-full whitespace-nowrap text-sm">
-                      <thead className="bg-gray-900 text-gray-300 sticky top-0 z-10">
-                        <tr>
-                          <th
-                            className="p-2 text-left cursor-pointer w-[150px]"
-                            onClick={() => handleFilterChange("trending")}
-                            title="Sort by trending score"
-                          >
-                            #{sortFilter === "trending" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                          </th>
-                          <th className="p-2 text-left" title="Token Pair">
-                            POOL
-                          </th>
-                          <th className="p-2 text-right" title="Price in USD">
-                            PRICE
-                          </th>
-                          <th
-                            className="p-2 text-right cursor-pointer"
-                            onClick={() => handleFilterChange("age")}
-                            title="Age of the token pair"
-                          >
-                            AGE{sortFilter === "age" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                          </th>
-                          <th className="p-2 text-right" title="Total transactions in 24 hours">
-                            TXN
-                          </th>
-                          <th
-                            className="p-2 text-right cursor-pointer"
-                            onClick={() => handleFilterChange("5m")}
-                            title="Price change in last 5 minutes"
-                          >
-                            5M{sortFilter === "5m" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                          </th>
-                          <th
-                            className="p-2 text-right cursor-pointer"
-                            onClick={() => handleFilterChange("1h")}
-                            title="Price change in last 1 hour"
-                          >
-                            1H{sortFilter === "1h" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                          </th>
-                          <th
-                            className="p-2 text-right cursor-pointer"
-                            onClick={() => handleFilterChange("6h")}
-                            title="Price change in last 6 hours"
-                          >
-                            6H{sortFilter === "6h" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                          </th>
-                          <th
-                            className="p-2 text-right cursor-pointer"
-                            onClick={() => handleFilterChange("24h")}
-                            title="Price change in last 24 hours"
-                          >
-                            24H{sortFilter === "24h" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                          </th>
-                          <th
-                            className="p-2 text-right cursor-pointer"
-                            onClick={() => handleFilterChange("volume")}
-                            title="Trading volume in last 24 hours"
-                          >
-                            VOLUME{sortFilter === "volume" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                          </th>
-                          <th
-                            className="p-2 text-right cursor-pointer"
-                            onClick={() => handleFilterChange("liquidity")}
-                            title="Liquidity in USD"
-                          >
-                            LIQUIDITY{sortFilter === "liquidity" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                          </th>
-                          <th
-                            className="p-2 text-right cursor-pointer"
-                            onClick={() => handleFilterChange("marketCap")}
-                            title="Market capitalization"
-                          >
-                            MKT CAP{sortFilter === "marketCap" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                          </th>
-                          <th className="p-2 text-center" title="Actions">
-                            ACTIONS
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {currentTokens.length === 0 ? (
-                          <tr>
-                            <td colSpan={13} className="p-4 text-center text-gray-400">
-                              No tokens match your criteria. Try adjusting filters or check Firebase/DexScreener data.
-                            </td>
-                          </tr>
-                        ) : (
-                          currentTokens.map((token, index) => {
-                            const rank = indexOfFirstToken + index + 1;
-                            const tokenAlerts = alerts.filter((alert) => alert.pairAddress === token.pairAddress);
-                            return (
-                              <tr
-                                key={token.pairAddress}
-                                className="border-b border-gray-800 hover:bg-gray-800"
-                              >
-                                <td className="p-2 flex items-center space-x-2">
-                                  <div className="flex items-center">
-                                    {getTrophy(rank)}
-                                    <span className="ml-1 bg-gray-600 rounded-full px-2 py-1">{rank}</span>
-                                  </div>
-                                  {token.boosted && <MarketingIcon />}
-                                </td>
-                                <td className="p-2">
-                                  <Link href={`/token-scanner/${token.pairAddress}/chart`}>
-                                    <div className="flex items-center space-x-2">
-                                      <img
-                                        src={token.info?.imageUrl || "/fallback.png"}
-                                        alt={token.baseToken.symbol}
-                                        className="w-6 h-6 rounded-full"
-                                      />
-                                      <span className="truncate">
-                                        {token.baseToken.symbol}/{token.quoteToken.symbol}
-                                      </span>
-                                    </div>
-                                  </Link>
-                                </td>
-                                <td className="p-2 text-right">
-                                  ${Number(token.priceUsd).toFixed(5)}
-                                </td>
-                                <td className="p-2 text-right">{getAge(token.pairCreatedAt)}</td>
-                                <td className="p-2 text-right">{getTxns24h(token).toLocaleString()}</td>
-                                <td className={`p-2 text-right ${getColorClass(token.priceChange?.m5 ?? 0)}`}>
-                                  {(token.priceChange?.m5 ?? 0).toFixed(2)}%
-                                </td>
-                                <td className={`p-2 text-right ${getColorClass(token.priceChange?.h1 ?? 0)}`}>
-                                  {(token.priceChange?.h1 ?? 0).toFixed(2)}%
-                                </td>
-                                <td className={`p-2 text-right ${getColorClass(token.priceChange?.h6 ?? 0)}`}>
-                                  {(token.priceChange?.h6 ?? 0).toFixed(2)}%
-                                </td>
-                                <td className={`p-2 text-right ${getColorClass(token.priceChange?.h24 ?? 0)}`}>
-                                  {(token.priceChange?.h24 ?? 0).toFixed(2)}%
-                                </td>
-                                <td className="p-2 text-right">
-                                  ${(token.volume?.h24 || 0).toLocaleString()}
-                                </td>
-                                <td className="p-2 text-right">
-                                  ${token.liquidity.usd.toLocaleString()}
-                                </td>
-                                <td className="p-2 text-right">
-                                  ${(token.marketCap || 0).toLocaleString()}
-                                </td>
-                                <td className="p-2 text-center flex justify-center space-x-2">
-                                  <motion.button
-                                    whileHover={{ scale: 1.1 }}
-                                    onClick={() => toggleFavorite(token.pairAddress)}
-                                    className="text-yellow-400"
-                                    title={favorites.includes(token.pairAddress) ? "Remove from Favorites" : "Add to Favorites"}
-                                  >
-                                    <FaStar
-                                      className={favorites.includes(token.pairAddress) ? "text-yellow-400" : "text-gray-400"}
-                                    />
-                                  </motion.button>
-                                  <motion.button
-                                    whileHover={{ scale: 1.1 }}
-                                    onClick={() => handleCopy(token.pairAddress)}
-                                    className="text-gray-400"
-                                    title="Copy Pair Address"
-                                  >
-                                    <FaClipboard />
-                                  </motion.button>
-                                  <motion.button
-                                    whileHover={{ scale: 1.1 }}
-                                    onClick={() => handleScan(token.pairAddress)}
-                                    className="text-blue-400"
-                                    title="Scan Token"
-                                  >
-                                    <FaSearch />
-                                  </motion.button>
-                                  {tokenAlerts.length > 0 && (
-                                    <motion.button
-                                      whileHover={{ scale: 1.1 }}
-                                      onClick={() => setSelectedAlerts(tokenAlerts)}
-                                      className={`text-white p-1 rounded ${getAlertButtonColor(tokenAlerts)}`}
-                                      title="View Alerts"
-                                    >
-                                      <FaBell />
-                                    </motion.button>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Mobile Card View */}
-                  <div className="md:hidden p-4 space-y-4">
+              {/* Desktop Table View */}
+              <div className="hidden md:block">
+                <table className="table-auto w-full whitespace-nowrap text-sm font-mono">
+                  <thead className="bg-[#1A1A1A] text-[#666666] sticky top-0 z-10 border-b border-[#222222]">
+                    <tr>
+                      <th
+                        className="p-3 text-left cursor-pointer w-[140px] hover:text-[#0052FF] transition-colors"
+                        onClick={() => handleFilterChange("trending")}
+                        title="Rank by trending score"
+                      >
+                        #{sortFilter === "trending" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                      </th>
+                      <th className="p-3 text-left" title="Token Pair">
+                        POOL
+                      </th>
+                      <th className="p-3 text-right" title="Price in USD">
+                        PRICE
+                      </th>
+                      <th
+                        className="p-3 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        onClick={() => handleFilterChange("age")}
+                        title="Age of the token pair"
+                      >
+                        AGE{sortFilter === "age" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                      </th>
+                      <th className="p-3 text-right" title="Total transactions in 24 hours">
+                        TXN
+                      </th>
+                      <th
+                        className="p-3 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        onClick={() => handleFilterChange("5m")}
+                        title="Price change in last 5 minutes"
+                      >
+                        5M{sortFilter === "5m" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                      </th>
+                      <th
+                        className="p-3 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        onClick={() => handleFilterChange("1h")}
+                        title="Price change in last 1 hour"
+                      >
+                        1H{sortFilter === "1h" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                      </th>
+                      <th
+                        className="p-3 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        onClick={() => handleFilterChange("6h")}
+                        title="Price change in last 6 hours"
+                      >
+                        6H{sortFilter === "6h" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                      </th>
+                      <th
+                        className="p-3 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        onClick={() => handleFilterChange("24h")}
+                        title="Price change in last 24 hours"
+                      >
+                        24H{sortFilter === "24h" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                      </th>
+                      <th
+                        className="p-3 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        onClick={() => handleFilterChange("volume")}
+                        title="Trading volume in last 24 hours"
+                      >
+                        VOLUME{sortFilter === "volume" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                      </th>
+                      <th
+                        className="p-3 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        onClick={() => handleFilterChange("liquidity")}
+                        title="Liquidity in USD"
+                      >
+                        LIQUIDITY{sortFilter === "liquidity" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                      </th>
+                      <th
+                        className="p-3 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        onClick={() => handleFilterChange("marketCap")}
+                        title="Market capitalization"
+                      >
+                        MKT CAP{sortFilter === "marketCap" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                      </th>
+                      <th className="p-3 text-center" title="Alerts">
+                        ALERTS
+                      </th>
+                      <th className="p-3 text-center" title="Actions">
+                        ACTIONS
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
                     {currentTokens.length === 0 ? (
-                      <div className="text-center text-gray-400">
-                        No tokens match your criteria. Try adjusting filters or check Firebase/DexScreener data.
-                      </div>
+                      <tr>
+                        <td colSpan={14} className="p-4 text-center text-[#666666] font-mono">
+                          No tokens available for this page. Try adjusting filters or check Firebase/DexScreener data.
+                        </td>
+                      </tr>
                     ) : (
                       currentTokens.map((token, index) => {
                         const rank = indexOfFirstToken + index + 1;
                         const tokenAlerts = alerts.filter((alert) => alert.pairAddress === token.pairAddress);
+                        if (!/^0x[a-fA-F0-9]{40}$/.test(token.pairAddress)) {
+                          console.warn(`Invalid pair address: ${token.pairAddress}`);
+                          return null;
+                        }
+                        const isAd = false;
                         return (
-                          <div
+                          <tr
                             key={token.pairAddress}
-                            className="bg-gray-800 p-4 rounded-lg shadow"
+                            className="border-b border-[#222222] hover:bg-gradient-to-r hover:from-[#1A1A1A] hover:to-[#222222] transition-colors duration-200"
                           >
-                            <div className="flex justify-between items-center mb-2">
+                            <td className="p-3">
                               <div className="flex items-center space-x-2">
-                                <div className="flex items-center">
-                                  {getTrophy(rank)}
-                                  <span className="ml-1 bg-gray-600 rounded-full px-2 py-1">#{rank}</span>
+                                <div className="bg-[#1A1A1A] rounded-full px-2 py-1 flex items-center justify-center w-12 font-mono text-[#A0A0A0] shadow-sm border border-[#222222]">
+                                  {getTrophy(rank) || rank}
                                 </div>
-                                {token.boosted && <MarketingIcon />}
+                                <div className="flex items-center space-x-1">
+                                  {token.boosted && (
+                                    <>
+                                      <MarketingIcon />
+                                      <span className="text-[#0052FF] text-xs">+{token.boostValue}</span>
+                                    </>
+                                  )}
+                                  {isAd && <AdIcon />}
+                                </div>
                               </div>
-                              <div className="flex space-x-2">
+                            </td>
+                            <td className="p-3 font-mono">
+                              <div
+                                onClick={() => handleTokenClick(token.pairAddress)}
+                                className="flex items-center space-x-2 hover:text-[#0052FF] cursor-pointer transition-colors duration-150"
+                              >
+                                {token.info && (
+                                  <img
+                                    src={token.info.imageUrl || "/fallback.png"}
+                                    alt={token.baseToken.symbol}
+                                    className="w-6 h-6 rounded-full border border-[#222222]"
+                                  />
+                                )}
+                                <div>
+                                  <span className="font-bold text-[#A0A0A0]">{token.baseToken.symbol}</span> /{" "}
+                                  <span className="text-[#666666]">{token.quoteToken.symbol}</span>
+                                  <br />
+                                  <span className="text-xs text-[#666666]">{token.baseToken.name}</span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="p-3 text-right text-[#A0A0A0]">{formatPrice(token.priceUsd)}</td>
+                            <td className="p-3 text-right text-[#A0A0A0]">{getAge(token.pairCreatedAt)}</td>
+                            <td className="p-3 text-right text-[#A0A0A0]">{getTxns24h(token)}</td>
+                            <td className={`p-3 text-right ${getColorClass(token.priceChange?.m5 || 0)}`}>
+                              {(token.priceChange?.m5 || 0).toFixed(2)}%
+                            </td>
+                            <td className={`p-3 text-right ${getColorClass(token.priceChange?.h1 || 0)}`}>
+                              {(token.priceChange?.h1 || 0).toFixed(2)}%
+                            </td>
+                            <td className={`p-3 text-right ${getColorClass(token.priceChange?.h6 || 0)}`}>
+                              {(token.priceChange?.h6 || 0).toFixed(2)}%
+                            </td>
+                            <td className={`p-3 text-right ${getColorClass(token.priceChange?.h24 || 0)}`}>
+                              {(token.priceChange?.h24 || 0).toFixed(2)}%
+                            </td>
+                            <td className="p-3 text-right text-[#A0A0A0]">
+                              ${(token.volume?.h24 || 0).toLocaleString()}
+                            </td>
+                            <td className="p-3 text-right text-[#A0A0A0]">
+                              ${(token.liquidity?.usd || 0).toLocaleString()}
+                            </td>
+                            <td className="p-3 text-right text-[#A0A0A0]">
+                              ${(token.marketCap || 0).toLocaleString()}
+                            </td>
+                            <td className="p-3 text-center">
+                              <motion.button
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.9 }}
+                                onClick={() => setSelectedAlerts(tokenAlerts)}
+                                className="px-3 py-1 rounded"
+                                title="View Alerts"
+                              >
+                                <div
+                                  className={`bg-[#333333] border border-[#FFFFFF33] rounded-full px-2 py-1 flex items-center justify-center space-x-2 ${getBellColor(
+                                    tokenAlerts
+                                  )}`}
+                                >
+                                  <FaBell className="w-4 h-4" />
+                                  <span className="text-xs">{tokenAlerts.length}</span>
+                                </div>
+                              </motion.button>
+                            </td>
+                            <td className="p-3 text-center">
+                              <div className="flex items-center justify-center space-x-2">
                                 <motion.button
                                   whileHover={{ scale: 1.1 }}
                                   onClick={() => toggleFavorite(token.pairAddress)}
                                   className="text-yellow-400"
-                                  title={favorites.includes(token.pairAddress) ? "Remove from Favorites" : "Add to Favorites"}
+                                  title={
+                                    favorites.includes(token.pairAddress)
+                                      ? "Remove from Favorites"
+                                      : "Add to Favorites"
+                                  }
                                 >
                                   <FaStar
-                                    className={favorites.includes(token.pairAddress) ? "text-yellow-400" : "text-gray-400"}
+                                    className={`w-5 h-5 ${
+                                      favorites.includes(token.pairAddress)
+                                        ? "text-yellow-400"
+                                        : "text-[#666666]"
+                                    }`}
                                   />
                                 </motion.button>
                                 <motion.button
                                   whileHover={{ scale: 1.1 }}
                                   onClick={() => handleCopy(token.pairAddress)}
-                                  className="text-gray-400"
+                                  className="text-[#666666]"
                                   title="Copy Pair Address"
                                 >
-                                  <FaClipboard />
+                                  <FaClipboard className="w-5 h-5" />
                                 </motion.button>
-                                <motion.button
-                                  whileHover={{ scale: 1.1 }}
-                                  onClick={() => handleScan(token.pairAddress)}
-                                  className="text-blue-400"
-                                  title="Scan Token"
-                                >
-                                  <FaSearch />
-                                </motion.button>
-                                {tokenAlerts.length > 0 && (
-                                  <motion.button
-                                    whileHover={{ scale: 1.1 }}
-                                    onClick={() => setSelectedAlerts(tokenAlerts)}
-                                    className={`text-white p-1 rounded ${getAlertButtonColor(tokenAlerts)}`}
-                                    title="View Alerts"
-                                  >
-                                    <FaBell />
-                                  </motion.button>
-                                )}
                               </div>
-                            </div>
-                            <Link href={`/token-scanner/${token.pairAddress}/chart`}>
-                              <div className="flex items-center space-x-2 mb-2">
-                                <img
-                                  src={token.info?.imageUrl || "/fallback.png"}
-                                  alt={token.baseToken.symbol}
-                                  className="w-8 h-8 rounded-full"
-                                />
-                                <span className="truncate">
-                                  {token.baseToken.symbol}/{token.quoteToken.symbol}
-                                </span>
-                              </div>
-                            </Link>
-                            <div className="grid grid-cols-2 gap-2 text-xs">
-                              <div>
-                                <span className="text-gray-400">Price:</span>{" "}
-                                ${Number(token.priceUsd).toFixed(5)}
-                              </div>
-                              <div>
-                                <span className="text-gray-400">Age:</span>{" "}
-                                {getAge(token.pairCreatedAt)}
-                              </div>
-                              <div>
-                                <span className="text-gray-400">Txn 24h:</span>{" "}
-                                {getTxns24h(token).toLocaleString()}
-                              </div>
-                              <div>
-                                <span className="text-gray-400">5m:</span>{" "}
-                                <span className={getColorClass(token.priceChange?.m5 ?? 0)}>
-                                  {(token.priceChange?.m5 ?? 0).toFixed(2)}%
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-gray-400">1h:</span>{" "}
-                                <span className={getColorClass(token.priceChange?.h1 ?? 0)}>
-                                  {(token.priceChange?.h1 ?? 0).toFixed(2)}%
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-gray-400">6h:</span>{" "}
-                                <span className={getColorClass(token.priceChange?.h6 ?? 0)}>
-                                  {(token.priceChange?.h6 ?? 0).toFixed(2)}%
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-gray-400">24h:</span>{" "}
-                                <span className={getColorClass(token.priceChange?.h24 ?? 0)}>
-                                  {(token.priceChange?.h24 ?? 0).toFixed(2)}%
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-gray-400">Volume:</span>{" "}
-                                ${(token.volume?.h24 || 0).toLocaleString()}
-                              </div>
-                              <div>
-                                <span className="text-gray-400">Liquidity:</span>{" "}
-                                ${token.liquidity.usd.toLocaleString()}
-                              </div>
-                              <div>
-                                <span className="text-gray-400">Mkt Cap:</span>{" "}
-                                ${(token.marketCap || 0).toLocaleString()}
-                              </div>
-                            </div>
-                          </div>
+                            </td>
+                          </tr>
                         );
                       })
                     )}
-                  </div>
+                  </tbody>
+                </table>
+              </div>
 
-                  {/* Pagination */}
-                  {totalPages > 1 && (
-                    <div className="p-4 flex justify-center items-center space-x-2">
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                        disabled={currentPage === 1}
-                        className="bg-gray-700 hover:bg-gray-600 text-white py-1 px-3 rounded disabled:opacity-50"
+              {/* Mobile Table View */}
+              <div className="md:hidden">
+                <table className="table-auto w-full whitespace-nowrap text-xs font-mono">
+                  <thead className="bg-[#1A1A1A] text-[#666666] sticky top-0 z-10 border-b border-[#222222]">
+                    <tr>
+                      <th
+                        className="p-2 text-left cursor-pointer w-[100px] hover:text-[#0052FF] transition-colors"
+                        onClick={() => handleFilterChange("trending")}
+                        title="Rank by trending score"
                       >
-                        Previous
-                      </motion.button>
-                      <span className="text-gray-400">
-                        Page {currentPage} of {totalPages}
-                      </span>
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                        disabled={currentPage === totalPages}
-                        className="bg-gray-700 hover:bg-gray-600 text-white py-1 px-3 rounded disabled:opacity-50"
+                        #{sortFilter === "trending" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                      </th>
+                      <th className="p-2 text-left" title="Token Pair">
+                        POOL
+                      </th>
+                      <th className="p-2 text-right" title="Price in USD">
+                        PRICE
+                      </th>
+                      <th
+                        className="p-2 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        onClick={() => handleFilterChange("age")}
+                        title="Age of the token pair"
                       >
-                        Next
-                      </motion.button>
-                    </div>
-                  )}
-                </>
+                        AGE{sortFilter === "age" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                      </th>
+                      <th className="p-2 text-right" title="Total transactions in 24 hours">
+                        TXN
+                      </th>
+                      <th
+                        className="p-2 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        onClick={() => handleFilterChange("5m")}
+                        title="Price change in last 5 minutes"
+                      >
+                        5M{sortFilter === "5m" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                      </th>
+                      <th
+                        className="p-2 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        onClick={() => handleFilterChange("1h")}
+                        title="Price change in last 1 hour"
+                      >
+                        1H{sortFilter === "1h" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                      </th>
+                      <th
+                        className="p-2 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        onClick={() => handleFilterChange("6h")}
+                        title="Price change in last 6 hours"
+                      >
+                        6H{sortFilter === "6h" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                      </th>
+                      <th
+                        className="p-2 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        onClick={() => handleFilterChange("24h")}
+                        title="Price change in last 24 hours"
+                      >
+                        24H{sortFilter === "24h" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                      </th>
+                      <th
+                        className="p-2 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        onClick={() => handleFilterChange("volume")}
+                        title="Trading volume in last 24 hours"
+                      >
+                        VOL{sortFilter === "volume" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                      </th>
+                      <th
+                        className="p-2 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        onClick={() => handleFilterChange("liquidity")}
+                        title="Liquidity in USD"
+                      >
+                        LIQ{sortFilter === "liquidity" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                      </th>
+                      <th
+                        className="p-2 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        onClick={() => handleFilterChange("marketCap")}
+                        title="Market capitalization"
+                      >
+                        MC{sortFilter === "marketCap" && (sortDirection === "desc" ? " ↓" : " ↑")}
+                      </th>
+                      <th className="p-2 text-center" title="Alerts">
+                        ALT
+                      </th>
+                      <th className="p-2 text-center" title="Actions">
+                        ACT
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {currentTokens.length === 0 ? (
+                      <tr>
+                        <td colSpan={14} className="p-4 text-center text-[#666666] font-mono">
+                          No tokens available for this page. Try adjusting filters or check Firebase/DexScreener data.
+                        </td>
+                      </tr>
+                    ) : (
+                      currentTokens.map((token, index) => {
+                        const rank = indexOfFirstToken + index + 1;
+                        const tokenAlerts = alerts.filter((alert) => alert.pairAddress === token.pairAddress);
+                        if (!/^0x[a-fA-F0-9]{40}$/.test(token.pairAddress)) {
+                          console.warn(`Invalid pair address: ${token.pairAddress}`);
+                          return null;
+                        }
+                        const isAd = false;
+                        return (
+                          <tr
+                            key={token.pairAddress}
+                            className="border-b border-[#222222] hover:bg-gradient-to-r hover:from-[#1A1A1A] hover:to-[#222222] transition-colors duration-200"
+                          >
+                            <td className="p-2">
+                              <div className="flex items-center space-x-1">
+                                <div className="bg-[#1A1A1A] rounded-full px-2 py-1 flex items-center justify-center w-10 font-mono text-[#A0A0A0] shadow-sm border border-[#222222]">
+                                  {getTrophy(rank) || rank}
+                                </div>
+                                <div className="flex items-center space-x-1">
+                                  {token.boosted && (
+                                    <>
+                                      <MarketingIcon />
+                                      <span className="text-[#0052FF] text-[10px]">+{token.boostValue}</span>
+                                    </>
+                                  )}
+                                  {isAd && <AdIcon />}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="p-2 font-mono">
+                              <div
+                                onClick={() => handleTokenClick(token.pairAddress)}
+                                className="flex items-center space-x-1 hover:text-[#0052FF] cursor-pointer transition-colors duration-150"
+                              >
+                                {token.info && (
+                                  <img
+                                    src={token.info.imageUrl || "/fallback.png"}
+                                    alt={token.baseToken.symbol}
+                                    className="w-5 h-5 rounded-full border border-[#222222]"
+                                  />
+                                )}
+                                <div>
+                                  <span className="font-bold text-[#A0A0A0]">{token.baseToken.symbol}</span> /{" "}
+                                  <span className="text-[#666666]">{token.quoteToken.symbol}</span>
+                                  <br />
+                                  <span className="text-[10px] text-[#666666] truncate">
+                                    {token.baseToken.name}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="p-2 text-right text-[#A0A0A0]">{formatPrice(token.priceUsd)}</td>
+                            <td className="p-2 text-right text-[#A0A0A0]">{getAge(token.pairCreatedAt)}</td>
+                            <td className="p-2 text-right text-[#A0A0A0]">{getTxns24h(token)}</td>
+                            <td className={`p-2 text-right ${getColorClass(token.priceChange?.m5 || 0)}`}>
+                              {(token.priceChange?.m5 || 0).toFixed(2)}%
+                            </td>
+                            <td className={`p-2 text-right ${getColorClass(token.priceChange?.h1 || 0)}`}>
+                              {(token.priceChange?.h1 || 0).toFixed(2)}%
+                            </td>
+                            <td className={`p-2 text-right ${getColorClass(token.priceChange?.h6 || 0)}`}>
+                              {(token.priceChange?.h6 || 0).toFixed(2)}%
+                            </td>
+                            <td className={`p-2 text-right ${getColorClass(token.priceChange?.h24 || 0)}`}>
+                              {(token.priceChange?.h24 || 0).toFixed(2)}%
+                            </td>
+                            <td className="p-2 text-right text-[#A0A0A0]">
+                              ${(token.volume?.h24 || 0).toLocaleString()}
+                            </td>
+                            <td className="p-2 text-right text-[#A0A0A0]">
+                              ${(token.liquidity?.usd || 0).toLocaleString()}
+                            </td>
+                            <td className="p-2 text-right text-[#A0A0A0]">
+                              ${(token.marketCap || 0).toLocaleString()}
+                            </td>
+                            <td className="p-2 text-center">
+                              <motion.button
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.9 }}
+                                onClick={() => setSelectedAlerts(tokenAlerts)}
+                                className="px-2 py-1 rounded"
+                                title="View Alerts"
+                              >
+                                <div
+                                  className={`bg-[#333333] border border-[#FFFFFF33] rounded-full px-2 py-1 flex items-center justify-center space-x-1 ${getBellColor(
+                                    tokenAlerts
+                                  )}`}
+                                >
+                                  <FaBell className="w-4 h-4" />
+                                  <span className="text-[10px]">{tokenAlerts.length}</span>
+                                </div>
+                              </motion.button>
+                            </td>
+                            <td className="p-2 text-center">
+                              <div className="flex items-center justify-center space-x-1">
+                                <motion.button
+                                  whileHover={{ scale: 1.1 }}
+                                  onClick={() => toggleFavorite(token.pairAddress)}
+                                  className="text-yellow-400"
+                                  title={
+                                    favorites.includes(token.pairAddress)
+                                      ? "Remove from Favorites"
+                                      : "Add to Favorites"
+                                  }
+                                >
+                                  <FaStar
+                                    className={`w-4 h-4 ${
+                                      favorites.includes(token.pairAddress)
+                                        ? "text-yellow-400"
+                                        : "text-[#666666]"
+                                    }`}
+                                  />
+                                </motion.button>
+                                <motion.button
+                                  whileHover={{ scale: 1.1 }}
+                                  onClick={() => handleCopy(token.pairAddress)}
+                                  className="text-[#666666]"
+                                  title="Copy Pair Address"
+                                >
+                                  <FaClipboard className="w-4 h-4" />
+                                </motion.button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="p-4 flex justify-center items-center space-x-2">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                    disabled={currentPage === 1}
+                    className="bg-[#1A1A1A] hover:bg-[#222222] text-[#A0A0A0] py-1 px-3 rounded font-mono disabled:opacity-50 border border-[#222222]"
+                  >
+                    Previous
+                  </motion.button>
+                  <input
+                    type="number"
+                    value={currentPage}
+                    onChange={(e) => {
+                      const page = Number(e.target.value);
+                      if (page >= 1 && page <= totalPages) {
+                        debouncedSetCurrentPage(page);
+                      }
+                    }}
+                    className="w-16 p-1 bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222] rounded font-mono text-center focus:outline-none focus:ring-2 focus:ring-[#0052FF]"
+                    min={1}
+                    max={totalPages}
+                  />
+                  <span className="text-[#666666] font-mono">of {totalPages}</span>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                    className="bg-[#1A1A1A] hover:bg-[#222222] text-[#A0A0A0] py-1 px-3 rounded font-mono disabled:opacity-50 border border-[#222222]"
+                  >
+                    Next
+                  </motion.button>
+                </div>
               )}
             </>
           )}
@@ -2053,3 +2323,4 @@ export default function TokenScanner() {
     </div>
   );
 }
+               

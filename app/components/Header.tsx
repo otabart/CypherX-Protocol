@@ -1,25 +1,24 @@
-"use client";
+'use client';
 
 import { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import { ShoppingBagIcon, MagnifyingGlassIcon, CubeIcon, EyeIcon, CalendarIcon, CommandLineIcon, TrophyIcon, DocumentTextIcon, UserIcon, UsersIcon } from "@heroicons/react/24/solid";
 
 // Firebase
-import { signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase.ts";
-import { useAuth } from "@/app/providers.tsx";
+import { signOut, type Auth } from "firebase/auth";
+import { auth as firebaseAuth } from "@/lib/firebase";
+import { useAuth } from "@/app/providers";
+
+const auth: Auth = firebaseAuth as Auth;
 
 const Header = () => {
   const router = useRouter();
   const pathname = usePathname();
-
-  // From Firebase Auth context
   const { user, loading } = useAuth();
-
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  // Prevent background scrolling when mobile menu is open
   useEffect(() => {
     if (isMenuOpen) {
       document.body.style.overflow = "hidden";
@@ -40,12 +39,10 @@ const Header = () => {
     };
   }, [isMenuOpen]);
 
-  // Close mobile menu on route change
   useEffect(() => {
     setIsMenuOpen(false);
   }, [pathname]);
 
-  // Sign out logic
   async function handleSignOut() {
     await signOut(auth);
     router.push("/login");
@@ -53,174 +50,57 @@ const Header = () => {
 
   return (
     <>
-      <header className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
-        <div className="container mx-auto flex items-center justify-between px-6 py-4">
-          {/* Logo & BETA badge */}
+      <header className={`sticky top-0 z-50 bg-gray-950 ${isMenuOpen ? "md:block hidden" : "block"}`}>
+        <div className="container mx-auto flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4">
           <Link href="/" className="flex items-center">
             <div className="coinContainer">
               <div className="coinInner">
                 <Image
-                  src="https://i.imgur.com/OML2njS.png"
-                  alt="Homebase Logo"
-                  width={40}
-                  height={40}
+                  src="https://i.imgur.com/mlPQazY.png"
+                  alt="Cypher Logo"
+                  width={48}
+                  height={48}
                   className="coinFace"
                 />
               </div>
             </div>
-            <span className="ml-2 text-xs font-bold text-green-700 bg-green-100 border border-green-500 rounded-full px-3 py-0.5 flex items-center relative top-[1px]">
+            <span className="ml-2 text-xs font-bold text-blue-400 bg-blue-500/20 border border-blue-500/30 rounded-full px-3 py-0.5 flex items-center relative top-[1px]">
               v1 BETA
             </span>
           </Link>
 
-          {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center space-x-6">
-            {/* Whale Watchers */}
-            <IconLink
-              href="/whale-watcher"
-              label="Whale Watchers"
-              svg={
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M2.458 12C3.732 7.943 7.523 5 12 5s8.268 2.943 9.542 7c-1.274 4.057-5.065 7-9.542 7s-8.268-2.943-9.542-7z"
-                />
-              }
-              extraPath={
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                />
-              }
-            />
-
-            {/* Token Screener */}
-            <IconLink
-              href="/token-scanner"
-              label="Token Screener"
-              svg={
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 1010.5 18a7.5 7.5 0 006.15-3.15z"
-                />
-              }
-            />
-
-            {/* Honeypot Scanner */}
-            <IconLink
-              href="/honeypot-scanner"
-              label="Honeypot Scanner"
-              svg={
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 8v4m0 4h.01M20.205 7.697l-7.2-3.6a1.3 1.3 0 00-1.01 0l-7.2 3.6A1.3 1.3 0 004 8.848v6.304a1.3 1.3 0 00.795 1.151l7.2 3.6c.315.158.694.158 1.01 0l7.2-3.6A1.3 1.3 0 0020 15.152V8.848a1.3 1.3 0 00-.795-1.151z"
-                />
-              }
-            />
-
-            {/* Launch Calendar */}
-            <IconLink
-              href="/launch-calendar"
-              label="Launch Calendar"
-              svg={
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                />
-              }
-            />
-
-            {/* Homescan (New) */}
-            <IconLink
-              href="/latest/block"
-              label="Homescan"
-              svg={
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M4 6h16M4 12h16M4 18h7"
-                />
-              }
-            />
-
-            {/* Tournaments */}
-            <IconLink
-              href="/TradingCompetition"
-              label="Tournaments"
-              svg={
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M8 21h8M12 17v4M6 3h12l1 5a5 5 0 01-4 5v1a4 4 0 01-4 4 4 4 0 01-4-4v-1a5 5 0 01-4-5l1-5z"
-                />
-              }
-            />
-
-            {/* Account Icon (Login or Account) */}
+          <nav className="hidden md:flex items-center space-x-4 lg:space-x-6">
+            <IconLink href="/whale-watcher" label="Whale Watchers" IconComponent={UsersIcon} />
+            <IconLink href="/token-scanner" label="Token Screener" IconComponent={EyeIcon} />
+            <IconLink href="/honeypot-scanner" label="Smart Contract Audit" IconComponent={MagnifyingGlassIcon} />
+            <IconLink href="/calendar" label="Community Calendar" IconComponent={CalendarIcon} />
+            <IconLink href="/explorer/latest/block" label="Cypherscan" IconComponent={CommandLineIcon} />
+            <IconLink href="/marketplace" label="Marketplace" IconComponent={ShoppingBagIcon} />
+            <IconLink href="/explorer" label="Blockchain Explorer" IconComponent={CubeIcon} />
+            <IconLink href="/TradingCompetition" label="Tournaments" IconComponent={TrophyIcon} />
             {!loading && (
               <div className="relative group">
-                <Link
-                  href={user ? "/account" : "/login"}
-                  className="flex items-center"
-                >
-                  <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                      viewBox="0 0 24 24" // Fixed viewBox
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M12 12c2.28 0 4-1.72 4-4s-1.72-4-4-4-4 1.72-4 4 1.72 4 4 4z"
-                      />
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M6 18v-.42A2.58 2.58 0 018.58 15h6.84A2.58 2.58 0 0118 17.58V18"
-                      />
-                    </svg>
+                <Link href={user ? "/account" : "/login"} className="flex items-center">
+                  <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
+                    <UserIcon className="w-4 h-4 text-gray-200 group-hover:text-blue-400 transition-colors" />
                   </div>
                   <span className="sr-only">{user ? "Account" : "Sign in"}</span>
                 </Link>
-                <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-black rounded pointer-events-none whitespace-nowrap hidden group-hover:block">
+                <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-gray-200 bg-gray-900 rounded pointer-events-none whitespace-nowrap hidden group-hover:block">
                   {user ? "Account" : "Sign in"}
                 </span>
               </div>
             )}
           </nav>
 
-          {/* Mobile Nav Toggle */}
-          <button
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="md:hidden text-gray-800"
-            aria-label="Toggle Menu"
-          >
+          <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="md:hidden text-gray-200 p-2" aria-label="Toggle Menu">
             {isMenuOpen ? (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-6 w-6"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <line x1="6" y1="6" x2="18" y2="18" strokeLinecap="round" strokeWidth={2} />
                 <line x1="6" y1="18" x2="18" y2="6" strokeLinecap="round" strokeWidth={2} />
               </svg>
             ) : (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-6 w-6"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <line x1="4" y1="8" x2="20" y2="8" strokeLinecap="round" strokeWidth={2} />
                 <line x1="4" y1="14" x2="16" y2="14" strokeLinecap="round" strokeWidth={2} />
               </svg>
@@ -229,292 +109,182 @@ const Header = () => {
         </div>
       </header>
 
-      {/* Mobile Navigation */}
       <div
-        className={`md:hidden fixed inset-0 z-40 bg-white transition-transform duration-300 overscroll-none ${
-          isMenuOpen ? "translate-y-0" : "-translate-y-full"
-        }`}
+        className={`md:hidden fixed inset-0 left-0 right-0 z-40 bg-gray-950 overscroll-none overflow-x-hidden ${isMenuOpen ? "block" : "hidden"}`}
         style={{ overscrollBehavior: "none" }}
       >
-        <nav className="pt-16 pb-10 px-6 h-full overflow-y-auto flex flex-col">
-          {/* Toolbase Section */}
-          <div className="py-4">
-            <div className="flex items-center gap-2 mb-4">
-              <svg
-                className="w-5 h-5 text-gray-800"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                viewBox="0 0 24 24"
+        <nav className="pt-10 pb-10 px-6 h-full overflow-y-auto overflow-x-hidden flex flex-col relative">
+          <button onClick={() => setIsMenuOpen(false)} className="absolute top-4 right-4 text-gray-200 p-2" aria-label="Close Menu">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <line x1="6" y1="6" x2="18" y2="18" strokeLinecap="round" strokeWidth={2} />
+              <line x1="6" y1="18" x2="18" y2="6" strokeLinecap="round" strokeWidth={2} />
+            </svg>
+          </button>
+
+          <ul className="space-y-3">
+            <li>
+              <Link
+                href="/token-scanner"
+                onClick={() => setIsMenuOpen(false)}
+                className="flex items-center gap-1 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M11 4h-1a2 2 0 00-2 2v1m0 0H6a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2h-2M8 7V5a2 2 0 012-2h1m0 0h1a2 2 0 012 2v2m-4 0h4m-5 4l-2-2m0 0l2-2m-2 2h6"
-                />
-              </svg>
-              <span className="font-semibold text-gray-800">Toolbase</span>
-            </div>
-            <ul className="space-y-3">
-              <li>
-                <Link
-                  href="/token-scanner"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="flex items-center gap-2 py-2 text-gray-800 hover:text-[#0052FF] transition-colors"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 1010.5 18a7.5 7.5 0 006.15-3.15z"
-                    />
-                  </svg>
-                  <span>Token Screener</span>
-                </Link>
-              </li>
-              <li className="border-t border-gray-300 mx-[-1.5rem]"></li>
-              <li>
-                <Link
-                  href="/whale-watcher"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="flex items-center gap-2 py-2 text-gray-800 hover:text-[#0052FF] transition-colors"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M2.458 12C3.732 7.943 7.523 5 12 5s8.268 2.943 9.542 7c-1.274 4.057-5.065 7-9.542 7s-8.268-2.943-9.542-7z"
-                    />
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                    />
-                  </svg>
-                  <span>Whale Watchers</span>
-                </Link>
-              </li>
-              <li className="border-t border-gray-300 mx-[-1.5rem]"></li>
-              <li>
-                <Link
-                  href="/launch-calendar"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="flex items-center gap-2 py-2 text-gray-800 hover:text-[#0052FF] transition-colors"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                    />
-                  </svg>
-                  <span>Launch Calendar</span>
-                </Link>
-              </li>
-              <li className="border-t border-gray-300 mx-[-1.5rem]"></li>
-              <li>
-                <Link
-                  href="/terminal"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="flex items-center gap-2 py-2 text-gray-800 hover:text-[#0052FF] transition-colors"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M9 12h6m-3-3v6m-9 3h18a2 2 0 002-2V6a2 2 0 00-2-2H3a2 2 0 00-2 2v12a2 2 0 002 2z"
-                    />
-                  </svg>
-                  <span>News Terminal</span>
-                </Link>
-              </li>
-              <li className="border-t border-gray-300 mx-[-1.5rem]"></li>
-              <li>
-                <Link
-                  href="/honeypot-scanner"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="flex items-center gap-2 py-2 text-gray-800 hover:text-[#0052FF] transition-colors"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M12 8v4m0 4h.01M20.205 7.697l-7.2-3.6a1.3 1.3 0 00-1.01 0l-7.2 3.6A1.3 1.3 0 004 8.848v6.304a1.3 1.3 0 00.795 1.151l7.2 3.6c.315.158.694.158 1.01 0l7.2-3.6A1.3 1.3 0 0020 15.152V8.848a1.3 0 00-.795-1.151z"
-                    />
-                  </svg>
-                  <span>Honeypot Scanner</span>
-                </Link>
-              </li>
-              <li className="border-t border-gray-300 mx-[-1.5rem]"></li>
-              <li>
-                <Link
-                  href="/latest/block"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="flex items-center gap-2 py-2 text-gray-800 hover:text-[#0052FF] transition-colors"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M4 6h16M4 12h16M4 18h7"
-                    />
-                  </svg>
-                  <span>Homescan</span>
-                </Link>
-              </li>
-            </ul>
-          </div>
+                <EyeIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
+                <span className="text-base leading-none">Token Screener</span>
+              </Link>
+            </li>
+            <li className="border-t border-blue-500/20 mx-[-1.5rem]"></li>
+            <li>
+              <Link
+                href="/whale-watcher"
+                onClick={() => setIsMenuOpen(false)}
+                className="flex items-center gap-1 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
+              >
+                <UsersIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
+                <span className="text-base leading-none">Whale Watchers</span>
+              </Link>
+            </li>
+            <li className="border-t border-blue-500/20 mx-[-1.5rem]"></li>
+            <li>
+              <Link
+                href="/launch-calendar"
+                onClick={() => setIsMenuOpen(false)}
+                className="flex items-center gap-1 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
+              >
+                <CalendarIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
+                <span className="text-base leading-none">Launch Calendar</span>
+              </Link>
+            </li>
+            <li className="border-t border-blue-500/20 mx-[-1.5rem]"></li>
+            <li>
+              <Link
+                href="/terminal"
+                onClick={() => setIsMenuOpen(false)}
+                className="flex items-center gap-1 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
+              >
+                <CommandLineIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
+                <span className="text-base leading-none">News Terminal</span>
+              </Link>
+            </li>
+            <li className="border-t border-blue-500/20 mx-[-1.5rem]"></li>
+            <li>
+              <Link
+                href="/honeypot-scanner"
+                onClick={() => setIsMenuOpen(false)}
+                className="flex items-center gap-1 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
+              >
+                <MagnifyingGlassIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
+                <span className="text-base leading-none">Honeypot Scanner</span>
+              </Link>
+            </li>
+            <li className="border-t border-blue-500/20 mx-[-1.5rem]"></li>
+            <li>
+              <Link
+                href="/latest/block"
+                onClick={() => setIsMenuOpen(false)}
+                className="flex items-center gap-1 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
+              >
+                <CommandLineIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
+                <span className="text-base leading-none">Homescan</span>
+              </Link>
+            </li>
+            <li className="border-t border-blue-500/20 mx-[-1.5rem]"></li>
+            <li>
+              <Link
+                href="/marketplace"
+                onClick={() => setIsMenuOpen(false)}
+                className="flex items-center gap-1 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
+              >
+                <ShoppingBagIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
+                <span className="text-base leading-none">Marketplace</span>
+              </Link>
+            </li>
+            <li className="border-t border-blue-500/20 mx-[-1.5rem]"></li>
+            <li>
+              <Link
+                href="/explorer"
+                onClick={() => setIsMenuOpen(false)}
+                className="flex items-center gap-1 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
+              >
+                <CubeIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
+                <span className="text-base leading-none">Blockchain Explorer</span>
+              </Link>
+            </li>
+          </ul>
 
-          {/* Full-width Divider Between Sections */}
-          <div className="border-t border-gray-300 my-4 mx-[-1.5rem]"></div>
+          <div className="border-t border-blue-500/20 my-4 mx-[-1.5rem]"></div>
 
-          {/* Additional Section */}
-          <div className="py-4">
-            <ul className="space-y-3">
-              <li>
-                <Link
-                  href="/TradingCompetition"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="flex items-center gap-2 py-2 text-gray-800 hover:text-[#0052FF] transition-colors"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                    viewBox="0 0 24 24"
+          <ul className="space-y-3">
+            <li>
+              <Link
+                href="/TradingCompetition"
+                onClick={() => setIsMenuOpen(false)}
+                className="flex items-center gap-1 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
+              >
+                <TrophyIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
+                <span className="text-base leading-none">Tournaments</span>
+              </Link>
+            </li>
+            <li>
+              <Link
+                href="/docs"
+                onClick={() => setIsMenuOpen(false)}
+                className="flex items-center gap-1 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
+              >
+                <DocumentTextIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
+                <span className="text-base leading-none">Docs</span>
+              </Link>
+            </li>
+            <li>
+              {!loading && (
+                user ? (
+                  <button
+                    onClick={handleSignOut}
+                    className="flex items-center gap-1 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md w-full text-left"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M8 21h8M12 17v4M6 3h12l1 5a5 5 0 01-4 5v1a4 4 0 01-4 4 4 4 0 01-4-4v-1a5 5 0 01-4-5l1-5z"
-                    />
-                  </svg>
-                  <span>Tournaments</span>
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/docs"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="flex items-center gap-2 py-2 text-gray-800 hover:text-[#0052FF] transition-colors"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M9 2h6l5 5v12a2 2 0 01-2 2H7a2 2 0 01-2-2V4a2 2 0 012-2z"
-                    />
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M14 2v6h6"
-                    />
-                  </svg>
-                  <span>Docs</span>
-                </Link>
-              </li>
-              <li>
-                {!loading && (
+                    <UserIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
+                    <span className="text-base leading-none">Sign out</span>
+                  </button>
+                ) : (
                   <Link
-                    href={user ? "/account" : "/login"}
+                    href="/login"
                     onClick={() => setIsMenuOpen(false)}
-                    className="flex items-center gap-2 py-2 text-gray-800 hover:text-[#0052FF] transition-colors"
+                    className="flex items-center gap-1 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
                   >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M12 12c2.28 0 4-1.72 4-4s-1.72-4-4-4-4 1.72-4 4 1.72 4 4 4z"
-                      />
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M6 18v-.42A2.58 2.58 0 018.58 15h6.84A2.58 2.58 0 0118 17.58V18"
-                      />
-                    </svg>
-                    <span>{user ? "Account" : "Sign in"}</span>
+                    <UserIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
+                    <span className="text-base leading-none">Sign in</span>
                   </Link>
-                )}
-              </li>
-            </ul>
-          </div>
+                )
+              )}
+            </li>
+          </ul>
         </nav>
       </div>
 
-      {/* Custom CSS for Coin Animation, etc. */}
       <style jsx>{`
+        :root {
+          --coinbase-blue: #3B82F6; /* Updated to match MarketplacePage blue */
+        }
         .coinContainer {
           position: relative;
-          width: 40px;
-          height: 40px;
-          perspective: 1000px;
+          width: 48px;
+          height: 48px;
         }
         .coinInner {
           width: 100%;
           height: 100%;
-          transform-style: preserve-3d;
-          animation: spinCoin 2s linear infinite;
+          animation: spinWheel 4s linear infinite;
         }
         .coinFace {
-          width: 40px;
-          height: 40px;
+          width: 48px;
+          height: 48px;
           backface-visibility: hidden;
         }
-        @keyframes spinCoin {
+        @keyframes spinWheel {
           from {
-            transform: rotateY(0deg);
+            transform: rotate(0deg);
           }
           to {
-            transform: rotateY(360deg);
+            transform: rotate(360deg);
           }
         }
       `}</style>
@@ -524,56 +294,26 @@ const Header = () => {
 
 export default Header;
 
-/**
- * A reusable component for a single icon link + tooltip.
- *
- * Props:
- * - href: URL path
- * - label: string (shown in tooltip)
- * - svg: main <path> or <svg> children
- * - extraPath?: an optional second path for more complex icons
- */
 function IconLink({
   href,
   label,
-  svg,
-  extraPath,
+  IconComponent,
 }: {
   href: string;
   label: string;
-  svg: React.ReactNode;
-  extraPath?: React.ReactNode;
+  IconComponent: React.ComponentType<React.SVGProps<SVGSVGElement>>;
 }) {
   return (
     <div className="relative group">
       <Link href={href} className="flex items-center">
-        {/* Gray circle with icon */}
-        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
-          <svg
-            className="w-4 h-4 text-gray-800"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            viewBox="0 0 24 24"
-          >
-            {svg}
-            {extraPath ? extraPath : null}
-          </svg>
+        <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
+          <IconComponent className="w-4 h-4 text-gray-200 group-hover:text-blue-400 transition-colors" />
         </div>
-        {/* Screen-reader text */}
         <span className="sr-only">{label}</span>
       </Link>
-
-      {/* Tooltip on hover */}
-      <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-black rounded pointer-events-none whitespace-nowrap hidden group-hover:block">
+      <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-gray-200 bg-gray-900 rounded pointer-events-none whitespace-nowrap hidden group-hover:block">
         {label}
       </span>
     </div>
   );
 }
-
-
-
-
-
-

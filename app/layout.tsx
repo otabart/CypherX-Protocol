@@ -1,11 +1,11 @@
-import "./globals.css";
-import { Providers } from "./providers.tsx";
-import type { Metadata } from "next";
+import './globals.css';
+import { Providers } from './providers.tsx';
+import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: "Homebase Markets",
+  title: 'CypherX Protocol',
   icons: {
-    icon: "https://i.imgur.com/tucXG6S.png",
+    icon: 'https://i.imgur.com/8NiARbt.png',
   },
 };
 
@@ -17,9 +17,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="geist antialiased">
-        <Providers>
-          {children}
-        </Providers>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
