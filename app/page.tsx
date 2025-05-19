@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import type { FC } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
-import ScrollingTokenBanner from './components/ScrollingTokenBanner.tsx';
+import TrendingWidget from './components/TrendingWidget.tsx';
 import Header from './components/Header.tsx';
 import Footer from './components/Footer.tsx';
 import PartnersScroller from './components/PartnersScroller.tsx';
@@ -229,38 +229,41 @@ const ToolIcon: FC<IconProps> = ({ className }) => {
 };
 
 function LatestBlocks({ blocks }: { blocks: Block[] }) {
-  const cardVariants = {
-    hidden: { opacity: 0 },
-    visible: { opacity: 1, transition: { duration: 0.5 } },
-  };
+  const isMobile = useIsMobile();
 
   const blockVariants = {
-    initial: { opacity: 0, scale: 0.95 },
-    animate: { opacity: 1, scale: 1 },
-    exit: { opacity: 0, scale: 0.95 },
+    initial: { y: -20, opacity: 0 },
+    animate: { y: 0, opacity: 1 },
+    exit: { y: 20, opacity: 0 },
   };
 
   return (
     <motion.div
       className="w-full font-mono bg-gray-950 rounded-xl shadow-lg p-4 sm:p-6 md:p-8 border border-blue-500/20"
-      variants={cardVariants}
-      initial="hidden"
-      animate="visible"
+      initial={{ opacity: 0 }}
+      whileInView={{ opacity: 1 }}
+      viewport={{ once: true }}
+      transition={{ duration: 0.5 }}
     >
       <h2 className="text-lg sm:text-xl md:text-2xl font-semibold text-gray-200 mb-4 sm:mb-6 md:mb-8">
         [ LATEST BLOCKS ]
       </h2>
-      <div className="space-y-4 sm:space-y-6">
-        <AnimatePresence>
+      <div className="space-y-4 sm:space-y-6 relative">
+        <AnimatePresence mode="wait" initial={false}>
           {blocks.slice(0, 3).map((block: Block, index) => (
             <motion.div
               key={block.number}
-              className="rounded-lg bg-gray-950 shadow-md p-3 sm:p-4 md:p-6 border border-blue-500/20 transition-all duration-300 hover:shadow-xl"
+              layout
               variants={blockVariants}
               initial="initial"
               animate="animate"
               exit="exit"
-              transition={{ duration: 0.4, delay: index * 0.2 }}
+              transition={{
+                duration: 0.4,
+                ease: 'easeInOut',
+                delay: index * 0.1,
+              }}
+              className="rounded-lg bg-gray-950 shadow-md p-3 sm:p-4 md:p-6 border border-blue-500/20 transition-all duration-300 hover:shadow-xl"
             >
               <div className="flex flex-col gap-2 sm:gap-0 sm:flex-row sm:justify-between sm:items-center mb-2 sm:mb-4">
                 <div className="flex items-center space-x-2 sm:space-x-3 flex-wrap">
@@ -342,7 +345,7 @@ function NetworkInsights({
               suffix: '$',
               icon: <CoinIcon />,
               decimals: 2,
-              change: '+2.5%', // Example price change
+              change: '+2.5%',
             },
             {
               title: '24h Volume',
@@ -350,7 +353,7 @@ function NetworkInsights({
               suffix: '$',
               icon: <VolumeIcon />,
               decimals: 0,
-              change: '-1.2%', // Example volume change
+              change: '-1.2%',
             },
             {
               title: 'Latest Block',
@@ -556,13 +559,12 @@ function HomePage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-950 text-gray-200">
-      {/* Scrolling Token Banner */}
-      <motion.div className="relative overflow-hidden">
-        <ScrollingTokenBanner />
-      </motion.div>
+      {/* Trending Tokens Banner */}
+      <TrendingWidget />
 
       {/* Header */}
       <Header />
+      <div className="border-t border-blue-500/30"></div>
 
       {/* Hero Section */}
       <motion.section
@@ -570,7 +572,7 @@ function HomePage() {
         {...scrollProps}
         style={{
           backgroundImage: 'url(https://i.imgur.com/YVycXUz.jpeg)',
-          backgroundSize: 'cover',
+          backgroundSize: 'cover', // Reverted to original
           backgroundPosition: 'center',
           backgroundRepeat: 'no-repeat',
         }}
@@ -619,14 +621,11 @@ function HomePage() {
       <NetworkInsights stats={stats} />
 
       {/* Latest Blocks Section */}
-      <motion.section
-        className="px-4 py-12 md:py-16 flex flex-col items-center bg-gray-950"
-        {...scrollProps}
-      >
+      <section className="px-4 py-12 md:py-16 flex flex-col items-center bg-gray-950">
         <div className="w-full max-w-md sm:max-w-5xl">
           <LatestBlocks blocks={blocks} />
         </div>
-      </motion.section>
+      </section>
 
       {/* What is Base? Section */}
       <motion.section

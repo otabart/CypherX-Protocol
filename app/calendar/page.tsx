@@ -21,7 +21,7 @@ import {
   GoogleAuthProvider,
   onAuthStateChanged,
 } from 'firebase/auth';
-import type { User } from 'firebase/auth'; // Type-only import for User
+import type { User } from 'firebase/auth';
 import { Timestamp } from 'firebase/firestore';
 import {
   FiSend,
@@ -57,20 +57,6 @@ interface LaunchDay {
   launches: DayLaunches;
 }
 
-// Define props for Header component
-interface HeaderProps {
-  user: User | null;
-  onSignIn: () => Promise<void>;
-  onSignOut: () => Promise<void>;
-}
-
-// Define props for EventCalendar component (assumed)
-interface EventCalendarProps {
-  user: User | null;
-  followedProjects: string[];
-}
-
-// Utility to get the current week's dates
 function getCurrentWeekDates(): { day: string; date: string; fullDate: string }[] {
   const today = new Date();
   const dayOfWeek = today.getDay();
@@ -91,7 +77,6 @@ function getCurrentWeekDates(): { day: string; date: string; fullDate: string }[
   return days;
 }
 
-// Utility to convert Firestore Timestamp to YYYY-MM-DD string
 function timestampToDateString(timestamp: Timestamp): string {
   const date = timestamp.toDate();
   return date.toISOString().split('T')[0];
@@ -139,7 +124,6 @@ export default function LaunchCalendar() {
     return () => unsubscribe();
   }, []);
 
-  // Moved fetchLaunchData outside useEffect to make it reusable
   const fetchLaunchData = async () => {
     setLoading(true);
     setError(null);
@@ -451,44 +435,42 @@ export default function LaunchCalendar() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-black text-white">
-      {/* Header */}
+    <div className="flex flex-col min-h-screen bg-gray-950 text-gray-200">
       <Header
         user={user}
         onSignIn={handleSignIn}
         onSignOut={handleSignOut}
       />
 
-      {/* Main Content */}
       <motion.main
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
         className="flex-grow container mx-auto px-4 py-8 sm:py-12"
       >
-        <div className="bg-black p-6 sm:p-8 rounded-xl shadow-xl border border-white border-opacity-10">
+        <div className="bg-gray-950 p-6 sm:p-8 rounded-xl shadow-md border border-blue-500/20">
           {loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 sm:gap-6">
               {Array.from({ length: 7 }).map((_, index) => (
                 <div
                   key={index}
-                  className="bg-black p-4 rounded-lg shadow-md border border-white border-opacity-10 min-h-80 flex flex-col animate-pulse"
+                  className="bg-gray-950 p-4 rounded-lg shadow-md border border-blue-500/20 min-h-80 flex flex-col animate-pulse"
                 >
-                  <div className="h-6 bg-[#1A1A1A] rounded w-1/3 mx-auto mb-2"></div>
-                  <div className="h-4 bg-[#1A1A1A] rounded w-1/4 mx-auto mb-4"></div>
+                  <div className="h-6 bg-gray-900 rounded w-1/3 mx-auto mb-2"></div>
+                  <div className="h-4 bg-gray-900 rounded w-1/4 mx-auto mb-4"></div>
                   <div className="flex-grow space-y-4">
-                    <div className="bg-[#1A1A1A] p-3 rounded-md border border-white border-opacity-10">
-                      <div className="h-4 bg-[#2A2A2A] rounded w-1/2 mx-auto mb-2"></div>
+                    <div className="bg-gray-900 p-3 rounded-md border border-blue-500/20">
+                      <div className="h-4 bg-gray-800 rounded w-1/2 mx-auto mb-2"></div>
                       <div className="grid grid-cols-2 gap-2">
-                        <div className="bg-black p-2 rounded-md h-16 border border-white border-opacity-10"></div>
-                        <div className="bg-black p-2 rounded-md h-16 border border-white border-opacity-10"></div>
+                        <div className="bg-gray-950 p-2 rounded-md h-16 border border-blue-500/20"></div>
+                        <div className="bg-gray-950 p-2 rounded-md h-16 border border-blue-500/20"></div>
                       </div>
                     </div>
-                    <div className="bg-[#0052FF] p-3 rounded-md border border-white border-opacity-10">
-                      <div className="h-4 bg-blue-400 rounded w-1/2 mx-auto mb-2"></div>
+                    <div className="bg-blue-500/20 p-3 rounded-md border border-blue-500/20">
+                      <div className="h-4 bg-blue-400/30 rounded w-1/2 mx-auto mb-2"></div>
                       <div className="grid grid-cols-2 gap-2">
-                        <div className="bg-black p-2 rounded-md h-16 border border-white border-opacity-10"></div>
-                        <div className="bg-black p-2 rounded-md h-16 border border-white border-opacity-10"></div>
+                        <div className="bg-gray-950 p-2 rounded-md h-16 border border-blue-500/20"></div>
+                        <div className="bg-gray-950 p-2 rounded-md h-16 border border-blue-500/20"></div>
                       </div>
                     </div>
                   </div>
@@ -498,12 +480,13 @@ export default function LaunchCalendar() {
           ) : error ? (
             <div className="text-center text-red-500 py-6">
               <p>{error}</p>
-              <button
+              <motion.button
+                whileHover={{ scale: 1.05 }}
                 onClick={fetchLaunchData}
-                className="mt-2 text-blue-500 underline hover:text-blue-400"
+                className="mt-2 text-blue-400 underline hover:text-blue-300 text-sm sm:text-base"
               >
                 Retry
-              </button>
+              </motion.button>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 sm:gap-6">
@@ -513,25 +496,24 @@ export default function LaunchCalendar() {
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: index * 0.1, duration: 0.3 }}
-                  className="bg-black p-4 rounded-lg shadow-md border border-white border-opacity-10 min-h-80 flex flex-col"
+                  className="bg-gray-950 p-4 rounded-lg shadow-md border border-blue-500/20 min-h-80 flex flex-col"
                 >
                   <div className="text-center">
-                    <h2 className="text-lg sm:text-xl font-bold text-[#0052FF]">
+                    <h2 className="text-lg sm:text-xl font-bold text-blue-400">
                       {day.day}
                     </h2>
-                    <p className="text-white text-opacity-70 text-xs sm:text-sm">
+                    <p className="text-gray-300 text-xs sm:text-sm">
                       {day.date}
                     </p>
                   </div>
                   <div className="flex-grow mt-4 flex flex-col space-y-4">
-                    {/* Launching Soon Section */}
-                    <div className="bg-[#1A1A1A] p-3 rounded-md border border-white border-opacity-10 flex-1">
-                      <h3 className="text-xs sm:text-sm font-semibold text-white text-opacity-90 text-center mb-2 flex items-center justify-center gap-1">
-                        <FiSend className="w-4 h-4 sm:w-5 sm:h-5 text-white text-opacity-80" />
+                    <div className="bg-gray-900 p-3 rounded-md border border-blue-500/20 flex-1">
+                      <h3 className="text-xs sm:text-sm font-semibold text-gray-200 text-center mb-2 flex items-center justify-center gap-1">
+                        <FiSend className="w-4 h-4 sm:w-5 sm:h-5 text-gray-200" />
                         Launching Soon
                       </h3>
                       {day.launches.launchingSoon.length === 0 ? (
-                        <p className="text-xs sm:text-sm text-white text-opacity-70 text-center">
+                        <p className="text-xs sm:text-sm text-gray-300 text-center">
                           No launches scheduled
                         </p>
                       ) : (
@@ -539,7 +521,7 @@ export default function LaunchCalendar() {
                           {day.launches.launchingSoon.map((launch, idx) => (
                             <motion.div
                               key={idx}
-                              className="flex flex-col items-center bg-black p-2 rounded-md shadow-sm hover:bg-[#1A1A1A] transition-all h-16 justify-center cursor-pointer border border-white border-opacity-10"
+                              className="flex flex-col items-center bg-gray-950 p-2 rounded-md shadow-sm hover:bg-gray-800 transition-all h-16 justify-center cursor-pointer border border-blue-500/20"
                               whileHover={{ scale: 1.05 }}
                               onClick={() => setSelectedLaunch(launch)}
                             >
@@ -547,15 +529,18 @@ export default function LaunchCalendar() {
                                 <img
                                   src={launch.logo}
                                   alt={launch.name}
-                                  className="w-8 h-8 rounded-full mb-1 object-cover"
+                                  className="w-8 h-8 rounded-full mb-1 object-cover border border-blue-500/20"
+                                  onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+                                    e.currentTarget.src = '/fallback.png';
+                                  }}
                                 />
                               ) : (
-                                <div className="w-8 h-8 bg-[#2A2A2A] rounded-full mb-1"></div>
+                                <div className="w-8 h-8 bg-gray-800 rounded-full mb-1 border border-blue-500/20"></div>
                               )}
-                              <p className="text-xs sm:text-sm font-semibold text-white truncate w-full text-center">
+                              <p className="text-xs sm:text-sm font-semibold text-gray-200 truncate w-full text-center">
                                 {launch.name || 'TBA'}
                               </p>
-                              <p className="text-[10px] sm:text-xs text-white text-opacity-70">
+                              <p className="text-[10px] sm:text-xs text-gray-300">
                                 {launch.ticker || ''}
                               </p>
                             </motion.div>
@@ -563,14 +548,13 @@ export default function LaunchCalendar() {
                         </div>
                       )}
                     </div>
-                    {/* Launched Section */}
-                    <div className="bg-[#0052FF] p-3 rounded-md border border-white border-opacity-10 flex-1">
-                      <h3 className="text-xs sm:text-sm font-semibold text-white text-center mb-2 flex items-center justify-center gap-1">
-                        <FiCheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                    <div className="bg-blue-500/20 p-3 rounded-md border border-blue-500/20 flex-1">
+                      <h3 className="text-xs sm:text-sm font-semibold text-gray-200 text-center mb-2 flex items-center justify-center gap-1">
+                        <FiCheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-gray-200" />
                         Launched
                       </h3>
                       {day.launches.launched.length === 0 ? (
-                        <p className="text-xs sm:text-sm text-white text-opacity-80 text-center">
+                        <p className="text-xs sm:text-sm text-gray-300 text-center">
                           No launches yet
                         </p>
                       ) : (
@@ -578,7 +562,7 @@ export default function LaunchCalendar() {
                           {day.launches.launched.map((launch, idx) => (
                             <motion.div
                               key={idx}
-                              className="flex flex-col items-center bg-black p-2 rounded-md shadow-sm hover:bg-[#1A1A1A] transition-all h-16 justify-center cursor-pointer border border-white border-opacity-10"
+                              className="flex flex-col items-center bg-gray-950 p-2 rounded-md shadow-sm hover:bg-gray-800 transition-all h-16 justify-center cursor-pointer border border-blue-500/20"
                               whileHover={{ scale: 1.05 }}
                               onClick={() => setSelectedLaunch(launch)}
                             >
@@ -586,15 +570,18 @@ export default function LaunchCalendar() {
                                 <img
                                   src={launch.logo}
                                   alt={launch.name}
-                                  className="w-8 h-8 rounded-full mb-1 object-cover"
+                                  className="w-8 h-8 rounded-full mb-1 object-cover border border-blue-500/20"
+                                  onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+                                    e.currentTarget.src = '/fallback.png';
+                                  }}
                                 />
                               ) : (
-                                <div className="w-8 h-8 bg-[#2A2A2A] rounded-full mb-1"></div>
+                                <div className="w-8 h-8 bg-gray-800 rounded-full mb-1 border border-blue-500/20"></div>
                               )}
-                              <p className="text-xs sm:text-sm font-semibold text-white truncate w-full text-center">
+                              <p className="text-xs sm:text-sm font-semibold text-gray-200 truncate w-full text-center">
                                 {launch.name || 'TBA'}
                               </p>
-                              <p className="text-[10px] sm:text-xs text-white text-opacity-70">
+                              <p className="text-[10px] sm:text-xs text-gray-300">
                                 {launch.ticker || ''}
                               </p>
                             </motion.div>
@@ -609,23 +596,22 @@ export default function LaunchCalendar() {
           )}
         </div>
 
-        {/* Event Calendar */}
         <EventCalendar user={user} followedProjects={followedProjects} />
       </motion.main>
 
-      <div className="container mx-auto px-4 py-6 bg-black border border-white border-opacity-10 rounded-xl shadow-lg mb-12">
+      <div className="container mx-auto px-4 py-6 bg-gray-950 border border-blue-500/20 rounded-xl shadow-md mb-12">
         <div className="text-center">
-          <h2 className="text-xl sm:text-2xl font-bold text-[#0052FF] mb-2">
+          <h2 className="text-xl sm:text-2xl font-bold text-blue-400 mb-2">
             Sign Up for Launch Alerts
           </h2>
-          <p className="text-white text-opacity-80 text-sm sm:text-base mb-4">
+          <p className="text-gray-300 text-sm sm:text-base mb-4">
             Stay updated on upcoming token launches.
           </p>
           {user ? (
             <motion.button
               whileHover={{ scale: 1.05 }}
               onClick={requestNotificationPermission}
-              className="px-4 sm:px-6 py-2 bg-[#0052FF] text-white rounded-md hover:bg-[#0042CC] transition text-sm sm:text-base"
+              className="px-4 sm:px-6 py-2 bg-blue-500/20 text-gray-200 rounded-md hover:bg-blue-400/30 transition text-sm sm:text-base"
             >
               Enable Notifications
             </motion.button>
@@ -633,7 +619,7 @@ export default function LaunchCalendar() {
             <motion.button
               whileHover={{ scale: 1.05 }}
               onClick={handleSignIn}
-              className="px-4 sm:px-6 py-2 bg-[#0052FF] text-white rounded-md hover:bg-[#0042CC] transition text-sm sm:text-base"
+              className="px-4 sm:px-6 py-2 bg-blue-500/20 text-gray-200 rounded-md hover:bg-blue-400/30 transition text-sm sm:text-base"
             >
               Sign In to Subscribe
             </motion.button>
@@ -642,76 +628,83 @@ export default function LaunchCalendar() {
       </div>
 
       {selectedLaunch && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50 overflow-y-auto">
+        <div className="fixed inset-0 bg-gray-950/70 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="bg-black p-6 rounded-xl shadow-2xl w-full max-w-md sm:max-w-lg relative mx-4 my-8 border border-white border-opacity-10"
+            className="bg-gray-950 p-6 rounded-xl shadow-md w-full max-w-md sm:max-w-lg relative mx-4 my-8 border border-blue-500/20"
           >
             <button
               onClick={() => setSelectedLaunch(null)}
-              className="absolute top-3 right-3 text-white text-opacity-80 text-lg hover:text-white"
+              className="absolute top-3 right-3 text-gray-300 text-lg hover:text-gray-200"
             >
               ×
             </button>
-            <h3 className="text-lg sm:text-xl font-bold text-white mb-4">
+            <h3 className="text-lg sm:text-xl font-bold text-gray-200 mb-4">
               {selectedLaunch.name || 'TBA'} ({selectedLaunch.ticker || 'N/A'})
             </h3>
             {selectedLaunch.logo ? (
               <img
                 src={selectedLaunch.logo}
                 alt={selectedLaunch.name}
-                className="w-16 h-16 rounded-full mx-auto my-3 object-cover"
+                className="w-16 h-16 rounded-full mx-auto my-3 object-cover border border-blue-500/20"
+                onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+                  e.currentTarget.src = '/fallback.png';
+                }}
               />
             ) : (
-              <div className="w-16 h-16 bg-[#2A2A2A] rounded-full mx-auto my-3"></div>
+              <div className="w-16 h-16 bg-gray-800 rounded-full mx-auto my-3 border border-blue-500/20"></div>
             )}
-            <p className="text-sm sm:text-base text-white text-opacity-80 mb-2">
+            <p className="text-sm sm:text-base text-gray-300 mb-2">
               <strong>Project ID:</strong> {selectedLaunch.id}
             </p>
-            <p className="text-sm sm:text-base text-white text-opacity-80 mb-2">
+            <p className="text-sm sm:text-base text-gray-300 mb-2">
               <strong>Launch Type:</strong> {selectedLaunch.launchType || 'N/A'}
             </p>
-            <p className="text-sm sm:text-base text-white text-opacity-80 mb-2">
+            <p className="text-sm sm:text-base text-gray-300 mb-2">
               <strong>Launch Date:</strong> {selectedLaunch.date || 'N/A'}
             </p>
-            <p className="text-sm sm:text-base text-white text-opacity-80 mb-4 break-words">
+            <p className="text-sm sm:text-base text-gray-300 mb-4 break-words">
               <strong>Description:</strong>{' '}
               {selectedLaunch.description || 'No description available.'}
             </p>
             <div className="flex flex-wrap justify-between mb-4 gap-2">
-              <button
+              <motion.button
+                whileHover={{ scale: 1.05 }}
                 onClick={() => handleVote(selectedLaunch, 'moon')}
-                className="bg-green-500 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-green-600 transition text-sm sm:text-base flex items-center gap-1"
+                className="bg-green-500 text-gray-200 px-3 sm:px-4 py-2 rounded-md hover:bg-green-600 transition text-sm sm:text-base flex items-center gap-1"
               >
                 🚀 Moon ({selectedLaunch.votes.moon || 0})
-              </button>
-              <button
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
                 onClick={() => handleVote(selectedLaunch, 'rug')}
-                className="bg-red-500 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-red-600 transition text-sm sm:text-base flex items-center gap-1"
+                className="bg-red-500 text-gray-200 px-3 sm:px-4 py-2 rounded-md hover:bg-red-600 transition text-sm sm:text-base flex items-center gap-1"
               >
                 💩 Rug ({selectedLaunch.votes.rug || 0})
-              </button>
+              </motion.button>
             </div>
             <div className="flex flex-wrap justify-between mb-4 gap-2">
-              <button
+              <motion.button
+                whileHover={{ scale: 1.05 }}
                 onClick={() => handleLike(selectedLaunch)}
-                className={`flex items-center gap-1 px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base transition ${
+                className={`flex items-center gap-1 px-3 sm:px-4 py-2 rounded-md text-sm sm:text-base transition ${
                   user && selectedLaunch.reactions.likes.includes(user.uid)
-                    ? 'bg-blue-500 text-white hover:bg-blue-600'
-                    : 'bg-[#1A1A1A] text-white hover:bg-[#2A2A2A] border border-white border-opacity-10'
+                    ? 'bg-blue-500/20 text-gray-200 hover:bg-blue-400/30'
+                    : 'bg-gray-900 text-gray-200 hover:bg-gray-800 border border-blue-500/20'
                 }`}
               >
                 <FiThumbsUp className="w-4 h-4 sm:w-5 sm:h-5" />
                 Like ({selectedLaunch.reactions.likes.length})
-              </button>
-              <button
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
                 onClick={() => handleFollow(selectedLaunch)}
-                className={`flex items-center gap-1 px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base transition ${
+                className={`flex items-center gap-1 px-3 sm:px-4 py-2 rounded-md text-sm sm:text-base transition ${
                   user && selectedLaunch.followers.includes(user.uid)
-                    ? 'bg-yellow-500 text-white hover:bg-yellow-600'
-                    : 'bg-[#1A1A1A] text-white hover:bg-[#2A2A2A] border border-white border-opacity-10'
+                    ? 'bg-yellow-500 text-gray-200 hover:bg-yellow-600'
+                    : 'bg-gray-900 text-gray-200 hover:bg-gray-800 border border-blue-500/20'
                 }`}
               >
                 <FiBell className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -719,10 +712,10 @@ export default function LaunchCalendar() {
                   ? 'Unfollow'
                   : 'Follow'}{' '}
                 ({selectedLaunch.followers.length})
-              </button>
+              </motion.button>
             </div>
             <div className="mb-4">
-              <h4 className="text-sm sm:text-base font-semibold text-white mb-2">
+              <h4 className="text-sm sm:text-base font-semibold text-gray-200 mb-2">
                 Comments
               </h4>
               {selectedLaunch.reactions.comments.length > 0 ? (
@@ -730,14 +723,14 @@ export default function LaunchCalendar() {
                   {selectedLaunch.reactions.comments.map((c, idx) => (
                     <li
                       key={idx}
-                      className="text-xs sm:text-sm text-white text-opacity-80 border-b border-white border-opacity-10 pb-1 break-words"
+                      className="text-xs sm:text-sm text-gray-300 border-b border-blue-500/20 pb-1 break-words"
                     >
                       <strong>User {c.userId.slice(0, 8)}:</strong> {c.text}
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="text-xs sm:text-sm text-white text-opacity-70">
+                <p className="text-xs sm:text-sm text-gray-300">
                   No comments yet.
                 </p>
               )}
@@ -748,14 +741,15 @@ export default function LaunchCalendar() {
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
                     placeholder="Add a comment..."
-                    className="flex-1 px-3 py-1 rounded-md border border-white border-opacity-20 bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50 text-sm sm:text-base"
+                    className="flex-1 px-3 py-1 rounded-md border border-blue-500/20 bg-gray-900 text-gray-200 placeholder-gray-400 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <button
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
                     onClick={() => handleCommentSubmit(selectedLaunch)}
-                    className="bg-[#0052FF] text-white px-3 py-1 rounded-md hover:bg-[#0042CC] transition text-sm sm:text-base"
+                    className="bg-blue-500/20 text-gray-200 px-3 py-1 rounded-md hover:bg-blue-400/30 transition text-sm sm:text-base"
                   >
                     Post
-                  </button>
+                  </motion.button>
                 </div>
               )}
             </div>
@@ -774,7 +768,7 @@ export default function LaunchCalendar() {
                   alert('Link copied to clipboard!');
                 });
               }}
-              className="w-full bg-[#1A1A1A] text-white py-2 rounded-lg hover:bg-[#2A2A2A] transition flex items-center justify-center gap-1 text-sm sm:text-base border border-white border-opacity-10"
+              className="w-full bg-gray-900 text-gray-200 py-2 rounded-md hover:bg-gray-800 transition flex items-center justify-center gap-1 text-sm sm:text-base border border-blue-500/20"
             >
               <FiShare2 className="w-4 h-4 sm:w-5 sm:h-5" />
               Share

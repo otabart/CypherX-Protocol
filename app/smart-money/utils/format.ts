@@ -1,5 +1,3 @@
-// app/smart-money/utils/format.ts
-
 /**
  * Formats a token balance to a readable string with a fixed number of decimal places.
  * @param balance The balance as a string (e.g., from Alchemy API).
@@ -10,9 +8,9 @@ export const formatBalance = (balance: string, decimals: number = 2): string => 
   try {
     const num = parseFloat(balance);
     if (isNaN(num)) {
-      return '0.00'; // Fallback for invalid numbers
+      return '0.00';
     }
-    return num.toFixed(decimals).replace(/\.?0+$/, ''); // Remove trailing zeros
+    return num.toFixed(decimals).replace(/\.?0+$/, '');
   } catch (error) {
     console.error('Error formatting balance:', error);
     return '0.00';
@@ -42,9 +40,9 @@ export const formatTransactionValue = (value: string, decimals: number = 4): str
   try {
     const num = parseFloat(value);
     if (isNaN(num)) {
-      return '0.0000'; // Fallback for invalid numbers
+      return '0.0000';
     }
-    return num.toFixed(decimals).replace(/\.?0+$/, ''); // Remove trailing zeros
+    return num.toFixed(decimals).replace(/\.?0+$/, '');
   } catch (error) {
     console.error('Error formatting transaction value:', error);
     return '0.0000';

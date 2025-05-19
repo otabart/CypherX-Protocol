@@ -1,6 +1,7 @@
 export interface TokenHolder {
   address: string;
   balance: string;
+  percentage: string; // Percentage of total supply owned
 }
 
 export interface Transaction {
@@ -8,5 +9,10 @@ export interface Transaction {
   from: string;
   to: string;
   value: string;
-  asset: string; // Added asset field for money flow visualization
+  asset: string;
+}
+
+export interface TokenMetadata {
+  decimals: number;
+  totalSupply: string;
 }

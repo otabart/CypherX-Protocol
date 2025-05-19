@@ -140,7 +140,7 @@ interface TrendInsight {
   crossoverType?: "Golden Cross" | "Death Cross";
 }
 
-export default function ChartPage() {
+export default function TokenScreenerPage() {
   const { poolAddress } = useParams();
   const [token, setToken] = useState<TokenMetadata | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -206,6 +206,23 @@ export default function ChartPage() {
   const lastTransactionRef = useRef<HTMLTableRowElement | null>(null);
   const availableIndicators = ["Volume", "SMA", "RSI", "MACD", "VWAP", "Supertrend"];
   const provider = new ethers.JsonRpcProvider("https://base-mainnet.g.alchemy.com/v2/8KR6qwxbLlIISgrMCZfsrYeMmn6-S-bN");
+
+  // Theme classes aligned with Marketplace and ExplorerPage
+  const themeClasses = {
+    background: "bg-gray-950", // #030712
+    text: "text-gray-200",
+    border: "border-blue-500/30",
+    containerBg: "bg-[#141A2F]", // Slightly lighter for contrast
+    hoverBg: "hover:bg-[#1E263B] hover:shadow-lg hover:scale-[1.02]",
+    secondaryText: "text-gray-400",
+    errorText: "text-red-400",
+    buttonBg: "bg-blue-500/20",
+    buttonHover: "hover:bg-blue-500/40",
+    buttonDisabled: "bg-gray-800",
+    shadow: "shadow-[0_2px_8px_rgba(59,130,246,0.2)]",
+    tabActive: "border-blue-400 text-blue-400",
+    tabInactive: "border-transparent text-gray-400",
+  };
 
   // Utility Functions
   const throttle = <F extends (...args: any[]) => void>(func: F, wait: number) => {
@@ -1208,9 +1225,9 @@ export default function ChartPage() {
     return {
       chart: {
         type: "candlestick",
-        height: isMounted && window.innerWidth < 768 ? 300 : 700,
+        height: isMounted && window.innerWidth < 768 ? 250 : 550,
         background: "transparent",
-        foreColor: "#A1A1AA",
+        foreColor: "#FFFFFF", // White text for chart labels
         toolbar: {
           show: true,
           tools: { download: false, selection: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true },
@@ -1227,28 +1244,28 @@ export default function ChartPage() {
         },
         animations: { enabled: false },
       },
-      title: { text: chartView, align: "left", style: { color: "#E4E4E7", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
+      title: { text: chartView, align: "left", style: { color: "#FFFFFF", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
       xaxis: {
         type: "datetime",
         min: xAxisRange ? xAxisRange.min : xMin,
         max: xAxisRange ? xAxisRange.max : xMaxWithPadding,
         labels: {
           datetimeUTC: false,
-          format: timeframe.includes("m") ? "HH:mm:ss" : "MMM d HH:mm",
-          style: { colors: "#A1A1AA", fontSize: isMounted && window.innerWidth < 768 ? "8px" : "10px", fontFamily: "Inter, sans-serif" },
+          format: "MMM d HH:mm:ss",
+          style: { colors: "#FFFFFF", fontSize: isMounted && window.innerWidth < 768 ? "8px" : "10px", fontFamily: "Inter, sans-serif" },
           rotate: -45,
           rotateAlways: true,
         },
-        tickAmount: 6,
-        title: { text: "Time", offsetY: 70, style: { color: "#E4E4E7", fontFamily: "Inter, sans-serif" } },
+        tickAmount: 8,
+        title: { text: "Time", offsetY: 70, style: { color: "#FFFFFF", fontFamily: "Inter, sans-serif" } },
       },
       yaxis: {
-        title: { text: chartView === "Price" ? "Price (USD)" : "Market Cap (USD)", style: { color: "#E4E4E7", fontFamily: "Inter, sans-serif" } },
+        title: { text: chartView === "Price" ? "Price (USD)" : "Market Cap (USD)", style: { color: "#FFFFFF", fontFamily: "Inter, sans-serif" } },
         labels: {
-          style: { colors: "#A1A1AA", fontSize: isMounted && window.innerWidth < 768 ? "8px" : "10px", fontFamily: "Inter, sans-serif" },
-          formatter: (val: number) => (chartView === "Price" ? `$${val.toFixed(4)}` : `$${formatLargeNumber(val)}`),
+          style: { colors: "#FFFFFF", fontSize: isMounted && window.innerWidth < 768 ? "8px" : "10px", fontFamily: "Inter, sans-serif" },
+          formatter: (val: number) => (chartView === "Price" ? `$${val.toFixed(6)}` : `$${formatLargeNumber(val)}`),
         },
-        tickAmount: 5,
+        tickAmount: 8,
         min: yMin,
         max: yMax,
       },
@@ -1265,21 +1282,21 @@ export default function ChartPage() {
           x: signal.x,
           y: signal.y,
           marker: { size: 6, fillColor: signal.type === "Buy" ? "#22C55E" : "#EF4444" },
-          label: { text: signal.type, style: { color: "#000000", background: signal.type === "Buy" ? "#22C55E" : "#EF4444", fontSize: "10px", fontFamily: "Inter, sans-serif" } },
+          label: { text: signal.type, style: { color: "#FFFFFF", background: signal.type === "Buy" ? "#22C55E" : "#EF4444", fontSize: "10px", fontFamily: "Inter, sans-serif" } },
         })),
       },
       tooltip: {
         enabled: true,
         theme: "dark",
         x: { format: "dd MMM HH:mm:ss" },
-        y: { formatter: (val: number) => (chartView === "Price" ? `$${val.toFixed(4)}` : `$${formatLargeNumber(val)}`) },
-        style: { fontFamily: "Inter, sans-serif" },
+        y: { formatter: (val: number) => (chartView === "Price" ? `$${val.toFixed(6)}` : `$${formatLargeNumber(val)}`) },
+        style: { fontFamily: "Inter, sans-serif", background: "#141A2F", color: "#FFFFFF" },
       },
       markers: { size: 0 },
       crosshair: {
         enabled: true,
-        x: { show: true, stroke: { color: "#0052FF", width: 1, dashArray: 3 } },
-        y: { show: true, stroke: { color: "#0052FF", width: 1, dashArray: 3 } },
+        x: { show: true, stroke: { color: "#60A5FA", width: 1, dashArray: 3 } },
+        y: { show: true, stroke: { color: "#60A5FA", width: 1, dashArray: 3 } },
       },
     };
   }, [chartView, timeframe, xAxisRange, supertrendSignals, candleData, marketCapData, isMounted]);
@@ -1301,9 +1318,9 @@ export default function ChartPage() {
     return {
       chart: {
         type: "line",
-        height: isMounted && window.innerWidth < 768 ? 300 : 700,
+        height: isMounted && window.innerWidth < 768 ? 250 : 550,
         background: "transparent",
-        foreColor: "#A1A1AA",
+        foreColor: "#FFFFFF",
         toolbar: {
           show: true,
           tools: { download: false, selection: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true },
@@ -1320,53 +1337,53 @@ export default function ChartPage() {
         },
         animations: { enabled: false },
       },
-      title: { text: "Price (Line)", align: "left", style: { color: "#E4E4E7", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
+      title: { text: "Price (Line)", align: "left", style: { color: "#FFFFFF", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
       xaxis: {
         type: "datetime",
         min: xAxisRange ? xAxisRange.min : xMin,
         max: xAxisRange ? xAxisRange.max : xMaxWithPadding,
         labels: {
           datetimeUTC: false,
-          format: timeframe.includes("m") ? "HH:mm:ss" : "MMM d HH:mm",
-          style: { colors: "#A1A1AA", fontSize: isMounted && window.innerWidth < 768 ? "8px" : "10px", fontFamily: "Inter, sans-serif" },
+          format: "MMM d HH:mm:ss",
+          style: { colors: "#FFFFFF", fontSize: isMounted && window.innerWidth < 768 ? "8px" : "10px", fontFamily: "Inter, sans-serif" },
           rotate: -45,
           rotateAlways: true,
         },
-        tickAmount: 6,
-        title: { text: "Time", offsetY: 70, style: { color: "#E4E4E7", fontFamily: "Inter, sans-serif" } },
+        tickAmount: 8,
+        title: { text: "Time", offsetY: 70, style: { color: "#FFFFFF", fontFamily: "Inter, sans-serif" } },
       },
       yaxis: {
-        title: { text: "Price (USD)", style: { color: "#E4E4E7", fontFamily: "Inter, sans-serif" } },
+        title: { text: "Price (USD)", style: { color: "#FFFFFF", fontFamily: "Inter, sans-serif" } },
         labels: {
-          style: { colors: "#A1A1AA", fontSize: isMounted && window.innerWidth < 768 ? "8px" : "10px", fontFamily: "Inter, sans-serif" },
-          formatter: (val: number) => `$${val.toFixed(4)}`,
+          style: { colors: "#FFFFFF", fontSize: isMounted && window.innerWidth < 768 ? "8px" : "10px", fontFamily: "Inter, sans-serif" },
+          formatter: (val: number) => `$${val.toFixed(6)}`,
         },
-        tickAmount: 5,
+        tickAmount: 8,
         min: yMin,
         max: yMax,
       },
       grid: { borderColor: "#27272A", strokeDashArray: 3 },
       stroke: { curve: "smooth", width: 2 },
-      colors: ["#0052FF"],
+      colors: ["#60A5FA"],
       tooltip: {
         enabled: true,
         theme: "dark",
         x: { format: "dd MMM HH:mm:ss" },
-        y: { formatter: (val: number) => `$${val.toFixed(4)}` },
-        style: { fontFamily: "Inter, sans-serif" },
+        y: { formatter: (val: number) => `$${val.toFixed(6)}` },
+        style: { fontFamily: "Inter, sans-serif", background: "#141A2F", color: "#FFFFFF" },
       },
       markers: { size: 0 },
       crosshair: {
         enabled: true,
-        x: { show: true, stroke: { color: "#0052FF", width: 1, dashArray: 3 } },
-        y: { show: true, stroke: { color: "#0052FF", width: 1, dashArray: 3 } },
+        x: { show: true, stroke: { color: "#60A5FA", width: 1, dashArray: 3 } },
+        y: { show: true, stroke: { color: "#60A5FA", width: 1, dashArray: 3 } },
       },
     };
   }, [timeframe, xAxisRange, lineData, isMounted]);
 
   const volumeOptions = useMemo<ApexCharts.ApexOptions>(() => ({
-    chart: { type: "bar", height: isMounted && window.innerWidth < 768 ? 100 : 200, background: "transparent", foreColor: "#A1A1AA", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false } },
-    title: { text: "Volume", align: "left", style: { color: "#E4E4E7", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
+    chart: { type: "bar", height: isMounted && window.innerWidth < 768 ? 100 : 200, background: "transparent", foreColor: "#FFFFFF", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false } },
+    title: { text: "Volume", align: "left", style: { color: "#FFFFFF", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
     xaxis: { 
       type: "datetime", 
       min: xAxisRange ? xAxisRange.min : undefined, 
@@ -1375,10 +1392,10 @@ export default function ChartPage() {
       tickAmount: isMounted && window.innerWidth < 768 ? 6 : 8 
     },
     yaxis: {
-      title: { text: "Volume", style: { color: "#E4E4E7", fontFamily: "Inter, sans-serif" } },
+      title: { text: "Volume", style: { color: "#FFFFFF", fontFamily: "Inter, sans-serif" } },
       labels: { 
         show: true, 
-        style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" }, 
+        style: { colors: "#FFFFFF", fontSize: "10px", fontFamily: "Inter, sans-serif" }, 
         formatter: (val: number) => formatLargeNumber(val) 
       },
       tickAmount: 3,
@@ -1398,28 +1415,28 @@ export default function ChartPage() {
           return `$${formatLargeNumber(volumeUsd)}`;
         },
       },
-      style: { fontFamily: "Inter, sans-serif" },
+      style: { fontFamily: "Inter, sans-serif", background: "#141A2F", color: "#FFFFFF" },
     },
   }), [xAxisRange, token, isMounted]);
 
   const smaOptions = useMemo<ApexCharts.ApexOptions>(() => ({
-    chart: { type: "line", height: isMounted && window.innerWidth < 768 ? 100 : 200, background: "transparent", foreColor: "#A1A1AA", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false } },
-    title: { text: "SMA (20 & 50)", align: "left", style: { color: "#E4E4E7", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
+    chart: { type: "line", height: isMounted && window.innerWidth < 768 ? 100 : 200, background: "transparent", foreColor: "#FFFFFF", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false } },
+    title: { text: "SMA (20 & 50)", align: "left", style: { color: "#FFFFFF", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
     xaxis: { type: "datetime", min: xAxisRange ? xAxisRange.min : undefined, max: xAxisRange ? xAxisRange.max : undefined, labels: { show: false } },
     yaxis: {
-      title: { text: "SMA", style: { color: "#E4E4E7", fontFamily: "Inter, sans-serif" } },
-      labels: { show: true, offsetX: -15, style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" }, formatter: (val: number) => val.toFixed(2) },
+      title: { text: "SMA", style: { color: "#FFFFFF", fontFamily: "Inter, sans-serif" } },
+      labels: { show: true, offsetX: -15, style: { colors: "#FFFFFF", fontSize: "10px", fontFamily: "Inter, sans-serif" }, formatter: (val: number) => val.toFixed(2) },
       tickAmount: 6,
     },
     stroke: { curve: "smooth", width: 2 },
     colors: ["#FBBF24", "#F87171"],
-    tooltip: { enabled: true, theme: "dark", x: { format: "dd MMM HH:mm:ss" }, y: { formatter: (val: number) => val.toFixed(2) }, style: { fontFamily: "Inter, sans-serif" } },
+    tooltip: { enabled: true, theme: "dark", x: { format: "dd MMM HH:mm:ss" }, y: { formatter: (val: number) => val.toFixed(2) }, style: { fontFamily: "Inter, sans-serif", background: "#141A2F", color: "#FFFFFF" } },
     annotations: {
       points: smaCrossovers.map((crossover) => ({
         x: crossover.x,
         y: crossover.y,
         marker: { size: 6, fillColor: crossover.type === "Golden Cross" ? "#22C55E" : "#EF4444" },
-        label: { text: crossover.type, style: { color: "#000000", background: crossover.type === "Golden Cross" ? "#22C55E" : "#EF4444", fontSize: "10px", fontFamily: "Inter, sans-serif" } },
+        label: { text: crossover.type, style: { color: "#FFFFFF", background: crossover.type === "Golden Cross" ? "#22C55E" : "#EF4444", fontSize: "10px", fontFamily: "Inter, sans-serif" } },
       })),
     },
   }), [xAxisRange, smaCrossovers, isMounted]);
@@ -1430,12 +1447,12 @@ export default function ChartPage() {
       height: isMounted && window.innerWidth < 768 ? 100 : 200,
       type: "line",
       background: "transparent",
-      foreColor: "#A1A1AA",
+      foreColor: "#FFFFFF",
       toolbar: { show: false },
       zoom: { enabled: false },
       animations: { enabled: false },
     },
-    title: { text: "RSI", align: "left", style: { color: "#E4E4E7", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
+    title: { text: "RSI", align: "left", style: { color: "#FFFFFF", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
     xaxis: {
       type: "datetime",
       min: xAxisRange ? xAxisRange.min : undefined,
@@ -1445,24 +1462,24 @@ export default function ChartPage() {
     yaxis: {
       min: 0,
       max: 100,
-      title: { text: "RSI", style: { color: "#E4E4E7", fontFamily: "Inter, sans-serif" } },
+      title: { text: "RSI", style: { color: "#FFFFFF", fontFamily: "Inter, sans-serif" } },
       labels: {
         show: true,
         offsetX: -15,
-        style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" },
+        style: { colors: "#FFFFFF", fontSize: "10px", fontFamily: "Inter, sans-serif" },
         formatter: (val: number) => val.toFixed(0),
       },
       tickAmount: 5,
     },
     stroke: { curve: "smooth", width: 2 },
-    colors: ["#0052FF"],
+    colors: ["#60A5FA"],
     grid: { borderColor: "#27272A" },
     tooltip: {
       enabled: true,
       theme: "dark",
       x: { format: "dd MMM HH:mm:ss" },
       y: { formatter: (val: number) => val.toFixed(2) },
-      style: { fontFamily: "Inter, sans-serif" },
+      style: { fontFamily: "Inter, sans-serif", background: "#141A2F", color: "#FFFFFF" },
     },
   }), [xAxisRange, isMounted]);
 
@@ -1472,12 +1489,12 @@ export default function ChartPage() {
       height: isMounted && window.innerWidth < 768 ? 100 : 200,
       type: "line",
       background: "transparent",
-      foreColor: "#A1A1AA",
+      foreColor: "#FFFFFF",
       toolbar: { show: false },
       zoom: { enabled: false },
       animations: { enabled: false },
     },
-    title: { text: "MACD", align: "left", style: { color: "#E4E4E7", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
+    title: { text: "MACD", align: "left", style: { color: "#FFFFFF", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
     xaxis: {
       type: "datetime",
       min: xAxisRange ? xAxisRange.min : undefined,
@@ -1485,27 +1502,27 @@ export default function ChartPage() {
       labels: { show: false },
     },
     yaxis: {
-      title: { text: "MACD", style: { color: "#E4E4E7", fontFamily: "Inter, sans-serif" } },
+      title: { text: "MACD", style: { color: "#FFFFFF", fontFamily: "Inter, sans-serif" } },
       labels: {
         show: true,
         offsetX: -15,
-        style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" },
+        style: { colors: "#FFFFFF", fontSize: "10px", fontFamily: "Inter, sans-serif" },
         formatter: (val: number) => val.toFixed(2),
       },
       tickAmount: 5,
     },
     stroke: { curve: "smooth", width: 2 },
-    colors: ["#3B82F6", "#F97316", "#10B981"],
+    colors: ["#60A5FA", "#F97316", "#10B981"],
     grid: { borderColor: "#27272A" },
     plotOptions: {
-      bar: { columnWidth: "80%" },
+    bar: { columnWidth: "80%" },
     },
     tooltip: {
       enabled: true,
       theme: "dark",
       x: { format: "dd MMM HH:mm:ss" },
       y: { formatter: (val: number) => val.toFixed(2) },
-      style: { fontFamily: "Inter, sans-serif" },
+      style: { fontFamily: "Inter, sans-serif", background: "#141A2F", color: "#FFFFFF" },
     },
   }), [xAxisRange, isMounted]);
 
@@ -1514,15 +1531,15 @@ export default function ChartPage() {
       type: "line", 
       height: isMounted && window.innerWidth < 768 ? 100 : 200, 
       background: "transparent", 
-      foreColor: "#A1A1AA", 
+      foreColor: "#FFFFFF", 
       toolbar: { show: false }, 
-            zoom: { enabled: false }, 
+      zoom: { enabled: false }, 
       animations: { enabled: false } 
     },
     title: { 
       text: "VWAP", 
       align: "left", 
-      style: { color: "#E4E4E7", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } 
+      style: { color: "#FFFFFF", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } 
     },
     xaxis: { 
       type: "datetime", 
@@ -1531,11 +1548,11 @@ export default function ChartPage() {
       labels: { show: false } 
     },
     yaxis: {
-      title: { text: "VWAP", style: { color: "#E4E4E7", fontFamily: "Inter, sans-serif" } },
+      title: { text: "VWAP", style: { color: "#FFFFFF", fontFamily: "Inter, sans-serif" } },
       labels: { 
         show: true, 
         offsetX: -15, 
-        style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" }, 
+        style: { colors: "#FFFFFF", fontSize: "10px", fontFamily: "Inter, sans-serif" }, 
         formatter: (val: number) => val.toFixed(2)
       },
       tickAmount: 6,
@@ -1547,7 +1564,7 @@ export default function ChartPage() {
       theme: "dark", 
       x: { format: "dd MMM HH:mm:ss" }, 
       y: { formatter: (val: number) => val.toFixed(2) }, 
-      style: { fontFamily: "Inter, sans-serif" } 
+      style: { fontFamily: "Inter, sans-serif", background: "#141A2F", color: "#FFFFFF" } 
     },
     annotations: {
       points: vwapSignals.map((signal) => ({
@@ -1557,7 +1574,7 @@ export default function ChartPage() {
         label: { 
           text: signal.type, 
           style: { 
-            color: "#000000", 
+            color: "#FFFFFF", 
             background: signal.type === "Buy" ? "#22C55E" : "#EF4444", 
             fontSize: "10px", 
             fontFamily: "Inter, sans-serif" 
@@ -1597,12 +1614,12 @@ export default function ChartPage() {
         type: "line",
         height: isMounted && window.innerWidth < 768 ? 100 : 200,
         background: "transparent",
-        foreColor: "#A1A1AA",
+        foreColor: "#FFFFFF",
         toolbar: { show: false },
         zoom: { enabled: false },
         animations: { enabled: false },
       },
-      title: { text: "Supertrend", align: "left", style: { color: "#E4E4E7", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
+      title: { text: "Supertrend", align: "left", style: { color: "#FFFFFF", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
       xaxis: {
         type: "datetime",
         min: xAxisRange ? xAxisRange.min : undefined,
@@ -1610,11 +1627,11 @@ export default function ChartPage() {
         labels: { show: false },
       },
       yaxis: {
-        title: { text: "Price", style: { color: "#E4E4E7", fontFamily: "Inter, sans-serif" } },
+        title: { text: "Price", style: { color: "#FFFFFF", fontFamily: "Inter, sans-serif" } },
         labels: {
           show: true,
           offsetX: -15,
-          style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" },
+          style: { colors: "#FFFFFF", fontSize: "10px", fontFamily: "Inter, sans-serif" },
           formatter: (val: number) => val.toFixed(2),
         },
         tickAmount: 6,
@@ -1628,15 +1645,15 @@ export default function ChartPage() {
         custom: ({ dataPointIndex }: any) => {
           const supertrend = supertrendData[dataPointIndex];
           return `
-            <div class="p-2 bg-[#18181B] rounded-lg shadow-lg">
-              <p class="text-sm font-semibold text-[#E4E4E7]"><span class="text-[#A1A1AA]">Price:</span> $${supertrend.y.toFixed(2)}</p>
-              <p class="text-sm text-[#E4E4E7]"><span class="text-[#A1A1AA]">Trend:</span> <span class="${supertrend.trend === "Bullish" ? "text-[#22C55E]" : "text-[#EF4444]"}">${supertrend.trend}</span></p>
-              <p class="text-sm text-[#E4E4E7]"><span class="text-[#A1A1AA]">Signal Strength:</span> ${supertrend.signalStrength.toFixed(2)}</p>
-              <p class="text-sm text-[#E4E4E7]"><span class="text-[#A1A1AA]">Action:</span> ${supertrend.action}</p>
+            <div class="p-2 bg-[#141A2F] rounded-lg shadow-lg">
+              <p class="text-sm font-semibold text-gray-200"><span class="text-gray-400">Price:</span> $${supertrend.y.toFixed(2)}</p>
+              <p class="text-sm text-gray-200"><span class="text-gray-400">Trend:</span> <span class="${supertrend.trend === "Bullish" ? "text-[#22C55E]" : "text-[#EF4444]"}">${supertrend.trend}</span></p>
+              <p class="text-sm text-gray-200"><span class="text-gray-400">Signal Strength:</span> ${supertrend.signalStrength.toFixed(2)}</p>
+              <p class="text-sm text-gray-200"><span class="text-gray-400">Action:</span> ${supertrend.action}</p>
             </div>
           `;
         },
-        style: { fontFamily: "Inter, sans-serif" },
+        style: { fontFamily: "Inter, sans-serif", background: "#141A2F", color: "#FFFFFF" },
       },
       series: [
         { name: "Supertrend (Bullish)", data: bullishData },
@@ -1706,7 +1723,7 @@ export default function ChartPage() {
 
   // JSX Return Statement
   return (
-    <div className="min-h-screen font-sans bg-[#0A0A0B] text-white w-full font-['Inter',_sans-serif]">
+    <div className={`min-h-screen font-sans ${themeClasses.background} ${themeClasses.text} w-full font-['Inter',_sans-serif]`}>
       <style jsx>{`
         @keyframes fadeIn {
           0% { opacity: 0; transform: translateY(-10px); }
@@ -1717,11 +1734,20 @@ export default function ChartPage() {
           50% { opacity: 1; }
           100% { opacity: 0.5; }
         }
+        @keyframes marquee {
+          0% { transform: translateX(100%); }
+          100% { transform: translateX(-100%); }
+        }
         .fade-in {
           animation: fadeIn 0.5s ease-in-out;
         }
         .pulse {
           animation: pulse 1.5s infinite ease-in-out;
+        }
+        .marquee {
+          display: inline-block;
+          animation: marquee 30s linear infinite;
+          white-space: nowrap;
         }
         .tooltip {
           position: relative;
@@ -1730,10 +1756,10 @@ export default function ChartPage() {
         .tooltip .tooltiptext {
           visibility: hidden;
           width: 120px;
-          background-color: #27272A;
-          color: #E4E4E7;
+          background-color: #141A2F;
+          color: ${themeClasses.text};
           text-align: center;
-          border-radius: 0;
+          border-radius: 4px;
           padding: 5px;
           position: absolute;
           z-index: 1;
@@ -1749,141 +1775,176 @@ export default function ChartPage() {
           opacity: 1;
         }
         .no-scrollbar {
-          overflow: hidden; /* Remove all scrollbars */
+          overflow: hidden;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: #27272A;
+          border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #60A5FA;
+          border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #3B82F6;
         }
         .trending-banner {
-          background-color: #0F0F11;
-          border-bottom: 1px solid #27272A;
-          padding: 0;
+          background-color: ${themeClasses.background};
+          border-bottom: 1px solid ${themeClasses.border};
+          padding: 0.5rem 0;
           overflow: hidden;
-          white-space: nowrap;
           width: 100%;
           position: relative;
           margin: 0;
+          height: 60px;
         }
         .trending-tokens-container {
           display: inline-flex;
-          width: max-content;
-          animation: marquee 20s linear infinite;
-        }
-        .trending-tokens-container:hover {
-          animation-play-state: paused;
+          align-items: center;
         }
         .trending-token-card {
           display: inline-flex;
           align-items: center;
-          padding: 8px 12px;
-          margin-right: 0;
-          background-color: #18181B;
-          border: 1px solid #27272A;
-          border-radius: 0;
-          min-width: 220px;
+          padding: 0.5rem 1rem;
+          background-color: ${themeClasses.containerBg};
+          border: 1px solid #4B5563;
+          border-radius: 4px;
+          min-width: 200px;
+          margin-right: 8px;
           white-space: nowrap;
+          transition: all 0.3s ease;
+        }
+        .trending-token-card:hover {
+          background-color: #1E263B;
+          transform: scale(1.02);
+          box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
         }
         .trending-token-card img {
-          width: 24px;
-          height: 24px;
+          width: 20px;
+          height: 20px;
           object-fit: cover;
           aspect-ratio: 1/1;
           background-color: #27272A;
-          border: 1px solid #27272A;
-          border-radius: 0;
+          border: 1px solid ${themeClasses.border};
+          border-radius: 50%;
           overflow: hidden;
-          margin-right: 8px;
+          margin-right: 6px;
         }
         .rank-badge {
           background-color: #27272A;
-          color: #E4E4E7;
-          font-size: 10px;
+          color: ${themeClasses.text};
+          font-size: 9px;
           font-weight: 600;
-          padding: 2px 6px;
-          border-radius: 0;
-          border: 1px solid #A1A1AA;
-          margin-right: 8px;
+          padding: 1px 4px;
+          border-radius: 4px;
+          border: 1px solid ${themeClasses.border};
+          margin-right: 6px;
         }
-        @keyframes marquee {
-          0% {
-            transform: translateX(0);
-          }
-          100% {
-            transform: translateX(-50%);
-          }
+        .main-layout {
+          display: grid;
+          grid-template-columns: 3fr 1fr;
+          gap: 1.5rem;
+          padding: 1.5rem;
+        }
+        .chart-section {
+          display: flex;
+          flex-direction: column;
+          gap: 1.5rem;
+        }
+        .sidebar {
+          display: flex;
+          flex-direction: column;
+          gap: 1.5rem;
         }
         .swap-form-container {
-          background-color: #18181B;
-          border: 1px solid #27272A;
-          border-radius: 0;
-          padding: 16px;
+          background-color: ${themeClasses.containerBg};
+          border: 1px solid ${themeClasses.border};
+          border-radius: 8px;
+          padding: 1.5rem;
+          box-shadow: ${themeClasses.shadow};
         }
         .swap-input {
-          background-color: #27272A;
-          border: 1px solid #27272A;
-          border-radius: 0;
+          background-color: #2D2D32;
+          border: 1px solid ${themeClasses.border};
+          border-radius: 4px;
           padding: 8px;
-          color: #E4E4E7;
+          color: ${themeClasses.text};
           width: 100%;
           font-size: 14px;
           outline: none;
+          transition: all 0.2s ease;
+        }
+        .swap-input:focus {
+          border-color: #60A5FA;
+          box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.5);
         }
         .swap-input:disabled {
           background-color: #1F1F23;
-          color: #A1A1AA;
+          color: ${themeClasses.secondaryText};
         }
         .swap-button {
-          background-color: #0052FF;
-          color: #FFFFFF;
-          padding: 8px;
-          border-radius: 0;
+          background-color: ${themeClasses.buttonBg};
+          color: #60A5FA;
+          padding: 10px;
+          border-radius: 4px;
           font-size: 14px;
           font-weight: 500;
-          transition: background-color 0.2s ease-in-out;
+          transition: all 0.3s ease;
           width: 100%;
+          text-transform: uppercase;
         }
         .swap-button:hover {
-          background-color: #003ECB;
+          background-color: ${themeClasses.buttonHover};
+          transform: scale(1.02);
         }
         .swap-button:disabled {
-          background-color: #003ECB;
+          background-color: ${themeClasses.buttonDisabled};
           opacity: 0.5;
           cursor: not-allowed;
         }
         .swap-arrow {
           background-color: #27272A;
-          border-radius: 0;
+          border-radius: 50%;
           padding: 8px;
           cursor: pointer;
-          transition: transform 0.2s ease-in-out;
+          transition: all 0.3s ease;
         }
         .swap-arrow:hover {
+          background-color: #3B82F6;
           transform: scale(1.1);
         }
         .swap-info {
           font-size: 12px;
-          color: #A1A1AA;
+          color: ${themeClasses.secondaryText};
         }
         .wallet-button {
-          background-color: #0052FF;
-          color: #FFFFFF;
-          padding: 8px;
-          border-radius: 0;
+          background-color: ${themeClasses.buttonBg};
+          color: #60A5FA;
+          padding: 10px;
+          border-radius: 4px;
           font-size: 14px;
           font-weight: 500;
-          transition: background-color 0.2s ease-in-out;
+          transition: all 0.3s ease;
           width: 100%;
           display: flex;
           align-items: center;
           justify-content: center;
           gap: 8px;
+          text-transform: uppercase;
         }
         .wallet-button:hover {
-          background-color: #003ECB;
+          background-color: ${themeClasses.buttonHover};
+          transform: scale(1.02);
         }
         .wallet-address {
           background-color: #27272A;
-          border: 1px solid #27272A;
-          border-radius: 0;
+          border: 1px solid ${themeClasses.border};
+          border-radius: 4px;
           padding: 8px;
-          color: #E4E4E7;
+          color: ${themeClasses.text};
           font-size: 12px;
           display: flex;
           align-items: center;
@@ -1902,12 +1963,13 @@ export default function ChartPage() {
           z-index: 50;
         }
         .wallet-modal-content {
-          background-color: #18181B;
-          border: 1px solid #27272A;
+          background-color: ${themeClasses.containerBg};
+          border: 1px solid ${themeClasses.border};
           border-radius: 8px;
-          padding: 16px;
+          padding: 1.5rem;
           width: 300px;
           max-width: 90%;
+          box-shadow: ${themeClasses.shadow};
         }
         .wallet-option {
           background-color: #27272A;
@@ -1918,74 +1980,62 @@ export default function ChartPage() {
           display: flex;
           align-items: center;
           gap: 8px;
+          transition: all 0.3s ease;
         }
         .wallet-option:hover {
           background-color: #3F3F46;
-        }
-        .main-layout {
-          display: flex;
-          flex-direction: row;
-          height: calc(100vh - 80px);
-          width: 100%;
-          overflow: hidden; /* Prevent horizontal overflow */
-        }
-        .chart-section {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          border-right: 1px solid #27272A;
-        }
-        .sidebar {
-          width: 320px;
-          background-color: #0F0F11;
-          border-left: none; /* Remove border-left to avoid double line */
-          overflow: hidden; /* Remove scrollbars */
-        }
-        .sidebar-header {
-          padding: 16px;
-          border-bottom: 1px solid #27272A;
+          transform: scale(1.02);
         }
         .branding-overlay {
           font-family: 'Inter', sans-serif;
           font-size: 12px;
           font-weight: 500;
-          color: #E4E4E7;
+          color: ${themeClasses.text};
         }
         .branding-overlay .symbol {
-          color: #E4E4E7;
+          color: ${themeClasses.text};
           font-weight: 600;
         }
         .branding-overlay .timeframe {
-          color: #A1A1AA;
+          color: ${themeClasses.secondaryText};
         }
         .branding-overlay .cypher {
-          color: #0052FF;
+          color: #60A5FA;
         }
         .branding-overlay .ohlc {
-          color: #A1A1AA;
+          color: ${themeClasses.secondaryText};
           font-family: 'Courier New', monospace;
         }
-        @media (max-width: 768px) {
+        .transactions-table-container {
+          overflow-x: hidden;
+          width: 100%;
+        }
+        .transactions-table {
+          width: 100%;
+          table-layout: auto;
+        }
+        .transactions-table th,
+        .transactions-table td {
+          white-space: nowrap;
+        }
+        @media (max-width: 1024px) {
           .main-layout {
-            flex-direction: column;
-            height: auto; /* Allow content to expand vertically on mobile */
+            grid-template-columns: 1fr;
           }
-          .chart-section {
-            border-right: none;
-            border-bottom: 1px solid #27272A;
-          }
+          .chart-section,
           .sidebar {
             width: 100%;
-            border-left: none;
-            border-top: none; /* Remove border-top to avoid double line */
           }
-          .chart-container {
+        }
+        @media (max-width: 768px) {
+          .chart-section {
             padding: 0;
           }
           .header {
             flex-direction: column;
             align-items: flex-start;
             gap: 8px;
+            padding: 1rem;
           }
           .timeframe-buttons {
             flex-wrap: wrap;
@@ -1997,26 +2047,26 @@ export default function ChartPage() {
             font-size: 9px;
           }
           .trending-banner {
-            padding: 0;
-            width: 100%;
+            padding: 0.5rem 0;
+            height: 50px;
           }
           .trending-token-card {
-            padding: 6px 10px;
-            margin-right: 0;
-            min-width: 200px;
+            padding: 0.5rem 0.75rem;
+            min-width: 180px;
+            margin-right: 6px;
           }
           .trending-token-card img {
-            width: 20px;
-            height: 20px;
-            margin-right: 6px;
+            width: 18px;
+            height: 18px;
+            margin-right: 4px;
           }
           .rank-badge {
-            font-size: 9px;
-            padding: 1px 4px;
-            margin-right: 6px;
+            font-size: 8px;
+            padding: 1px 3px;
+            margin-right: 4px;
           }
           .swap-form-container {
-            padding: 12px;
+            padding: 1rem;
           }
           .swap-input {
             font-size: 12px;
@@ -2025,7 +2075,7 @@ export default function ChartPage() {
           .swap-button,
           .wallet-button {
             font-size: 12px;
-            padding: 6px;
+            padding: 8px;
           }
           .swap-info {
             font-size: 10px;
@@ -2034,9 +2084,6 @@ export default function ChartPage() {
             font-size: 10px;
             padding: 6px;
           }
-          .sidebar-header {
-            padding: 12px;
-          }
         }
       `}</style>
 
@@ -2044,20 +2091,20 @@ export default function ChartPage() {
       {showWalletModal && (
         <div className="wallet-modal">
           <div className="wallet-modal-content">
-            <h3 className="text-lg font-semibold mb-4">Connect a Wallet</h3>
+            <h3 className="text-2xl font-bold uppercase text-white mb-4">Connect a Wallet</h3>
             {connectors.map((connector) => (
               <div
                 key={connector.id}
                 className="wallet-option"
                 onClick={() => handleConnectWallet(connector)}
               >
-                <FaWallet className="w-5 h-5 text-[#0052FF]" />
-                <span>{connector.name}</span>
+                <FaWallet className="w-5 h-5 text-blue-400" />
+                <span className={themeClasses.text}>{connector.name}</span>
               </div>
             ))}
             <button
               onClick={() => setShowWalletModal(false)}
-              className="mt-4 text-[#A1A1AA] hover:text-[#EF4444] text-sm"
+              className="mt-4 text-gray-400 hover:text-red-400 text-sm uppercase"
             >
               Cancel
             </button>
@@ -2068,11 +2115,11 @@ export default function ChartPage() {
       {/* Trending Tokens Banner */}
       <div className="trending-banner">
         {trendingError ? (
-          <div className="text-[#EF4444] text-sm px-4 py-2">Error: {trendingError}</div>
+          <div className={`${themeClasses.errorText} text-sm px-4 py-2`}>Error: {trendingError}</div>
         ) : trendingLoading ? (
-          <div className="text-[#A1A1AA] text-sm px-4 py-2 flex items-center">
+          <div className={`text-gray-400 text-sm px-4 py-2 flex items-center`}>
             <svg
-              className="animate-spin h-5 w-5 text-[#0052FF] mr-2"
+              className="animate-spin h-5 w-5 text-blue-400 mr-2"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
               viewBox="0 0 24 24"
@@ -2087,10 +2134,10 @@ export default function ChartPage() {
             Loading trending tokens...
           </div>
         ) : trendingTokens.length === 0 ? (
-          <div className="text-[#A1A1AA] text-sm px-4 py-2">No trending tokens available.</div>
+          <div className={`text-gray-400 text-sm px-4 py-2`}>No trending tokens available.</div>
         ) : (
-          <div className="trending-tokens-container">
-            {[...trendingTokens, ...trendingTokens].map((token, index) => (
+          <div className="trending-tokens-container marquee">
+            {trendingTokens.map((token, index) => (
               <Link
                 href={`/token-screener/${token.pairAddress}/chart`}
                 key={`${token.pairAddress}-${index}`}
@@ -2104,11 +2151,40 @@ export default function ChartPage() {
                     onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/24/27272A/FFFFFF?text=T")}
                   />
                   <div className="flex-1">
-                    <span className="font-semibold text-[#E4E4E7] text-sm">{token.symbol}</span>
-                    <span className="block text-xs text-[#A1A1AA] truncate max-w-[60px]">{token.name}</span>
+                    <span className={`font-semibold ${themeClasses.text} text-sm`}>{token.symbol}</span>
+                    <span className={`block text-xs ${themeClasses.secondaryText} truncate max-w-[60px]`}>{token.name}</span>
                   </div>
                   <div className="text-right">
-                    <span className="block text-[#E4E4E7] text-sm">${parseFloat(token.priceUsd).toFixed(4)}</span>
+                    <span className={`block ${themeClasses.text} text-sm`}>${parseFloat(token.priceUsd).toFixed(4)}</span>
+                    <span
+                      className={`text-xs ${token.priceChange24h >= 0 ? "text-[#22C55E]" : "text-[#EF4444]"}`}
+                    >
+                      {token.priceChange24h.toFixed(2)}%
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            ))}
+            {/* Duplicate for seamless scrolling */}
+            {trendingTokens.map((token, index) => (
+              <Link
+                href={`/token-screener/${token.pairAddress}/chart`}
+                key={`${token.pairAddress}-${index}-duplicate`}
+                passHref
+              >
+                <div className="trending-token-card">
+                  <span className="rank-badge">#{(index % trendingTokens.length) + 1}</span>
+                  <img
+                    src={token.imageUrl}
+                    alt={`${token.symbol} logo`}
+                    onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/24/27272A/FFFFFF?text=T")}
+                  />
+                  <div className="flex-1">
+                    <span className={`font-semibold ${themeClasses.text} text-sm`}>{token.symbol}</span>
+                    <span className={`block text-xs ${themeClasses.secondaryText} truncate max-w-[60px]`}>{token.name}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className={`block ${themeClasses.text} text-sm`}>${parseFloat(token.priceUsd).toFixed(4)}</span>
                     <span
                       className={`text-xs ${token.priceChange24h >= 0 ? "text-[#22C55E]" : "text-[#EF4444]"}`}
                     >
@@ -2123,715 +2199,719 @@ export default function ChartPage() {
       </div>
 
       {/* Header */}
-      <header className="sticky top-0 z-50 px-4 py-2 border-b border-[#27272A] flex flex-wrap justify-between items-center w-full bg-[#0F0F11] shadow-sm header">
-        <div className="flex items-center gap-2">
+      <header className={`sticky top-0 z-50 px-6 py-4 ${themeClasses.border} border-b flex flex-wrap justify-between items-center w-full ${themeClasses.background} ${themeClasses.shadow} header`}>
+        <div className="flex items-center gap-3">
           {token?.logoUrl && (
             <img
               src={token.logoUrl}
               alt={`${token.baseToken.name} logo`}
-              className="w-6 h-6 rounded-full border border-[#27272A]"
+              className="w-8 h-8 rounded-full border border-blue-500/30"
               onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/48")}
             />
           )}
-          <h1 className="text-base font-semibold tracking-tight">
+          <h1 className="text-2xl font-bold uppercase text-white">
             {token ? `${token.baseToken.symbol}/${token.quoteToken.symbol}` : "Loading..."}
-            <span className="ml-2 text-xs text-[#A1A1AA] font-normal">on Base Chain</span>
+            <span className="ml-2 text-sm text-gray-400 font-normal">on Base Chain</span>
           </h1>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="text-xs text-[#A1A1AA]">Last Updated: {lastUpdated}</div>
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-gray-400">Last Updated: {lastUpdated}</div>
         </div>
       </header>
 
       {/* Main Content */}
       <div className="main-layout">
-        {/* Chart Section */}
+        {/* Chart and Transactions Section */}
         <div className="chart-section">
           {initialLoading ? (
-            <div className="text-center text-sm flex items-center justify-center h-full bg-[#0F0F11]">
-              <svg className="animate-spin h-6 w-6 text-[#0052FF] mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <div className={`text-center text-sm flex items-center justify-center h-full ${themeClasses.background}`}>
+              <svg className="animate-spin h-6 w-6 text-blue-400 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
               Loading...
             </div>
           ) : error ? (
-            <div className="text-[#EF4444] text-center text-sm bg-[#0F0F11] p-4 h-full flex items-center justify-center">{error}</div>
+            <div className={`text-red-400 text-center text-sm ${themeClasses.background} p-6 h-full flex items-center justify-center`}>{error}</div>
           ) : (
-            <div className="bg-[#0F0F11] border border-[#27272A] w-full h-full flex flex-col shadow-sm" style={{ borderRadius: 0 }}>
-              <div className="flex flex-wrap justify-between items-center px-4 py-3 border-b border-[#27272A]">
-                <div className="flex space-x-2 mb-2 lg:mb-0">
-                  <button
-                    onClick={() => setChartView("Price")}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${chartView === "Price" ? "bg-[#0052FF] text-white shadow-sm" : "bg-[#18181B] text-[#A1A1AA] hover:bg-[#27272A]"}`}
-                  >
-                    Price
-                  </button>
-                  <button
-                    onClick={() => setChartView("MarketCap")}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${chartView === "MarketCap" ? "bg-[#0052FF] text-white shadow-sm" : "bg-[#18181B] text-[#A1A1AA] hover:bg-[#27272A]"}`}
-                  >
-                    Market Cap
-                  </button>
-                  {chartView === "Price" && (
-                    <>
-                      <button
-                        onClick={() => setChartType("Candlestick")}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${chartType === "Candlestick" ? "bg-[#0052FF] text-white shadow-sm" : "bg-[#18181B] text-[#A1A1AA] hover:bg-[#27272A]"}`}
-                      >
-                        Candlestick
-                      </button>
-                      <button
-                        onClick={() => setChartType("Line")}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${chartType === "Line" ? "bg-[#0052FF] text-white shadow-sm" : "bg-[#18181B] text-[#A1A1AA] hover:bg-[#27272A]"}`}
-                      >
-                        Line
-                      </button>
-                    </>
+            <>
+              {/* Chart Section */}
+              <div className={`border ${themeClasses.border} flex flex-col ${themeClasses.shadow}`}>
+                <div className={`flex flex-wrap justify-between items-center px-6 py-4 border-b ${themeClasses.border}`}>
+                  <div className="flex space-x-3 mb-2 lg:mb-0">
+                    <button
+                      onClick={() => setChartView("Price")}
+                      className={`px-4 py-2 rounded-md text-sm font-medium uppercase transition-all duration-200 ${chartView === "Price" ? "bg-blue-500/20 text-blue-400 shadow-sm" : "bg-[#141A2F] text-gray-400 hover:bg-[#1E263B]"}`}
+                    >
+                      Price
+                    </button>
+                    <button
+                      onClick={() => setChartView("MarketCap")}
+                      className={`px-4 py-2 rounded-md text-sm font-medium uppercase transition-all duration-200 ${chartView === "MarketCap" ? "bg-blue-500/20 text-blue-400 shadow-sm" : "bg-[#141A2F] text-gray-400 hover:bg-[#1E263B]"}`}
+                    >
+                      Market Cap
+                    </button>
+                    {chartView === "Price" && (
+                      <>
+                        <button
+                          onClick={() => setChartType("Candlestick")}
+                          className={`px-4 py-2 rounded-md text-sm font-medium uppercase transition-all duration-200 ${chartType === "Candlestick" ? "bg-blue-500/20 text-blue-400 shadow-sm" : "bg-[#141A2F] text-gray-400 hover:bg-[#1E263B]"}`}
+                        >
+                          Candlestick
+                        </button>
+                        <button
+                          onClick={() => setChartType("Line")}
+                          className={`px-4 py-2 rounded-md text-sm font-medium uppercase transition-all duration-200 ${chartType === "Line" ? "bg-blue-500/20 text-blue-400 shadow-sm" : "bg-[#141A2F] text-gray-400 hover:bg-[#1E263B]"}`}
+                        >
+                          Line
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-3 timeframe-buttons">
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <div className="flex gap-2 items-center">
+                        <span className="text-sm text-gray-400 px-3 py-2 uppercase">Timeframe:</span>
+                        {["1m", "5m", "15m", "1h", "4h", "12h", "1d"].map((tf) => (
+                          <button
+                            key={tf}
+                            onClick={() => {
+                              setTimeframe(tf);
+                              if (token) fetchChartData(poolAddress as string, token);
+                            }}
+                            disabled={initialLoading}
+                            className={`px-4 py-2 rounded-md text-sm font-medium uppercase transition-all duration-200 ${
+                              timeframe === tf ? "bg-blue-500/20 text-blue-400 shadow-sm" : "bg-[#141A2F] text-gray-400 hover:bg-[#1E263B]"
+                            } ${initialLoading ? "opacity-50 cursor-not-allowed" : ""}`}
+                          >
+                            {initialLoading && timeframe === tf ? (
+                              <svg className="animate-spin h-4 w-4 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                            ) : (
+                              tf
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="relative px-6 py-6 flex-1">
+                  <div className="absolute top-4 left-4 z-10 branding-overlay">
+                    <span className="symbol">{symbol}</span>
+                    <span className="mx-1">•</span>
+                    <span className="timeframe">{timeframe.toUpperCase()}</span>
+                    <span className="mx-1">•</span>
+                    <span className="cypher">cypher.io</span>
+                    <span className="ml-1 ohlc">{ohlc}</span>
+                  </div>
+
+                  {chartView === "Price" ? (
+                    chartType === "Candlestick" ? (
+                      candleData.length > 0 ? (
+                        <Chart
+                          options={candlestickOptions}
+                          series={[{ data: candleData }]}
+                          type="candlestick"
+                          height={isMounted && window.innerWidth < 768 ? 250 : 550}
+                          width="100%"
+                        />
+                      ) : (
+                        <div className={`text-center text-sm ${themeClasses.secondaryText} h-full flex items-center justify-center`}>No chart data available.</div>
+                      )
+                    ) : (
+                      lineData.length > 0 ? (
+                        <Chart
+                          options={lineOptions}
+                          series={[{ name: "Price", data: lineData }]}
+                          type="line"
+                          height={isMounted && window.innerWidth < 768 ? 250 : 550}
+                          width="100%"
+                        />
+                      ) : (
+                        <div className={`text-center text-sm ${themeClasses.secondaryText} h-full flex items-center justify-center`}>No chart data available.</div>
+                      )
+                    )
+                  ) : (
+                    marketCapData.length > 0 ? (
+                      <Chart
+                        options={candlestickOptions}
+                        series={[{ data: marketCapData }]}
+                        type="candlestick"
+                        height={isMounted && window.innerWidth < 768 ? 250 : 550}
+                        width="100%"
+                      />
+                    ) : (
+                      <div className={`text-center text-sm ${themeClasses.secondaryText} h-full flex items-center justify-center`}>No chart data available.</div>
+                    )
                   )}
                 </div>
-                <div className="flex flex-wrap gap-2 timeframe-buttons">
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <div className="flex gap-1 items-center">
-                      <span className="text-xs text-[#A1A1AA] px-2 py-1">Timeframe:</span>
-                      {["1m", "5m", "15m", "1h", "4h", "12h", "1d"].map((tf) => (
-                        <button
-                          key={tf}
-                          onClick={() => {
-                            setTimeframe(tf);
-                            if (token) fetchChartData(poolAddress as string, token);
-                          }}
-                          disabled={initialLoading}
-                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                            timeframe === tf ? "bg-[#0052FF] text-white shadow-sm" : "bg-[#18181B] text-[#A1A1AA] hover:bg-[#27272A]"
-                          } ${initialLoading ? "opacity-50 cursor-not-allowed" : ""}`}
+              </div>
+
+              {/* Transactions Section */}
+              <div className={`border ${themeClasses.border} ${themeClasses.shadow}`}>
+                <div className="px-6 py-6">
+                  <h3 className="text-2xl font-bold uppercase text-white mb-4 pl-1">Transactions</h3>
+                  <div className="max-h-60 overflow-y-auto overflow-x-hidden custom-scrollbar transactions-table-container">
+                    <table className="transactions-table text-sm text-left font-mono">
+                      <thead className={`text-sm ${themeClasses.secondaryText} uppercase ${themeClasses.background} sticky top-0 z-10`}>
+                        <tr>
+                          <th scope="col" className="px-3 py-3">Time</th>
+                          <th scope="col" className="px-3 py-3">Type</th>
+                          <th scope="col" className="px-3 py-3">Price (USD)</th>
+                          <th scope="col" className="px-3 py-3">Price (ETH)</th>
+                          <th scope="col" className="px-3 py-3 text-right">Token Amount</th>
+                          <th scope="col" className="px-3 py-3 text-right">Token Price</th>
+                          <th scope="col" className="px-3 py-3 text-right">From</th>
+                          <th scope="col" className="px-3 py-3 text-right">To</th>
+                          <th scope="col" className="px-3 py-3 text-right">Maker</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {transactions.length === 0 && !transactionLoading ? (
+                          <tr>
+                            <td colSpan={9} className={`px-3 py-3 text-center ${themeClasses.secondaryText}`}>
+                              No transactions available.
+                            </td>
+                          </tr>
+                        ) : (
+                          transactions.map((tx, index) => {
+                            const tokenAmount = tx.tokenAmount || 0;
+                            const tokenPriceInUsd = token?.priceUsd ? parseFloat(token.priceUsd) : 0;
+                            const usdValue = Number.isFinite(tokenAmount * tokenPriceInUsd)
+                              ? (tokenAmount * tokenPriceInUsd).toFixed(2)
+                              : "0.00";
+                            const ethValue = ethPrice && Number.isFinite((tokenAmount * tokenPriceInUsd) / ethPrice)
+                              ? ((tokenAmount * tokenPriceInUsd) / ethPrice).toFixed(4)
+                              : "0.0000";
+                            const isBuy = token && tx.to.toLowerCase() === token.pairAddress.toLowerCase();
+                            const maker = isBuy ? tx.from : tx.to;
+                            const shortFrom = `${tx.from.slice(0, 4)}...${tx.from.slice(-4)}`;
+                            const shortTo = `${tx.to.slice(0, 4)}...${tx.to.slice(-4)}`;
+                            const shortMaker = `${maker.slice(0, 4)}...${maker.slice(-4)}`;
+
+                            return (
+                              <tr
+                                key={tx.id}
+                                className={`border-b ${themeClasses.border} ${themeClasses.text} fade-in ${
+                                  index % 2 === 0 ? "bg-[#141A2F]" : themeClasses.background
+                                }`}
+                                ref={index === transactions.length - 1 ? lastTransactionRef : null}
+                              >
+                                <td className="px-3 py-3">
+                                  {new Date(tx.timestamp).toLocaleString("en-US", {
+                                    month: "short",
+                                    day: "2-digit",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                    second: "2-digit",
+                                    hour12: true,
+                                  }).replace(",", "")}
+                                </td>
+                                <td className={`px-3 py-3 ${isBuy ? "text-[#22C55E]" : "text-[#EF4444]"} font-bold`}>
+                                  {isBuy ? "BUY" : "SELL"}
+                                </td>
+                                <td className={`px-3 py-3 ${themeClasses.text}`}>${usdValue}</td>
+                                <td className={`px-3 py-3 ${themeClasses.text}`}>{ethValue}</td>
+                                <td className="px-3 py-3 text-right">{Number.isFinite(tokenAmount) ? tokenAmount.toFixed(4) : "0.0000"}</td>
+                                <td className={`px-3 py-3 text-right ${themeClasses.text}`}>${Number.isFinite(tokenPriceInUsd) ? tokenPriceInUsd.toFixed(6) : "0.000000"}</td>
+                                <td className="px-3 py-3 text-right">
+                                  <div className="tooltip">
+                                    <a
+                                      href={`https://basescan.org/address/${tx.from}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-blue-400 hover:underline"
+                                    >
+                                      {shortFrom}
+                                    </a>
+                                    <span className="tooltiptext">{tx.from}</span>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-3 text-right">
+                                  <div className="tooltip">
+                                    <a
+                                      href={`https://basescan.org/address/${tx.to}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-blue-400 hover:underline"
+                                    >
+                                      {shortTo}
+                                    </a>
+                                    <span className="tooltiptext">{tx.to}</span>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-3 text-right">
+                                  <div className="tooltip">
+                                    <a
+                                      href={`https://basescan.org/address/${maker}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-blue-400 hover:underline"
+                                    >
+                                      {shortMaker}
+                                    </a>
+                                    <span className="tooltiptext">{maker}</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                    {transactionLoading && (
+                      <div className={`text-center text-sm ${themeClasses.secondaryText} py-2`}>
+                        <svg
+                          className="animate-spin h-5 w-5 text-blue-400 mx-auto pulse"
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
                         >
-                          {initialLoading && timeframe === tf ? (
-                            <svg className="animate-spin h-4 w-4 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                          ) : (
-                            tf
-                          )}
-                        </button>
-                      ))}
-                    </div>
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          ></path>
+                        </svg>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
 
-              <div className="relative px-4 py-3 flex-1">
-                <div className="absolute top-4 left-4 z-10 branding-overlay">
-                  <span className="symbol">{symbol}</span>
-                  <span className="mx-1">•</span>
-                  <span className="timeframe">{timeframe.toUpperCase()}</span>
-                  <span className="mx-1">•</span>
-                  <span className="cypher">cypher.io</span>
-                  <span className="ml-1 ohlc">{ohlc}</span>
+              {/* Indicators Section (Moved Below Transactions) */}
+              <div className={`border ${themeClasses.border} ${themeClasses.shadow}`}>
+                <div className={`flex border-b ${themeClasses.border} ${themeClasses.background} w-full`}>
+                  {availableIndicators.map((indicator) => (
+                    <button
+                      key={indicator}
+                      onClick={() => setActiveIndicatorTab(indicator)}
+                      className={`px-4 py-2 text-sm font-medium uppercase border-b-2 transition-all duration-200 ${
+                        activeIndicatorTab === indicator ? themeClasses.tabActive : themeClasses.tabInactive
+                      }`}
+                    >
+                      {indicator}
+                    </button>
+                  ))}
                 </div>
 
-                {chartView === "Price" ? (
-                  chartType === "Candlestick" ? (
-                    candleData.length > 0 ? (
-                      <Chart
-                        options={candlestickOptions}
-                        series={[{ data: candleData }]}
-                        type="candlestick"
-                        height={isMounted && window.innerWidth < 768 ? 300 : "100%"}
-                        width="100%"
-                      />
-                    ) : (
-                      <div className="text-center text-sm text-[#A1A1AA] h-full flex items-center justify-center">No chart data available.</div>
-                    )
-                  ) : (
-                    lineData.length > 0 ? (
-                      <Chart
-                        options={lineOptions}
-                        series={[{ name: "Price", data: lineData }]}
-                        type="line"
-                        height={isMounted && window.innerWidth < 768 ? 300 : "100%"}
-                        width="100%"
-                      />
-                    ) : (
-                      <div className="text-center text-sm text-[#A1A1AA] h-full flex items-center justify-center">No chart data available.</div>
-                    )
-                  )
-                ) : (
-                  marketCapData.length > 0 ? (
+                <div className="px-6 py-6 w-full flex-1">
+                  {activeIndicatorTab === "Volume" && (
                     <Chart
-                      options={candlestickOptions}
-                      series={[{ data: marketCapData }]}
-                      type="candlestick"
-                      height={isMounted && window.innerWidth < 768 ? 300 : "100%"}
+                      options={volumeOptions}
+                      series={[{ name: "Volume", data: volumeData }]}
+                      type="bar"
+                      height={isMounted && window.innerWidth < 768 ? 100 : 200}
                       width="100%"
                     />
-                  ) : (
-                    <div className="text-center text-sm text-[#A1A1AA] h-full flex items-center justify-center">No chart data available.</div>
-                  )
-                )}
-              </div>
-
-              <div className="px-4 flex-1 no-scrollbar">
-                <h3 className="text-sm font-semibold mb-2 text-[#E4E4E7] pl-1">Transactions</h3>
-                <div className="max-h-60 no-scrollbar w-full">
-                  <table className="w-full text-[11px] text-left font-mono transactions-table">
-                    <thead className="text-[10px] text-[#A1A1AA] uppercase bg-[#0F0F11] sticky top-0 z-10">
-                      <tr>
-                        <th scope="col" className="px-2 py-2">Time</th>
-                        <th scope="col" className="px-2 py-2">Type</th>
-                        <th scope="col" className="px-2 py-2">Price (USD)</th>
-                        <th scope="col" className="px-2 py-2">Price (ETH)</th>
-                        <th scope="col" className="px-2 py-2 text-right">Token Amount</th>
-                        <th scope="col" className="px-2 py-2 text-right">Token Price</th>
-                        <th scope="col" className="px-2 py-2 text-right">From</th>
-                        <th scope="col" className="px-2 py-2 text-right">To</th>
-                        <th scope="col" className="px-2 py-2 text-right">Maker</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {transactions.length === 0 && !transactionLoading ? (
-                        <tr>
-                          <td colSpan={9} className="px-2 py-3 text-center text-[#A1A1AA]">
-                            No transactions available.
-                          </td>
-                        </tr>
-                      ) : (
-                        transactions.map((tx, index) => {
-                          const tokenAmount = tx.tokenAmount || 0;
-                          const tokenPriceInUsd = token?.priceUsd ? parseFloat(token.priceUsd) : 0;
-                          const usdValue = Number.isFinite(tokenAmount * tokenPriceInUsd)
-                            ? (tokenAmount * tokenPriceInUsd).toFixed(2)
-                            : "0.00";
-                          const ethValue = ethPrice && Number.isFinite((tokenAmount * tokenPriceInUsd) / ethPrice)
-                            ? ((tokenAmount * tokenPriceInUsd) / ethPrice).toFixed(4)
-                            : "0.0000";
-                          const isBuy = token && tx.to.toLowerCase() === token.pairAddress.toLowerCase();
-                          const maker = isBuy ? tx.from : tx.to;
-                          const shortFrom = `${tx.from.slice(0, 4)}...${tx.from.slice(-4)}`;
-                          const shortTo = `${tx.to.slice(0, 4)}...${tx.to.slice(-4)}`;
-                          const shortMaker = `${maker.slice(0, 4)}...${maker.slice(-4)}`;
-
-                          return (
-                            <tr
-                              key={tx.id}
-                              className={`border-b border-[#27272A] text-[#E4E4E7] fade-in ${
-                                index % 2 === 0 ? "bg-[#18181B]" : "bg-[#0F0F11]"
-                              }`}
-                              ref={index === transactions.length - 1 ? lastTransactionRef : null}
-                            >
-                              <td className="px-2 py-3">
-                                {new Date(tx.timestamp).toLocaleString("en-US", {
-                                  month: "short",
-                                  day: "2-digit",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                  second: "2-digit",
-                                  hour12: true,
-                                }).replace(",", "")}
-                              </td>
-                              <td className={`px-2 py-3 ${isBuy ? "text-[#22C55E]" : "text-[#EF4444]"} font-bold`}>
-                                {isBuy ? "BUY" : "SELL"}
-                              </td>
-                              <td className="px-2 py-3 text-[#E4E4E7]">${usdValue}</td>
-                              <td className="px-2 py-3 text-[#E4E4E7]">{ethValue}</td>
-                              <td className="px-2 py-3 text-right">{Number.isFinite(tokenAmount) ? tokenAmount.toFixed(4) : "0.0000"}</td>
-                              <td className="px-2 py-3 text-right text-[#E4E4E7]">${Number.isFinite(tokenPriceInUsd) ? tokenPriceInUsd.toFixed(6) : "0.000000"}</td>
-                              <td className="px-2 py-3 text-right">
-                                <div className="tooltip">
-                                  <a
-                                    href={`https://basescan.org/address/${tx.from}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-[#0052FF] hover:underline"
-                                  >
-                                    {shortFrom}
-                                  </a>
-                                  <span className="tooltiptext">{tx.from}</span>
-                                </div>
-                              </td>
-                              <td className="px-2 py-3 text-right">
-                                <div className="tooltip">
-                                  <a
-                                    href={`https://basescan.org/address/${tx.to}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-[#0052FF] hover:underline"
-                                  >
-                                    {shortTo}
-                                  </a>
-                                  <span className="tooltiptext">{tx.to}</span>
-                                </div>
-                              </td>
-                              <td className="px-2 py-3 text-right">
-                                <div className="tooltip">
-                                  <a
-                                    href={`https://basescan.org/address/${maker}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-[#0052FF] hover:underline"
-                                  >
-                                    {shortMaker}
-                                  </a>
-                                  <span className="tooltiptext">{maker}</span>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                  {transactionLoading && (
-                    <div className="text-center text-sm text-[#A1A1AA] py-2">
-                      <svg
-                        className="animate-spin h-5 w-5 text-[#0052FF] mx-auto pulse"
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        ></path>
-                      </svg>
-                    </div>
+                  )}
+                  {activeIndicatorTab === "SMA" && (
+                    <Chart
+                      options={smaOptions}
+                      series={[{ name: "SMA 20", data: sma20Data }, { name: "SMA 50", data: sma50Data }]}
+                      type="line"
+                      height={isMounted && window.innerWidth < 768 ? 100 : 200}
+                      width="100%"
+                    />
+                  )}
+                  {activeIndicatorTab === "RSI" && (
+                    <Chart
+                      options={rsiOptions}
+                      series={[{ name: "RSI", data: rsiData }]}
+                      type="line"
+                      height={isMounted && window.innerWidth < 768 ? 100 : 200}
+                      width="100%"
+                    />
+                  )}
+                  {activeIndicatorTab === "MACD" && (
+                    <Chart
+                      options={macdOptions}
+                      series={[
+                        { name: "MACD", data: macdData.map((d) => ({ x: d.x, y: d.macd })) },
+                        { name: "Signal", data: macdData.map((d) => ({ x: d.x, y: d.signal })) },
+                        { name: "Histogram", data: macdData.map((d) => ({ x: d.x, y: d.histogram })), type: "bar" },
+                      ]}
+                      type="line"
+                      height={isMounted && window.innerWidth < 768 ? 100 : 200}
+                      width="100%"
+                    />
+                  )}
+                  {activeIndicatorTab === "VWAP" && (
+                    <Chart
+                      options={vwapOptions}
+                      series={[{ name: "VWAP", data: vwapData }]}
+                      type="line"
+                      height={isMounted && window.innerWidth < 768 ? 100 : 200}
+                      width="100%"
+                    />
+                  )}
+                  {activeIndicatorTab === "Supertrend" && (
+                    <Chart
+                      options={supertrendOptions}
+                      series={supertrendOptions.series as any}
+                      type="line"
+                      height={isMounted && window.innerWidth < 768 ? 100 : 200}
+                      width="100%"
+                    />
                   )}
                 </div>
               </div>
-
-              <div className="flex overflow-x-auto border-t border-[#27272A] bg-[#0F0F11] mt-4 w-full">
-                {availableIndicators.map((indicator) => (
-                  <button
-                    key={indicator}
-                    onClick={() => setActiveIndicatorTab(indicator)}
-                    className={`px-4 py-2 text-sm font-medium transition-all duration-200 ${
-                      activeIndicatorTab === indicator ? "bg-[#0052FF] text-white" : "text-[#A1A1AA] hover:bg-[#27272A]"
-                    }`}
-                  >
-                    {indicator}
-                  </button>
-                ))}
-              </div>
-
-              <div className="px-4 py-3 w-full flex-1">
-                {activeIndicatorTab === "Volume" && (
-                  <Chart
-                    options={volumeOptions}
-                    series={[{ name: "Volume", data: volumeData }]}
-                    type="bar"
-                    height={isMounted && window.innerWidth < 768 ? 100 : "100%"}
-                    width="100%"
-                  />
-                )}
-                {activeIndicatorTab === "SMA" && (
-                  <Chart
-                    options={smaOptions}
-                    series={[{ name: "SMA 20", data: sma20Data }, { name: "SMA 50", data: sma50Data }]}
-                    type="line"
-                    height={isMounted && window.innerWidth < 768 ? 100 : "100%"}
-                    width="100%"
-                  />
-                )}
-                {activeIndicatorTab === "RSI" && (
-                  <Chart
-                    options={rsiOptions}
-                    series={[{ name: "RSI", data: rsiData }]}
-                    type="line"
-                    height={isMounted && window.innerWidth < 768 ? 100 : "100%"}
-                    width="100%"
-                  />
-                )}
-                {activeIndicatorTab === "MACD" && (
-                  <Chart
-                    options={macdOptions}
-                    series={[
-                      { name: "MACD", data: macdData.map((d) => ({ x: d.x, y: d.macd })) },
-                      { name: "Signal", data: macdData.map((d) => ({ x: d.x, y: d.signal })) },
-                      { name: "Histogram", data: macdData.map((d) => ({ x: d.x, y: d.histogram })), type: "bar" },
-                    ]}
-                    type="line"
-                    height={isMounted && window.innerWidth < 768 ? 100 : "100%"}
-                    width="100%"
-                  />
-                )}
-                {activeIndicatorTab === "VWAP" && (
-                  <Chart
-                    options={vwapOptions}
-                    series={[{ name: "VWAP", data: vwapData }]}
-                    type="line"
-                    height={isMounted && window.innerWidth < 768 ? 100 : "100%"}
-                    width="100%"
-                  />
-                )}
-                {activeIndicatorTab === "Supertrend" && (
-                  <Chart
-                    options={supertrendOptions}
-                    series={supertrendOptions.series as any}
-                    type="line"
-                    height={isMounted && window.innerWidth < 768 ? 100 : "100%"}
-                    width="100%"
-                  />
-                )}
-              </div>
-            </div>
+            </>
           )}
         </div>
 
-        {/* Sidebar */}
+        {/* Sidebar Section */}
         <div className="sidebar">
-          <div className="sidebar-header">
-            <h2 className="text-lg font-semibold text-[#E4E4E7]">
-              {token ? `${token.baseToken.symbol}/${token.quoteToken.symbol}` : "Details"}
-            </h2>
-          </div>
-          <div className="p-4 h-full no-scrollbar">
-            {initialLoading ? (
-              <div className="text-center text-sm text-[#A1A1AA] bg-[#18181B] rounded-lg p-4">Loading token data...</div>
-            ) : error ? (
-              <div className="text-[#EF4444] text-center text-sm bg-[#18181B] rounded-lg p-4">{error}</div>
-            ) : token ? (
-              <div className="space-y-4">
-                {/* Token Info Card */}
-                <div className="bg-[#18181B] rounded-lg p-4 border border-[#27272A]">
-                  <div className="relative mb-4">
-                    <img
-                      src={token.bannerUrl}
-                      alt={`${token.baseToken.name} banner`}
-                      className="w-full h-20 object-cover rounded-lg border border-[#27272A]"
-                      onError={(e) => (e.currentTarget.src = "https://i.imgur.com/Fo2D7cK.png")}
-                    />
-                    <img
-                      src={token.logoUrl}
-                      alt={`${token.baseToken.name} logo`}
-                      className="absolute -bottom-4 left-2 w-10 h-10 rounded-full border-2 border-[#18181B]"
-                      onError={(e) => (e.currentTarget.src = "https://firebasestorage.googleapis.com/v0/b/homebase-dapp.firebasestorage.app/o/0x73cb479f2ccf77bad90bcda91e3987358437240a(2).png?alt=media&token=1cd408cf-c6a9-4264-8d30-0e1c5a544397")}
-                    />
-                  </div>
-                  <h2 className="text-lg font-semibold tracking-tight mt-4">
-                    {token.baseToken.name} ({token.baseToken.symbol})
-                  </h2>
-                  <div className="flex items-center gap-2 text-xs text-[#A1A1AA] mt-1">
-                    <span>Pool:</span>
-                    <span className="truncate">{token.poolAddress}</span>
-                    <button onClick={() => copyToClipboard(token.poolAddress)} className="hover:text-[#0052FF]">
-                      <ClipboardIcon className="w-4 h-4" />
+          <h2 className="text-2xl font-bold uppercase text-white">
+            {token ? `${token.baseToken.symbol}/${token.quoteToken.symbol}` : "Details"}
+          </h2>
+          {initialLoading ? (
+            <div className={`text-center text-sm ${themeClasses.secondaryText} ${themeClasses.containerBg} rounded-lg p-6`}>Loading token data...</div>
+          ) : error ? (
+            <div className={`text-red-400 text-center text-sm ${themeClasses.containerBg} rounded-lg p-6`}>{error}</div>
+          ) : token ? (
+            <div className="space-y-6">
+              {/* Token Info Card */}
+              <div className={`${themeClasses.containerBg} rounded-lg p-6 ${themeClasses.border} ${themeClasses.shadow} ${themeClasses.hoverBg}`}>
+                <div className="relative mb-4">
+                  <img
+                    src={token.bannerUrl}
+                    alt={`${token.baseToken.name} banner`}
+                    className="w-full h-20 object-cover rounded-lg border border-blue-500/30"
+                    onError={(e) => (e.currentTarget.src = "https://i.imgur.com/Fo2D7cK.png")}
+                  />
+                  <img
+                    src={token.logoUrl}
+                    alt={`${token.baseToken.name} logo`}
+                    className="absolute -bottom-4 left-2 w-12 h-12 rounded-full border-2 border-[#141A2F]"
+                    onError={(e) => (e.currentTarget.src = "https://firebasestorage.googleapis.com/v0/b/homebase-dapp.firebasestorage.app/o/0x73cb479f2ccf77bad90bcda91e3987358437240a(2).png?alt=media&token=1cd408cf-c6a9-4264-8d30-0e1c5a544397")}
+                  />
+                </div>
+                <h2 className="text-2xl font-bold uppercase text-white mt-4">
+                  {token.baseToken.name} ({token.baseToken.symbol})
+                </h2>
+                <div className="flex items-center gap-2 text-sm text-gray-400 mt-2">
+                  <span className="uppercase">Pool:</span>
+                  <span className="truncate">{token.poolAddress}</span>
+                  <button onClick={() => copyToClipboard(token.poolAddress)} className="hover:text-blue-400">
+                    <ClipboardIcon className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-gray-400 mt-1">
+                  <span className="uppercase">Pair:</span>
+                  <span className="truncate">{token.pairAddress}</span>
+                  <button onClick={() => copyToClipboard(token.pairAddress)} className="hover:text-blue-400">
+                    <ClipboardIcon className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Swap Form Card */}
+              <div className="swap-form-container">
+                <h3 className="text-2xl font-bold uppercase text-white mb-4">Swap Tokens</h3>
+                {/* Wallet Connection */}
+                <div className="mb-4">
+                  {isConnected ? (
+                    <div className="wallet-address">
+                      <div className="flex items-center gap-2">
+                        <FaWallet className="text-blue-400 w-4 h-4" />
+                        <span className="truncate">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
+                      </div>
+                      <button
+                        onClick={() => disconnect()}
+                        className="text-gray-400 hover:text-red-400 text-sm uppercase"
+                      >
+                        Disconnect
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setShowWalletModal(true)}
+                      className="wallet-button"
+                    >
+                      <FaWallet className="w-4 h-4" />
+                      Connect Wallet
                     </button>
+                  )}
+                </div>
+
+                {/* Token In */}
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-gray-400 uppercase">You Pay</span>
+                    <span className="text-sm text-gray-400">
+                      Balance: {walletBalance} {tokenIn?.symbol || ""}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-[#A1A1AA] mt-1">
-                    <span>Pair:</span>
-                    <span className="truncate">{token.pairAddress}</span>
-                    <button onClick={() => copyToClipboard(token.pairAddress)} className="hover:text-[#0052FF]">
-                      <ClipboardIcon className="w-4 h-4" />
-                    </button>
+                  <div className="flex items-center gap-3">
+                    <span className="bg-[#27272A] text-gray-200 rounded p-2 font-mono text-sm">
+                      {tokenIn ? tokenIn.symbol : "Select"}
+                    </span>
+                    <input
+                      type="number"
+                      placeholder="0.0"
+                      value={amountIn}
+                      onChange={(e) => setAmountIn(e.target.value)}
+                      className="swap-input"
+                      disabled={!tokenIn || !isConnected}
+                    />
                   </div>
                 </div>
 
-                {/* Swap Form Card */}
-                <div className="swap-form-container">
-                  <h3 className="text-sm font-semibold mb-3 text-[#E4E4E7]">Swap Tokens</h3>
-                  {/* Wallet Connection */}
-                  <div className="mb-4">
-                    {isConnected ? (
-                      <div className="wallet-address">
-                        <div className="flex items-center gap-2">
-                          <FaWallet className="text-[#0052FF] w-4 h-4" />
-                          <span className="truncate">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
-                        </div>
-                        <button
-                          onClick={() => disconnect()}
-                          className="text-[#A1A1AA] hover:text-[#EF4444] text-xs"
-                        >
-                          Disconnect
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setShowWalletModal(true)}
-                        className="wallet-button"
-                      >
-                        <FaWallet className="w-4 h-4" />
-                        Connect Wallet
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Token In */}
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-[#A1A1AA]">You Pay</span>
-                      <span className="text-xs text-[#A1A1AA]">
-                        Balance: {walletBalance} {tokenIn?.symbol || ""}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="bg-[#27272A] text-[#E4E4E7] rounded p-2 font-mono text-sm">
-                        {tokenIn ? tokenIn.symbol : "Select"}
-                      </span>
-                      <input
-                        type="number"
-                        placeholder="0.0"
-                        value={amountIn}
-                        onChange={(e) => setAmountIn(e.target.value)}
-                        className="swap-input"
-                        disabled={!tokenIn || !isConnected}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Swap Arrow */}
-                  <div className="flex justify-center mb-4">
-                    <button
-                      onClick={handleSwapTokens}
-                      className="swap-arrow"
-                      disabled={!tokenIn || !tokenOut}
-                    >
-                      <FaExchangeAlt className="w-5 h-5 text-[#0052FF]" />
-                    </button>
-                  </div>
-
-                  {/* Token Out */}
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-[#A1A1AA]">You Receive</span>
-                      <span className="text-xs text-[#A1A1AA]">
-                        Est. {amountOut || "0.0"} {tokenOut?.symbol || ""}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="bg-[#27272A] text-[#E4E4E7] rounded p-2 font-mono text-sm">
-                        {tokenOut ? tokenOut.symbol : "Select"}
-                      </span>
-                      <input
-                        type="number"
-                        placeholder="0.0"
-                        value={amountOut}
-                        disabled
-                        className="swap-input"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Swap Info */}
-                  <div className="swap-info mb-4">
-                    <div className="flex justify-between">
-                      <span>Price Impact:</span>
-                      <span className={priceImpact > 5 ? "text-[#EF4444]" : "text-[#E4E4E7]"}>
-                        {priceImpact.toFixed(2)}%
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Slippage Tolerance:</span>
-                      <span>{slippage}%</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Gas Estimate:</span>
-                      <span>{gasEstimate} Gwei</span>
-                    </div>
-                  </div>
-
-                  {/* Swap Button */}
+                {/* Swap Arrow */}
+                <div className="flex justify-center mb-4">
                   <button
-                    onClick={handleSwapWithApproval}
-                    disabled={isSwapLoading || !isConnected || !amountIn || !tokenIn || !tokenOut}
-                    className="swap-button"
+                    onClick={handleSwapTokens}
+                    className="swap-arrow"
+                    disabled={!tokenIn || !tokenOut}
                   >
-                    {isSwapLoading ? "Processing..." : "Swap"}
+                    <FaExchangeAlt className="w-5 h-5 text-blue-400" />
                   </button>
                 </div>
 
-                {/* Market Stats Card */}
-                <div className="bg-[#18181B] rounded-lg p-4 border border-[#27272A]">
-                  <h3 className="text-sm font-semibold mb-3">Market Stats</h3>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[#A1A1AA]">Price (USD)</span>
-                      <span className="font-medium">${parseFloat(token.priceUsd).toFixed(4)}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-[#A1A1AA]">Market Cap</span>
-                      <span className="font-medium">{formatLargeNumber(token.marketCap)}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-[#A1A1AA]">Liquidity</span>
-                      <span className="font-medium">{formatLargeNumber(token.liquidity.usd)}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-[#A1A1AA]">FDV</span>
-                      <span className="font-medium">{formatLargeNumber(token.fdv)}</span>
-                    </div>
+                {/* Token Out */}
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-gray-400 uppercase">You Receive</span>
+                    <span className="text-sm text-gray-400">
+                      Est. {amountOut || "0.0"} {tokenOut?.symbol || ""}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="bg-[#27272A] text-gray-200 rounded p-2 font-mono text-sm">
+                      {tokenOut ? tokenOut.symbol : "Select"}
+                    </span>
+                    <input
+                      type="number"
+                      placeholder="0.0"
+                      value={amountOut}
+                      disabled
+                      className="swap-input"
+                    />
                   </div>
                 </div>
 
-                {/* Performance Metrics Card */}
-                {performanceMetrics && (
-                  <div className="bg-[#18181B] rounded-lg p-4 border border-[#27272A]">
-                    <h3 className="text-sm font-semibold mb-3">Performance</h3>
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div
-                        className={`flex justify-between items-center p-2 rounded-lg ${
-                          performanceMetrics.change_5m >= 0 ? "bg-[#22C55E]/10" : "bg-[#EF4444]/10"
+                {/* Swap Info */}
+                <div className="swap-info mb-4">
+                  <div className="flex justify-between">
+                    <span className="uppercase">Price Impact:</span>
+                    <span className={priceImpact > 5 ? "text-red-400" : themeClasses.text}>
+                      {priceImpact.toFixed(2)}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="uppercase">Slippage Tolerance:</span>
+                    <span>{slippage}%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="uppercase">Gas Estimate:</span>
+                    <span>{gasEstimate} Gwei</span>
+                  </div>
+                </div>
+
+                {/* Swap Button */}
+                <button
+                  onClick={handleSwapWithApproval}
+                  disabled={isSwapLoading || !isConnected || !amountIn || !tokenIn || !tokenOut}
+                  className="swap-button"
+                >
+                  {isSwapLoading ? "Processing..." : "Swap"}
+                </button>
+              </div>
+
+              {/* Market Stats Card */}
+              <div className={`${themeClasses.containerBg} rounded-lg p-6 ${themeClasses.border} ${themeClasses.shadow} ${themeClasses.hoverBg}`}>
+                <h3 className="text-2xl font-bold uppercase text-white mb-4">Market Stats</h3>
+                <div className="space-y-3 text-base">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-300 uppercase">Price (USD)</span>
+                    <span className="font-medium text-gray-200">${parseFloat(token.priceUsd).toFixed(4)}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-300 uppercase">Market Cap</span>
+                    <span className="font-medium text-gray-200">${formatLargeNumber(token.marketCap)}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-300 uppercase">Liquidity</span>
+                    <span className="font-medium text-gray-200">${formatLargeNumber(token.liquidity.usd)}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-300 uppercase">FDV</span>
+                    <span className="font-medium text-gray-200">${formatLargeNumber(token.fdv)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Performance Metrics Card */}
+              {performanceMetrics && (
+                <div className={`${themeClasses.containerBg} rounded-lg p-6 ${themeClasses.border} ${themeClasses.shadow} ${themeClasses.hoverBg}`}>
+                  <h3 className="text-2xl font-bold uppercase text-white mb-4">Performance</h3>
+                  <div className="grid grid-cols-2 gap-4 text-base">
+                    <div
+                      className={`flex justify-between items-center p-3 rounded-lg ${
+                        performanceMetrics.change_5m >= 0 ? "bg-[#22C55E]/10" : "bg-[#EF4444]/10"
+                      }`}
+                    >
+                      <span className="text-gray-300 uppercase">5m</span>
+                      <span
+                        className={`flex items-center gap-1 font-medium ${
+                          performanceMetrics.change_5m >= 0 ? "text-[#22C55E]" : "text-[#EF4444]"
                         }`}
                       >
-                        <span className="text-[#A1A1AA]">5m</span>
-                        <span
-                          className={`flex items-center gap-1 font-medium ${
-                            performanceMetrics.change_5m >= 0 ? "text-[#22C55E]" : "text-[#EF4444]"
-                          }`}
-                        >
-                          {performanceMetrics.change_5m >= 0 ? (
-                            <ArrowUpIcon className="w-4 h-4" />
-                          ) : (
-                            <ArrowDownIcon className="w-4 h-4" />
-                          )}
-                          {performanceMetrics.change_5m.toFixed(2)}%
-                        </span>
-                      </div>
-                      <div
-                        className={`flex justify-between items-center p-2 rounded-lg ${
-                          performanceMetrics.change_1h >= 0 ? "bg-[#22C55E]/10" : "bg-[#EF4444]/10"
-                        }`}
-                      >
-                        <span className="text-[#A1A1AA]">1h</span>
-                        <span
-                          className={`flex items-center gap-1 font-medium ${
-                            performanceMetrics.change_1h >= 0 ? "text-[#22C55E]" : "text-[#EF4444]"
-                          }`}
-                        >
-                          {performanceMetrics.change_1h >= 0 ? (
-                            <ArrowUpIcon className="w-4 h-4" />
-                          ) : (
-                            <ArrowDownIcon className="w-4 h-4" />
-                          )}
-                          {performanceMetrics.change_1h.toFixed(2)}%
-                        </span>
-                      </div>
-                      <div
-                        className={`flex justify-between items-center p-2 rounded-lg ${
-                          performanceMetrics.change_4h >= 0 ? "bg-[#22C55E]/10" : "bg-[#EF4444]/10"
-                        }`}
-                      >
-                        <span className="text-[#A1A1AA]">4h</span>
-                        <span
-                          className={`flex items-center gap-1 font-medium ${
-                            performanceMetrics.change_4h >= 0 ? "text-[#22C55E]" : "text-[#EF4444]"
-                          }`}
-                        >
-                          {performanceMetrics.change_4h >= 0 ? (
-                            <ArrowUpIcon className="w-4 h-4" />
-                          ) : (
-                            <ArrowDownIcon className="w-4 h-4" />
-                          )}
-                          {performanceMetrics.change_4h.toFixed(2)}%
-                        </span>
-                      </div>
-                      <div
-                        className={`flex justify-between items-center p-2 rounded-lg ${
-                          performanceMetrics.change_24h >= 0 ? "bg-[#22C55E]/10" : "bg-[#EF4444]/10"
-                        }`}
-                      >
-                        <span className="text-[#A1A1AA]">24h</span>
-                        <span
-                          className={`flex items-center gap-1 font-medium ${
-                            performanceMetrics.change_24h >= 0 ? "text-[#22C55E]" : "text-[#EF4444]"
-                          }`}
-                        >
-                          {performanceMetrics.change_24h >= 0 ? (
-                            <ArrowUpIcon className="w-4 h-4" />
-                          ) : (
-                            <ArrowDownIcon className="w-4 h-4" />
-                          )}
-                          {performanceMetrics.change_24h.toFixed(2)}%
-                        </span>
-                      </div>
+                        {performanceMetrics.change_5m >= 0 ? (
+                          <ArrowUpIcon className="w-4 h-4" />
+                        ) : (
+                          <ArrowDownIcon className="w-4 h-4" />
+                        )}
+                        {performanceMetrics.change_5m.toFixed(2)}%
+                      </span>
                     </div>
+                    <div
+                      className={`flex justify-between items-center p-3 rounded-lg ${
+                        performanceMetrics.change_1h >= 0 ? "bg-[#22C55E]/10" : "bg-[#EF4444]/10"
+                      }`}
+                    >
+                      <span className="text-gray-300 uppercase">1h</span>
+                      <span
+                        className={`flex items-center gap-1 font-medium ${
+                          performanceMetrics.change_1h >= 0 ? "text-[#22C55E]" : "text-[#EF4444]"
+                        }`}
+                      >
+                        {performanceMetrics.change_1h >= 0 ? (
+                          <ArrowUpIcon className="w-4 h-4" />
+                        ) : (
+                          <ArrowDownIcon className="w-4 h-4" />
+                        )}
+                        {performanceMetrics.change_1h.toFixed(2)}%
+                      </span>
+                    </div>
+                    <div
+                      className={`flex justify-between items-center p-3 rounded-lg ${
+                        performanceMetrics.change_4h >= 0 ? "bg-[#22C55E]/10" : "bg-[#EF4444]/10"
+                      }`}
+                    >
+                      <span className="text-gray-300 uppercase">4h</span>
+                      <span
+                        className={`flex items-center gap-1 font-medium ${
+                          performanceMetrics.change_4h >= 0 ? "text-[#22C55E]" : "text-[#EF4444]"
+                        }`}
+                      >
+                        {performanceMetrics.change_4h >= 0 ? (
+                          <ArrowUpIcon className="w-4 h-4" />
+                        ) : (
+                          <ArrowDownIcon className="w-4 h-4" />
+                        )}
+                        {performanceMetrics.change_4h.toFixed(2)}%
+                      </span>
+                    </div>
+                    <div
+                      className={`flex justify-between items-center p-3 rounded-lg ${
+                        performanceMetrics.change_24h >= 0 ? "bg-[#22C55E]/10" : "bg-[#EF4444]/10"
+                      }`}
+                    >
+                      <span className="text-gray-300 uppercase">24h</span>
+                      <span
+                        className={`flex items-center gap-1 font-medium ${
+                          performanceMetrics.change_24h >= 0 ? "text-[#22C55E]" : "text-[#EF4444]"
+                        }`}
+                      >
+                        {performanceMetrics.change_24h >= 0 ? (
+                          <ArrowUpIcon className="w-4 h-4" />
+                        ) : (
+                          <ArrowDownIcon className="w-4 h-4" />
+                        )}
+                        {performanceMetrics.change_24h.toFixed(2)}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Trend Analysis Card (Smaller) */}
+              <div className={`${themeClasses.containerBg} rounded-lg p-4 ${themeClasses.border} ${themeClasses.shadow} ${themeClasses.hoverBg}`}>
+                <h3 className="text-xl font-bold uppercase text-white mb-3">Trend Analysis</h3>
+                <div className={`text-sm ${themeClasses.secondaryText} space-y-2`}>
+                  {getTrendAnalysis().map((insight, index) => (
+                    <div key={index} className="flex items-start gap-2">
+                      {insight.trend && (
+                        <span
+                          className={`px-2 py-0.5 text-xs font-medium rounded-full shadow-sm border border-blue-500/30 ${
+                            insight.trend === "Bullish" ? "bg-[#22C55E] text-gray-200" : "bg-[#EF4444] text-gray-200"
+                          }`}
+                        >
+                          {insight.trend}
+                        </span>
+                      )}
+                      {insight.rsiStatus && (
+                        <span
+                          className={`px-2 py-0.5 text-xs font-medium rounded-full shadow-sm border border-blue-500/30 ${
+                            insight.rsiStatus === "Overbought"
+                              ? "bg-[#EF4444] text-gray-200"
+                              : insight.rsiStatus === "Oversold"
+                              ? "bg-[#22C55E] text-gray-200"
+                              : "bg-[#27272A] text-gray-200"
+                          }`}
+                        >
+                          {insight.rsiStatus}
+                        </span>
+                      )}
+                      {insight.crossoverType && (
+                        <span
+                          className={`px-2 py-0.5 text-xs font-medium rounded-full shadow-sm border border-blue-500/30 ${
+                            insight.crossoverType === "Golden Cross"
+                              ? "bg-[#22C55E] text-gray-200"
+                              : "bg-[#EF4444] text-gray-200"
+                          }`}
+                        >
+                          {insight.crossoverType}
+                        </span>
+                      )}
+                      <span>{insight.text}</span>
+                    </div>
+                  ))}
+                  <div className="mt-2">
+                    <Sparklines data={getSparklineData()} width={200} height={30}>
+                      <SparklinesLine
+                        color={
+                          getSparklineData()[getSparklineData().length - 1] >= getSparklineData()[0]
+                            ? "#22C55E"
+                            : "#EF4444"
+                        }
+                      />
+                    </Sparklines>
+                  </div>
+                </div>
+              </div>
+
+              {/* Ads Card (Smaller) */}
+              <div className={`${themeClasses.containerBg} rounded-lg p-4 ${themeClasses.border} ${themeClasses.shadow} ${themeClasses.hoverBg}`}>
+                <h3 className="text-xl font-bold uppercase text-white mb-3">Advertisement</h3>
+                {token.adImageUrl ? (
+                  <img
+                    src={token.adImageUrl}
+                    alt="Project Ad"
+                    className="w-full h-16 object-cover rounded-lg border border-blue-500/30"
+                    onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/300x100?text=Ad+Space")}
+                  />
+                ) : (
+                  <div className={`text-sm ${themeClasses.secondaryText} text-center bg-[#27272A] rounded-lg p-3`}>
+                    Advertise Here
                   </div>
                 )}
-
-                {/* Trend Analysis Card */}
-                <div className="bg-[#18181B] rounded-lg p-4 border border-[#27272A]">
-                  <h3 className="text-sm font-semibold mb-3">Trend Analysis</h3>
-                  <div className="text-sm text-[#A1A1AA] space-y-2">
-                    {getTrendAnalysis().map((insight, index) => (
-                      <div key={index} className="flex items-start gap-2">
-                        {insight.trend && (
-                          <span
-                            className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-                              insight.trend === "Bullish" ? "bg-[#22C55E] text-[#E4E4E7]" : "bg-[#EF4444] text-[#E4E4E7]"
-                            }`}
-                          >
-                            {insight.trend}
-                          </span>
-                        )}
-                        {insight.rsiStatus && (
-                          <span
-                            className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-                              insight.rsiStatus === "Overbought"
-                                ? "bg-[#EF4444] text-[#E4E4E7]"
-                                : insight.rsiStatus === "Oversold"
-                                ? "bg-[#22C55E] text-[#E4E4E7]"
-                                : "bg-[#27272A] text-[#E4E4E7]"
-                            }`}
-                          >
-                            {insight.rsiStatus}
-                          </span>
-                        )}
-                        {insight.crossoverType && (
-                          <span
-                            className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-                              insight.crossoverType === "Golden Cross"
-                                ? "bg-[#22C55E] text-[#E4E4E7]"
-                                : "bg-[#EF4444] text-[#E4E4E7]"
-                            }`}
-                          >
-                            {insight.crossoverType}
-                          </span>
-                        )}
-                        <span>{insight.text}</span>
-                      </div>
-                    ))}
-                    <div className="mt-2">
-                      <Sparklines data={getSparklineData()} width={200} height={30}>
-                        <SparklinesLine
-                          color={
-                            getSparklineData()[getSparklineData().length - 1] >= getSparklineData()[0]
-                              ? "#22C55E"
-                              : "#EF4444"
-                          }
-                        />
-                      </Sparklines>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Ads Card */}
-                <div className="bg-[#18181B] rounded-lg p-4 border border-[#27272A]">
-                  <h3 className="text-sm font-semibold mb-3">Advertisement</h3>
-                  {token.adImageUrl ? (
-                    <img
-                      src={token.adImageUrl}
-                      alt="Project Ad"
-                      className="w-full h-20 object-cover rounded-lg border border-[#27272A]"
-                      onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/300x100?text=Ad+Space")}
-                    />
-                  ) : (
-                    <div className="text-sm text-[#A1A1AA] text-center bg-[#27272A] rounded-lg p-4">
-                      Advertise Here
-                    </div>
-                  )}
-                </div>
               </div>
-            ) : (
-              <div className="text-center text-sm text-[#A1A1AA] bg-[#18181B] rounded-lg p-4">
-                No token data available.
-              </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className={`text-center text-sm ${themeClasses.secondaryText} ${themeClasses.containerBg} rounded-lg p-6`}>
+              No token data available.
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
-     

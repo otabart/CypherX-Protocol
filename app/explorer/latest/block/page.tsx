@@ -1,3 +1,4 @@
+// app/explorer/latest/block/page.tsx
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -145,7 +146,7 @@ export default function CypherScanPage() {
         const querySnapshot = await getDocs(q);
 
         if (!querySnapshot.empty) {
-          const blockData = querySnapshot.docs[0].data() as Block;
+          // Removed unused blockData variable
           router.push(`/latest/hash/${searchQuery}`);
         } else {
           setError("Block hash not found in local database");
@@ -174,20 +175,20 @@ export default function CypherScanPage() {
   );
 
   const themeClasses = {
-    background: theme === "dark" ? "bg-black" : "bg-white",
-    text: theme === "dark" ? "text-white" : "text-black",
-    border: theme === "dark" ? "border-[#333333]" : "border-gray-200",
-    headerBg: theme === "dark" ? "bg-[#1A1A1A]" : "bg-gray-100",
-    containerBg: theme === "dark" ? "bg-[#1A1A1A]" : "bg-gray-100",
-    hoverBg: theme === "dark" ? "hover:bg-[#222222]" : "hover:bg-gray-50",
-    placeholder: theme === "dark" ? "placeholder-gray-400" : "placeholder-gray-400",
+    background: theme === "dark" ? "bg-gray-950" : "bg-gray-100",
+    text: theme === "dark" ? "text-gray-200" : "text-gray-900",
+    border: theme === "dark" ? "border-blue-500/30" : "border-gray-300",
+    headerBg: theme === "dark" ? "bg-gray-950" : "bg-gray-200",
+    containerBg: theme === "dark" ? "bg-gray-950" : "bg-white",
+    hoverBg: theme === "dark" ? "hover:bg-gray-900" : "hover:bg-gray-200",
+    placeholder: theme === "dark" ? "placeholder-gray-400" : "placeholder-gray-500",
     secondaryText: theme === "dark" ? "text-gray-400" : "text-gray-600",
     errorText: theme === "dark" ? "text-red-400" : "text-red-600",
-    buttonBg: theme === "dark" ? "bg-[#0052FF]" : "bg-blue-600",
-    buttonHover: theme === "dark" ? "hover:bg-[#003ECB]" : "hover:bg-blue-700",
-    buttonDisabled: theme === "dark" ? "bg-[#4A4A4A]" : "bg-gray-400",
-    shadow: theme === "dark" ? "shadow-[0_2px_8px_rgba(0,82,255,0.2)]" : "shadow-[0_2px_8px_rgba(0,0,0,0.1)]",
-    filterBg: theme === "dark" ? "bg-[#1A1A1A]" : "bg-white",
+    buttonBg: theme === "dark" ? "bg-blue-500/20" : "bg-blue-500",
+    buttonHover: theme === "dark" ? "hover:bg-blue-500/40" : "hover:bg-blue-600",
+    buttonDisabled: theme === "dark" ? "bg-gray-800" : "bg-gray-400",
+    shadow: theme === "dark" ? "shadow-[0_2px_8px_rgba(59,130,246,0.2)]" : "shadow-[0_2px_8px_rgba(0,0,0,0.1)]",
+    filterBg: theme === "dark" ? "bg-gray-950" : "bg-white",
   };
 
   useEffect(() => {
@@ -206,14 +207,14 @@ export default function CypherScanPage() {
     <div className={`min-h-screen w-full font-mono ${themeClasses.background} ${themeClasses.text}`}>
       <div className={`border ${themeClasses.border} ${themeClasses.shadow} w-full min-h-screen`}>
         <div className={`flex items-center justify-between px-4 py-3 sm:px-3 sm:py-2 ${themeClasses.headerBg}`}>
-          <h1 className={`${themeClasses.text} text-lg sm:text-base font-semibold`}>[ CYPHERSCAN ]</h1>
+          <h1 className={`${themeClasses.text} text-lg sm:text-base font-semibold uppercase`}>[ CYPHERSCAN ]</h1>
           <button
             onClick={toggleTheme}
-            className={`p-2 sm:p-1 ${themeClasses.buttonBg} ${themeClasses.buttonHover} transition-colors ${themeClasses.shadow}`}
+            className={`p-2 sm:p-1 ${themeClasses.buttonBg} ${themeClasses.buttonHover} border border-blue-500/30 transition-colors ${themeClasses.shadow}`}
           >
             {theme === "dark" ? (
               <svg
-                className="w-5 h-5 sm:w-4 sm:h-4 text-white"
+                className="w-5 h-5 sm:w-4 sm:h-4 text-gray-200"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -228,7 +229,7 @@ export default function CypherScanPage() {
               </svg>
             ) : (
               <svg
-                className="w-5 h-5 sm:w-4 sm:h-4 text-black"
+                className="w-5 h-5 sm:w-4 sm:h-4 text-gray-900"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -247,7 +248,7 @@ export default function CypherScanPage() {
         <div className="p-4 sm:p-3">
           <div className="flex flex-col space-y-4 sm:space-y-3 mb-4 sm:mb-3">
             <form onSubmit={handleSearch} className={`flex items-center w-full ${themeClasses.containerBg} border ${themeClasses.border} p-2 flex-wrap`}>
-              <span className="text-[#0052FF] mr-2 sm:mr-1 text-sm sm:text-xs shrink-0">user@cypherscan:~$</span>
+              <span className="text-blue-400 mr-2 sm:mr-1 text-sm sm:text-xs shrink-0">user@cypherscan:~$</span>
               <input
                 type="text"
                 placeholder="find block/hash..."
@@ -257,7 +258,7 @@ export default function CypherScanPage() {
               />
               <button
                 type="submit"
-                className={`px-2 py-1 ${themeClasses.buttonBg} ${themeClasses.text} ${themeClasses.buttonHover} transition-colors ${themeClasses.shadow} text-sm sm:text-xs shrink-0 mt-1 sm:mt-0`}
+                className={`px-2 py-1 ${themeClasses.buttonBg} text-blue-400 ${themeClasses.buttonHover} border border-blue-500/30 transition-colors ${themeClasses.shadow} text-sm sm:text-xs shrink-0 mt-1 sm:mt-0 uppercase`}
               >
                 EXEC
               </button>
@@ -266,14 +267,14 @@ export default function CypherScanPage() {
               <select
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value)}
-                className={`${themeClasses.filterBg} ${themeClasses.text} border ${themeClasses.border} px-2 py-1 text-sm sm:text-xs`}
+                className={`${themeClasses.filterBg} ${themeClasses.text} border ${themeClasses.border} px-2 py-1 text-sm sm:text-xs uppercase`}
               >
                 <option value="All">All Statuses</option>
                 <option value="Finalized">Finalized</option>
               </select>
               <button
                 onClick={handleRefresh}
-                className={`px-2 py-1 ${themeClasses.buttonBg} ${themeClasses.text} ${themeClasses.buttonHover} transition-colors ${themeClasses.shadow} flex items-center text-sm sm:text-xs`}
+                className={`px-2 py-1 ${themeClasses.buttonBg} text-blue-400 ${themeClasses.buttonHover} border border-blue-500/30 transition-colors ${themeClasses.shadow} flex items-center text-sm sm:text-xs uppercase`}
                 disabled={loading}
               >
                 <svg
@@ -297,12 +298,12 @@ export default function CypherScanPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm sm:text-xs">
               <thead>
-                <tr className={`text-[#0052FF] border-b border-[#0052FF]`}>
-                  <th className="py-2 px-2 text-left font-semibold">BLOCK</th>
-                  <th className="py-2 px-2 text-left font-semibold">STATUS</th>
-                  <th className="py-2 px-2 text-left font-semibold">TIMESTAMP</th>
-                  <th className="py-2 px-2 text-left font-semibold">HASH</th>
-                  <th className="py-2 px-2 text-left font-semibold">TXNS</th>
+                <tr className={`text-white border-b border-blue-500/30`}>
+                  <th className="py-2 px-2 text-left font-semibold uppercase">BLOCK</th>
+                  <th className="py-2 px-2 text-left font-semibold uppercase">STATUS</th>
+                  <th className="py-2 px-2 text-left font-semibold uppercase">TIMESTAMP</th>
+                  <th className="py-2 px-2 text-left font-semibold uppercase">HASH</th>
+                  <th className="py-2 px-2 text-left font-semibold uppercase">TXNS</th>
                 </tr>
               </thead>
               <tbody>
@@ -311,7 +312,7 @@ export default function CypherScanPage() {
                     <td colSpan={5} className="text-center py-4 sm:py-3">
                       <div className="flex justify-center items-center">
                         <svg
-                          className="w-6 h-6 sm:w-5 sm:h-5 animate-spin text-[#0052FF]"
+                          className="w-6 h-6 sm:w-5 sm:h-5 animate-spin text-blue-400"
                           fill="none"
                           stroke="currentColor"
                           viewBox="0 0 24 24"
@@ -324,19 +325,19 @@ export default function CypherScanPage() {
                             d="M4 12a8 8 0 018-8v8h8a8 8 0 01-16 0z"
                           />
                         </svg>
-                        <span className={`ml-2 ${themeClasses.secondaryText} text-sm sm:text-xs`}>[LOADING...]</span>
+                        <span className={`ml-2 ${themeClasses.secondaryText} text-sm sm:text-xs uppercase`}>[LOADING...]</span>
                       </div>
                     </td>
                   </tr>
                 ) : error ? (
                   <tr>
-                    <td colSpan={5} className={`text-center py-4 sm:py-3 ${themeClasses.errorText} text-sm sm:text-xs`}>
+                    <td colSpan={5} className={`text-center py-4 sm:py-3 ${themeClasses.errorText} text-sm sm:text-xs uppercase`}>
                       ERR: {error}
                     </td>
                   </tr>
                 ) : filteredBlocks.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className={`text-center py-4 sm:py-3 ${themeClasses.secondaryText} text-sm sm:text-xs`}>
+                    <td colSpan={5} className={`text-center py-4 sm:py-3 ${themeClasses.secondaryText} text-sm sm:text-xs uppercase`}>
                       [NO BLOCKS DETECTED]
                     </td>
                   </tr>
@@ -349,19 +350,19 @@ export default function CypherScanPage() {
                       <td className="py-2 px-2">
                         <Link
                           href={`/explorer/latest/block/${block.number}`}
-                          className="text-[#0052FF] hover:underline"
+                          className="text-blue-400 hover:underline"
                         >
                           {block.number}
                         </Link>
                       </td>
                       <td className="py-2 px-2">
-                        <span className="text-green-500 whitespace-nowrap">[ {block.status} ]</span>
+                        <span className="text-green-400 whitespace-nowrap">[ {block.status} ]</span>
                       </td>
                       <td className={`py-2 px-2 ${themeClasses.secondaryText}`}>{block.timestamp}</td>
                       <td className="py-2 px-2 truncate">
                         <Link
                           href={`/latest/hash/${block.hash}`}
-                          className="text-[#0052FF] hover:underline"
+                          className="text-blue-400 hover:underline"
                         >
                           {block.hash}
                         </Link>
@@ -377,15 +378,15 @@ export default function CypherScanPage() {
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1 || loading}
-              className={`px-2 py-1 ${themeClasses.buttonBg} ${themeClasses.text} ${themeClasses.buttonHover} disabled:${themeClasses.buttonDisabled} disabled:cursor-not-allowed transition-colors ${themeClasses.shadow} text-sm sm:text-xs`}
+              className={`px-2 py-1 ${themeClasses.buttonBg} text-blue-400 ${themeClasses.buttonHover} border border-blue-500/30 disabled:${themeClasses.buttonDisabled} disabled:cursor-not-allowed transition-colors ${themeClasses.shadow} text-sm sm:text-xs uppercase`}
             >
               PREV
             </button>
-            <span className={`${themeClasses.secondaryText} text-sm sm:text-xs`}>[ PAGE {page} ]</span>
+            <span className={`${themeClasses.secondaryText} text-sm sm:text-xs uppercase`}>[ PAGE {page} ]</span>
             <button
               onClick={() => setPage((p) => p + 1)}
               disabled={loading}
-              className={`px-2 py-1 ${themeClasses.buttonBg} ${themeClasses.text} ${themeClasses.buttonHover} disabled:${themeClasses.buttonDisabled} disabled:cursor-not-allowed transition-colors ${themeClasses.shadow} text-sm sm:text-xs`}
+              className={`px-2 py-1 ${themeClasses.buttonBg} text-blue-400 ${themeClasses.buttonHover} border border-blue-500/30 disabled:${themeClasses.buttonDisabled} disabled:cursor-not-allowed transition-colors ${themeClasses.shadow} text-sm sm:text-xs uppercase`}
             >
               NEXT
             </button>

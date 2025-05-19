@@ -1,36 +1,36 @@
 const Footer = () => {
   return (
-    <footer className="bg-gray-950 text-gray-200 py-6">
+    <footer className="bg-[#A5CFFF] text-[#1A2233] py-6 border-t border-blue-500/30">
       <div className="container mx-auto flex flex-col md:flex-row justify-between items-center">
         {/* Logo and Description */}
         <div className="mb-4 md:mb-0 text-center md:text-left">
-          <h2 className="text-2xl font-bold">Homebase</h2>
-          <p className="text-sm mt-2 text-gray-400">
+          <h2 className="text-2xl font-bold text-[#1A2233]">Homebase</h2>
+          <p className="text-sm mt-2 text-[#1A2233]/80">
             Your go-to platform for Base chain analytics and insights.
           </p>
         </div>
 
         {/* Links */}
         <div className="flex flex-col md:flex-row gap-4 text-center md:text-right">
-          <a href="/" className="text-gray-200 hover:text-blue-400">
+          <a href="/" className="text-[#1A2233] hover:text-blue-400 transition-colors">
             Home
           </a>
-          <a href="/token-scanner" className="text-gray-200 hover:text-blue-400">
+          <a href="/token-scanner" className="text-[#1A2233] hover:text-blue-400 transition-colors">
             Token Screener
           </a>
-          <a href="/marketplace" className="text-gray-200 hover:text-blue-400">
+          <a href="/marketplace" className="text-[#1A2233] hover:text-blue-400 transition-colors">
             Marketplace
           </a>
-          <a href="/TradingCompetition" className="text-gray-200 hover:text-blue-400">
+          <a href="/TradingCompetition" className="text-[#1A2233] hover:text-blue-400 transition-colors">
             Tournaments
           </a>
-          <a href="/terminal" className="text-gray-200 hover:text-blue-400">
+          <a href="/terminal" className="text-[#1A2233] hover:text-blue-400 transition-colors">
             Terminal
           </a>
-          <a href="/docs" className="text-gray-200 hover:text-blue-400">
+          <a href="/docs" className="text-[#1A2233] hover:text-blue-400 transition-colors">
             Docs
           </a>
-          <a href="mailto:homebasemarkets@gmail.com" className="text-gray-200 hover:text-blue-400">
+          <a href="mailto:homebasemarkets@gmail.com" className="text-[#1A2233] hover:text-blue-400 transition-colors">
             Contact
           </a>
         </div>
@@ -49,7 +49,7 @@ const Footer = () => {
               viewBox="0 0 24 24"
               strokeWidth={1.5}
               stroke="currentColor"
-              className="w-6 h-6 text-gray-200 hover:text-blue-400"
+              className="w-6 h-6 text-[#1A2233] hover:text-blue-400 transition-colors"
             >
               <path
                 strokeLinecap="round"
@@ -70,7 +70,7 @@ const Footer = () => {
               viewBox="0 0 24 24"
               strokeWidth={1.5}
               stroke="currentColor"
-              className="w-6 h-6 text-gray-200 hover:text-blue-400"
+              className="w-6 h-6 text-[#1A2233] hover:text-blue-400 transition-colors"
             >
               <path
                 strokeLinecap="round"
@@ -86,10 +86,3 @@ const Footer = () => {
 };
 
 export default Footer;
-
-
-  
-  
-
-  
-  

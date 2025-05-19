@@ -15,6 +15,7 @@ import {
   getDoc,
   type DocumentData,
   type CollectionReference,
+  type Query,
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { type User } from 'firebase/auth';
@@ -39,7 +40,7 @@ interface Event {
   createdBy: string;
   eventType: string;
   link?: string;
-  status: string; // Added status field
+  status: string;
   reactions: { likes: string[]; comments: { userId: string; text: string }[] };
 }
 
@@ -75,15 +76,15 @@ interface EventCalendarProps {
 
 function timestampToDateString(timestamp: Timestamp): string {
   const date = timestamp.toDate();
-  return date.toISOString().split('T')[0]; // e.g., "2025-05-07"
+  return date.toISOString().split('T')[0];
 }
 
 function getCurrentWeekDates(): { day: string; date: string; fullDate: string }[] {
   const today = new Date();
   const dayOfWeek = today.getDay();
   const startOfWeek = new Date(today);
-  startOfWeek.setDate(today.getDate() - dayOfWeek + 1); // Monday
-  startOfWeek.setUTCHours(0, 0, 0, 0); // Start of day in UTC
+  startOfWeek.setDate(today.getDate() - dayOfWeek + 1);
+  startOfWeek.setUTCHours(0, 0, 0, 0);
 
   const days = [];
   const dayNames = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
@@ -100,7 +101,6 @@ function getCurrentWeekDates(): { day: string; date: string; fullDate: string }[
   return days;
 }
 
-// Utility to chunk arrays for Firestore 'in' query limit (30 items)
 const chunkArray = (array: string[], size: number) =>
   Array.from({ length: Math.ceil(array.length / size) }, (_, i) =>
     array.slice(i * size, (i + 1) * size)
@@ -135,7 +135,6 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
 
   const weekDates = getCurrentWeekDates();
 
-  // Fetch projects for the dropdown
   useEffect(() => {
     async function fetchProjects() {
       try {
@@ -172,10 +171,9 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
       console.log('followedProjects:', followedProjects);
       console.log('eventTypeFilter:', eventTypeFilter);
 
-      // Fetch projects
       const projectMap: { [key: string]: { name: string; ticker: string } } = {};
       const projectCollection = collection(db, 'tokenLaunch') as CollectionReference<DocumentData>;
-      let projectQuery = projectCollection;
+      let projectQuery: CollectionReference<DocumentData> | Query<DocumentData> = projectCollection;
       if (user && followedProjects.length > 0) {
         projectQuery = query(projectCollection, where('__name__', 'in', followedProjects));
       }
@@ -188,12 +186,10 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
         };
       });
 
-      // Fetch events
       const eventCollection = collection(db, 'projectEvents') as CollectionReference<DocumentData>;
       let querySnapshotDocs: DocumentData[] = [];
 
       if (user && followedProjects.length > 0) {
-        // Handle Firestore 'in' query limit (30 items)
         const chunks = chunkArray(followedProjects, 30);
         for (const chunk of chunks) {
           const q = query(
@@ -201,7 +197,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
             where('date', '>=', startTimestamp),
             where('date', '<=', endTimestamp),
             where('projectId', 'in', chunk),
-            where('status', '==', 'approved') // Ensure only approved events
+            where('status', '==', 'approved')
           );
           const snapshot = await getDocs(q);
           snapshot.forEach((doc) => querySnapshotDocs.push(doc));
@@ -211,7 +207,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
           eventCollection,
           where('date', '>=', startTimestamp),
           where('date', '<=', endTimestamp),
-          where('status', '==', 'approved') // Ensure only approved events
+          where('status', '==', 'approved')
         );
         const snapshot = await getDocs(q);
         querySnapshotDocs = snapshot.docs;
@@ -239,7 +235,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
           createdBy: data.createdBy,
           eventType: data.eventType,
           link: data.link,
-          status: data.status || 'unknown', // Include status
+          status: data.status || 'unknown',
           reactions: data.reactions || { likes: [], comments: [] },
         };
 
@@ -404,7 +400,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
         createdBy: user.uid,
         eventType: newEvent.eventType,
         link: newEvent.link || null,
-        status: isAdmin ? 'approved' : 'pending', // Set status based on user role
+        status: isAdmin ? 'approved' : 'pending',
         reactions: { likes: [], comments: [] },
       };
       console.log('Creating event:', eventData);
@@ -413,7 +409,6 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
       setShowCreateModal(false);
       setNewEvent({ projectId: '', title: '', description: '', date: '', eventType: 'AMA', link: '' });
 
-      // Notify followers (only for approved events)
       if (eventData.status === 'approved') {
         const projectDoc = await getDoc(doc(db, 'tokenLaunch', newEvent.projectId));
         if (projectDoc.exists()) {
@@ -431,7 +426,6 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
         }
       }
 
-      // Refresh events
       fetchEventData();
     } catch (error: any) {
       console.error('Error creating event:', error);
@@ -490,7 +484,8 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
   return (
     <div className="my-12">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl sm:text-2xl font-bold text-[#0052FF]">
+        <h2 className="text-xl sm:text-2xl font-bold text-blue-400 flex items-center gap-2">
+          <FiCalendar className="w-6 h-6 sm:w-7 sm:h-7 text-blue-400" />
           Event Calendar
         </h2>
         <div className="flex items-center gap-3">
@@ -498,7 +493,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
             <select
               value={eventTypeFilter}
               onChange={(e) => setEventTypeFilter(e.target.value)}
-              className="appearance-none px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white focus:outline-none focus:ring-2 focus:ring-[#0052FF] pr-8"
+              className="appearance-none px-3 py-2 border border-blue-500/20 rounded-md text-sm sm:text-base bg-gray-900 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
             >
               <option value="All">All Events</option>
               <option value="AMA">AMA</option>
@@ -506,14 +501,14 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
               <option value="Update">Update</option>
               <option value="Other">Other</option>
             </select>
-            <FiFilter className="absolute right-2 top-1/2 transform -translate-y-1/2 text-white text-opacity-80 w-4 h-4" />
+            <FiFilter className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-200 w-4 h-4 sm:w-5 sm:h-5" />
           </div>
           {(user?.email === 'homebasemarkets@gmail.com' || true) && (
             <>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 onClick={() => setShowCreateModal(true)}
-                className="px-4 py-2 bg-[#0052FF] text-white rounded-md hover:bg-[#0042CC] transition text-sm sm:text-base flex items-center gap-1"
+                className="px-4 py-2 bg-blue-500/20 text-gray-200 rounded-md hover:bg-blue-400/30 transition text-sm sm:text-base flex items-center gap-1"
               >
                 <FiPlus className="w-4 h-4 sm:w-5 sm:h-5" />
                 Create Event
@@ -521,7 +516,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 onClick={() => setShowSubmitProjectModal(true)}
-                className="px-4 py-2 bg-[#0052FF] text-white rounded-md hover:bg-[#0042CC] transition text-sm sm:text-base flex items-center gap-1"
+                className="px-4 py-2 bg-blue-500/20 text-gray-200 rounded-md hover:bg-blue-400/30 transition text-sm sm:text-base flex items-center gap-1"
               >
                 <FiPlus className="w-4 h-4 sm:w-5 sm:h-5" />
                 Submit Project
@@ -530,23 +525,40 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
           )}
         </div>
       </div>
-      <div className="bg-black p-6 sm:p-8 rounded-xl shadow-xl border border-white border-opacity-10">
+      <div className="bg-gray-950 p-6 sm:p-8 rounded-xl shadow-md border border-blue-500/20">
         {loading ? (
-          <div className="text-center py-6">
-            <p className="text-white text-opacity-70">Loading events...</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 sm:gap-6">
+            {Array.from({ length: 7 }).map((_, index) => (
+              <div
+                key={index}
+                className="bg-gray-950 p-4 rounded-lg shadow-md border border-blue-500/20 min-h-80 flex flex-col animate-pulse"
+              >
+                <div className="h-6 bg-gray-900 rounded w-1/3 mx-auto mb-2"></div>
+                <div className="h-4 bg-gray-900 rounded w-1/4 mx-auto mb-4"></div>
+                <div className="flex-grow space-y-4">
+                  <div className="bg-gray-900 p-3 rounded-md border border-blue-500/20">
+                    <div className="h-4 bg-gray-800 rounded w-1/2 mx-auto mb-2"></div>
+                    <div className="space-y-2">
+                      <div className="bg-gray-950 p-2 rounded-md h-16 border border-blue-500/20"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         ) : error ? (
           <div className="text-center text-red-500 py-6">
             <p>{error}</p>
-            <button
+            <motion.button
+              whileHover={{ scale: 1.05 }}
               onClick={fetchEventData}
-              className="mt-2 text-blue-500 underline hover:text-blue-400"
+              className="mt-2 text-blue-400 underline hover:text-blue-300 text-sm sm:text-base"
             >
               Retry
-            </button>
+            </motion.button>
           </div>
         ) : eventData.every((day) => day.events.events.length === 0) ? (
-          <div className="text-center text-white text-opacity-70 py-6">
+          <div className="text-center text-gray-300 py-6">
             <p>No approved events scheduled for this week.</p>
             {followedProjects.length > 0 && (
               <p>Try clearing the project filter to see all events.</p>
@@ -563,24 +575,24 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: index * 0.1, duration: 0.3 }}
-                className="bg-black p-4 rounded-lg shadow-md border border-white border-opacity-10 min-h-80 flex flex-col"
+                className="bg-gray-950 p-4 rounded-lg shadow-md border border-blue-500/20 min-h-80 flex flex-col"
               >
                 <div className="text-center">
-                  <h2 className="text-lg sm:text-xl font-bold text-[#0052FF]">
+                  <h2 className="text-lg sm:text-xl font-bold text-blue-400">
                     {day.day}
                   </h2>
-                  <p className="text-white text-opacity-70 text-xs sm:text-sm">
+                  <p className="text-gray-300 text-xs sm:text-sm">
                     {day.date}
                   </p>
                 </div>
                 <div className="flex-grow mt-4">
-                  <div className="bg-[#1A1A1A] p-3 rounded-md border border-white border-opacity-10 flex-1">
-                    <h3 className="text-xs sm:text-sm font-semibold text-white text-opacity-90 text-center mb-2 flex items-center justify-center gap-1">
-                      <FiCalendar className="w-4 h-4 sm:w-5 sm:h-5 text-white text-opacity-80" />
+                  <div className="bg-gray-900 p-3 rounded-md border border-blue-500/20 flex-1">
+                    <h3 className="text-xs sm:text-sm font-semibold text-gray-200 text-center mb-2 flex items-center justify-center gap-1">
+                      <FiCalendar className="w-4 h-4 sm:w-5 sm:h-5 text-gray-200" />
                       Events
                     </h3>
                     {day.events?.events?.length === 0 ? (
-                      <p className="text-xs sm:text-sm text-white text-opacity-70 text-center">
+                      <p className="text-xs sm:text-sm text-gray-300 text-center">
                         No events scheduled
                       </p>
                     ) : (
@@ -588,25 +600,25 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                         {day.events.events.map((event, idx) => (
                           <motion.div
                             key={idx}
-                            className="bg-black p-2 rounded-md shadow-sm hover:bg-[#1A1A1A] transition-all cursor-pointer border border-white border-opacity-10"
+                            className="bg-gray-950 p-2 rounded-md shadow-sm hover:bg-gray-800 transition-all cursor-pointer border border-blue-500/20"
                             whileHover={{ scale: 1.05 }}
                             onClick={() => setSelectedEvent(event)}
                           >
-                            <p className="text-xs sm:text-sm font-semibold text-white truncate w-full text-center">
+                            <p className="text-xs sm:text-sm font-semibold text-gray-200 truncate w-full text-center">
                               {event.title}
                             </p>
-                            <p className="text-[10px] sm:text-xs text-white text-opacity-70 text-center">
+                            <p className="text-[10px] sm:text-xs text-gray-300 text-center">
                               {event.projectName} ({event.projectTicker})
                             </p>
                             <span
-                              className={`inline-block mt-1 px-2 py-1 text-[10px] sm:text-xs rounded-full text-white ${
+                              className={`inline-block mt-1 px-2 py-1 text-[10px] sm:text-xs rounded-full text-gray-200 ${
                                 event.eventType === 'AMA'
-                                  ? 'bg-purple-500'
+                                  ? 'bg-blue-500/20'
                                   : event.eventType === 'Giveaway'
-                                  ? 'bg-green-500'
+                                  ? 'bg-blue-400/20'
                                   : event.eventType === 'Update'
-                                  ? 'bg-blue-500'
-                                  : 'bg-[#2A2A2A]'
+                                  ? 'bg-blue-300/20'
+                                  : 'bg-gray-800'
                               }`}
                             >
                               {event.eventType}
@@ -623,65 +635,65 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
         )}
       </div>
 
-      {/* Event Details Modal */}
       {selectedEvent && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50 overflow-y-auto">
+        <div className="fixed inset-0 bg-gray-950/70 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="bg-black p-6 rounded-xl shadow-2xl w-full max-w-md sm:max-w-lg relative mx-4 my-8 border border-white border-opacity-10"
+            className="bg-gray-950 p-6 rounded-xl shadow-md w-full max-w-md sm:max-w-lg relative mx-4 my-8 border border-blue-500/20"
           >
             <button
               onClick={() => setSelectedEvent(null)}
-              className="absolute top-3 right-3 text-white text-opacity-80 text-lg hover:text-white"
+              className="absolute top-3 right-3 text-gray-300 text-lg hover:text-gray-200"
             >
               ×
             </button>
-            <h3 className="text-lg sm:text-xl font-bold text-white mb-4">
+            <h3 className="text-lg sm:text-xl font-bold text-gray-200 mb-4">
               {selectedEvent.title}
             </h3>
-            <p className="text-sm sm:text-base text-white text-opacity-80 mb-2">
+            <p className="text-sm sm:text-base text-gray-300 mb-2">
               <strong>Project:</strong> {selectedEvent.projectName} ({selectedEvent.projectTicker})
             </p>
-            <p className="text-sm sm:text-base text-white text-opacity-80 mb-2">
+            <p className="text-sm sm:text-base text-gray-300 mb-2">
               <strong>Date:</strong> {selectedEvent.date}
             </p>
-            <p className="text-sm sm:text-base text-white text-opacity-80 mb-2">
+            <p className="text-sm sm:text-base text-gray-300 mb-2">
               <strong>Type:</strong> {selectedEvent.eventType}
             </p>
             {selectedEvent.link && (
-              <p className="text-sm sm:text-base text-white text-opacity-80 mb-4">
+              <p className="text-sm sm:text-base text-gray-300 mb-4">
                 <strong>Link:</strong>{' '}
                 <a
                   href={selectedEvent.link}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[#0052FF] hover:underline flex items-center gap-1"
+                  className="text-blue-400 hover:underline flex items-center gap-1"
                 >
-                  <FiLink className="w-4 h-4" />
+                  <FiLink className="w-4 h-4 sm:w-5 sm:h-5" />
                   Join Event
                 </a>
               </p>
             )}
-            <p className="text-sm sm:text-base text-white text-opacity-80 mb-4 break-words">
+            <p className="text-sm sm:text-base text-gray-300 mb-4 break-words">
               <strong>Description:</strong> {selectedEvent.description}
             </p>
             <div className="flex flex-wrap justify-between mb-4 gap-2">
-              <button
+              <motion.button
+                whileHover={{ scale: 1.05 }}
                 onClick={() => handleLike(selectedEvent)}
-                className={`flex items-center gap-1 px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base transition ${
+                className={`flex items-center gap-1 px-3 sm:px-4 py-2 rounded-md text-sm sm:text-base transition ${
                   user && selectedEvent.reactions.likes.includes(user.uid)
-                    ? 'bg-blue-500 text-white hover:bg-blue-600'
-                    : 'bg-[#1A1A1A] text-white hover:bg-[#2A2A2A] border border-white border-opacity-10'
+                    ? 'bg-blue-500/20 text-gray-200 hover:bg-blue-400/30'
+                    : 'bg-gray-900 text-gray-200 hover:bg-gray-800 border border-blue-500/20'
                 }`}
               >
                 <FiThumbsUp className="w-4 h-4 sm:w-5 sm:h-5" />
                 Like ({selectedEvent.reactions.likes.length})
-              </button>
+              </motion.button>
             </div>
             <div className="mb-4">
-              <h4 className="text-sm sm:text-base font-semibold text-white mb-2">
+              <h4 className="text-sm sm:text-base font-semibold text-gray-200 mb-2">
                 Comments
               </h4>
               {selectedEvent.reactions.comments.length > 0 ? (
@@ -689,14 +701,14 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                   {selectedEvent.reactions.comments.map((c, idx) => (
                     <li
                       key={idx}
-                      className="text-xs sm:text-sm text-white text-opacity-80 border-b border-white border-opacity-10 pb-1 break-words"
+                      className="text-xs sm:text-sm text-gray-300 border-b border-blue-500/20 pb-1 break-words"
                     >
                       <strong>User {c.userId.slice(0, 8)}:</strong> {c.text}
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="text-xs sm:text-sm text-white text-opacity-70">
+                <p className="text-xs sm:text-sm text-gray-300">
                   No comments yet.
                 </p>
               )}
@@ -707,14 +719,15 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
                     placeholder="Add a comment..."
-                    className="flex-1 px-3 py-1 rounded-md border border-white border-opacity-20 bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50 text-sm sm:text-base"
+                    className="flex-1 px-3 py-1 rounded-md border border-blue-500/20 bg-gray-900 text-gray-200 placeholder-gray-400 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <button
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
                     onClick={() => handleCommentSubmit(selectedEvent)}
-                    className="bg-[#0052FF] text-white px-3 py-1 rounded-md hover:bg-[#0042CC] transition text-sm sm:text-base"
+                    className="bg-blue-500/20 text-gray-200 px-3 py-1 rounded-md hover:bg-blue-400/30 transition text-sm sm:text-base"
                   >
                     Post
-                  </button>
+                  </motion.button>
                 </div>
               )}
             </div>
@@ -722,27 +735,26 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
         </div>
       )}
 
-      {/* Create Event Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50 overflow-y-auto">
+        <div className="fixed inset-0 bg-gray-950/70 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="bg-black p-6 rounded-xl shadow-2xl w-full max-w-md sm:max-w-lg relative mx-4 my-8 border border-white border-opacity-10"
+            className="bg-gray-950 p-6 rounded-xl shadow-md w-full max-w-md sm:max-w-lg relative mx-4 my-8 border border-blue-500/20"
           >
             <button
               onClick={() => setShowCreateModal(false)}
-              className="absolute top-3 right-3 text-white text-opacity-80 text-lg hover:text-white"
+              className="absolute top-3 right-3 text-gray-300 text-lg hover:text-gray-200"
             >
               ×
             </button>
-            <h3 className="text-lg sm:text-xl font-bold text-white mb-4">
+            <h3 className="text-lg sm:text-xl font-bold text-gray-200 mb-4">
               Create New Event
             </h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-white text-opacity-90">
+                <label className="block text-sm font-medium text-gray-200">
                   Project
                 </label>
                 <select
@@ -750,7 +762,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                   onChange={(e) =>
                     setNewEvent({ ...newEvent, projectId: e.target.value })
                   }
-                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90"
+                  className="mt-1 w-full px-3 py-2 border border-blue-500/20 rounded-md text-sm sm:text-base bg-gray-900 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Select a project</option>
                   {projects.map((project) => (
@@ -761,7 +773,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-white text-opacity-90">
+                <label className="block text-sm font-medium text-gray-200">
                   Event Title
                 </label>
                 <input
@@ -771,11 +783,11 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     setNewEvent({ ...newEvent, title: e.target.value })
                   }
                   placeholder="e.g., Community AMA"
-                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50"
+                  className="mt-1 w-full px-3 py-2 border border-blue-500/20 rounded-md text-sm sm:text-base bg-gray-900 text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-white text-opacity-90">
+                <label className="block text-sm font-medium text-gray-200">
                   Event Type
                 </label>
                 <select
@@ -783,7 +795,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                   onChange={(e) =>
                     setNewEvent({ ...newEvent, eventType: e.target.value })
                   }
-                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90"
+                  className="mt-1 w-full px-3 py-2 border border-blue-500/20 rounded-md text-sm sm:text-base bg-gray-900 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="AMA">AMA</option>
                   <option value="Giveaway">Giveaway</option>
@@ -792,7 +804,7 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-white text-opacity-90">
+                <label className="block text-sm font-medium text-gray-200">
                   Description
                 </label>
                 <textarea
@@ -801,11 +813,11 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     setNewEvent({ ...newEvent, description: e.target.value })
                   }
                   placeholder="Describe the event..."
-                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base h-24 bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50"
+                  className="mt-1 w-full px-3 py-2 border border-blue-500/20 rounded-md text-sm sm:text-base h-24 bg-gray-900 text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-white text-opacity-90">
+                <label className="block text-sm font-medium text-gray-200">
                   Date
                 </label>
                 <input
@@ -814,11 +826,11 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                   onChange={(e) =>
                     setNewEvent({ ...newEvent, date: e.target.value })
                   }
-                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90"
+                  className="mt-1 w-full px-3 py-2 border border-blue-500/20 rounded-md text-sm sm:text-base bg-gray-900 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-white text-opacity-90">
+                <label className="block text-sm font-medium text-gray-200">
                   Link (Optional)
                 </label>
                 <input
@@ -828,13 +840,13 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     setNewEvent({ ...newEvent, link: e.target.value })
                   }
                   placeholder="e.g., Zoom or Discord link"
-                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50"
+                  className="mt-1 w-full px-3 py-2 border border-blue-500/20 rounded-md text-sm sm:text-base bg-gray-900 text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 onClick={handleCreateEvent}
-                className="w-full bg-[#0052FF] text-white py-2 rounded-md hover:bg-[#0042CC] transition text-sm sm:text-base"
+                className="w-full bg-blue-500/20 text-gray-200 py-2 rounded-md hover:bg-blue-400/30 transition text-sm sm:text-base"
               >
                 Create Event
               </motion.button>
@@ -843,27 +855,26 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
         </div>
       )}
 
-      {/* Submit Project Modal */}
       {showSubmitProjectModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50 overflow-y-auto">
+        <div className="fixed inset-0 bg-gray-950/70 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="bg-black p-6 rounded-xl shadow-2xl w-full max-w-md sm:max-w-lg relative mx-4 my-8 border border-white border-opacity-10"
+            className="bg-gray-950 p-6 rounded-xl shadow-md w-full max-w-md sm:max-w-lg relative mx-4 my-8 border border-blue-500/20"
           >
             <button
               onClick={() => setShowSubmitProjectModal(false)}
-              className="absolute top-3 right-3 text-white text-opacity-80 text-lg hover:text-white"
+              className="absolute top-3 right-3 text-gray-300 text-lg hover:text-gray-200"
             >
               ×
             </button>
-            <h3 className="text-lg sm:text-xl font-bold text-white mb-4">
+            <h3 className="text-lg sm:text-xl font-bold text-gray-200 mb-4">
               Submit New Project
             </h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-white text-opacity-90">
+                <label className="block text-sm font-medium text-gray-200">
                   Project Name
                 </label>
                 <input
@@ -873,11 +884,11 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     setNewProject({ ...newProject, name: e.target.value })
                   }
                   placeholder="e.g., Homebase Project"
-                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50"
+                  className="mt-1 w-full px-3 py-2 border border-blue-500/20 rounded-md text-sm sm:text-base bg-gray-900 text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-white text-opacity-90">
+                <label className="block text-sm font-medium text-gray-200">
                   Ticker
                 </label>
                 <input
@@ -887,11 +898,11 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     setNewProject({ ...newProject, ticker: e.target.value })
                   }
                   placeholder="e.g., HMB"
-                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50"
+                  className="mt-1 w-full px-3 py-2 border border-blue-500/20 rounded-md text-sm sm:text-base bg-gray-900 text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-white text-opacity-90">
+                <label className="block text-sm font-medium text-gray-200">
                   Description
                 </label>
                 <textarea
@@ -900,11 +911,11 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     setNewProject({ ...newProject, description: e.target.value })
                   }
                   placeholder="Describe your project..."
-                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base h-24 bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50"
+                  className="mt-1 w-full px-3 py-2 border border-blue-500/20 rounded-md text-sm sm:text-base h-24 bg-gray-900 text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-white text-opacity-90">
+                <label className="block text-sm font-medium text-gray-200">
                   Contract Address
                 </label>
                 <input
@@ -914,11 +925,11 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     setNewProject({ ...newProject, contractAddress: e.target.value })
                   }
                   placeholder="e.g., 0x..."
-                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50"
+                                    className="mt-1 w-full px-3 py-2 border border-blue-500/20 rounded-md text-sm sm:text-base bg-gray-900 text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-white text-opacity-90">
+                <label className="block text-sm font-medium text-gray-200">
                   Website
                 </label>
                 <input
@@ -928,11 +939,11 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     setNewProject({ ...newProject, website: e.target.value })
                   }
                   placeholder="e.g., https://project.com"
-                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50"
+                  className="mt-1 w-full px-3 py-2 border border-blue-500/20 rounded-md text-sm sm:text-base bg-gray-900 text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-white text-opacity-90">
+                <label className="block text-sm font-medium text-gray-200">
                   Proof of Ownership
                 </label>
                 <input
@@ -942,13 +953,13 @@ export default function EventCalendar({ user, followedProjects }: EventCalendarP
                     setNewProject({ ...newProject, proofOfOwnership: e.target.value })
                   }
                   placeholder="e.g., Link to verified contract or admin proof"
-                  className="mt-1 w-full px-3 py-2 border border-white border-opacity-20 rounded-md text-sm sm:text-base bg-[#1A1A1A] text-white text-opacity-90 placeholder-white placeholder-opacity-50"
+                  className="mt-1 w-full px-3 py-2 border border-blue-500/20 rounded-md text-sm sm:text-base bg-gray-900 text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 onClick={handleSubmitProject}
-                className="w-full bg-[#0052FF] text-white py-2 rounded-md hover:bg-[#0042CC] transition text-sm sm:text-base"
+                className="w-full bg-blue-500/20 text-gray-200 py-2 rounded-md hover:bg-blue-400/30 transition text-sm sm:text-base"
               >
                 Submit Project
               </motion.button>

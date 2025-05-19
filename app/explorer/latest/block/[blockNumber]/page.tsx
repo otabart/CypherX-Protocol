@@ -1,7 +1,9 @@
+// app/explorer/latest/block/[blockNumber]/page.tsx
 "use client";
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { db, auth } from "../../../../../lib/firebase.ts";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 
@@ -36,6 +38,7 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
   const [error, setError] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [theme, setTheme] = useState<string>("dark");
+  const router = useRouter();
 
   const fetchBlock = async () => {
     setLoading(true);
@@ -123,18 +126,19 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
 
   useEffect(() => {
     if (!blockNumber) {
-      setError("Block number is missing");
+      router.push("/explorer/latest/block");
       return;
     }
 
     const blockNum = parseInt(blockNumber, 10);
     if (isNaN(blockNum) || blockNum < 0) {
       setError("Invalid block number: Must be a positive integer");
+      router.push("/explorer/latest/block");
       return;
     }
 
     fetchBlock();
-  }, [blockNumber]);
+  }, [blockNumber, router]);
 
   const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -148,16 +152,16 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
   };
 
   const themeClasses = {
-    background: theme === "dark" ? "bg-black" : "bg-white",
-    text: theme === "dark" ? "text-white" : "text-black",
-    border: theme === "dark" ? "border-[#333333]" : "border-gray-200",
-    headerBg: theme === "dark" ? "bg-[#1A1A1A]" : "bg-gray-100",
-    hoverBg: theme === "dark" ? "hover:bg-[#222222]" : "hover:bg-gray-50",
+    background: theme === "dark" ? "bg-gray-950" : "bg-gray-100",
+    text: theme === "dark" ? "text-gray-200" : "text-gray-900",
+    border: theme === "dark" ? "border-blue-500/30" : "border-gray-300",
+    headerBg: theme === "dark" ? "bg-gray-950" : "bg-gray-200",
+    hoverBg: theme === "dark" ? "hover:bg-gray-900" : "hover:bg-gray-200",
     secondaryText: theme === "dark" ? "text-gray-400" : "text-gray-600",
     errorText: theme === "dark" ? "text-red-400" : "text-red-600",
-    buttonBg: theme === "dark" ? "bg-[#0052FF]" : "bg-blue-600",
-    buttonHover: theme === "dark" ? "hover:bg-[#003ECB]" : "hover:bg-blue-700",
-    shadow: theme === "dark" ? "shadow-[0_2px_8px_rgba(0,82,255,0.2)]" : "shadow-[0_2px_8px_rgba(0,0,0,0.1)]",
+    buttonBg: theme === "dark" ? "bg-blue-500/20" : "bg-blue-500",
+    buttonHover: theme === "dark" ? "hover:bg-blue-500/40" : "hover:bg-blue-600",
+    shadow: theme === "dark" ? "shadow-[0_2px_8px_rgba(59,130,246,0.2)]" : "shadow-[0_2px_8px_rgba(0,0,0,0.1)]",
   };
 
   return (
@@ -167,7 +171,7 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
           <div className="flex items-center space-x-3">
             <Link
               href="/explorer/latest/block"
-              className={`inline-flex items-center px-2 py-1 ${themeClasses.buttonBg} ${themeClasses.text} ${themeClasses.buttonHover} transition-colors ${themeClasses.shadow} text-sm`}
+              className={`inline-flex items-center px-2 py-1 ${themeClasses.buttonBg} text-blue-400 ${themeClasses.buttonHover} border border-blue-500/30 transition-colors ${themeClasses.shadow} text-sm uppercase`}
             >
               <svg
                 className="w-4 h-4 mr-1"
@@ -180,15 +184,15 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
               </svg>
               BACK
             </Link>
-            <h1 className={`${themeClasses.text} text-lg font-semibold`}>Block #{blockNumber} - CYPHERSCAN</h1>
+            <h1 className={`${themeClasses.text} text-lg font-semibold uppercase`}>Block #{blockNumber} - CYPHERSCAN</h1>
           </div>
           <button
             onClick={toggleTheme}
-            className={`p-2 ${themeClasses.buttonBg} ${themeClasses.buttonHover} transition-colors ${themeClasses.shadow}`}
+            className={`p-2 ${themeClasses.buttonBg} text-blue-400 ${themeClasses.buttonHover} border border-blue-500/30 transition-colors ${themeClasses.shadow}`}
           >
             {theme === "dark" ? (
               <svg
-                className="w-5 h-5 text-white"
+                className="w-5 h-5 text-gray-200"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -203,7 +207,7 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
               </svg>
             ) : (
               <svg
-                className="w-5 h-5 text-black"
+                className="w-5 h-5 text-gray-900"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -223,7 +227,7 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
           {loading ? (
             <div className="flex justify-center items-center py-6">
               <svg
-                className="w-6 h-6 animate-spin text-[#0052FF]"
+                className="w-6 h-6 animate-spin text-blue-400"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -231,57 +235,57 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 12a8 8 0 018-8v8h8a8 8 0 01-16 0z" />
               </svg>
-              <span className={`ml-2 ${themeClasses.secondaryText}`}>[LOADING...]</span>
+              <span className={`ml-2 ${themeClasses.secondaryText} uppercase`}>[LOADING...]</span>
             </div>
           ) : error ? (
-            <p className={`text-center py-6 ${themeClasses.errorText}`}>
+            <p className={`text-center py-6 ${themeClasses.errorText} uppercase`}>
               Error: {error}. Please try a different block number or contact support.
             </p>
           ) : block ? (
             <div className="space-y-6">
               <div>
-                <h2 className="text-[#0052FF] text-base font-semibold border-b border-[#0052FF] pb-2 mb-4">[ BLOCK OVERVIEW ]</h2>
+                <h2 className="text-white text-base font-semibold border-b border-blue-500/30 pb-2 mb-4 uppercase">[ BLOCK OVERVIEW ]</h2>
                 <div className="grid grid-cols-1 gap-3">
                   <div className="space-y-3">
                     <p className="text-sm">
-                      <strong className="text-[#0052FF]">BLOCK:</strong>{" "}
+                      <strong className="text-blue-400 uppercase">BLOCK:</strong>{" "}
                       <a
                         href={`https://basescan.org/block/${block.number}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[#0052FF] hover:underline"
+                        className="text-blue-400 hover:underline"
                       >
                         {block.number}
                       </a>
                     </p>
                     <p className="text-sm">
-                      <strong className="text-[#0052FF]">STATUS:</strong>{" "}
-                      <span className="text-green-500">[ {block.status} ]</span>
+                      <strong className="text-blue-400 uppercase">STATUS:</strong>{" "}
+                      <span className="text-green-400">[ {block.status} ]</span>
                     </p>
                     <p className="text-sm">
-                      <strong className="text-[#0052FF]">TIMESTAMP:</strong>{" "}
+                      <strong className="text-blue-400 uppercase">TIMESTAMP:</strong>{" "}
                       <span className={`${themeClasses.secondaryText}`}>{block.timestamp}</span>
                     </p>
                     <p className="flex items-center text-sm">
-                      <strong className="text-[#0052FF] mr-2">HASH:</strong>
+                      <strong className="text-blue-400 mr-2 uppercase">HASH:</strong>
                       <a
                         href={`https://basescan.org/block/${block.hash}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="truncate flex-1 text-[#0052FF] hover:underline"
+                        className="truncate flex-1 text-blue-400 hover:underline"
                       >
                         {block.hash}
                       </a>
                       <button
                         onClick={() => copyToClipboard(block.hash, "hash")}
-                        className="ml-1 p-1 text-[#0052FF] hover:text-[#003ECB]"
+                        className="ml-1 p-1 text-blue-400 hover:text-blue-500"
                       >
                         {copiedField === "hash" ? (
                           <svg
-                            className="w-4 h-4 text-green-500"
+                            className="w-4 h-4 text-green-400"
                             fill="none"
                             stroke="currentColor"
-                            viewBox="0 0 24 24"
+                            viewBox="0 0 24 14"
                             xmlns="http://www.w3.org/2000/svg"
                           >
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
@@ -305,22 +309,22 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
                       </button>
                     </p>
                     <p className="flex items-center text-sm">
-                      <strong className="text-[#0052FF] mr-2">PARENT HASH:</strong>
+                      <strong className="text-blue-400 mr-2 uppercase">PARENT HASH:</strong>
                       <a
                         href={`https://basescan.org/block/${block.parentHash}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="truncate flex-1 text-[#0052FF] hover:underline"
+                        className="truncate flex-1 text-blue-400 hover:underline"
                       >
                         {block.parentHash}
                       </a>
                       <button
                         onClick={() => copyToClipboard(block.parentHash, "parentHash")}
-                        className="ml-1 p-1 text-[#0052FF] hover:text-[#003ECB]"
+                        className="ml-1 p-1 text-blue-400 hover:text-blue-500"
                       >
                         {copiedField === "parentHash" ? (
                           <svg
-                            className="w-4 h-4 text-green-500"
+                            className="w-4 h-4 text-green-400"
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
@@ -347,22 +351,22 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
                       </button>
                     </p>
                     <p className="flex items-center text-sm">
-                      <strong className="text-[#0052FF] mr-2">MINER:</strong>
+                      <strong className="text-blue-400 mr-2 uppercase">MINER:</strong>
                       <a
                         href={`https://basescan.org/address/${block.miner}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="truncate flex-1 text-[#0052FF] hover:underline"
+                        className="truncate flex-1 text-blue-400 hover:underline"
                       >
                         {block.miner}
                       </a>
                       <button
                         onClick={() => copyToClipboard(block.miner, "miner")}
-                        className="ml-1 p-1 text-[#0052FF] hover:text-[#003ECB]"
+                        className="ml-1 p-1 text-blue-400 hover:text-blue-500"
                       >
                         {copiedField === "miner" ? (
                           <svg
-                            className="w-4 h-4 text-green-500"
+                            className="w-4 h-4 text-green-400"
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
@@ -392,29 +396,29 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
                 </div>
               </div>
               <div>
-                <h2 className="text-[#0052FF] text-base font-semibold border-b border-[#0052FF] pb-2 mb-4">[ GAS INFORMATION ]</h2>
+                <h2 className="text-white text-base font-semibold border-b border-blue-500/30 pb-2 mb-4 uppercase">[ GAS INFORMATION ]</h2>
                 <div className="grid grid-cols-1 gap-3">
                   <p className="text-sm">
-                    <strong className="text-[#0052FF]">GAS USED:</strong> {block.gasUsed}
+                    <strong className="text-blue-400 uppercase">GAS USED:</strong> {block.gasUsed}
                   </p>
                   <p className="text-sm">
-                    <strong className="text-[#0052FF]">GAS LIMIT:</strong> {block.gasLimit}
+                    <strong className="text-blue-400 uppercase">GAS LIMIT:</strong> {block.gasLimit}
                   </p>
                 </div>
               </div>
               <div>
-                <h2 className="text-[#0052FF] text-base font-semibold border-b border-[#0052FF] pb-2 mb-4">[ TRANSACTIONS ]</h2>
+                <h2 className="text-white text-base font-semibold border-b border-blue-500/30 pb-2 mb-4 uppercase">[ TRANSACTIONS ]</h2>
                 <p className="mb-4 text-sm">
-                  <strong className="text-[#0052FF]">TOTAL TXNS:</strong> {block.transactions}
+                  <strong className="text-blue-400 uppercase">TOTAL TXNS:</strong> {block.transactions}
                 </p>
                 {block.transactionList && block.transactionList.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="text-[#0052FF] border-b border-[#0052FF]">
-                          <th className="py-2 px-2 text-left font-semibold">HASH</th>
-                          <th className="py-2 px-2 text-left font-semibold">FROM</th>
-                          <th className="py-2 px-2 text-left font-semibold">TO</th>
+                        <tr className="text-white border-b border-blue-500/30">
+                          <th className="py-2 px-2 text-left font-semibold uppercase">HASH</th>
+                          <th className="py-2 px-2 text-left font-semibold uppercase">FROM</th>
+                          <th className="py-2 px-2 text-left font-semibold uppercase">TO</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -425,7 +429,7 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
                                 href={`https://basescan.org/tx/${tx.hash}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-[#0052FF] hover:underline"
+                                className="text-blue-400 hover:underline"
                               >
                                 {tx.hash}
                               </a>
@@ -435,7 +439,7 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
                                 href={`https://basescan.org/address/${tx.from}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-[#0052FF] hover:underline"
+                                className="text-blue-400 hover:underline"
                               >
                                 {tx.from}
                               </a>
@@ -445,7 +449,7 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
                                 href={`https://basescan.org/address/${tx.to}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-[#0052FF] hover:underline"
+                                className="text-blue-400 hover:underline"
                               >
                                 {tx.to}
                               </a>
@@ -456,12 +460,12 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
                     </table>
                   </div>
                 ) : (
-                  <p className={`text-sm ${themeClasses.secondaryText}`}>[ NO TRANSACTIONS DETECTED ]</p>
+                  <p className={`text-sm ${themeClasses.secondaryText} uppercase`}>[ NO TRANSACTIONS DETECTED ]</p>
                 )}
               </div>
             </div>
           ) : (
-            <p className={`text-center py-6 ${themeClasses.secondaryText} text-sm`}>
+            <p className={`text-center py-6 ${themeClasses.secondaryText} text-sm uppercase`}>
               No block data available. Please check the block number or try again later.
             </p>
           )}
