@@ -1,4 +1,3 @@
-// app/api/honeypot/scan/route.ts
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
@@ -26,7 +25,7 @@ export async function GET(request: Request) {
 
     const data = await honeypotResponse.json();
     return NextResponse.json(data);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Error scanning honeypot:", err);
     return NextResponse.json({ error: "Server error scanning token." }, { status: 500 });
   }

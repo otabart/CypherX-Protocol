@@ -23,19 +23,11 @@ interface Transaction {
   timestamp: string;
 }
 
-interface NFT {
-  name: string;
-  contractAddress: string;
-  tokenId: string;
-  image?: string;
-}
-
 interface WalletData {
   ethBalance: number;
   ethUsdValue: number;
   tokens: Token[];
   txList: Transaction[];
-  nfts: NFT[];
 }
 
 export default function WalletPage({ params }: { params: Promise<{ walletAddress: string }> }) {
@@ -46,7 +38,6 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
   const [walletAddress, setWalletAddress] = useState<string>("");
   const [ethPrice, setEthPrice] = useState<number>(0);
   const [txPage, setTxPage] = useState<number>(1);
-  const [nftPage, setNftPage] = useState<number>(1);
   const itemsPerPage = 10;
 
   // Theme classes aligned with ExplorerPage
@@ -72,6 +63,9 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
     const fetchEthPrice = async () => {
       try {
         const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd");
+        if (!res.ok) {
+          throw new Error(`Failed to fetch ETH price: ${res.statusText}`);
+        }
         const data = await res.json();
         setEthPrice(data.ethereum.usd);
       } catch (err) {
@@ -101,10 +95,23 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
 
         // Fetch data from server-side API route
         const response = await fetch(`/api/wallet/${address}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error("API response not OK:", response.status, errorText);
+          throw new Error(errorText || "Failed to fetch wallet data");
+        }
+
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          const errorText = await response.text();
+          console.error("Unexpected response format:", errorText);
+          throw new Error("Response is not JSON");
+        }
+
         const data = await response.json();
 
-        if (!response.ok) {
-          throw new Error(data.error || "Failed to fetch wallet data");
+        if (data.error) {
+          throw new Error(data.error);
         }
 
         // Format timestamps on the client side
@@ -120,10 +127,9 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
           ethUsdValue,
           tokens: data.tokens,
           txList: formattedTxList,
-          nfts: data.nfts,
         });
 
-        if (data.ethBalance === 0 && data.tokens.length === 0 && data.txList.length === 0 && data.nfts.length === 0) {
+        if (data.ethBalance === 0 && data.tokens.length === 0 && data.txList.length === 0) {
           setError("No data found for this address on Base Mainnet.");
           setWalletData(null);
         }
@@ -146,9 +152,6 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
 
   const paginatedTxList = walletData?.txList.slice((txPage - 1) * itemsPerPage, txPage * itemsPerPage);
   const totalTxPages = Math.ceil((walletData?.txList.length || 0) / itemsPerPage);
-
-  const paginatedNfts = walletData?.nfts.slice((nftPage - 1) * itemsPerPage, nftPage * itemsPerPage);
-  const totalNftPages = Math.ceil((walletData?.nfts.length || 0) / itemsPerPage);
 
   return (
     <div className={`min-h-screen w-full font-mono ${themeClasses.background} ${themeClasses.text}`}>
@@ -208,7 +211,7 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
               <span className={`${themeClasses.secondaryText} text-xs sm:text-sm uppercase`}>Base Mainnet</span>
             </div>
 
-            <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 ${themeClasses.containerBg} border ${themeClasses.border} p-4 sm:p-6 rounded-lg`}>
+            <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 ${themeClasses.containerBg} border ${themeClasses.border} p-4 sm:p-6 rounded-lg`}>
               <div>
                 <h3 className="text-sm font-semibold text-blue-400 uppercase">Balance</h3>
                 <p className={`${themeClasses.text} text-base sm:text-lg mt-1`}>{walletData.ethBalance.toFixed(4)} BASE ETH</p>
@@ -219,10 +222,6 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                 <p className={`${themeClasses.text} text-base sm:text-lg mt-1`}>{walletData.tokens.length}</p>
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-blue-400 uppercase">NFTs</h3>
-                <p className={`${themeClasses.text} text-base sm:text-lg mt-1`}>{walletData.nfts.length}</p>
-              </div>
-              <div>
                 <h3 className="text-sm font-semibold text-blue-400 uppercase">Transactions</h3>
                 <p className={`${themeClasses.text} text-base sm:text-lg mt-1`}>{walletData.txList.length}</p>
               </div>
@@ -230,7 +229,7 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
 
             <div className="border-b border-blue-400">
               <nav className="flex space-x-2 sm:space-x-4 overflow-x-auto">
-                {["overview", "transactions", "tokens", "nfts"].map((tab) => (
+                {["overview", "transactions", "tokens"].map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
@@ -254,9 +253,6 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                     </p>
                     <p>
                       <strong>Total Tokens:</strong> {walletData.tokens.length}
-                    </p>
-                    <p>
-                      <strong>Total NFTs:</strong> {walletData.nfts.length}
                     </p>
                     <p>
                       <strong>Recent Transactions:</strong> {walletData.txList.length}
@@ -398,57 +394,6 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                     </div>
                   ) : (
                     <p className={`${themeClasses.secondaryText} text-sm sm:text-base uppercase`}>No Tokens Found</p>
-                  )}
-                </div>
-              )}
-
-              {activeTab === "nfts" && (
-                <div className={`${themeClasses.containerBg} border ${themeClasses.border} p-4 sm:p-6 rounded-lg`}>
-                  <h3 className="text-base sm:text-lg font-semibold text-blue-400 mb-3 uppercase">NFT Holdings</h3>
-                  {walletData.nfts.length > 0 ? (
-                    <>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                        {paginatedNfts?.map((nft: NFT, index: number) => (
-                          <div key={index} className={`border ${themeClasses.border} p-2 sm:p-3 rounded-lg ${themeClasses.hoverBg}`}>
-                            <img
-                              src={nft.image}
-                              alt={nft.name}
-                              className="w-full h-24 sm:h-32 object-cover rounded"
-                              onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/150")}
-                            />
-                            <p className="text-xs sm:text-sm mt-2 truncate">{nft.name}</p>
-                            <p className={`${themeClasses.secondaryText} text-xs mt-1`}>Token ID: {nft.tokenId.slice(0, 8)}</p>
-                            <Link
-                              href={`/explorer/address/${nft.contractAddress}`}
-                              className="text-blue-400 hover:underline text-xs truncate block"
-                            >
-                              Contract: {nft.contractAddress.slice(0, 6)}...{nft.contractAddress.slice(-4)}
-                            </Link>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="flex flex-col sm:flex-row justify-between items-center mt-4 gap-3">
-                        <button
-                          onClick={() => setNftPage((prev) => Math.max(prev - 1, 1))}
-                          disabled={nftPage === 1}
-                          className={`px-4 py-2 ${themeClasses.buttonBg} ${themeClasses.buttonHover} ${nftPage === 1 ? themeClasses.buttonDisabled : ""} rounded-lg text-sm uppercase w-full sm:w-auto`}
-                        >
-                          Previous
-                        </button>
-                        <span className={`${themeClasses.text} text-sm uppercase`}>
-                          Page {nftPage} of {totalNftPages}
-                        </span>
-                        <button
-                          onClick={() => setNftPage((prev) => Math.min(prev + 1, totalNftPages))}
-                          disabled={nftPage === totalNftPages}
-                          className={`px-4 py-2 ${themeClasses.buttonBg} ${themeClasses.buttonHover} ${nftPage === totalNftPages ? themeClasses.buttonDisabled : ""} rounded-lg text-sm uppercase w-full sm:w-auto`}
-                        >
-                          Next
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <p className={`${themeClasses.secondaryText} text-sm sm:text-base uppercase`}>No NFTs Found</p>
                   )}
                 </div>
               )}

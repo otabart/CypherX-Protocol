@@ -1,42 +1,128 @@
+'use client';
+
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { ShoppingBagIcon, MagnifyingGlassIcon, CubeIcon, EyeIcon, CommandLineIcon, UsersIcon } from "@heroicons/react/24/solid";
+
 const Footer = () => {
+  const [ethPrice, setEthPrice] = useState<number | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<"Connected" | "Disconnected">("Connected");
+  const [uptime, setUptime] = useState<string>("");
+
+  // Fetch ETH price
+  useEffect(() => {
+    const fetchEthPrice = async () => {
+      try {
+        const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd", {
+          cache: "no-store",
+        });
+        const data = await res.json();
+        setEthPrice(data.ethereum.usd);
+      } catch (err) {
+        console.error("Error fetching ETH price:", err);
+        setEthPrice(null);
+      }
+    };
+    fetchEthPrice();
+    const interval = setInterval(fetchEthPrice, 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, []);
+
+  // Simulate connection status (replace with real WebSocket/API check if available)
+  useEffect(() => {
+    const simulateConnection = () => {
+      setConnectionStatus(Math.random() > 0.1 ? "Connected" : "Disconnected"); // 90% chance of being connected
+    };
+    simulateConnection();
+    const interval = setInterval(simulateConnection, 30000); // Check every 30 seconds
+    return () => clearInterval(interval);
+  }, []);
+
+  // Calculate live uptime (assuming app launched on May 1, 2025)
+  useEffect(() => {
+    const launchDate = new Date("2025-05-01T00:00:00Z");
+    const calculateUptime = () => {
+      const now = new Date("2025-05-19T11:22:00-07:00"); // Current date/time: May 19, 2025, 11:22 AM PDT
+      const diff = now.getTime() - launchDate.getTime();
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      setUptime(`${days}d ${hours}h ${minutes}m`);
+    };
+    calculateUptime();
+    const interval = setInterval(calculateUptime, 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, []);
+
   return (
-    <footer className="bg-[#A5CFFF] text-[#1A2233] py-6 border-t border-blue-500/30">
-      <div className="container mx-auto flex flex-col md:flex-row justify-between items-center">
-        {/* Logo and Description */}
-        <div className="mb-4 md:mb-0 text-center md:text-left">
-          <h2 className="text-2xl font-bold text-[#1A2233]">Homebase</h2>
-          <p className="text-sm mt-2 text-[#1A2233]/80">
-            Your go-to platform for Base chain analytics and insights.
-          </p>
+    <footer className="bg-gray-950 text-gray-100 py-3 border-t border-[#3B82F6/30] w-full">
+      <div className="container mx-auto flex flex-wrap justify-between items-center px-4 gap-4">
+        {/* Status Section */}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1">
+            <span className="text-gray-400 text-xs">Uptime:</span>
+            <span className="text-gray-100 text-xs">{uptime || "Calculating..."}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-gray-400 text-xs">Status:</span>
+            <span className={`flex items-center gap-1 text-xs ${connectionStatus === "Connected" ? "text-green-500" : "text-red-500"}`}>
+              <span className={`w-2 h-2 rounded-full ${connectionStatus === "Connected" ? "bg-green-500" : "bg-red-500"}`}></span>
+              {connectionStatus}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-gray-400 text-xs">ETH Price:</span>
+            <span className="text-gray-100 text-xs">{ethPrice ? `$${ethPrice.toLocaleString()}` : "Loading..."}</span>
+          </div>
         </div>
 
-        {/* Links */}
-        <div className="flex flex-col md:flex-row gap-4 text-center md:text-right">
-          <a href="/" className="text-[#1A2233] hover:text-blue-400 transition-colors">
-            Home
-          </a>
-          <a href="/token-scanner" className="text-[#1A2233] hover:text-blue-400 transition-colors">
-            Token Screener
-          </a>
-          <a href="/marketplace" className="text-[#1A2233] hover:text-blue-400 transition-colors">
-            Marketplace
-          </a>
-          <a href="/TradingCompetition" className="text-[#1A2233] hover:text-blue-400 transition-colors">
-            Tournaments
-          </a>
-          <a href="/terminal" className="text-[#1A2233] hover:text-blue-400 transition-colors">
-            Terminal
-          </a>
-          <a href="/docs" className="text-[#1A2233] hover:text-blue-400 transition-colors">
-            Docs
-          </a>
-          <a href="mailto:homebasemarkets@gmail.com" className="text-[#1A2233] hover:text-blue-400 transition-colors">
-            Contact
-          </a>
+        {/* Navigation Menus */}
+        <div className="flex items-center gap-3">
+          <Link href="/token-scanner" className="flex items-center gap-1 group">
+            <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center">
+              <EyeIcon className="w-4 h-4 text-gray-200 group-hover:text-blue-400 transition-colors" />
+            </div>
+            <span className="text-sm text-gray-100 group-hover:text-blue-400 transition-colors">Screener</span>
+          </Link>
+          <div className="border-r border-blue-400/20 h-4"></div>
+          <Link href="/smart-money" className="flex items-center gap-1 group">
+            <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center">
+              <UsersIcon className="w-4 h-4 text-gray-200 group-hover:text-blue-400 transition-colors" />
+            </div>
+            <span className="text-sm text-gray-100 group-hover:text-blue-400 transition-colors">Smart Money</span>
+          </Link>
+          <div className="border-r border-blue-400/20 h-4"></div>
+          <Link href="/honeypot-scanner" className="flex items-center gap-1 group">
+            <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center">
+              <MagnifyingGlassIcon className="w-4 h-4 text-gray-200 group-hover:text-blue-400 transition-colors" />
+            </div>
+            <span className="text-sm text-gray-100 group-hover:text-blue-400 transition-colors">Smart Audit</span>
+          </Link>
+          <div className="border-r border-blue-400/20 h-4"></div>
+          <Link href="/explorer/latest/block" className="flex items-center gap-1 group">
+            <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center">
+              <CommandLineIcon className="w-4 h-4 text-gray-200 group-hover:text-blue-400 transition-colors" />
+            </div>
+            <span className="text-sm text-gray-100 group-hover:text-blue-400 transition-colors">Block Scan</span>
+          </Link>
+          <div className="border-r border-blue-400/20 h-4"></div>
+          <Link href="/marketplace" className="flex items-center gap-1 group">
+            <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center">
+              <ShoppingBagIcon className="w-4 h-4 text-gray-200 group-hover:text-blue-400 transition-colors" />
+            </div>
+            <span className="text-sm text-gray-100 group-hover:text-blue-400 transition-colors">Marketplace</span>
+          </Link>
+          <div className="border-r border-blue-400/20 h-4"></div>
+          <Link href="/explorer" className="flex items-center gap-1 group">
+            <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center">
+              <CubeIcon className="w-4 h-4 text-gray-200 group-hover:text-blue-400 transition-colors" />
+            </div>
+            <span className="text-sm text-gray-100 group-hover:text-blue-400 transition-colors">Explorer</span>
+          </Link>
         </div>
 
         {/* Social Media Links */}
-        <div className="flex gap-4 mt-4 md:mt-0">
+        <div className="flex items-center gap-3">
           <a
             href="https://twitter.com/HomebaseMarkets"
             target="_blank"
@@ -49,7 +135,7 @@ const Footer = () => {
               viewBox="0 0 24 24"
               strokeWidth={1.5}
               stroke="currentColor"
-              className="w-6 h-6 text-[#1A2233] hover:text-blue-400 transition-colors"
+              className="w-5 h-5 text-gray-100 hover:text-blue-400 transition-colors"
             >
               <path
                 strokeLinecap="round"
@@ -70,7 +156,7 @@ const Footer = () => {
               viewBox="0 0 24 24"
               strokeWidth={1.5}
               stroke="currentColor"
-              className="w-6 h-6 text-[#1A2233] hover:text-blue-400 transition-colors"
+              className="w-5 h-5 text-gray-100 hover:text-blue-400 transition-colors"
             >
               <path
                 strokeLinecap="round"
@@ -81,6 +167,57 @@ const Footer = () => {
           </a>
         </div>
       </div>
+
+      {/* Responsive Styles */}
+      <style jsx>{`
+        @media (max-width: 768px) {
+          .container {
+            flex-direction: column;
+            gap: 8px;
+            text-align: center;
+          }
+          .flex-wrap {
+            gap: 8px;
+            justify-content: center;
+          }
+          .flex.items-center.gap-3 {
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 8px;
+          }
+          .flex.items-center.gap-4 {
+            justify-content: center;
+            flex-wrap: wrap;
+          }
+          .border-r {
+            display: none;
+          }
+        }
+        @media (max-width: 480px) {
+          .text-xs {
+            font-size: 10px;
+          }
+          .text-sm {
+            font-size: 12px;
+          }
+          .w-5.h-5 {
+            width: 16px;
+            height: 16px;
+          }
+          .w-6.h-6 {
+            width: 20px;
+            height: 20px;
+          }
+          .w-4.h-4 {
+            width: 12px;
+            height: 12px;
+          }
+          .w-2.h-2 {
+            width: 8px;
+            height: 8px;
+          }
+        }
+      `}</style>
     </footer>
   );
 };

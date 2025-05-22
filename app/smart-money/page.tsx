@@ -3,24 +3,31 @@
 import React, { useState, useEffect } from 'react';
 import SmartMoneyTable from './components/SmartMoneyTable';
 import { getTopHolders, getWalletTransactions, getTotalSupply, getHolderCount, getTokenMetadata } from './services/api';
-import type { TokenHolder, Transaction, TokenMetadata } from './types';
+import type { TokenHolder, Transaction, TokenMetadata, TokenTransferTrend } from './types';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip as ChartTooltip, Legend, ArcElement } from 'chart.js';
 import { Line, Pie } from 'react-chartjs-2';
 import { ArrowPathIcon, InformationCircleIcon } from '@heroicons/react/20/solid';
-import { formatAddress, formatTransactionValue } from './utils/format';
+import { formatAddress, formatTransactionValue, formatTimestamp } from './utils/format';
 import { Network } from 'vis-network/standalone';
 import { useEffect as useEffectVis } from 'react';
 import { motion } from 'framer-motion';
-import Header from '../components/Header';
+import type { Variants } from 'framer-motion';
 import { Tooltip } from 'react-tooltip';
+
+// Placeholder Header Component
+const Header: React.FC = () => (
+  <header className="p-4 bg-gray-900">
+    <h1 className="text-2xl font-bold text-blue-400">Smart Money Dashboard</h1>
+  </header>
+);
 
 // Register Chart.js components
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, ChartTooltip, Legend, ArcElement);
 
 // Animation variants for sections
-const sectionVariants = {
+const sectionVariants: Variants = {
   hidden: { opacity: 0, y: 30 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: 'easeOut' } },
 };
@@ -32,7 +39,9 @@ interface Token {
 }
 
 const isValidAddress = (address: string): boolean => {
-  return /^0x[a-fA-F0-9]{40}$/.test(address);
+  const isValid = /^0x[a-fA-F0-9]{40}$/.test(address);
+  if (!isValid) console.warn(`Invalid address format: ${address}`);
+  return isValid;
 };
 
 const SmartMoneyPage: React.FC = () => {
@@ -57,61 +66,44 @@ const SmartMoneyPage: React.FC = () => {
       setError(null);
       setTimeoutReached(false);
 
-      // Timeout for loading state
       const timeout = setTimeout(() => {
         setLoading(false);
         setTimeoutReached(true);
-        setError('Request timed out. Please try refreshing or selecting a different token.');
-      }, 30000); // 30 seconds timeout
+        setError('Request timed out while fetching tokens. Please try again.');
+      }, 60000);
 
       try {
         const tokensCollection = collection(db, 'tokens');
         const tokensSnapshot = await getDocs(tokensCollection);
-
         if (tokensSnapshot.empty) {
           setError('No tokens found in Firebase. Please add tokens to the "tokens" collection.');
-          console.warn('Tokens collection is empty');
           setLoading(false);
           clearTimeout(timeout);
           return;
         }
 
-        console.log(`Fetched ${tokensSnapshot.size} documents from tokens collection`);
-
         const tokensList = tokensSnapshot.docs
           .map(doc => {
             const data = doc.data();
-            console.log(`Token document ${doc.id}:`, data);
-
             const symbol = data.symbol?.trim();
             const address = data.address?.trim();
-
             if (!symbol || !address || !isValidAddress(address)) {
-              console.warn(
-                `Invalid token document: ${doc.id}. Missing or invalid fields - symbol: ${symbol}, address: ${address}`,
-                data
-              );
+              console.warn(`Invalid token data: symbol=${symbol}, address=${address}`);
               return null;
             }
-
-            return {
-              name: symbol,
-              address: address,
-              logoUrl: data.logoUrl?.trim() || undefined,
-            } as Token;
+            return { name: symbol, address, logoUrl: data.logoUrl?.trim() || undefined } as Token;
           })
           .filter((token): token is Token => token !== null);
 
         if (tokensList.length > 0) {
-          console.log('Valid tokens:', tokensList);
+          console.log('Fetched tokens:', tokensList);
           setTokens(tokensList);
           setSelectedToken(tokensList[0]);
         } else {
-          setError('No valid tokens found in Firebase. Ensure documents have valid "symbol" and "address" fields.');
-          console.warn('No valid tokens after filtering');
+          setError('No valid tokens found in Firebase. All token addresses were invalid or malformed.');
         }
       } catch (err: any) {
-        setError(`Failed to fetch tokens from Firebase: ${err.message}`);
+        setError(`Failed to fetch tokens from Firebase: ${err.message}. Please check your Firebase configuration.`);
         console.error('Firebase fetch error:', err);
       } finally {
         setLoading(false);
@@ -134,58 +126,79 @@ const SmartMoneyPage: React.FC = () => {
     setHolderCount(0);
     setTokenMetadata(null);
 
-    // Timeout for data fetching
     const timeout = setTimeout(() => {
       setLoading(false);
       setTimeoutReached(true);
-      setError('Data fetch timed out. Please try refreshing or selecting a different token.');
-    }, 30000); // 30 seconds timeout
+      setError(`Data fetch timed out for token ${token.name} (${token.address}). This token may not exist on the Base chain, or there may be a network issue. Please try refreshing or selecting a different token.`);
+    }, 60000);
 
     try {
       console.log(`Fetching data for token: ${token.name} (${token.address})`);
+      
+      // Fetch token metadata to validate the token
+      let metadata: TokenMetadata;
+      try {
+        metadata = await getTokenMetadata(token.address);
+        if (!metadata.totalSupply || parseInt(metadata.totalSupply, 16) === 0) {
+          console.warn(`Token ${token.address} has no total supply. It may not be a valid ERC-20 token on Base. Proceeding with transfer data fetch.`);
+          setError(`Warning: Token ${token.name} (${token.address}) has no total supply. It may not be a valid ERC-20 token on Base, but we'll attempt to fetch transfer data.`);
+          metadata = { decimals: 18, totalSupply: '0' }; // Fallback metadata
+        }
+      } catch (err: any) {
+        console.error(`Failed to fetch token metadata for ${token.address}:`, err.message);
+        setError(`Warning: Could not fetch metadata for ${token.name} (${token.address}): ${err.message}. Proceeding with transfer data fetch.`);
+        metadata = { decimals: 18, totalSupply: '0' }; // Fallback metadata
+      }
 
-      const [holdersData, supply, count, metadata] = await Promise.all([
-        getTopHolders(token.address),
-        getTotalSupply(token.address),
-        getHolderCount(token.address),
-        getTokenMetadata(token.address),
+      const [holdersData, supply, count] = await Promise.all([
+        getTopHolders(token.address).catch(err => {
+          console.error(`Failed to fetch top holders for ${token.address}:`, err);
+          throw err;
+        }),
+        getTotalSupply(token.address).catch(err => {
+          console.error(`Failed to fetch total supply for ${token.address}:`, err);
+          return '0'; // Fallback to '0' instead of throwing
+        }),
+        getHolderCount(token.address).catch(err => {
+          console.error(`Failed to fetch holder count for ${token.address}:`, err);
+          return 0; // Fallback to 0 instead of throwing
+        }),
       ]);
-
-      console.log('Fetched holders data:', holdersData);
-      console.log('Fetched total supply:', supply);
-      console.log('Fetched holder count:', count);
-      console.log('Fetched token metadata:', metadata);
 
       setHolders(holdersData);
       setTotalSupply(supply);
       setHolderCount(count);
       setTokenMetadata(metadata);
 
-      // Fetch transactions for all top holders (up to 10)
+      // Fetch transactions for top holders
       if (holdersData.length > 0) {
-        console.log(`Fetching transactions for top ${Math.min(10, holdersData.length)} holders...`);
-        const txPromises = holdersData.slice(0, 10).map(holder => getWalletTransactions(holder.address));
-        const txResults = await Promise.all(txPromises.map(p => p.catch(e => {
-          console.error(`Error fetching transactions for holder ${holder.address}:`, e);
-          return [];
-        })));
+        const topHolders = holdersData.slice(0, 10);
+        console.log(`Fetching transactions for top holders:`, topHolders.map(h => h.address));
+        const txPromises = topHolders.map(holder =>
+          getWalletTransactions(holder.address).catch(err => {
+            console.error(`Failed to fetch transactions for wallet ${holder.address}:`, err);
+            return [];
+          })
+        );
+        const txResults = await Promise.all(txPromises);
         const allTxs = txResults.flat().filter(tx => tx && tx.hash);
-        console.log('All transactions fetched:', allTxs);
         setAllTransactions(allTxs);
 
-        // Fetch transactions for the first holder to populate Transactions and Network tabs
         if (holdersData.length > 0) {
-          const firstHolderTxs = await getWalletTransactions(holdersData[0].address);
-          console.log('First holder transactions:', firstHolderTxs);
+          console.log(`Fetching transactions for first holder: ${holdersData[0].address}`);
+          const firstHolderTxs = await getWalletTransactions(holdersData[0].address).catch(err => {
+            console.error(`Failed to fetch transactions for first holder ${holdersData[0].address}:`, err);
+            return [];
+          });
           setTransactions(firstHolderTxs);
         }
       } else {
-        console.warn('No holders found, skipping transaction fetch.');
-        setError('No holder data available for this token. Try selecting a different token.');
+        console.warn(`No holders found for token ${token.address}. This token may have no activity on Base.`);
+        setError(`No holders found for token ${token.name} (${token.address}). This token may have no activity on the Base chain.`);
       }
     } catch (err: any) {
-      setError(`Failed to fetch data for ${token.name}: ${err.message}`);
-      console.error('Data fetch error:', err);
+      setError(`Failed to fetch data for ${token.name} (${token.address}): ${err.message}. Ensure this token exists on the Base chain and try again.`);
+      console.error(`Error fetching data for token ${token.address}:`, err);
     } finally {
       setLoading(false);
       clearTimeout(timeout);
@@ -194,9 +207,9 @@ const SmartMoneyPage: React.FC = () => {
 
   useEffect(() => {
     if (!selectedToken) return;
-
     fetchHoldersData(selectedToken);
-  }, [selectedToken?.address]); // Use address as a key to force re-fetch
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedToken]);
 
   const handleWalletClick = async (walletAddress: string) => {
     setLoading(true);
@@ -206,19 +219,19 @@ const SmartMoneyPage: React.FC = () => {
     const timeout = setTimeout(() => {
       setLoading(false);
       setTimeoutReached(true);
-      setError('Transaction fetch timed out. Please try again.');
-    }, 30000);
+      setError(`Transaction fetch timed out for wallet ${walletAddress}. Please try again.`);
+    }, 60000);
 
     try {
+      console.log(`Fetching transactions for wallet: ${walletAddress}`);
       const txs = await getWalletTransactions(walletAddress);
-      console.log('Transactions for wallet:', txs);
       setTransactions(txs);
       if (txs.length === 0) {
-        setError('No transactions found for this wallet.');
+        setError(`No transactions found for wallet ${walletAddress} on the Base chain.`);
       }
     } catch (err: any) {
-      setError(`Failed to fetch transactions: ${err.message}`);
-      console.error('Transaction fetch error:', err);
+      setError(`Failed to fetch transactions for wallet ${walletAddress}: ${err.message}. Ensure this wallet has activity on the Base chain.`);
+      console.error(`Error fetching transactions for wallet ${walletAddress}:`, err);
     } finally {
       setLoading(false);
       clearTimeout(timeout);
@@ -230,7 +243,38 @@ const SmartMoneyPage: React.FC = () => {
     totalTxValue: allTransactions.reduce((sum, tx) => sum + parseFloat(tx.value), 0),
     totalTxCount: allTransactions.length,
     uniqueWallets: new Set(allTransactions.flatMap(tx => [tx.from, tx.to])).size,
+    netFlow: allTransactions.reduce((acc, tx) => {
+      if (tx.asset !== 'ETH') {
+        const value = parseFloat(tx.value);
+        if (holders.some(h => h.address === tx.to)) return acc + value;
+        if (holders.some(h => h.address === tx.from)) return acc - value;
+      }
+      return acc;
+    }, 0),
   };
+
+  // Smart Money Trends (top tokens being accumulated)
+  const calculateSmartMoneyTrends = (): TokenTransferTrend[] => {
+    const tokenMap: { [key: string]: { totalValue: number; transactionCount: number } } = {};
+    allTransactions.forEach(tx => {
+      if (tx.asset !== 'ETH' && holders.some(h => h.address === tx.to)) {
+        if (!tokenMap[tx.asset]) tokenMap[tx.asset] = { totalValue: 0, transactionCount: 0 };
+        tokenMap[tx.asset].totalValue += parseFloat(tx.value);
+        tokenMap[tx.asset].transactionCount += 1;
+      }
+    });
+
+    return Object.entries(tokenMap)
+      .map(([token, data]) => ({
+        token,
+        totalValue: data.totalValue,
+        transactionCount: data.transactionCount,
+      }))
+      .sort((a, b) => b.totalValue - a.totalValue)
+      .slice(0, 5);
+  };
+
+  const smartMoneyTrends = calculateSmartMoneyTrends();
 
   // Holder Distribution Pie Chart
   const holderDistributionData = {
@@ -239,18 +283,9 @@ const SmartMoneyPage: React.FC = () => {
       {
         label: 'Token Distribution',
         data: holders.slice(0, 5).map(holder => parseFloat(holder.percentage)).concat(
-          holders.length > 5
-            ? holders.slice(5).reduce((sum, holder) => sum + parseFloat(holder.percentage), 0)
-            : 0
+          holders.length > 5 ? holders.slice(5).reduce((sum, holder) => sum + parseFloat(holder.percentage), 0) : 0
         ),
-        backgroundColor: [
-          '#3B82F6',
-          '#1E3A8A',
-          '#4B5563',
-          '#6B7280',
-          '#9CA3AF',
-          '#D1D5DB',
-        ],
+        backgroundColor: ['#3B82F6', '#1E3A8A', '#4B5563', '#6B7280', '#9CA3AF', '#D1D5DB'],
         borderColor: '#FFFFFF',
         borderWidth: 1,
       },
@@ -261,16 +296,8 @@ const SmartMoneyPage: React.FC = () => {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: {
-        position: 'top' as const,
-        labels: { color: '#D1D5DB', font: { size: 12 } },
-      },
-      title: {
-        display: true,
-        text: 'Smart Holders Distribution',
-        color: '#FFFFFF',
-        font: { size: 14 },
-      },
+      legend: { position: 'top' as const, labels: { color: '#D1D5DB', font: { size: 12 } } },
+      title: { display: true, text: 'Smart Holders Distribution', color: '#FFFFFF', font: { size: 14 } },
     },
   };
 
@@ -293,31 +320,17 @@ const SmartMoneyPage: React.FC = () => {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: {
-        position: 'top' as const,
-        labels: { color: '#D1D5DB', font: { size: 12 } },
-      },
-      title: {
-        display: true,
-        text: 'Transaction Value Trend',
-        color: '#FFFFFF',
-        font: { size: 14 },
-      },
+      legend: { position: 'top' as const, labels: { color: '#D1D5DB', font: { size: 12 } } },
+      title: { display: true, text: 'Transaction Value Trend', color: '#FFFFFF', font: { size: 14 } },
     },
     scales: {
-      x: {
-        ticks: { color: '#D1D5DB', font: { size: 10 } },
-        grid: { color: 'rgba(255, 255, 255, 0.1)' },
-      },
-      y: {
-        ticks: { color: '#D1D5DB', font: { size: 10 } },
-        grid: { color: 'rgba(255, 255, 255, 0.1)' },
-      },
+      x: { ticks: { color: '#D1D5DB', font: { size: 10 } }, grid: { color: 'rgba(255, 255, 255, 0.1)' } },
+      y: { ticks: { color: '#D1D5DB', font: { size: 10 } }, grid: { color: 'rgba(255, 255, 255, 0.1)' } },
     },
   };
 
   // Network Graph for Whale Transfers
-  const NetworkGraph = () => {
+  const NetworkGraph = ({ transactions }: { transactions: Transaction[] }) => {
     const networkRef = React.useRef<HTMLDivElement>(null);
 
     useEffectVis(() => {
@@ -334,7 +347,7 @@ const SmartMoneyPage: React.FC = () => {
           to: tx.to,
           value: parseFloat(tx.value),
           label: `${formatTransactionValue(tx.value)} ${tx.asset}`,
-          color: '#3B82F6',
+          color: tx.isBuy ? '#34D399' : '#EF4444',
         });
       });
 
@@ -344,16 +357,13 @@ const SmartMoneyPage: React.FC = () => {
         color: holders.some(holder => holder.address === address) ? '#3B82F6' : '#D1D5DB',
       }));
 
-      const data = {
-        nodes: nodeData,
-        edges: edges,
-      };
-
+      const data = { nodes: nodeData, edges };
       const options = {
         nodes: {
           shape: 'dot',
           size: 20,
           font: { size: 12, color: '#FFFFFF' },
+          scaling: { min: 10, max: 30 },
         },
         edges: {
           width: 2,
@@ -372,10 +382,30 @@ const SmartMoneyPage: React.FC = () => {
           timestep: 0.35,
           stabilization: { iterations: 150 },
         },
+        interaction: {
+          hover: true,
+          zoomView: true,
+          dragView: true,
+        },
         height: '300px',
       };
 
       const network = new Network(networkRef.current, data, options);
+
+      network.on('click', (params: { nodes: string[] }) => {
+        if (params.nodes.length > 0) {
+          const nodeId = params.nodes[0];
+          handleWalletClick(nodeId);
+        }
+      });
+
+      network.on('hoverNode', () => {
+        if (networkRef.current) networkRef.current.style.cursor = 'pointer';
+      });
+
+      network.on('blurNode', () => {
+        if (networkRef.current) networkRef.current.style.cursor = 'default';
+      });
 
       return () => {
         network.destroy();
@@ -384,7 +414,7 @@ const SmartMoneyPage: React.FC = () => {
 
     return (
       <div className="w-full h-[300px] bg-gray-900 p-4 rounded-lg border border-blue-500/30">
-        <h3 className="text-lg font-semibold text-blue-400 mb-2 uppercase">Whale Transfer Network</h3>
+        <h3 className="text-lg font-semibold text-blue-400 mb-2 uppercase">Transfer Network</h3>
         <div ref={networkRef} className="w-full h-[250px]" />
       </div>
     );
@@ -392,7 +422,7 @@ const SmartMoneyPage: React.FC = () => {
 
   // Timeline Chart for Recent Transactions
   const timelineChartData = {
-    labels: allTransactions.slice(0, 20).map((_, index) => `Tx ${index + 1}`),
+    labels: allTransactions.slice(0, 20).map((_, idx) => `Tx ${idx + 1}`),
     datasets: [
       {
         label: 'Transaction Value',
@@ -409,49 +439,39 @@ const SmartMoneyPage: React.FC = () => {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: {
-        position: 'top' as const,
-        labels: { color: '#D1D5DB', font: { size: 12 } },
-      },
-      title: {
-        display: true,
-        text: 'Recent Whale Transactions',
-        color: '#FFFFFF',
-        font: { size: 14 },
-      },
+      legend: { position: 'top' as const, labels: { color: '#D1D5DB', font: { size: 12 } } },
+      title: { display: true, text: 'Recent Whale Transactions', color: '#FFFFFF', font: { size: 14 } },
     },
     scales: {
-      x: {
-        ticks: { color: '#D1D5DB', font: { size: 10 } },
-        grid: { color: 'rgba(255, 255, 255, 0.1)' },
-      },
-      y: {
-        ticks: { color: '#D1D5DB', font: { size: 10 } },
-        grid: { color: 'rgba(255, 255, 255, 0.1)' },
-      },
+      x: { ticks: { color: '#D1D5DB', font: { size: 10 } }, grid: { color: 'rgba(255, 255, 255, 0.1)' } },
+      y: { ticks: { color: '#D1D5DB', font: { size: 10 } }, grid: { color: 'rgba(255, 255, 255, 0.1)' } },
     },
   };
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-200 font-sans flex flex-col">
-      <style jsx>{`
-        /* Custom Scrollbar Styling */
+      <style jsx global>{`
         .custom-scrollbar::-webkit-scrollbar {
           width: 8px;
         }
-
         .custom-scrollbar::-webkit-scrollbar-track {
-          background: #1F2937; /* gray-900 */
+          background: #1F2937;
           border-radius: 4px;
         }
-
         .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #3B82F6; /* blue-400 */
+          background: #3B82F6;
           border-radius: 4px;
         }
-
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #60A5FA; /* blue-400 hover */
+          background: #60A5FA;
+        }
+        .animate-pulse-slow {
+          animation: pulse 2s infinite ease-in-out;
+        }
+        @keyframes pulse {
+          0% { opacity: 0.5; }
+          50% { opacity: 1; }
+          100% { opacity: 0.5; }
         }
       `}</style>
 
@@ -506,8 +526,8 @@ const SmartMoneyPage: React.FC = () => {
               <select
                 className="bg-gray-900 text-gray-200 p-3 rounded-lg w-full max-w-xs focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all duration-300 appearance-none border border-blue-500/30"
                 value={selectedToken?.address || ''}
-                onChange={(e) => {
-                  const token = tokens.find(t => t.address === e.target.value);
+                onChange={(_) => {
+                  const token = tokens.find(t => t.address === _.target.value);
                   if (token) setSelectedToken(token);
                 }}
                 disabled={tokens.length === 0 || loading}
@@ -532,9 +552,7 @@ const SmartMoneyPage: React.FC = () => {
 
           {selectedToken && !loading && (
             <button
-              onClick={() => {
-                setSelectedToken({ ...selectedToken });
-              }}
+              onClick={() => setSelectedToken({ ...selectedToken })}
               className="flex items-center bg-blue-500/20 text-blue-400 px-4 py-2 rounded-lg hover:bg-blue-500/40 border border-blue-500/30 transition-all duration-300 text-sm uppercase"
             >
               <ArrowPathIcon className="w-5 h-5 mr-2 animate-spin-slow" />
@@ -578,7 +596,7 @@ const SmartMoneyPage: React.FC = () => {
                   Contract Address
                   <InformationCircleIcon
                     className="w-4 h-4 ml-1 text-gray-400 cursor-pointer"
-                    data-tooltip-id="contract-tooltip"
+                    data-tooltip-id="contract-tooltip-smart-money"
                     data-tooltip-content={`Decimals: ${tokenMetadata.decimals}`}
                   />
                 </h3>
@@ -601,14 +619,14 @@ const SmartMoneyPage: React.FC = () => {
             variants={sectionVariants}
             initial="hidden"
             animate="visible"
-            className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8"
           >
             <div className="bg-gray-900 p-4 rounded-lg border border-blue-500/30 transform hover:scale-105 transition-transform duration-300">
               <h3 className="text-gray-400 text-sm font-semibold uppercase flex items-center">
                 Total Tx Value
                 <InformationCircleIcon
                   className="w-4 h-4 ml-1 text-gray-400 cursor-pointer"
-                  data-tooltip-id="tx-value-tooltip"
+                  data-tooltip-id="tx-value-tooltip-smart-money"
                   data-tooltip-content="Sum of all transaction values by top holders"
                 />
               </h3>
@@ -619,7 +637,7 @@ const SmartMoneyPage: React.FC = () => {
                 Total Transactions
                 <InformationCircleIcon
                   className="w-4 h-4 ml-1 text-gray-400 cursor-pointer"
-                  data-tooltip-id="tx-count-tooltip"
+                  data-tooltip-id="tx-count-tooltip-smart-money"
                   data-tooltip-content="Number of transactions by top holders"
                 />
               </h3>
@@ -630,11 +648,24 @@ const SmartMoneyPage: React.FC = () => {
                 Unique Wallets
                 <InformationCircleIcon
                   className="w-4 h-4 ml-1 text-gray-400 cursor-pointer"
-                  data-tooltip-id="wallets-tooltip"
+                  data-tooltip-id="wallets-tooltip-smart-money"
                   data-tooltip-content="Number of unique wallets involved in transactions"
                 />
               </h3>
               <p className="text-xl font-bold text-blue-400">{whaleActivityMetrics.uniqueWallets}</p>
+            </div>
+            <div className="bg-gray-900 p-4 rounded-lg border border-blue-500/30 transform hover:scale-105 transition-transform duration-300">
+              <h3 className="text-gray-400 text-sm font-semibold uppercase flex items-center">
+                Net Flow
+                <InformationCircleIcon
+                  className="w-4 h-4 ml-1 text-gray-400 cursor-pointer"
+                  data-tooltip-id="net-flow-tooltip-smart-money"
+                  data-tooltip-content="Net token flow (inflow - outflow) for top holders"
+                />
+              </h3>
+              <p className={`text-xl font-bold flex items-center gap-1 ${whaleActivityMetrics.netFlow >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {whaleActivityMetrics.netFlow >= 0 ? '▲' : '▼'} {Math.abs(whaleActivityMetrics.netFlow).toLocaleString()} Tokens
+              </p>
             </div>
           </motion.div>
         )}
@@ -646,20 +677,8 @@ const SmartMoneyPage: React.FC = () => {
             animate={{ opacity: 1 }}
             className="flex justify-center items-center my-6"
           >
-            <svg
-              className="animate-spin h-6 w-6 text-blue-400"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
+            <svg className="animate-spin h-6 w-6 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path
                 className="opacity-75"
                 fill="currentColor"
@@ -697,7 +716,7 @@ const SmartMoneyPage: React.FC = () => {
             variants={sectionVariants}
             initial="hidden"
             animate="visible"
-            className="flex space-x-4 mb-6"
+            className="flex flex-wrap gap-4 mb-6"
           >
             <button
               onClick={() => setVisualizationMode('holders')}
@@ -706,17 +725,13 @@ const SmartMoneyPage: React.FC = () => {
               Holders
             </button>
             <button
-              onClick={() => {
-                setVisualizationMode('transactions');
-              }}
+              onClick={() => setVisualizationMode('transactions')}
               className={`px-4 py-2 rounded-lg text-sm uppercase ${visualizationMode === 'transactions' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'bg-gray-900 text-gray-400 border-gray-700'} border hover:bg-blue-500/40 transition-colors duration-200`}
             >
               Transactions
             </button>
             <button
-              onClick={() => {
-                setVisualizationMode('network');
-              }}
+              onClick={() => setVisualizationMode('network')}
               className={`px-4 py-2 rounded-lg text-sm uppercase ${visualizationMode === 'network' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'bg-gray-900 text-gray-400 border-gray-700'} border hover:bg-blue-500/40 transition-colors duration-200`}
             >
               Network
@@ -732,15 +747,8 @@ const SmartMoneyPage: React.FC = () => {
 
         {/* Smart Holders Section */}
         {visualizationMode === 'holders' && (
-          <motion.section
-            variants={sectionVariants}
-            initial="hidden"
-            animate="visible"
-            className="mb-12"
-          >
-            <h2 className="text-3xl font-bold text-white mb-8 uppercase">
-              Smart Holders (Top 100)
-            </h2>
+          <motion.section variants={sectionVariants} initial="hidden" animate="visible" className="mb-12">
+            <h2 className="text-3xl font-bold text-white mb-8 uppercase">Smart Holders (Top 100)</h2>
             {holders.length > 0 ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-gray-900 p-4 rounded-lg border border-blue-500/30 h-[300px]">
@@ -761,24 +769,15 @@ const SmartMoneyPage: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="text-gray-400 text-center py-4">
-                No holder data available. Try refreshing or selecting a different token.
-              </div>
+              <div className="text-gray-400 text-center py-4">No holder data available. Try refreshing or selecting a different token.</div>
             )}
           </motion.section>
         )}
 
         {/* Transaction Visualizations */}
         {visualizationMode === 'transactions' && (
-          <motion.section
-            variants={sectionVariants}
-            initial="hidden"
-            animate="visible"
-            className="mb-12"
-          >
-            <h2 className="text-3xl font-bold text-white mb-8 uppercase">
-              Money Flow Analysis
-            </h2>
+          <motion.section variants={sectionVariants} initial="hidden" animate="visible" className="mb-12">
+            <h2 className="text-3xl font-bold text-white mb-8 uppercase">Money Flow Analysis</h2>
             {transactions.length > 0 ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-gray-900 p-4 rounded-lg border border-blue-500/30 h-[250px]">
@@ -790,6 +789,8 @@ const SmartMoneyPage: React.FC = () => {
                     <thead>
                       <tr className="bg-gray-900">
                         <th className="p-3 text-gray-400 font-semibold text-sm uppercase">Hash</th>
+                        <th className="p-3 text-gray-400 font-semibold text-sm uppercase">Time</th>
+                        <th className="p-3 text-gray-400 font-semibold text-sm uppercase">Type</th>
                         <th className="p-3 text-gray-400 font-semibold text-sm uppercase">From</th>
                         <th className="p-3 text-gray-400 font-semibold text-sm uppercase">To</th>
                         <th className="p-3 text-gray-400 font-semibold text-sm uppercase">Asset</th>
@@ -798,10 +799,7 @@ const SmartMoneyPage: React.FC = () => {
                     </thead>
                     <tbody>
                       {transactions.map(tx => (
-                        <tr
-                          key={tx.hash}
-                          className="border-b border-gray-800 hover:bg-blue-500/10 transition-colors duration-150"
-                        >
+                        <tr key={tx.hash} className="border-b border-gray-800 hover:bg-blue-500/10 transition-colors duration-150">
                           <td className="p-3 text-gray-200 text-sm">
                             <a
                               href={`https://basescan.org/tx/${tx.hash}`}
@@ -811,6 +809,10 @@ const SmartMoneyPage: React.FC = () => {
                             >
                               {formatAddress(tx.hash)}
                             </a>
+                          </td>
+                          <td className="p-3 text-gray-200 text-sm">{tx.timestamp ? formatTimestamp(tx.timestamp) : 'N/A'}</td>
+                          <td className={`p-3 text-sm ${tx.isBuy ? 'text-green-400' : 'text-red-400'}`}>
+                            {tx.isBuy !== undefined ? (tx.isBuy ? 'BUY' : 'SELL') : 'N/A'}
                           </td>
                           <td className="p-3 text-gray-200 text-sm">{formatAddress(tx.from)}</td>
                           <td className="p-3 text-gray-200 text-sm">{formatAddress(tx.to)}</td>
@@ -832,17 +834,10 @@ const SmartMoneyPage: React.FC = () => {
 
         {/* Network Visualization */}
         {visualizationMode === 'network' && (
-          <motion.section
-            variants={sectionVariants}
-            initial="hidden"
-            animate="visible"
-            className="mb-12"
-          >
-            <h2 className="text-3xl font-bold text-white mb-8 uppercase">
-              Whale Transfer Network
-            </h2>
+          <motion.section variants={sectionVariants} initial="hidden" animate="visible" className="mb-12">
+            <h2 className="text-3xl font-bold text-white mb-8 uppercase">Whale Transfer Network</h2>
             {transactions.length > 0 ? (
-              <NetworkGraph />
+              <NetworkGraph transactions={transactions} />
             ) : (
               <div className="text-gray-400 text-center py-4">
                 No network data available. Click "View Transactions" on a holder to load data.
@@ -853,15 +848,8 @@ const SmartMoneyPage: React.FC = () => {
 
         {/* Timeline Visualization */}
         {visualizationMode === 'timeline' && (
-          <motion.section
-            variants={sectionVariants}
-            initial="hidden"
-            animate="visible"
-            className="mb-12"
-          >
-            <h2 className="text-3xl font-bold text-white mb-8 uppercase">
-              Recent Whale Transactions
-            </h2>
+          <motion.section variants={sectionVariants} initial="hidden" animate="visible" className="mb-12">
+            <h2 className="text-3xl font-bold text-white mb-8 uppercase">Recent Whale Transactions</h2>
             {allTransactions.length > 0 ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-gray-900 p-4 rounded-lg border border-blue-500/30 h-[250px]">
@@ -873,6 +861,8 @@ const SmartMoneyPage: React.FC = () => {
                     <thead>
                       <tr className="bg-gray-900">
                         <th className="p-3 text-gray-400 font-semibold text-sm uppercase">Hash</th>
+                        <th className="p-3 text-gray-400 font-semibold text-sm uppercase">Time</th>
+                        <th className="p-3 text-gray-400 font-semibold text-sm uppercase">Type</th>
                         <th className="p-3 text-gray-400 font-semibold text-sm uppercase">From</th>
                         <th className="p-3 text-gray-400 font-semibold text-sm uppercase">To</th>
                         <th className="p-3 text-gray-400 font-semibold text-sm uppercase">Asset</th>
@@ -881,10 +871,7 @@ const SmartMoneyPage: React.FC = () => {
                     </thead>
                     <tbody>
                       {allTransactions.slice(0, 20).map(tx => (
-                        <tr
-                          key={tx.hash}
-                          className="border-b border-gray-800 hover:bg-blue-500/10 transition-colors duration-150"
-                        >
+                        <tr key={tx.hash} className="border-b border-gray-800 hover:bg-blue-500/10 transition-colors duration-150">
                           <td className="p-3 text-gray-200 text-sm">
                             <a
                               href={`https://basescan.org/tx/${tx.hash}`}
@@ -894,6 +881,10 @@ const SmartMoneyPage: React.FC = () => {
                             >
                               {formatAddress(tx.hash)}
                             </a>
+                          </td>
+                          <td className="p-3 text-gray-200 text-sm">{tx.timestamp ? formatTimestamp(tx.timestamp) : 'N/A'}</td>
+                          <td className={`p-3 text-sm ${tx.isBuy ? 'text-green-400' : 'text-red-400'}`}>
+                            {tx.isBuy !== undefined ? (tx.isBuy ? 'BUY' : 'SELL') : 'N/A'}
                           </td>
                           <td className="p-3 text-gray-200 text-sm">{formatAddress(tx.from)}</td>
                           <td className="p-3 text-gray-200 text-sm">{formatAddress(tx.to)}</td>
@@ -906,10 +897,36 @@ const SmartMoneyPage: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="text-gray-400 text-center py-4">
-                No recent transactions available.
-              </div>
+              <div className="text-gray-400 text-center py-4">No recent transactions available.</div>
             )}
+          </motion.section>
+        )}
+
+        {/* Smart Money Trends */}
+        {smartMoneyTrends.length > 0 && (
+          <motion.section variants={sectionVariants} initial="hidden" animate="visible" className="mb-12">
+            <h2 className="text-3xl font-bold text-white mb-8 uppercase">Smart Money Trends</h2>
+            <div className="bg-gray-900 p-4 rounded-lg border border-blue-500/30">
+              <h3 className="text-lg font-semibold text-blue-400 mb-2 uppercase">Top Tokens Being Accumulated</h3>
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-900">
+                    <th className="p-3 text-gray-400 font-semibold text-sm uppercase">Token</th>
+                    <th className="p-3 text-gray-400 font-semibold text-sm uppercase">Total Value</th>
+                    <th className="p-3 text-gray-400 font-semibold text-sm uppercase">Transaction Count</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {smartMoneyTrends.map(trend => (
+                    <tr key={trend.token} className="border-b border-gray-800 hover:bg-blue-500/10 transition-colors duration-150">
+                      <td className="p-3 text-gray-200 text-sm">{trend.token}</td>
+                      <td className="p-3 text-gray-200 text-sm">{trend.totalValue.toLocaleString()}</td>
+                      <td className="p-3 text-gray-200 text-sm">{trend.transactionCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </motion.section>
         )}
       </main>
@@ -921,11 +938,12 @@ const SmartMoneyPage: React.FC = () => {
         </p>
       </footer>
 
-      {/* Tooltip Component - Updated to remove 'effect' prop */}
-      <Tooltip id="contract-tooltip" />
-      <Tooltip id="tx-value-tooltip" />
-      <Tooltip id="tx-count-tooltip" />
-      <Tooltip id="wallets-tooltip" />
+      {/* Tooltip Components */}
+      <Tooltip id="contract-tooltip-smart-money" />
+      <Tooltip id="tx-value-tooltip-smart-money" />
+      <Tooltip id="tx-count-tooltip-smart-money" />
+      <Tooltip id="wallets-tooltip-smart-money" />
+      <Tooltip id="net-flow-tooltip-smart-money" />
     </div>
   );
 };

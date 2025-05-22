@@ -204,7 +204,7 @@ function getTrophy(rank: number): JSX.Element | null {
 function MarketingIcon(): JSX.Element {
   return (
     <span className="cursor-help" title="Boosted Token">
-      <FaBolt className="text-[#0052FF] w-4 h-4 md:w-5 md:h-5" />
+      <FaBolt className="text-blue-400 w-4 h-4 md:w-5 md:h-5" />
     </span>
   );
 }
@@ -219,58 +219,58 @@ function AdIcon(): JSX.Element {
 
 function SkeletonRow(): JSX.Element {
   return (
-    <tr className="border-b border-[#222222]">
+    <tr className="border-b border-blue-500/30">
       <td className="p-3">
-        <div className="h-6 bg-[#222222] rounded animate-pulse w-12"></div>
+        <div className="h-6 bg-gray-900 rounded animate-pulse w-12"></div>
       </td>
       <td className="p-3">
         <div className="flex items-center space-x-2">
-          <div className="w-6 h-6 bg-[#222222] rounded-full animate-pulse"></div>
-          <div className="h-6 bg-[#222222] rounded animate-pulse w-24"></div>
+          <div className="w-6 h-6 bg-gray-900 rounded-full animate-pulse"></div>
+          <div className="h-6 bg-gray-900 rounded animate-pulse w-24"></div>
         </div>
       </td>
       <td className="p-3 text-right">
-        <div className="h-6 bg-[#222222] rounded animate-pulse w-16 ml-auto"></div>
+        <div className="h-6 bg-gray-900 rounded animate-pulse w-16 ml-auto"></div>
       </td>
       <td className="p-3 text-right">
-        <div className="h-6 bg-[#222222] rounded animate-pulse w-16 ml-auto"></div>
+        <div className="h-6 bg-gray-900 rounded animate-pulse w-16 ml-auto"></div>
       </td>
       <td className="p-3 text-right">
-        <div className="h-6 bg-[#222222] rounded animate-pulse w-16 ml-auto"></div>
+        <div className="h-6 bg-gray-900 rounded animate-pulse w-16 ml-auto"></div>
       </td>
       <td className="p-3 text-right">
-        <div className="h-6 bg-[#222222] rounded animate-pulse w-16 ml-auto"></div>
+        <div className="h-6 bg-gray-900 rounded animate-pulse w-16 ml-auto"></div>
       </td>
       <td className="p-3 text-right">
-        <div className="h-6 bg-[#222222] rounded animate-pulse w-16 ml-auto"></div>
+        <div className="h-6 bg-gray-900 rounded animate-pulse w-16 ml-auto"></div>
       </td>
       <td className="p-3 text-right">
-        <div className="h-6 bg-[#222222] rounded animate-pulse w-16 ml-auto"></div>
+        <div className="h-6 bg-gray-900 rounded animate-pulse w-16 ml-auto"></div>
       </td>
       <td className="p-3 text-right">
-        <div className="h-6 bg-[#222222] rounded animate-pulse w-16 ml-auto"></div>
+        <div className="h-6 bg-gray-900 rounded animate-pulse w-16 ml-auto"></div>
       </td>
       <td className="p-3 text-right">
-        <div className="h-6 bg-[#222222] rounded animate-pulse w-20 ml-auto"></div>
+        <div className="h-6 bg-gray-900 rounded animate-pulse w-20 ml-auto"></div>
       </td>
       <td className="p-3 text-right">
-        <div className="h-6 bg-[#222222] rounded animate-pulse w-20 ml-auto"></div>
+        <div className="h-6 bg-gray-900 rounded animate-pulse w-20 ml-auto"></div>
       </td>
       <td className="p-3 text-right">
-        <div className="h-6 bg-[#222222] rounded animate-pulse w-20 ml-auto"></div>
+        <div className="h-6 bg-gray-900 rounded animate-pulse w-20 ml-auto"></div>
       </td>
       <td className="p-3 text-center">
-        <div className="h-6 bg-[#222222] rounded animate-pulse w-12 mx-auto"></div>
+        <div className="h-6 bg-gray-900 rounded animate-pulse w-12 mx-auto"></div>
       </td>
       <td className="p-3 text-center">
-        <div className="h-6 bg-[#222222] rounded animate-pulse w-12 mx-auto"></div>
+        <div className="h-6 bg-gray-900 rounded animate-pulse w-12 mx-auto"></div>
       </td>
     </tr>
   );
 }
 
 function getBellColor(alerts: Alert[]): string {
-  if (alerts.length === 0) return "text-[#666666]";
+  if (alerts.length === 0) return "text-gray-400";
   const latestAlert = alerts.sort(
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   )[0];
@@ -285,11 +285,11 @@ function getBellColor(alerts: Alert[]): string {
       return "text-red-500";
     case "volume_spike":
     case "boost":
-      return "text-[#0052FF]";
+      return "text-blue-400";
     case "new_token":
       return "text-purple-500";
     default:
-      return "text-[#666666]";
+      return "text-gray-400";
   }
 }
 
@@ -431,8 +431,6 @@ export default function TokenScreener() {
                   (t) => t.address.toLowerCase() === pair.baseToken.address.toLowerCase()
                 );
                 return {
-                  chainId: pair.chainId || "base",
-                  dexId: pair.dexId || "",
                   pairAddress: firestoreToken?.pool || "",
                   baseToken: {
                     address: pair.baseToken.address || "",
@@ -457,7 +455,6 @@ export default function TokenScreener() {
                   fdv: pair.fdv || 0,
                   pairCreatedAt: firestoreToken?.createdAt || pair.pairCreatedAt || 0,
                   info: pair.info ? { imageUrl: pair.info.imageUrl } : undefined,
-                  isIncomplete: !pair.priceUsd || !pair.liquidity.usd,
                 };
               })
             );
@@ -467,8 +464,6 @@ export default function TokenScreener() {
         if (allResults.length === 0) {
           setTokens(
             validTokens.map((token) => ({
-              chainId: "base",
-              dexId: "",
               pairAddress: token.pool || "",
               baseToken: {
                 address: token.address,
@@ -485,7 +480,6 @@ export default function TokenScreener() {
               fdv: 0,
               pairCreatedAt: token.createdAt || 0,
               info: { imageUrl: undefined },
-              isIncomplete: true,
             }))
           );
         } else {
@@ -1009,8 +1003,8 @@ export default function TokenScreener() {
       {
         label: "Base AI Index Value",
         data: indexHistory.map((point) => ({ x: point.timestamp.getTime(), y: point.value })),
-        borderColor: "rgba(0, 82, 255, 1)",
-        backgroundColor: "rgba(0, 82, 255, 0.2)",
+        borderColor: "rgba(59, 130, 246, 1)", // blue-400
+        backgroundColor: "rgba(59, 130, 246, 0.2)",
         fill: true,
       },
     ],
@@ -1024,10 +1018,10 @@ export default function TokenScreener() {
           unit: "minute" as const,
           displayFormats: { minute: "HH:mm" },
         },
-        title: { display: true, text: "Time" },
+        title: { display: true, text: "TIME" },
       },
       y: {
-        title: { display: true, text: "Index Value (USD)" },
+        title: { display: true, text: "INDEX VALUE (USD)" },
       },
     },
     plugins: {
@@ -1174,15 +1168,21 @@ export default function TokenScreener() {
   const currentTokens = sortedTokens.slice(indexOfFirstToken, indexOfLastToken);
   const totalPages = Math.ceil(sortedTokens.length / pageSize);
 
+  // Animation variants for table rows
+  const rowVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: "easeOut" } },
+  };
+
   // Render
   if (!isMounted) {
     return (
-      <div className="w-screen h-screen bg-[#0A0A0A] text-[#A0A0A0] font-mono m-0 p-0 overflow-hidden">
+      <div className="w-screen h-screen bg-gray-950 text-gray-200 font-sans m-0 p-0 overflow-hidden">
         <div className="flex flex-col w-full h-full">
-          <div className="sticky top-0 z-50 bg-[#1A1A1A] shadow-lg w-full border-b border-[#222222] h-16"></div>
-          <div className="bg-[#1A1A1A] p-3 sm:p-4 border-b border-[#222222] shadow-inner h-16"></div>
+          <div className="sticky top-0 z-50 bg-gray-900 shadow-lg w-full border-b border-blue-500/30 h-16"></div>
+          <div className="bg-gray-900 p-3 sm:p-4 border-b border-blue-500/30 shadow-inner h-16"></div>
           <div className="flex-1 flex flex-col overflow-x-auto overflow-y-auto">
-            <div className="p-4 text-center text-[#666666] font-mono">Loading...</div>
+            <div className="p-4 text-center text-gray-400 font-sans uppercase">Loading...</div>
           </div>
         </div>
       </div>
@@ -1190,9 +1190,9 @@ export default function TokenScreener() {
   }
 
   return (
-    <div className="w-screen h-screen bg-[#0A0A0A] text-[#A0A0A0] font-mono m-0 p-0 overflow-hidden">
+    <div className="w-screen h-screen bg-gray-950 text-gray-200 font-sans m-0 p-0 overflow-hidden">
       {error && (
-        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-[#1A1A1A] text-[#A0A0A0] font-mono py-2 px-4 rounded-lg shadow-xl z-50 border border-[#222222]">
+        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-900 text-gray-200 font-sans py-2 px-4 rounded-lg shadow-xl z-50 border border-blue-500/30 uppercase">
           {error}
           <button onClick={() => setError("")} className="ml-2 text-sm font-bold">
             ×
@@ -1201,50 +1201,50 @@ export default function TokenScreener() {
       )}
 
       {toast && (
-        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-[#1A1A1A] text-[#A0A0A0] py-2 px-4 rounded-lg shadow-xl z-50 border border-[#222222]">
+        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-900 text-gray-200 py-2 px-4 rounded-lg shadow-xl z-50 border border-blue-500/30 font-sans uppercase">
           {toast}
         </div>
       )}
 
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="relative bg-[#1A1A1A] text-[#A0A0A0] p-6 rounded-lg shadow-xl w-80 border border-[#222222]">
-            <button onClick={closeModal} className="absolute top-2 right-2 text-xl font-bold font-mono">
+          <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30">
+            <button onClick={closeModal} className="absolute top-2 right-2 text-xl font-bold font-sans">
               ×
             </button>
             {!submissionSuccess ? (
               <>
-                <h2 className="text-xl font-bold mb-4 font-mono">Submit Token Listing</h2>
+                <h2 className="text-xl font-bold mb-4 font-sans uppercase">Submit Token Listing</h2>
                 <form onSubmit={handleSubmitListing}>
                   <div className="mb-4">
-                    <label className="block mb-1 font-mono">Token Symbol</label>
+                    <label className="block mb-1 font-sans uppercase">Token Symbol</label>
                     <input
                       type="text"
                       value={tokenSymbol}
                       onChange={(e) => setTokenSymbol(e.target.value)}
-                      className="w-full border border-[#222222] p-2 rounded font-mono bg-[#1A1A1A] text-[#A0A0A0] focus:outline-none focus:ring-2 focus:ring-[#0052FF]"
+                      className="w-full border border-blue-500/30 p-2 rounded font-sans bg-gray-900 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
                       required
                       maxLength={10}
                     />
                   </div>
                   <div className="mb-4">
-                    <label className="block mb-1 font-mono">Token Address</label>
+                    <label className="block mb-1 font-sans uppercase">Token Address</label>
                     <input
                       type="text"
                       value={tokenAddress}
                       onChange={(e) => setTokenAddress(e.target.value)}
-                      className="w-full border border-[#222222] p-2 rounded font-mono bg-[#1A1A1A] text-[#A0A0A0] focus:outline-none focus:ring-2 focus:ring-[#0052FF]"
+                      className="w-full border border-blue-500/30 p-2 rounded font-sans bg-gray-900 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
                       required
                       placeholder="0x..."
                     />
                   </div>
                   <div className="mb-4">
-                    <label className="block mb-1 font-mono">Logo URL</label>
+                    <label className="block mb-1 font-sans uppercase">Logo URL</label>
                     <input
                       type="url"
                       value={tokenLogo}
                       onChange={(e) => setTokenLogo(e.target.value)}
-                      className="w-full border border-[#222222] p-2 rounded font-mono bg-[#1A1A1A] text-[#A0A0A0] focus:outline-none focus:ring-2 focus:ring-[#0052FF]"
+                      className="w-full border border-blue-500/30 p-2 rounded font-sans bg-gray-900 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
                       required
                       placeholder="https://..."
                     />
@@ -1253,14 +1253,14 @@ export default function TokenScreener() {
                     <button
                       type="button"
                       onClick={closeModal}
-                      className="bg-[#1A1A1A] hover:bg-[#222222] text-[#A0A0A0] py-2 px-4 rounded font-mono border border-[#222222]"
+                      className="bg-gray-900 hover:bg-gray-800 text-gray-200 py-2 px-4 rounded font-sans border border-blue-500/30 uppercase"
                     >
                       Cancel
                     </button>
                     <motion.button
                       whileHover={{ scale: 1.05 }}
                       type="submit"
-                      className="bg-[#0052FF] hover:bg-[#003087] text-[#0A0A0A] py-2 px-4 rounded font-mono"
+                      className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded font-sans uppercase border border-blue-500/30"
                     >
                       Submit
                     </motion.button>
@@ -1269,14 +1269,14 @@ export default function TokenScreener() {
               </>
             ) : (
               <div className="text-center">
-                <h2 className="text-xl font-bold mb-4 font-mono">Token Listing Submitted!</h2>
-                <p className="mb-4 text-sm font-mono">
+                <h2 className="text-xl font-bold mb-4 font-sans uppercase">Token Listing Submitted!</h2>
+                <p className="mb-4 text-sm font-sans uppercase">
                   Your token has been submitted for review. We’ll notify you once it’s listed!
                 </p>
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   onClick={closeModal}
-                  className="bg-[#0052FF] hover:bg-[#003087] text-[#0A0A0A] py-2 px-4 rounded font-mono"
+                  className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded font-sans uppercase border border-blue-500/30"
                 >
                   Close
                 </motion.button>
@@ -1288,21 +1288,21 @@ export default function TokenScreener() {
 
       {showBoostModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="relative bg-[#1A1A1A] text-[#A0A0A0] p-6 rounded-lg shadow-xl w-80 border border-[#222222]">
-            <h2 className="text-xl font-bold mb-4 font-mono">Boost Info</h2>
-            <p className="text-sm mb-4 font-mono">
+          <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30">
+            <h2 className="text-xl font-bold mb-4 font-sans uppercase">Boost Info</h2>
+            <p className="text-sm mb-4 font-sans uppercase">
               Purchase a boost with USDC on our website to increase your token's visibility. Boosts add a score to your
               token's trending rank:
             </p>
-            <ul className="text-sm mb-4 list-disc list-inside font-mono">
+            <ul className="text-sm mb-4 list-disc list-inside font-sans uppercase">
               {boostInfo.map((info) => (
-                <li key={info.boost} className="font-mono">
+                <li key={info.boost} className="font-sans uppercase">
                   Boost ({info.boost}) - {info.cost} USDC ({info.duration})
                 </li>
               ))}
-              <li className="font-mono">Ad ({adInfo.type}) - {adInfo.cost} USDC</li>
+              <li className="font-sans uppercase">Ad ({adInfo.type}) - {adInfo.cost} USDC</li>
             </ul>
-            <p className="text-sm mb-4 font-mono">
+            <p className="text-sm mb-4 font-sans uppercase">
               Once the transaction is confirmed, your token will appear boosted in the screener!
             </p>
             <div className="flex justify-end">
@@ -1310,7 +1310,7 @@ export default function TokenScreener() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleBoostNow}
-                className="bg-[#0052FF] hover:bg-[#003087] text-[#0A0A0A] py-2 px-4 rounded font-mono"
+                className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded font-sans uppercase border border-blue-500/30"
               >
                 Boost Now
               </motion.button>
@@ -1321,15 +1321,15 @@ export default function TokenScreener() {
 
       {showFavoritePopup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="relative bg-[#1A1A1A] text-[#A0A0A0] p-6 rounded-lg shadow-xl w-80 border border-[#222222]">
+          <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30">
             <button
               onClick={() => setShowFavoritePopup(false)}
-              className="absolute top-2 right-2 text-xl font-bold font-mono"
+              className="absolute top-2 right-2 text-xl font-bold font-sans"
             >
               ×
             </button>
-            <h2 className="text-xl font-bold mb-4 font-mono">Authentication Required</h2>
-            <p className="text-sm mb-4 font-mono">Please sign in to favorite a token.</p>
+            <h2 className="text-xl font-bold mb-4 font-sans uppercase">Authentication Required</h2>
+            <p className="text-sm mb-4 font-sans uppercase">Please sign in to favorite a token.</p>
             <div className="flex flex-col space-y-2">
               <motion.button
                 whileHover={{ scale: 1.05 }}
@@ -1338,7 +1338,7 @@ export default function TokenScreener() {
                   setShowFavoritePopup(false);
                   router.push("/login");
                 }}
-                className="bg-[#0052FF] hover:bg-[#003087] text-[#0A0A0A] py-2 px-4 rounded w-full font-mono"
+                className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded w-full font-sans uppercase border border-blue-500/30"
               >
                 Sign In
               </motion.button>
@@ -1346,7 +1346,7 @@ export default function TokenScreener() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setShowFavoritePopup(false)}
-                className="bg-[#1A1A1A] hover:bg-[#222222] text-[#A0A0A0] py-2 px-4 rounded w-full font-mono border border-[#222222]"
+                className="bg-gray-900 hover:bg-gray-800 text-gray-200 py-2 px-4 rounded w-full font-sans border border-blue-500/30 uppercase"
               >
                 Cancel
               </motion.button>
@@ -1357,8 +1357,8 @@ export default function TokenScreener() {
 
       {selectedAlerts && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-[#1A1A1A] text-[#A0A0A0] p-8 rounded-lg shadow-xl w-[448px] border border-[#222222]">
-            <h2 className="text-xl font-bold mb-4 font-mono">Alerts ({selectedAlerts.length})</h2>
+          <div className="bg-gray-900 text-gray-200 p-8 rounded-lg shadow-xl w-[448px] border border-blue-500/30">
+            <h2 className="text-xl font-bold mb-4 font-sans uppercase">Alerts ({selectedAlerts.length})</h2>
             <ul className="space-y-3 max-h-96 overflow-y-auto">
               {selectedAlerts.map((alert, idx) => {
                 const token = tokens.find((t) => t.pairAddress === alert.pairAddress);
@@ -1366,24 +1366,24 @@ export default function TokenScreener() {
                   alert.type === "new_token"
                     ? "text-purple-500"
                     : alert.type === "volume_spike" || alert.type === "boost"
-                    ? "text-[#0052FF]"
+                    ? "text-blue-400"
                     : alert.type === "mover" || (alert.priceChangePercent && alert.priceChangePercent >= 0)
                     ? "text-green-500"
                     : "text-red-500";
                 return (
-                  <li key={idx} className="text-sm font-mono flex items-center space-x-3">
+                  <li key={idx} className="text-sm font-sans flex items-center space-x-3 uppercase">
                     {token && token.info && (
                       <img
                         src={token.info.imageUrl || "/fallback.png"}
                         alt={token.baseToken.symbol}
-                        className="w-6 h-6 rounded-full border border-[#222222]"
+                        className="w-6 h-6 rounded-full border border-blue-500/30"
                       />
                     )}
                     <div>
                       <span className="font-bold">{alert.type.replace("_", " ").toUpperCase()}:</span>{" "}
                       <span className={colorClass}>{alert.message}</span>
                       <br />
-                      <span className="text-xs text-[#666666] font-mono">
+                      <span className="text-xs text-gray-400 font-sans uppercase">
                         {new Date(alert.timestamp).toLocaleString()}
                       </span>
                     </div>
@@ -1396,7 +1396,7 @@ export default function TokenScreener() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setSelectedAlerts(null)}
-                className="bg-[#0052FF] hover:bg-[#003087] text-[#0A0A0A] py-2 px-4 rounded font-mono"
+                className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded font-sans uppercase border border-blue-500/30"
               >
                 Close
               </motion.button>
@@ -1406,37 +1406,37 @@ export default function TokenScreener() {
       )}
 
       <div className="flex flex-col w-full h-full">
-        <div className="sticky top-0 z-50 bg-[#1A1A1A] shadow-lg w-full border-b border-[#222222]">
+        <div className="sticky top-0 z-50 bg-gray-900 shadow-lg w-full border-b border-blue-500/30">
           <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between px-4 py-3 space-y-2 sm:space-y-0">
             <div className="flex flex-row items-center space-x-4">
-              <div className="flex items-center space-x-2 bg-[#1A1A1A] border border-[#222222] rounded-lg px-4 py-2 shadow-inner">
-                <span className="text-[#0052FF] animate-pulse font-mono" title="Live Pulse">
+              <div className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 rounded-lg px-4 py-2 shadow-inner">
+                <span className="text-blue-400 animate-pulse font-sans uppercase" title="Live Pulse">
                   ●
                 </span>
-                <div className="text-sm sm:text-base text-[#A0A0A0] font-mono flex items-center space-x-2">
+                <div className="text-sm sm:text-base text-gray-200 font-sans flex items-center space-x-2 uppercase">
                   <span>LIVE {viewerCount} Traders</span>
                   <span className="flex items-center">
                     <FaBell className={`inline mr-1 ${getBellColor(alerts)}`} />
-                    <span className={alerts.length === 0 ? "text-[#666666]" : ""}>{notificationCount}</span>
+                    <span className={alerts.length === 0 ? "text-gray-400" : ""}>{notificationCount}</span>
                   </span>
                 </div>
               </div>
             </div>
             <div className="flex items-center space-x-4">
               <div className="relative w-full sm:w-80">
-                <div className="flex items-center bg-[#1A1A1A] rounded-lg px-3 py-2 border border-[#222222] w-full h-9 shadow-sm">
-                  <FaSearch className="text-[#666666] mr-2" />
+                <div className="flex items-center bg-gray-900 rounded-lg px-3 py-2 border border-blue-500/30 w-full h-9 shadow-sm">
+                  <FaSearch className="text-gray-400 mr-2" />
                   <input
                     type="text"
                     placeholder="Search tokens..."
                     onChange={(e) => debouncedSetSearchQuery(e.target.value)}
                     onFocus={() => setShowSearchDropdown(true)}
                     onBlur={() => setTimeout(() => setShowSearchDropdown(false), 200)}
-                    className="bg-transparent text-[#A0A0A0] focus:outline-none text-sm font-mono w-full p-1 touch-friendly h-6 placeholder-[#666666]"
+                    className="bg-transparent text-gray-200 focus:outline-none text-sm font-sans w-full p-1 touch-friendly h-6 placeholder-gray-400 uppercase"
                   />
                 </div>
                 {showSearchDropdown && searchSuggestions.length > 0 && (
-                  <div className="absolute top-full left-0 mt-2 w-full bg-[#1A1A1A] rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto border border-[#222222]">
+                  <div className="absolute top-full left-0 mt-2 w-full bg-gray-900 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto border border-blue-500/30">
                     {searchSuggestions.map((token) => (
                       <div
                         key={token.pairAddress}
@@ -1445,19 +1445,19 @@ export default function TokenScreener() {
                           setShowSearchDropdown(false);
                           handleTokenClick(token.pairAddress);
                         }}
-                        className="flex items-center space-x-3 p-3 hover:bg-[#222222] cursor-pointer transition-colors duration-150"
+                        className="flex items-center space-x-3 p-3 hover:bg-gray-800 cursor-pointer transition-colors duration-150"
                       >
                         {token.info && (
                           <img
                             src={token.info.imageUrl || "/fallback.png"}
                             alt={token.baseToken.symbol}
-                            className="w-6 h-6 rounded-full border border-[#222222]"
+                            className="w-6 h-6 rounded-full border border-blue-500/30"
                           />
                         )}
-                        <span className="text-sm font-mono truncate text-[#A0A0A0]">
+                        <span className="text-sm font-sans truncate text-gray-200 uppercase">
                           {token.baseToken.name} / {token.quoteToken.symbol} ({token.baseToken.symbol})
                         </span>
-                        <span className="text-sm text-[#666666] ml-auto font-mono">
+                        <span className="text-sm text-gray-400 ml-auto font-sans uppercase">
                           {formatPrice(token.priceUsd)}
                         </span>
                       </div>
@@ -1469,34 +1469,34 @@ export default function TokenScreener() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setShowBoostModal(true)}
-                className="flex items-center space-x-2 bg-[#1A1A1A] border border-[#222222] text-[#A0A0A0] text-sm font-mono whitespace-nowrap px-4 py-2 rounded-lg hover:bg-[#222222] transition-colors shadow-sm"
+                className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
               >
-                <FaBolt className="text-[#0052FF]" />
+                <FaBolt className="text-blue-400" />
                 <span>[Boost Info]</span>
               </motion.button>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setShowModal(true)}
-                className="flex items-center space-x-2 bg-[#1A1A1A] border border-[#222222] text-[#A0A0A0] text-sm font-mono whitespace-nowrap px-4 py-2 rounded-lg hover:bg-[#222222] transition-colors shadow-sm"
+                className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
               >
-                <FaPlusCircle className="text-[#0052FF]" />
+                <FaPlusCircle className="text-blue-400" />
                 <span>[Submit Listing]</span>
               </motion.button>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => router.push("/account")}
-                className="flex items-center space-x-2 bg-[#1A1A1A] border border-[#222222] text-[#A0A0A0] text-sm font-mono whitespace-nowrap px-4 py-2 rounded-lg hover:bg-[#222222] transition-colors shadow-sm"
+                className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
               >
-                <FaUser className="text-[#A0A0A0]" />
+                <FaUser className="text-gray-200" />
                 <span>[Account]</span>
               </motion.button>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleReturn}
-                className="flex items-center space-x-2 bg-[#1A1A1A] border border-[#222222] text-[#A0A0A0] text-sm font-mono whitespace-nowrap px-4 py-2 rounded-lg hover:bg-[#222222] transition-colors shadow-sm"
+                className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
               >
                 <span>[Return]</span>
               </motion.button>
@@ -1504,13 +1504,13 @@ export default function TokenScreener() {
           </div>
         </div>
 
-        <div className="bg-[#1A1A1A] p-3 sm:p-4 flex flex-col sm:flex-row gap-3 sm:gap-4 border-b border-[#222222] shadow-inner">
+        <div className="bg-gray-900 p-3 sm:p-4 flex flex-col sm:flex-row gap-3 sm:gap-4 border-b border-blue-500/30 shadow-inner">
           <div className="flex flex-col sm:flex-row gap-2 w-full items-center">
             <motion.button
               whileHover={{ scale: 1.05 }}
               onClick={() => setViewMode("all")}
-              className={`p-2 text-[#A0A0A0] rounded-lg text-sm sm:text-base w-full sm:w-auto font-mono transition-colors shadow-sm border border-[#222222] truncate ${
-                viewMode === "all" ? "bg-[#0052FF] text-[#0A0A0A]" : "bg-[#1A1A1A] hover:bg-[#222222]"
+              className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
+                viewMode === "all" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
               }`}
               title="All Tokens"
             >
@@ -1519,8 +1519,8 @@ export default function TokenScreener() {
             <motion.button
               whileHover={{ scale: 1.05 }}
               onClick={() => setViewMode("favorites")}
-              className={`p-2 text-[#A0A0A0] rounded-lg text-sm sm:text-base w-full sm:w-auto font-mono transition-colors shadow-sm border border-[#222222] truncate ${
-                viewMode === "favorites" ? "bg-[#0052FF] text-[#0A0A0A]" : "bg-[#1A1A1A] hover:bg-[#222222]"
+              className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
+                viewMode === "favorites" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
               }`}
               title="Favorites"
             >
@@ -1529,8 +1529,8 @@ export default function TokenScreener() {
             <motion.button
               whileHover={{ scale: 1.05 }}
               onClick={() => setViewMode("baseAI")}
-              className={`p-2 text-[#A0A0A0] rounded-lg text-sm sm:text-base w-full sm:w-auto font-mono transition-colors shadow-sm border border-[#222222] truncate ${
-                viewMode === "baseAI" ? "bg-[#0052FF] text-[#0A0A0A]" : "bg-[#1A1A1A] hover:bg-[#222222]"
+              className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
+                viewMode === "baseAI" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
               }`}
               title="Base AI Index"
             >
@@ -1539,8 +1539,8 @@ export default function TokenScreener() {
             <motion.button
               whileHover={{ scale: 1.05 }}
               onClick={() => setViewMode("alerts")}
-              className={`p-2 text-[#A0A0A0] rounded-lg text-sm sm:text-base w-full sm:w-auto font-mono transition-colors shadow-sm border border-[#222222] truncate ${
-                viewMode === "alerts" ? "bg-[#FF5555] text-[#0A0A0A]" : "bg-[#1A1A1A] hover:bg-[#222222]"
+              className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
+                viewMode === "alerts" ? "bg-red-500/20 text-red-400" : "bg-gray-900 hover:bg-gray-800"
               }`}
               title="Alerts"
             >
@@ -1549,8 +1549,8 @@ export default function TokenScreener() {
             <motion.button
               whileHover={{ scale: 1.05 }}
               onClick={() => setViewMode("new")}
-              className={`p-2 text-[#A0A0A0] rounded-lg text-sm sm:text-base w-full sm:w-auto font-mono transition-colors shadow-sm border border-[#222222] truncate ${
-                viewMode === "new" ? "bg-[#0052FF] text-[#0A0A0A]" : "bg-[#1A1A1A] hover:bg-[#222222]"
+              className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
+                viewMode === "new" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
               }`}
               title="New Tokens"
             >
@@ -1558,7 +1558,7 @@ export default function TokenScreener() {
             </motion.button>
             <motion.button
               disabled
-              className="p-2 text-[#666666] rounded-lg text-sm sm:text-base w-full sm:w-auto font-mono transition-colors shadow-sm border border-[#222222] bg-[#1A1A1A] opacity-50 cursor-not-allowed truncate"
+              className="p-2 text-gray-400 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 bg-gray-900 opacity-50 cursor-not-allowed truncate uppercase"
               title="New Pairs v2 (Locked)"
             >
               New Pairs v2
@@ -1569,7 +1569,7 @@ export default function TokenScreener() {
               <select
                 value={filters.minLiquidity || 0}
                 onChange={(e) => setFilters({ ...filters, minLiquidity: Number(e.target.value) })}
-                className="p-2 bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222] rounded-lg text-sm font-mono shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0052FF] w-full"
+                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
                 title="Minimum Liquidity ($)"
               >
                 <option value={0}>Min Liq ($): Any</option>
@@ -1581,7 +1581,7 @@ export default function TokenScreener() {
               <select
                 value={filters.minVolume || 0}
                 onChange={(e) => setFilters({ ...filters, minVolume: Number(e.target.value) })}
-                className="p-2 bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222] rounded-lg text-sm font-mono shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0052FF] w-full"
+                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
                 title="Minimum Volume ($)"
               >
                 <option value={0}>Min Vol ($): Any</option>
@@ -1593,11 +1593,11 @@ export default function TokenScreener() {
               <select
                 value={filters.minAge || 0}
                 onChange={(e) => setFilters({ ...filters, minAge: Number(e.target.value) })}
-                className="p-2 bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222] rounded-lg text-sm font-mono shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0052FF] w-full"
+                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
                 title="Minimum Age (days)"
               >
                 <option value={0}>Min Age (d): Any</option>
-                <option value={1}>1 day</option>
+                                <option value={1}>1 day</option>
                 <option value={7}>7 days</option>
                 <option value={30}>30 days</option>
                 <option value={90}>90 days</option>
@@ -1610,7 +1610,7 @@ export default function TokenScreener() {
                     maxAge: e.target.value === "Infinity" ? Infinity : Number(e.target.value),
                   })
                 }
-                className="p-2 bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222] rounded-lg text-sm font-mono shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0052FF] w-full"
+                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
                 title="Maximum Age (days)"
               >
                 <option value="Infinity">Max Age (d): Any</option>
@@ -1628,7 +1628,7 @@ export default function TokenScreener() {
                 placeholder="Min Liq ($)"
                 value={filters.minLiquidity || ""}
                 onChange={(e) => setFilters({ ...filters, minLiquidity: Number(e.target.value) })}
-                className="p-2 bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222] rounded-lg text-sm sm:text-base w-full sm:w-32 font-mono placeholder-[#666666] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0052FF]"
+                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm sm:text-base w-full sm:w-32 font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
                 title="Minimum Liquidity ($)"
               />
               <input
@@ -1636,7 +1636,7 @@ export default function TokenScreener() {
                 placeholder="Min Vol ($)"
                 value={filters.minVolume || ""}
                 onChange={(e) => setFilters({ ...filters, minVolume: Number(e.target.value) })}
-                className="p-2 bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222] rounded-lg text-sm sm:text-base w-full sm:w-32 font-mono placeholder-[#666666] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0052FF]"
+                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm sm:text-base w-full sm:w-32 font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
                 title="Minimum Volume ($)"
               />
               <input
@@ -1644,7 +1644,7 @@ export default function TokenScreener() {
                 placeholder="Min Age (d)"
                 value={filters.minAge || ""}
                 onChange={(e) => setFilters({ ...filters, minAge: Number(e.target.value) })}
-                className="p-2 bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222] rounded-lg text-sm sm:text-base w-full sm:w-32 font-mono placeholder-[#666666] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0052FF]"
+                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm sm:text-base w-full sm:w-32 font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
                 title="Minimum Age (days)"
               />
               <input
@@ -1657,7 +1657,7 @@ export default function TokenScreener() {
                     maxAge: e.target.value ? Number(e.target.value) : Infinity,
                   })
                 }
-                className="p-2 bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222] rounded-lg text-sm sm:text-base w-full sm:w-32 font-mono placeholder-[#666666] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0052FF]"
+                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm sm:text-base w-full sm:w-32 font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
                 title="Maximum Age (days)"
               />
             </div>
@@ -1665,29 +1665,29 @@ export default function TokenScreener() {
         </div>
 
         {viewMode === "baseAI" && (
-          <div className="bg-[#1A1A1A] p-4 border-b border-[#222222] shadow-inner">
+          <div className="bg-gray-900 p-4 border-b border-blue-500/30 shadow-inner">
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <div className="bg-[#1A1A1A] p-3 rounded-lg border border-[#222222] shadow-sm">
-                <p className="text-sm font-mono text-[#666666]">Total Volume (24h)</p>
-                <p className="text-lg font-mono text-[#A0A0A0]">${indexMetrics.totalVolume.toLocaleString()}</p>
+              <div className="bg-gray-900 p-3 rounded-lg border border-blue-500/30 shadow-sm">
+                <p className="text-sm font-sans text-gray-400 uppercase">Total Volume (24h)</p>
+                <p className="text-lg font-sans text-gray-200 uppercase">${indexMetrics.totalVolume.toLocaleString()}</p>
               </div>
-              <div className="bg-[#1A1A1A] p-3 rounded-lg border border-[#222222] shadow-sm">
-                <p className="text-sm font-mono text-[#666666]">Total Market Cap</p>
-                <p className="text-lg font-mono text-[#A0A0A0]">${indexMetrics.totalMarketCap.toLocaleString()}</p>
+              <div className="bg-gray-900 p-3 rounded-lg border border-blue-500/30 shadow-sm">
+                <p className="text-sm font-sans text-gray-400 uppercase">Total Market Cap</p>
+                <p className="text-lg font-sans text-gray-200 uppercase">${indexMetrics.totalMarketCap.toLocaleString()}</p>
               </div>
-              <div className="bg-[#1A1A1A] p-3 rounded-lg border border-[#222222] shadow-sm">
-                <p className="text-sm font-mono text-[#666666]">Avg. Price Change (24h)</p>
-                <p className={`text-lg font-mono ${getColorClass(indexMetrics.avgPriceChange)}`}>
+              <div className="bg-gray-900 p-3 rounded-lg border border-blue-500/30 shadow-sm">
+                <p className="text-sm font-sans text-gray-400 uppercase">Avg. Price Change (24h)</p>
+                <p className={`text-lg font-sans ${getColorClass(indexMetrics.avgPriceChange)} uppercase`}>
                   {indexMetrics.avgPriceChange.toFixed(2)}%
                 </p>
               </div>
-              <div className="bg-[#1A1A1A] p-3 rounded-lg border border-[#222222] shadow-sm">
-                <p className="text-sm font-mono text-[#666666]">Token Count</p>
-                <p className="text-lg font-mono text-[#A0A0A0]">{indexMetrics.tokenCount}</p>
+              <div className="bg-gray-900 p-3 rounded-lg border border-blue-500/30 shadow-sm">
+                <p className="text-sm font-sans text-gray-400 uppercase">Token Count</p>
+                <p className="text-lg font-sans text-gray-200 uppercase">{indexMetrics.tokenCount}</p>
               </div>
             </div>
             <div className="mt-4">
-              <h3 className="text-lg font-semibold font-mono text-[#A0A0A0]">Index Growth</h3>
+              <h3 className="text-lg font-semibold font-sans text-gray-200 uppercase">Index Growth</h3>
               <Line data={chartData} options={chartOptions} />
             </div>
           </div>
@@ -1696,8 +1696,8 @@ export default function TokenScreener() {
         <div className="flex-1 flex flex-col overflow-x-auto overflow-y-auto">
           {loading ? (
             <div className="p-4">
-              <table className="table-auto w-full whitespace-nowrap text-sm font-mono">
-                <thead className="bg-[#1A1A1A] text-[#666666] sticky top-0 z-10 border-b border-[#222222]">
+              <table className="table-auto w-full whitespace-nowrap text-sm font-sans uppercase">
+                <thead className="bg-gray-900 text-gray-400 sticky top-0 z-10 border-b border-blue-500/30">
                   <tr>
                     <th className="p-3 text-left" title="Rank by trending score">
                       #
@@ -1751,16 +1751,16 @@ export default function TokenScreener() {
               </table>
             </div>
           ) : filteredTokens.length === 0 && viewMode !== "alerts" ? (
-            <div className="p-4 text-center text-[#666666] font-mono">
+            <div className="p-4 text-center text-gray-400 font-sans uppercase">
               No tokens match your filters. Try adjusting filters or check Firebase data.
             </div>
           ) : viewMode === "alerts" ? (
-            <div className="w-full h-full bg-[#1A1A1A] overflow-y-auto">
-              <div className="p-4 border-b border-[#666666]">
-                <h2 className="text-xl font-bold font-mono text-[#A0A0A0] uppercase">Alerts Feed</h2>
+            <div className="w-full h-full bg-gray-900 overflow-y-auto">
+              <div className="p-4 border-b border-blue-500/30">
+                <h2 className="text-xl font-bold font-sans text-gray-200 uppercase">Alerts Feed</h2>
               </div>
               {alerts.length === 0 ? (
-                <p className="p-4 text-[#666666] font-mono">No recent alerts.</p>
+                <p className="p-4 text-gray-400 font-sans uppercase">No recent alerts.</p>
               ) : (
                 <ul className="space-y-2">
                   {alerts.map((alert, idx) => {
@@ -1769,7 +1769,7 @@ export default function TokenScreener() {
                       alert.type === "new_token"
                         ? "text-purple-500"
                         : alert.type === "volume_spike" || alert.type === "boost"
-                        ? "text-[#0052FF]"
+                        ? "text-blue-400"
                         : alert.type === "mover" || (alert.priceChangePercent && alert.priceChangePercent >= 0)
                         ? "text-green-500"
                         : "text-red-500";
@@ -1779,7 +1779,7 @@ export default function TokenScreener() {
                     const formattedMessage = messageParts.map((part, index) => {
                       if (/^\d+\.?\d*$/.test(part)) {
                         if (alert.type === "volume_spike") {
-                          return <span key={index} className="text-[#0052FF]">{part}</span>;
+                          return <span key={index} className="text-blue-400">{part}</span>;
                         }
                         if (alert.priceChangePercent !== undefined) {
                           return (
@@ -1795,22 +1795,22 @@ export default function TokenScreener() {
                     return (
                       <li
                         key={idx}
-                        className="flex items-center justify-between p-3 hover:bg-[#222222] transition-colors duration-150 border-b border-[#666666]"
+                        className="flex items-center justify-between p-3 hover:bg-gray-800 transition-colors duration-150 border-b border-blue-500/30"
                       >
                         <div className="flex items-center space-x-3">
                           {token && token.info && (
                             <img
                               src={token.info.imageUrl || "/fallback.png"}
                               alt={token.baseToken.symbol}
-                              className="w-6 h-6 rounded-full border border-[#222222]"
+                              className="w-6 h-6 rounded-full border border-blue-500/30"
                             />
                           )}
                           <div>
-                            <p className="text-sm font-mono">
+                            <p className="text-sm font-sans uppercase">
                               <span className="font-bold">{alert.type.replace("_", " ").toUpperCase()}:</span>{" "}
                               {formattedMessage}
                             </p>
-                            <p className="text-xs text-[#666666] font-mono">
+                            <p className="text-xs text-gray-400 font-sans uppercase">
                               {new Date(alert.timestamp).toLocaleString()}
                             </p>
                           </div>
@@ -1820,7 +1820,7 @@ export default function TokenScreener() {
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             onClick={() => handleTokenClick(token.pairAddress)}
-                            className="bg-[#0052FF] hover:bg-[#003087] text-[#0A0A0A] px-3 py-1 rounded font-mono text-sm"
+                            className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 px-3 py-1 rounded font-sans text-sm uppercase border border-blue-500/30"
                           >
                             View
                           </motion.button>
@@ -1835,11 +1835,11 @@ export default function TokenScreener() {
             <>
               {/* Desktop Table View */}
               <div className="hidden md:block">
-                <table className="table-auto w-full whitespace-nowrap text-sm font-mono">
-                  <thead className="bg-[#1A1A1A] text-[#666666] sticky top-0 z-10 border-b border-[#222222]">
+                <table className="table-auto w-full whitespace-nowrap text-sm font-sans uppercase">
+                  <thead className="bg-gray-900 text-gray-400 sticky top-0 z-10 border-b border-blue-500/30">
                     <tr>
                       <th
-                        className="p-3 text-left cursor-pointer w-[140px] hover:text-[#0052FF] transition-colors"
+                        className="p-3 text-left cursor-pointer w-[140px] hover:text-blue-400 transition-colors"
                         onClick={() => handleFilterChange("trending")}
                         title="Rank by trending score"
                       >
@@ -1852,7 +1852,7 @@ export default function TokenScreener() {
                         PRICE
                       </th>
                       <th
-                        className="p-3 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        className="p-3 text-right cursor-pointer hover:text-blue-400 transition-colors"
                         onClick={() => handleFilterChange("age")}
                         title="Age of the token pair"
                       >
@@ -1862,49 +1862,49 @@ export default function TokenScreener() {
                         TXN
                       </th>
                       <th
-                        className="p-3 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        className="p-3 text-right cursor-pointer hover:text-blue-400 transition-colors"
                         onClick={() => handleFilterChange("5m")}
                         title="Price change in last 5 minutes"
                       >
                         5M{sortFilter === "5m" && (sortDirection === "desc" ? " ↓" : " ↑")}
                       </th>
                       <th
-                        className="p-3 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        className="p-3 text-right cursor-pointer hover:text-blue-400 transition-colors"
                         onClick={() => handleFilterChange("1h")}
                         title="Price change in last 1 hour"
                       >
                         1H{sortFilter === "1h" && (sortDirection === "desc" ? " ↓" : " ↑")}
                       </th>
                       <th
-                        className="p-3 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        className="p-3 text-right cursor-pointer hover:text-blue-400 transition-colors"
                         onClick={() => handleFilterChange("6h")}
                         title="Price change in last 6 hours"
                       >
                         6H{sortFilter === "6h" && (sortDirection === "desc" ? " ↓" : " ↑")}
                       </th>
                       <th
-                        className="p-3 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        className="p-3 text-right cursor-pointer hover:text-blue-400 transition-colors"
                         onClick={() => handleFilterChange("24h")}
                         title="Price change in last 24 hours"
                       >
                         24H{sortFilter === "24h" && (sortDirection === "desc" ? " ↓" : " ↑")}
                       </th>
                       <th
-                        className="p-3 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        className="p-3 text-right cursor-pointer hover:text-blue-400 transition-colors"
                         onClick={() => handleFilterChange("volume")}
                         title="Trading volume in last 24 hours"
                       >
                         VOLUME{sortFilter === "volume" && (sortDirection === "desc" ? " ↓" : " ↑")}
                       </th>
                       <th
-                        className="p-3 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        className="p-3 text-right cursor-pointer hover:text-blue-400 transition-colors"
                         onClick={() => handleFilterChange("liquidity")}
                         title="Liquidity in USD"
                       >
                         LIQUIDITY{sortFilter === "liquidity" && (sortDirection === "desc" ? " ↓" : " ↑")}
                       </th>
                       <th
-                        className="p-3 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        className="p-3 text-right cursor-pointer hover:text-blue-400 transition-colors"
                         onClick={() => handleFilterChange("marketCap")}
                         title="Market capitalization"
                       >
@@ -1921,7 +1921,7 @@ export default function TokenScreener() {
                   <tbody>
                     {currentTokens.length === 0 ? (
                       <tr>
-                        <td colSpan={14} className="p-4 text-center text-[#666666] font-mono">
+                        <td colSpan={14} className="p-4 text-center text-gray-400 font-sans uppercase">
                           No tokens available for this page. Try adjusting filters or check Firebase/DexScreener data.
                         </td>
                       </tr>
@@ -1935,49 +1935,52 @@ export default function TokenScreener() {
                         }
                         const isAd = false;
                         return (
-                          <tr
+                          <motion.tr
                             key={token.pairAddress}
-                            className="border-b border-[#222222] hover:bg-gradient-to-r hover:from-[#1A1A1A] hover:to-[#222222] transition-colors duration-200"
+                            className="border-b border-blue-500/30 hover:bg-gradient-to-r hover:from-gray-900 hover:to-gray-800 transition-colors duration-200"
+                            variants={rowVariants}
+                            initial="hidden"
+                            animate="visible"
                           >
                             <td className="p-3">
                               <div className="flex items-center space-x-2">
-                                <div className="bg-[#1A1A1A] rounded-full px-2 py-1 flex items-center justify-center w-12 font-mono text-[#A0A0A0] shadow-sm border border-[#222222]">
+                                <div className="bg-gray-900 rounded-full px-2 py-1 flex items-center justify-center w-12 font-sans text-gray-200 shadow-sm border border-blue-500/30 uppercase">
                                   {getTrophy(rank) || rank}
                                 </div>
                                 <div className="flex items-center space-x-1">
                                   {token.boosted && (
                                     <>
                                       <MarketingIcon />
-                                      <span className="text-[#0052FF] text-xs">+{token.boostValue}</span>
+                                      <span className="text-blue-400 text-xs uppercase">+{token.boostValue}</span>
                                     </>
                                   )}
                                   {isAd && <AdIcon />}
                                 </div>
                               </div>
                             </td>
-                            <td className="p-3 font-mono">
+                            <td className="p-3 font-sans uppercase">
                               <div
                                 onClick={() => handleTokenClick(token.pairAddress)}
-                                className="flex items-center space-x-2 hover:text-[#0052FF] cursor-pointer transition-colors duration-150"
+                                className="flex items-center space-x-2 hover:text-blue-400 cursor-pointer transition-colors duration-150"
                               >
                                 {token.info && (
                                   <img
                                     src={token.info.imageUrl || "/fallback.png"}
                                     alt={token.baseToken.symbol}
-                                    className="w-6 h-6 rounded-full border border-[#222222]"
+                                    className="w-6 h-6 rounded-full border border-blue-500/30"
                                   />
                                 )}
                                 <div>
-                                  <span className="font-bold text-[#A0A0A0]">{token.baseToken.symbol}</span> /{" "}
-                                  <span className="text-[#666666]">{token.quoteToken.symbol}</span>
+                                  <span className="font-bold text-gray-200">{token.baseToken.symbol}</span> /{" "}
+                                  <span className="text-gray-400">{token.quoteToken.symbol}</span>
                                   <br />
-                                  <span className="text-xs text-[#666666]">{token.baseToken.name}</span>
+                                  <span className="text-xs text-gray-400">{token.baseToken.name}</span>
                                 </div>
                               </div>
                             </td>
-                            <td className="p-3 text-right text-[#A0A0A0]">{formatPrice(token.priceUsd)}</td>
-                            <td className="p-3 text-right text-[#A0A0A0]">{getAge(token.pairCreatedAt)}</td>
-                            <td className="p-3 text-right text-[#A0A0A0]">{getTxns24h(token)}</td>
+                            <td className="p-3 text-right text-gray-200">{formatPrice(token.priceUsd)}</td>
+                            <td className="p-3 text-right text-gray-200">{getAge(token.pairCreatedAt)}</td>
+                            <td className="p-3 text-right text-gray-200">{getTxns24h(token)}</td>
                             <td className={`p-3 text-right ${getColorClass(token.priceChange?.m5 || 0)}`}>
                               {(token.priceChange?.m5 || 0).toFixed(2)}%
                             </td>
@@ -1990,13 +1993,13 @@ export default function TokenScreener() {
                             <td className={`p-3 text-right ${getColorClass(token.priceChange?.h24 || 0)}`}>
                               {(token.priceChange?.h24 || 0).toFixed(2)}%
                             </td>
-                            <td className="p-3 text-right text-[#A0A0A0]">
+                            <td className="p-3 text-right text-gray-200">
                               ${(token.volume?.h24 || 0).toLocaleString()}
                             </td>
-                            <td className="p-3 text-right text-[#A0A0A0]">
+                            <td className="p-3 text-right text-gray-200">
                               ${(token.liquidity?.usd || 0).toLocaleString()}
                             </td>
-                            <td className="p-3 text-right text-[#A0A0A0]">
+                            <td className="p-3 text-right text-gray-200">
                               ${(token.marketCap || 0).toLocaleString()}
                             </td>
                             <td className="p-3 text-center">
@@ -2008,7 +2011,7 @@ export default function TokenScreener() {
                                 title="View Alerts"
                               >
                                 <div
-                                  className={`bg-[#333333] border border-[#FFFFFF33] rounded-full px-2 py-1 flex items-center justify-center space-x-2 ${getBellColor(
+                                  className={`bg-gray-800 border border-blue-500/30 rounded-full px-2 py-1 flex items-center justify-center space-x-2 ${getBellColor(
                                     tokenAlerts
                                   )}`}
                                 >
@@ -2033,21 +2036,21 @@ export default function TokenScreener() {
                                     className={`w-5 h-5 ${
                                       favorites.includes(token.pairAddress)
                                         ? "text-yellow-400"
-                                        : "text-[#666666]"
+                                        : "text-gray-400"
                                     }`}
                                   />
                                 </motion.button>
                                 <motion.button
                                   whileHover={{ scale: 1.1 }}
                                   onClick={() => handleCopy(token.pairAddress)}
-                                  className="text-[#666666]"
+                                  className="text-gray-400"
                                   title="Copy Pair Address"
                                 >
                                   <FaClipboard className="w-5 h-5" />
                                 </motion.button>
                               </div>
                             </td>
-                          </tr>
+                          </motion.tr>
                         );
                       })
                     )}
@@ -2057,11 +2060,11 @@ export default function TokenScreener() {
 
               {/* Mobile Table View */}
               <div className="md:hidden">
-                <table className="table-auto w-full whitespace-nowrap text-xs font-mono">
-                  <thead className="bg-[#1A1A1A] text-[#666666] sticky top-0 z-10 border-b border-[#222222]">
+                <table className="table-auto w-full whitespace-nowrap text-xs font-sans uppercase">
+                  <thead className="bg-gray-900 text-gray-400 sticky top-0 z-10 border-b border-blue-500/30">
                     <tr>
                       <th
-                        className="p-2 text-left cursor-pointer w-[100px] hover:text-[#0052FF] transition-colors"
+                        className="p-2 text-left cursor-pointer w-[100px] hover:text-blue-400 transition-colors"
                         onClick={() => handleFilterChange("trending")}
                         title="Rank by trending score"
                       >
@@ -2074,7 +2077,7 @@ export default function TokenScreener() {
                         PRICE
                       </th>
                       <th
-                        className="p-2 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        className="p-2 text-right cursor-pointer hover:text-blue-400 transition-colors"
                         onClick={() => handleFilterChange("age")}
                         title="Age of the token pair"
                       >
@@ -2084,49 +2087,49 @@ export default function TokenScreener() {
                         TXN
                       </th>
                       <th
-                        className="p-2 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        className="p-2 text-right cursor-pointer hover:text-blue-400 transition-colors"
                         onClick={() => handleFilterChange("5m")}
                         title="Price change in last 5 minutes"
                       >
                         5M{sortFilter === "5m" && (sortDirection === "desc" ? " ↓" : " ↑")}
                       </th>
                       <th
-                        className="p-2 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        className="p-2 text-right cursor-pointer hover:text-blue-400 transition-colors"
                         onClick={() => handleFilterChange("1h")}
                         title="Price change in last 1 hour"
                       >
                         1H{sortFilter === "1h" && (sortDirection === "desc" ? " ↓" : " ↑")}
                       </th>
                       <th
-                        className="p-2 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        className="p-2 text-right cursor-pointer hover:text-blue-400 transition-colors"
                         onClick={() => handleFilterChange("6h")}
                         title="Price change in last 6 hours"
                       >
                         6H{sortFilter === "6h" && (sortDirection === "desc" ? " ↓" : " ↑")}
                       </th>
                       <th
-                        className="p-2 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        className="p-2 text-right cursor-pointer hover:text-blue-400 transition-colors"
                         onClick={() => handleFilterChange("24h")}
                         title="Price change in last 24 hours"
                       >
                         24H{sortFilter === "24h" && (sortDirection === "desc" ? " ↓" : " ↑")}
                       </th>
                       <th
-                        className="p-2 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        className="p-2 text-right cursor-pointer hover:text-blue-400 transition-colors"
                         onClick={() => handleFilterChange("volume")}
                         title="Trading volume in last 24 hours"
                       >
                         VOL{sortFilter === "volume" && (sortDirection === "desc" ? " ↓" : " ↑")}
                       </th>
                       <th
-                        className="p-2 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        className="p-2 text-right cursor-pointer hover:text-blue-400 transition-colors"
                         onClick={() => handleFilterChange("liquidity")}
                         title="Liquidity in USD"
                       >
                         LIQ{sortFilter === "liquidity" && (sortDirection === "desc" ? " ↓" : " ↑")}
                       </th>
                       <th
-                        className="p-2 text-right cursor-pointer hover:text-[#0052FF] transition-colors"
+                        className="p-2 text-right cursor-pointer hover:text-blue-400 transition-colors"
                         onClick={() => handleFilterChange("marketCap")}
                         title="Market capitalization"
                       >
@@ -2143,7 +2146,7 @@ export default function TokenScreener() {
                   <tbody>
                     {currentTokens.length === 0 ? (
                       <tr>
-                        <td colSpan={14} className="p-4 text-center text-[#666666] font-mono">
+                        <td colSpan={14} className="p-4 text-center text-gray-400 font-sans uppercase">
                           No tokens available for this page. Try adjusting filters or check Firebase/DexScreener data.
                         </td>
                       </tr>
@@ -2157,51 +2160,52 @@ export default function TokenScreener() {
                         }
                         const isAd = false;
                         return (
-                          <tr
+                          <motion.tr
                             key={token.pairAddress}
-                            className="border-b border-[#222222] hover:bg-gradient-to-r hover:from-[#1A1A1A] hover:to-[#222222] transition-colors duration-200"
+                            className="border-b border-blue-500/30 hover:bg-gradient-to-r hover:from-gray-900 hover:to-gray-800 transition-colors duration-200"
+                            variants={rowVariants}
+                            initial="hidden"
+                            animate="visible"
                           >
                             <td className="p-2">
                               <div className="flex items-center space-x-1">
-                                <div className="bg-[#1A1A1A] rounded-full px-2 py-1 flex items-center justify-center w-10 font-mono text-[#A0A0A0] shadow-sm border border-[#222222]">
+                                <div className="bg-gray-900 rounded-full px-2 py-1 flex items-center justify-center w-10 font-sans text-gray-200 shadow-sm border border-blue-500/30 uppercase">
                                   {getTrophy(rank) || rank}
                                 </div>
                                 <div className="flex items-center space-x-1">
                                   {token.boosted && (
                                     <>
                                       <MarketingIcon />
-                                      <span className="text-[#0052FF] text-[10px]">+{token.boostValue}</span>
+                                      <span className="text-blue-400 text-[10px] uppercase">+{token.boostValue}</span>
                                     </>
                                   )}
                                   {isAd && <AdIcon />}
                                 </div>
                               </div>
                             </td>
-                            <td className="p-2 font-mono">
+                            <td className="p-2 font-sans uppercase">
                               <div
                                 onClick={() => handleTokenClick(token.pairAddress)}
-                                className="flex items-center space-x-1 hover:text-[#0052FF] cursor-pointer transition-colors duration-150"
+                                className="flex items-center space-x-1 hover:text-blue-400 cursor-pointer transition-colors duration-150"
                               >
                                 {token.info && (
                                   <img
                                     src={token.info.imageUrl || "/fallback.png"}
                                     alt={token.baseToken.symbol}
-                                    className="w-5 h-5 rounded-full border border-[#222222]"
+                                    className="w-5 h-5 rounded-full border border-blue-500/30"
                                   />
                                 )}
                                 <div>
-                                  <span className="font-bold text-[#A0A0A0]">{token.baseToken.symbol}</span> /{" "}
-                                  <span className="text-[#666666]">{token.quoteToken.symbol}</span>
+                                  <span className="font-bold text-gray-200">{token.baseToken.symbol}</span> /{" "}
+                                  <span className="text-gray-400">{token.quoteToken.symbol}</span>
                                   <br />
-                                  <span className="text-[10px] text-[#666666] truncate">
-                                    {token.baseToken.name}
-                                  </span>
+                                  <span className="text-[10px] text-gray-400 truncate">{token.baseToken.name}</span>
                                 </div>
                               </div>
                             </td>
-                            <td className="p-2 text-right text-[#A0A0A0]">{formatPrice(token.priceUsd)}</td>
-                            <td className="p-2 text-right text-[#A0A0A0]">{getAge(token.pairCreatedAt)}</td>
-                            <td className="p-2 text-right text-[#A0A0A0]">{getTxns24h(token)}</td>
+                            <td className="p-2 text-right text-gray-200">{formatPrice(token.priceUsd)}</td>
+                            <td className="p-2 text-right text-gray-200">{getAge(token.pairCreatedAt)}</td>
+                            <td className="p-2 text-right text-gray-200">{getTxns24h(token)}</td>
                             <td className={`p-2 text-right ${getColorClass(token.priceChange?.m5 || 0)}`}>
                               {(token.priceChange?.m5 || 0).toFixed(2)}%
                             </td>
@@ -2214,13 +2218,13 @@ export default function TokenScreener() {
                             <td className={`p-2 text-right ${getColorClass(token.priceChange?.h24 || 0)}`}>
                               {(token.priceChange?.h24 || 0).toFixed(2)}%
                             </td>
-                            <td className="p-2 text-right text-[#A0A0A0]">
+                            <td className="p-2 text-right text-gray-200">
                               ${(token.volume?.h24 || 0).toLocaleString()}
                             </td>
-                            <td className="p-2 text-right text-[#A0A0A0]">
+                            <td className="p-2 text-right text-gray-200">
                               ${(token.liquidity?.usd || 0).toLocaleString()}
                             </td>
-                            <td className="p-2 text-right text-[#A0A0A0]">
+                            <td className="p-2 text-right text-gray-200">
                               ${(token.marketCap || 0).toLocaleString()}
                             </td>
                             <td className="p-2 text-center">
@@ -2232,7 +2236,7 @@ export default function TokenScreener() {
                                 title="View Alerts"
                               >
                                 <div
-                                  className={`bg-[#333333] border border-[#FFFFFF33] rounded-full px-2 py-1 flex items-center justify-center space-x-1 ${getBellColor(
+                                  className={`bg-gray-800 border border-blue-500/30 rounded-full px-2 py-1 flex items-center justify-center space-x-1 ${getBellColor(
                                     tokenAlerts
                                   )}`}
                                 >
@@ -2257,21 +2261,21 @@ export default function TokenScreener() {
                                     className={`w-4 h-4 ${
                                       favorites.includes(token.pairAddress)
                                         ? "text-yellow-400"
-                                        : "text-[#666666]"
+                                        : "text-gray-400"
                                     }`}
                                   />
                                 </motion.button>
                                 <motion.button
                                   whileHover={{ scale: 1.1 }}
                                   onClick={() => handleCopy(token.pairAddress)}
-                                  className="text-[#666666]"
+                                  className="text-gray-400"
                                   title="Copy Pair Address"
                                 >
                                   <FaClipboard className="w-4 h-4" />
                                 </motion.button>
                               </div>
                             </td>
-                          </tr>
+                          </motion.tr>
                         );
                       })
                     )}
@@ -2287,7 +2291,7 @@ export default function TokenScreener() {
                     whileTap={{ scale: 0.95 }}
                     onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
                     disabled={currentPage === 1}
-                    className="bg-[#1A1A1A] hover:bg-[#222222] text-[#A0A0A0] py-1 px-3 rounded font-mono disabled:opacity-50 border border-[#222222]"
+                    className="bg-gray-900 hover:bg-gray-800 text-gray-200 py-1 px-3 rounded font-sans disabled:opacity-50 border border-blue-500/30 uppercase"
                   >
                     Previous
                   </motion.button>
@@ -2300,17 +2304,17 @@ export default function TokenScreener() {
                         debouncedSetCurrentPage(page);
                       }
                     }}
-                    className="w-16 p-1 bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222] rounded font-mono text-center focus:outline-none focus:ring-2 focus:ring-[#0052FF]"
+                    className="w-16 p-1 bg-gray-900 text-gray-200 border border-blue-500/30 rounded font-sans text-center focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
                     min={1}
                     max={totalPages}
                   />
-                  <span className="text-[#666666] font-mono">of {totalPages}</span>
+                  <span className="text-gray-400 font-sans uppercase">of {totalPages}</span>
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
                     disabled={currentPage === totalPages}
-                    className="bg-[#1A1A1A] hover:bg-[#222222] text-[#A0A0A0] py-1 px-3 rounded font-mono disabled:opacity-50 border border-[#222222]"
+                    className="bg-gray-900 hover:bg-gray-800 text-gray-200 py-1 px-3 rounded font-sans disabled:opacity-50 border border-blue-500/30 uppercase"
                   >
                     Next
                   </motion.button>
@@ -2323,4 +2327,3 @@ export default function TokenScreener() {
     </div>
   );
 }
-               

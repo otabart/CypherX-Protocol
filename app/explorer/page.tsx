@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
-import { ClipboardIcon, ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
+import { ClipboardIcon, ArrowTopRightOnSquareIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import Link from "next/link";
 
 // Components
@@ -35,12 +35,35 @@ function ExternalLinkIcon({ className }: { className: string }) {
   return <ArrowTopRightOnSquareIcon className={className} />;
 }
 
+// Spinner Icon for Updating Indicator
+function SpinnerIcon({ className }: { className: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+        d="M4 12a8 8 0 018-8v2a6 6 0 00-6 6h-2zm8-8v2a6 6 0 016 6h2a8 8 0 01-8 8v-2a6 6 0 00-6-6H4z"
+      />
+    </svg>
+  );
+}
+
 interface Block {
   number: number;
   hash: string;
   timestamp: string;
   transactionCount: number;
   validator: string;
+  gasUsed: string;
+  difficulty: string;
+  timestampRaw: number;
 }
 
 interface Transaction {
@@ -67,42 +90,58 @@ export default function ExplorerPage() {
   const [recentBlocks, setRecentBlocks] = useState<Block[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [whaleTransactions, setWhaleTransactions] = useState<WhaleTransaction[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [ethPrice, setEthPrice] = useState<number>(0);
-  const [marketCap, setMarketCap] = useState<number>(0);
+  const [loading, setLoading] = useState<{ blocks: boolean; transactions: boolean; whales: boolean }>({
+    blocks: true,
+    transactions: true,
+    whales: true,
+  });
+  const [updating, setUpdating] = useState<{ blocks: boolean; transactions: boolean; whales: boolean }>({
+    blocks: false,
+    transactions: false,
+    whales: false,
+  });
+  const [error, setError] = useState<{ blocks: string | null; transactions: string | null; whales: string | null }>({
+    blocks: null,
+    transactions: null,
+    whales: null,
+  });
   const [totalTxns, setTotalTxns] = useState<number>(0);
   const [latestBlock, setLatestBlock] = useState<number>(0);
+  const [gasPrice, setGasPrice] = useState<string>("0");
+  const [pendingTxns, setPendingTxns] = useState<number>(0);
+  const [activeAddresses, setActiveAddresses] = useState<number>(0);
+  const [avgBlockTime, setAvgBlockTime] = useState<string>("0");
+  const [networkHashRate, setNetworkHashRate] = useState<string>("0");
+  const [avgGasFee, setAvgGasFee] = useState<string>("0");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Use refs to store previous data for comparison
+  const prevBlocksRef = useRef<Block[]>([]);
+  const prevTransactionsRef = useRef<Transaction[]>([]);
+  const prevWhaleTransactionsRef = useRef<WhaleTransaction[]>([]);
 
   // Alchemy API URL
   const alchemyUrl = process.env.NEXT_PUBLIC_ALCHEMY_API_URL;
 
-  // Debugging logs
-  console.log("NEXT_PUBLIC_ALCHEMY_API_URL from process.env:", process.env.NEXT_PUBLIC_ALCHEMY_API_URL);
-  console.log("Using Alchemy URL:", alchemyUrl);
-
-  if (!alchemyUrl) {
-    console.error("Missing Alchemy API URL. Set NEXT_PUBLIC_ALCHEMY_API_URL in .env.local.");
-    setError("Alchemy API URL is missing. Please set NEXT_PUBLIC_ALCHEMY_API_URL in .env.local.");
-  }
-
-  // Theme classes aligned with Marketplace
+  // Theme classes
   const themeClasses = {
-    background: "bg-gray-950", // #030712
+    background: "bg-gray-950",
     text: "text-gray-200",
     border: "border-blue-500/30",
     headerBg: "bg-gray-950",
-    containerBg: "bg-[#141A2F]", // Slightly lighter for contrast
-    hoverBg: "hover:bg-[#1E263B] hover:shadow-lg hover:scale-[1.02]",
+    containerBg: "bg-[#141A2F]",
+    hoverBg: "hover:bg-[#1E263B] hover:shadow-lg hover:scale-[1.01]",
     secondaryText: "text-gray-400",
     errorText: "text-red-400",
     buttonBg: "bg-blue-500/20",
     buttonHover: "hover:bg-blue-500/40",
     buttonDisabled: "bg-gray-800",
     shadow: "shadow-[0_2px_8px_rgba(59,130,246,0.2)]",
-    tabActive: "border-blue-400 text-blue-400",
-    tabInactive: "border-transparent text-gray-400",
+    toastBg: "bg-blue-500/80",
+    panelHeader: "bg-gradient-to-r from-blue-500/30 to-blue-400/30",
+    statsBg: "bg-gradient-to-b from-[#0D1326] to-[#141A2F]",
+    separator: "bg-gradient-to-r from-transparent via-blue-400 to-transparent",
   };
 
   // Prevent background scrolling when mobile menu is open
@@ -131,163 +170,291 @@ export default function ExplorerPage() {
     setIsMenuOpen(false);
   }, [pathname]);
 
-  // Fetch ETH price and market cap
+  // Toast auto-dismiss
   useEffect(() => {
-    const fetchMarketData = async () => {
-      try {
-        const res = await fetch("https://api.coingecko.com/api/v3/coins/ethereum");
-        const data = await res.json();
-        setEthPrice(data.market_data.current_price.usd);
-        setMarketCap(data.market_data.market_cap.usd);
-      } catch (err) {
-        console.error("Error fetching market data:", err);
-        setEthPrice(1852.38);
-        setMarketCap(222423884847);
-      }
-    };
-    fetchMarketData();
-  }, []);
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   // Fetch blockchain data
-  useEffect(() => {
-    if (!alchemyUrl) return;
+  const fetchData = async (isInitialFetch: boolean = false) => {
+    if (!alchemyUrl) {
+      console.error("Missing Alchemy API URL. Set NEXT_PUBLIC_ALCHEMY_API_URL in .env.local.");
+      setError({
+        blocks: "Alchemy API URL is missing.",
+        transactions: "Alchemy API URL is missing.",
+        whales: "Alchemy API URL is missing.",
+      });
+      setLoading({ blocks: false, transactions: false, whales: false });
+      return;
+    }
 
-    async function fetchData() {
-      setLoading(true);
-      setError(null);
+    try {
+      if (!isInitialFetch) {
+        setUpdating({ blocks: true, transactions: true, whales: true });
+      }
 
-      try {
-        const blockNumberResponse = await fetch(alchemyUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            method: "eth_blockNumber",
-            params: [],
-            id: 1,
-          }),
-        });
-        const blockNumberData = await blockNumberResponse.json();
-        if (blockNumberData.error) {
-          throw new Error(blockNumberData.error.message);
+      // Fetch Gas Price
+      const gasPriceResponse = await fetch(alchemyUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "eth_gasPrice",
+          params: [],
+          id: 0,
+        }),
+      });
+      const gasPriceData = await gasPriceResponse.json();
+      if (gasPriceData.error) throw new Error(gasPriceData.error.message);
+      const newGasPrice = (parseInt(gasPriceData.result, 16) / 1e9).toFixed(4) + " Gwei";
+      if (newGasPrice !== gasPrice) setGasPrice(newGasPrice);
+
+      // Fetch Fee History (last 10 blocks)
+      const feeHistoryResponse = await fetch(alchemyUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "eth_feeHistory",
+          params: [10, "latest", [25, 50, 75]],
+          id: 1,
+        }),
+      });
+      const feeHistoryData = await feeHistoryResponse.json();
+      if (feeHistoryData.error) throw new Error(feeHistoryData.error.message);
+      const baseFees = feeHistoryData.result.baseFeePerGas.map((fee: string) => parseInt(fee, 16));
+      const avgFeeInWei = baseFees.reduce((sum: number, fee: number) => sum + fee, 0) / baseFees.length;
+      const newAvgGasFee = (avgFeeInWei / 1e9).toFixed(4) + " Gwei";
+      if (newAvgGasFee !== avgGasFee) setAvgGasFee(newAvgGasFee);
+
+      // Fetch Pending Transactions
+      const pendingTxResponse = await fetch(alchemyUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "eth_getBlockTransactionCountByNumber",
+          params: ["pending"],
+          id: 2,
+        }),
+      });
+      const pendingTxData = await pendingTxResponse.json();
+      if (pendingTxData.error) throw new Error(pendingTxData.error.message);
+      const newPendingTxns = parseInt(pendingTxData.result, 16);
+      if (newPendingTxns !== pendingTxns) setPendingTxns(newPendingTxns);
+
+      // Fetch Latest Block Number
+      const blockNumberResponse = await fetch(alchemyUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "eth_blockNumber",
+          params: [],
+          id: 3,
+        }),
+      });
+      const blockNumberData = await blockNumberResponse.json();
+      if (blockNumberData.error) throw new Error(blockNumberData.error.message);
+      const latestBlockNumber = parseInt(blockNumberData.result, 16);
+      if (latestBlockNumber !== latestBlock) setLatestBlock(latestBlockNumber);
+
+      // Fetch Blocks (last 3 for display)
+      const blockPromises = [];
+      for (let i = 0; i < 3; i++) {
+        const blockNum = latestBlockNumber - i;
+        blockPromises.push(
+          fetch(alchemyUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              method: "eth_getBlockByNumber",
+              params: [`0x${blockNum.toString(16)}`, true],
+              id: i + 4,
+            }),
+          })
+        );
+      }
+      const blockResponses = await Promise.all(blockPromises);
+      const blocks = await Promise.all(blockResponses.map((res) => res.json()));
+
+      const blockData: Block[] = blocks.map((block: any, index: number) => {
+        if (block.error) {
+          throw new Error(`Failed to fetch block ${latestBlockNumber - index}: ${block.error.message}`);
         }
-        const latestBlockNumber = parseInt(blockNumberData.result, 16);
-        setLatestBlock(latestBlockNumber);
+        return {
+          number: parseInt(block.result.number, 16),
+          hash: block.result.hash,
+          timestamp: formatDistanceToNow(new Date(parseInt(block.result.timestamp, 16) * 1000), {
+            addSuffix: true,
+          }).toUpperCase(),
+          timestampRaw: parseInt(block.result.timestamp, 16),
+          transactionCount: block.result.transactions.length,
+          validator: block.result.miner || "0x4200000000000000000000000000000000000011",
+          gasUsed: (parseInt(block.result.gasUsed, 16) / 1e6).toFixed(2) + "M",
+          difficulty: (parseInt(block.result.difficulty, 16) / 1e12).toFixed(2) + "T",
+        };
+      });
 
-        const blockPromises = [];
-        for (let i = 0; i < 5; i++) {
-          const blockNum = latestBlockNumber - i;
-          blockPromises.push(
-            fetch(alchemyUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                jsonrpc: "2.0",
-                method: "eth_getBlockByNumber",
-                params: [`0x${blockNum.toString(16)}`, true],
-                id: i + 2,
-              }),
-            })
-          );
+      // Calculate Average Block Time and Network Hash Rate
+      if (blockData.length > 1) {
+        const timeDiffs = [];
+        for (let i = 1; i < blockData.length; i++) {
+          const diff = blockData[i - 1].timestampRaw - blockData[i].timestampRaw;
+          timeDiffs.push(diff);
         }
-        const blockResponses = await Promise.all(blockPromises);
-        const blocks = await Promise.all(blockResponses.map((res) => res.json()));
+        const avgTime = timeDiffs.reduce((sum, diff) => sum + diff, 0) / timeDiffs.length;
+        const newAvgBlockTime = avgTime.toFixed(2) + " s";
+        if (newAvgBlockTime !== avgBlockTime) setAvgBlockTime(newAvgBlockTime);
 
-        const blockData: Block[] = blocks.map((block: any, index: number) => {
-          if (block.error) {
-            throw new Error(`Failed to fetch block ${latestBlockNumber - index}: ${block.error.message}`);
-          }
-          return {
-            number: parseInt(block.result.number, 16),
-            hash: block.result.hash,
+        const avgDifficulty = blockData.reduce((sum, block) => sum + parseFloat(block.difficulty), 0) / blockData.length;
+        const hashRate = (avgDifficulty * 1e12) / avgTime / 1e12;
+        const newNetworkHashRate = hashRate.toFixed(2) + " TH/s";
+        if (newNetworkHashRate !== networkHashRate) setNetworkHashRate(newNetworkHashRate);
+      }
+
+      // Compare blocks
+      const hasNewBlocks = blockData.some((block, i) => !prevBlocksRef.current[i] || block.hash !== prevBlocksRef.current[i].hash);
+      if (hasNewBlocks) {
+        setRecentBlocks(blockData);
+        prevBlocksRef.current = blockData;
+      }
+
+      // Fetch Transactions
+      const txData: Transaction[] = [];
+      for (const block of blocks) {
+        if (block.error || !block.result) continue;
+        for (const tx of block.result.transactions.slice(0, 3 - txData.length)) {
+          if (txData.length >= 3) break;
+          const value = tx.value ? parseInt(tx.value, 16) / 1e18 : 0;
+          txData.push({
+            hash: tx.hash,
+            from: tx.from,
+            to: tx.to || "N/A",
+            value: value.toFixed(4),
             timestamp: formatDistanceToNow(new Date(parseInt(block.result.timestamp, 16) * 1000), {
               addSuffix: true,
             }).toUpperCase(),
-            transactionCount: block.result.transactions.length,
-            validator: block.result.miner || "0x4200000000000000000000000000000000000011",
-          };
-        });
-
-        const txData: Transaction[] = [];
-        for (const block of blocks) {
-          if (block.error || !block.result) continue;
-          for (const tx of block.result.transactions.slice(0, 5 - txData.length)) {
-            if (txData.length >= 5) break;
-            const value = tx.value ? parseInt(tx.value, 16) / 1e18 : 0;
-            txData.push({
-              hash: tx.hash,
-              from: tx.from,
-              to: tx.to || "N/A",
-              value: value.toFixed(4),
-              timestamp: formatDistanceToNow(new Date(parseInt(block.result.timestamp, 16) * 1000), {
-                addSuffix: true,
-              }).toUpperCase(),
-            });
-          }
-          if (txData.length >= 5) break;
+          });
         }
-
-        let totalTxCount = 0;
-        for (const block of blocks) {
-          if (block.result) {
-            totalTxCount += block.result.transactions.length;
-          }
-        }
-        setTotalTxns(totalTxCount * 1000000);
-
-        const whaleResponse = await fetch(alchemyUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            method: "alchemy_getAssetTransfers",
-            params: [
-              {
-                fromBlock: `0x${(latestBlockNumber - 100).toString(16)}`,
-                toBlock: "latest",
-                category: ["external"],
-                maxCount: "0x32",
-              },
-            ],
-            id: 3,
-          }),
-        });
-        const whaleDataResponse = await whaleResponse.json();
-        if (whaleDataResponse.error) {
-          throw new Error(whaleDataResponse.error.message);
-        }
-
-        const whaleData: WhaleTransaction[] = whaleDataResponse.result.transfers
-          .filter((tx: any) => tx.value && tx.value > 10)
-          .map((tx: any) => ({
-            hash: tx.hash,
-            from: tx.from,
-            to: tx.to,
-            value: tx.value.toFixed(4),
-            timestamp: formatDistanceToNow(new Date(tx.metadata?.blockTimestamp || Date.now()), {
-              addSuffix: true,
-            }).toUpperCase(),
-          }))
-          .slice(0, 5);
-
-        setRecentBlocks(blockData);
-        setRecentTransactions(txData);
-        setWhaleTransactions(whaleData);
-      } catch (err: unknown) {
-        const errorMessage = err instanceof Error ? err.message : "Unknown error";
-        console.error("Error fetching explorer data:", errorMessage);
-        setError(`Error: ${errorMessage}`);
-      } finally {
-        setLoading(false);
+        if (txData.length >= 3) break;
       }
-    }
+      const hasNewTransactions = txData.some((tx, i) => !prevTransactionsRef.current[i] || tx.hash !== prevTransactionsRef.current[i].hash);
+      if (hasNewTransactions) {
+        setRecentTransactions(txData);
+        prevTransactionsRef.current = txData;
+      }
 
-    fetchData();
+      // Total Transactions (from last 3 blocks)
+      let totalTxCount = 0;
+      for (const block of blocks) {
+        if (block.result) {
+          totalTxCount += block.result.transactions.length;
+        }
+      }
+      if (totalTxCount !== totalTxns) setTotalTxns(totalTxCount);
+
+      // Fetch Active Addresses (from last 50 blocks)
+      const addresses = new Set<string>();
+      const transfersResponse = await fetch(alchemyUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "alchemy_getAssetTransfers",
+          params: [
+            {
+              fromBlock: `0x${(latestBlockNumber - 50).toString(16)}`,
+              toBlock: "latest",
+              category: ["external"],
+              maxCount: "0x64", // 100 transfers
+            },
+          ],
+          id: 9,
+        }),
+      });
+      const transfersData = await transfersResponse.json();
+      if (transfersData.error) {
+        throw new Error(transfersData.error.message);
+      }
+      transfersData.result.transfers.forEach((tx: any) => {
+        addresses.add(tx.from);
+        if (tx.to) addresses.add(tx.to);
+      });
+      const newActiveAddresses = addresses.size;
+      if (newActiveAddresses !== activeAddresses) setActiveAddresses(newActiveAddresses);
+
+      // Fetch Whale Transactions
+      const whaleResponse = await fetch(alchemyUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "alchemy_getAssetTransfers",
+          params: [
+            {
+              fromBlock: `0x${(latestBlockNumber - 100).toString(16)}`,
+              toBlock: "latest",
+              category: ["external"],
+              maxCount: "0x32",
+            },
+          ],
+          id: 10,
+        }),
+      });
+      const whaleDataResponse = await whaleResponse.json();
+      if (whaleDataResponse.error) {
+        throw new Error(whaleDataResponse.error.message);
+      }
+
+      const whaleData: WhaleTransaction[] = whaleDataResponse.result.transfers
+        .filter((tx: any) => tx.value && tx.value > 100)
+        .map((tx: any) => ({
+          hash: tx.hash,
+          from: tx.from,
+          to: tx.to,
+          value: tx.value.toFixed(4),
+          timestamp: formatDistanceToNow(new Date(tx.metadata?.blockTimestamp || Date.now()), {
+            addSuffix: true,
+          }).toUpperCase(),
+        }))
+        .slice(0, 3);
+      const hasNewWhaleTransactions = whaleData.some(
+        (tx, i) => !prevWhaleTransactionsRef.current[i] || tx.hash !== prevWhaleTransactionsRef.current[i].hash
+      );
+      if (hasNewWhaleTransactions) {
+        setWhaleTransactions(whaleData);
+        prevWhaleTransactionsRef.current = whaleData;
+      }
+
+      setLoading({ blocks: false, transactions: false, whales: false });
+      setUpdating({ blocks: false, transactions: false, whales: false });
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Unknown error";
+      console.error("Error fetching explorer data:", errorMessage);
+      setError({
+        blocks: `Error: ${errorMessage}`,
+        transactions: `Error: ${errorMessage}`,
+        whales: `Error: ${errorMessage}`,
+      });
+      setLoading({ blocks: false, transactions: false, whales: false });
+      setUpdating({ blocks: false, transactions: false, whales: false });
+    }
+  };
+
+  useEffect(() => {
+    fetchData(true); // Initial fetch
+    const interval = setInterval(() => fetchData(false), 15000); // Subsequent fetches
+    return () => clearInterval(interval);
   }, [alchemyUrl]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    alert("Copied to clipboard!");
+    setToastMessage("Copied to clipboard!");
   };
 
   const handleSearch = () => {
@@ -299,300 +466,343 @@ export default function ExplorerPage() {
     } else if (/^\d+$/.test(query)) {
       router.push(`/explorer/latest/block/${query}`);
     } else {
-      alert("Invalid search query. Please enter a valid address, transaction hash, or block number.");
+      setToastMessage("Invalid search query. Please enter a valid address, transaction hash, or block number.");
     }
+  };
+
+  const clearSearch = () => {
+    setSearchQuery("");
+  };
+
+  const retryFetch = (section: keyof typeof loading) => {
+    setError((prev) => ({ ...prev, [section]: null }));
+    setLoading((prev) => ({ ...prev, [section]: true }));
+    fetchData(true);
   };
 
   return (
     <div className={`min-h-screen w-full font-mono ${themeClasses.background} ${themeClasses.text}`}>
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div
+          className={`fixed top-4 right-4 px-4 py-2 rounded-lg ${themeClasses.toastBg} text-white text-sm shadow-lg z-50 animate-fade-in-out`}
+        >
+          {toastMessage}
+        </div>
+      )}
+
       {/* Header */}
       <div className="relative">
         <Header />
-        {/* Skinny Separator Line Under Header */}
-        <div className="absolute bottom-0 left-0 right-0 h-px bg-blue-500/30 w-full">
-          <div className="absolute inset-0 h-px bg-gradient-to-r from-transparent via-blue-400 to-transparent"></div>
+        <div className="h-px bg-blue-500/30 w-full">
+          <div className={`h-px ${themeClasses.separator}`}></div>
         </div>
       </div>
 
       {/* Main Content */}
-      <main className="w-full">
-        {/* Search Section */}
-        <section className={`w-full py-8 sm:py-10 ${themeClasses.background}`}>
-          <div className="max-w-7xl mx-auto px-4 sm:px-6">
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="relative flex-1">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && handleSearch()}
-                  placeholder="Search by address, transaction hash, or block number..."
-                  className={`w-full py-3 pl-10 pr-4 text-sm sm:text-base rounded-lg ${themeClasses.containerBg} ${themeClasses.text} border ${themeClasses.border} focus:outline-none focus:ring-2 focus:ring-blue-400/50 transition-all duration-200 placeholder-gray-500`}
-                />
-                <SearchIcon className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              </div>
+      <main className={`w-full ${themeClasses.background}`}>
+        {/* Hero Section */}
+        <section className={`w-full bg-gradient-to-b from-gray-950 to-gray-900 text-center`}>
+          <div className="w-full max-w-3xl mx-auto px-4 sm:px-6 py-8">
+            <h1 className="text-4xl sm:text-5xl font-bold text-white uppercase mb-4 relative">
+              Blockchain Explorer
+            </h1>
+            <div className="relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyPress={(e) => e.key === "Enter" && handleSearch()}
+                placeholder="Search address, tx hash, or block number"
+                className={`w-full py-3 pl-10 pr-10 text-base rounded-lg ${themeClasses.containerBg} ${themeClasses.text} border ${themeClasses.border} focus:outline-none focus:ring-2 focus:ring-blue-400/50 transition-all duration-300 placeholder-gray-500 transform focus:scale-[1.01] focus:shadow-glow`}
+                aria-label="Search blockchain data"
+              />
+              <SearchIcon className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              {searchQuery && (
+                <button
+                  onClick={clearSearch}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-200"
+                  aria-label="Clear search"
+                >
+                  <XMarkIcon className="w-5 h-5" />
+                </button>
+              )}
               <button
                 onClick={handleSearch}
-                className={`px-4 sm:px-6 py-3 ${themeClasses.buttonBg} ${themeClasses.buttonHover} rounded-lg text-blue-400 border ${themeClasses.border} text-sm sm:text-base font-medium transition-all duration-200 uppercase`}
+                disabled={!searchQuery}
+                className={`mt-3 w-full py-2 ${themeClasses.buttonBg} ${searchQuery ? themeClasses.buttonHover : themeClasses.buttonDisabled} rounded-lg text-blue-400 border ${themeClasses.border} text-sm font-medium transition-all duration-200 uppercase disabled:cursor-not-allowed`}
+                aria-label="Search"
               >
                 Search
               </button>
             </div>
+            <div className="mt-4 flex justify-center gap-4 sm:gap-6">
+              <div>
+                <p className="text-xs text-blue-400 uppercase">Latest Block</p>
+                <p className="text-base font-semibold">{latestBlock.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-xs text-blue-400 uppercase">Gas Price</p>
+                <p className="text-base font-semibold">{gasPrice}</p>
+              </div>
+            </div>
           </div>
         </section>
 
-        {/* Overview Metrics */}
-        <section className={`w-full py-8 sm:py-12 ${themeClasses.background}`}>
-          <div className="max-w-7xl mx-auto px-4 sm:px-6">
-            <h2 className="text-xl sm:text-2xl font-bold text-white mb-6 uppercase">Network Overview</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-              <div
-                className={`${themeClasses.containerBg} ${themeClasses.border} rounded-lg p-4 sm:p-6 ${themeClasses.shadow} transition-all duration-200 ${themeClasses.hoverBg}`}
-              >
-                <h3 className="text-sm sm:text-base font-semibold text-blue-400 uppercase">ETH Price</h3>
-                <p className={`${themeClasses.text} text-lg sm:text-xl mt-2`}>${ethPrice.toLocaleString()}</p>
-              </div>
-              <div
-                className={`${themeClasses.containerBg} ${themeClasses.border} rounded-lg p-4 sm:p-6 ${themeClasses.shadow} transition-all duration-200 ${themeClasses.hoverBg}`}
-              >
-                <h3 className="text-sm sm:text-base font-semibold text-blue-400 uppercase">Market Cap</h3>
-                <p className={`${themeClasses.text} text-lg sm:text-xl mt-2`}>${marketCap.toLocaleString()}</p>
-              </div>
-              <div
-                className={`${themeClasses.containerBg} ${themeClasses.border} rounded-lg p-4 sm:p-6 ${themeClasses.shadow} transition-all duration-200 ${themeClasses.hoverBg}`}
-              >
-                <h3 className="text-sm sm:text-base font-semibold text-blue-400 uppercase">Transactions</h3>
-                <p className={`${themeClasses.text} text-lg sm:text-xl mt-2`}>{(totalTxns / 1000000).toFixed(1)}M</p>
-              </div>
-              <div
-                className={`${themeClasses.containerBg} ${themeClasses.border} rounded-lg p-4 sm:p-6 ${themeClasses.shadow} transition-all duration-200 ${themeClasses.hoverBg}`}
-              >
-                <h3 className="text-sm sm:text-base font-semibold text-blue-400 uppercase">Latest Block</h3>
-                <p className={`${themeClasses.text} text-lg sm:text-xl mt-2`}>{latestBlock}</p>
-              </div>
+        {/* Network Stats Section */}
+        <section className={`w-full ${themeClasses.statsBg}`}>
+          <div className="mx-auto px-4 sm:px-6 py-3">
+            <h2 className="text-lg sm:text-xl font-bold text-white uppercase mb-3 text-center">Network Stats</h2>
+            <div className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 border ${themeClasses.border} rounded-lg p-3`}>
+              {[
+                { title: "Transactions", value: totalTxns.toLocaleString() },
+                { title: "Pending Txns", value: pendingTxns.toLocaleString() },
+                { title: "Active Addresses", value: activeAddresses.toLocaleString() },
+                { title: "Avg Block Time", value: avgBlockTime },
+                { title: "Network Hash Rate", value: networkHashRate },
+                { title: "Avg Gas Fee", value: avgGasFee },
+              ].map((metric, index) => (
+                <div
+                  key={index}
+                  className={`flex flex-col items-center p-2 rounded-md hover:bg-[#1E263B] transition-all duration-200 ${themeClasses.shadow}`}
+                >
+                  <p className="text-xs text-blue-400 uppercase text-center">{metric.title}</p>
+                  <p className="text-base font-semibold animate-fade-in">{metric.value}</p>
+                </div>
+              ))}
             </div>
           </div>
         </section>
 
         {/* Data Sections */}
-        <section className={`w-full py-8 sm:py-12 ${themeClasses.background}`}>
-          <div className="max-w-7xl mx-auto px-4 sm:px-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-              {/* Latest Blocks */}
-              <div
-                className={`${themeClasses.containerBg} ${themeClasses.border} rounded-lg p-4 sm:p-6 ${themeClasses.shadow} flex flex-col min-h-[400px]`}
-              >
-                <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6 uppercase">Latest Blocks</h2>
-                {loading ? (
-                  <div className="flex justify-center items-center py-6 flex-grow">
-                    <svg
-                      className="w-6 h-6 animate-spin text-blue-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                        d="M4 12a8 8 0 018-8v8h8a8 8 0 01-16 0z"
-                      />
-                    </svg>
-                    <span className={`${themeClasses.secondaryText} ml-2 uppercase text-sm sm:text-base`}>Loading...</span>
-                  </div>
-                ) : error ? (
-                  <p className={`${themeClasses.errorText} text-center py-6 uppercase flex-grow text-sm sm:text-base`}>{error}</p>
-                ) : recentBlocks.length > 0 ? (
-                  <div className="space-y-4 sm:space-y-6 flex-grow">
-                    {recentBlocks.map((block, index) => (
-                      <div
-                        key={index}
-                        className={`p-4 sm:p-5 ${themeClasses.border} rounded-lg ${themeClasses.hoverBg} transition-all duration-200`}
+        <section className="w-full">
+          <div className={`flex flex-col sm:flex-row divide-x divide-blue-500/30`}>
+            {/* Latest Blocks */}
+            <div className={`flex-1 ${themeClasses.containerBg}`}>
+              <div className="px-4 sm:px-6 py-6">
+                <div className="flex items-center p-3">
+                  <h2 className={`text-lg font-bold text-white uppercase ${themeClasses.panelHeader} flex-1`}>Latest Blocks</h2>
+                  {updating.blocks && <SpinnerIcon className="w-4 h-4 text-blue-400 animate-spin" />}
+                </div>
+                <div className="p-3">
+                  {loading.blocks ? (
+                    <div className="space-y-2">
+                      {[...Array(3)].map((_, i) => (
+                        <div key={i} className="animate-pulse">
+                          <div className="h-3 bg-gray-700/50 rounded w-3/4 mb-1"></div>
+                          <div className="h-2 bg-gray-700/50 rounded w-1/2"></div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : error.blocks ? (
+                    <div className="flex flex-col items-center justify-center py-4">
+                      <p className={`${themeClasses.errorText} text-center uppercase text-xs`}>{error.blocks}</p>
+                      <button
+                        onClick={() => retryFetch("blocks")}
+                        className={`mt-2 px-3 py-1 ${themeClasses.buttonBg} ${themeClasses.buttonHover} rounded-lg text-blue-400 border ${themeClasses.border} text-xs font-medium uppercase`}
                       >
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                          <div>
-                            <Link
-                              href={`/explorer/latest/block/${block.number}`}
-                              className="text-blue-400 font-semibold hover:underline text-base sm:text-lg"
-                            >
-                              Block #{block.number}
-                            </Link>
-                            <p className={`${themeClasses.secondaryText} text-xs sm:text-sm mt-1`}>{block.timestamp}</p>
-                          </div>
-                          <div className="text-left sm:text-right">
-                            <p className={`${themeClasses.text} text-sm sm:text-base`}>{block.transactionCount} txns</p>
-                            <p className={`${themeClasses.secondaryText} text-xs sm:text-sm mt-1 truncate`}>
-                              Validator: {block.validator.slice(0, 6)}...{block.validator.slice(-4)}
-                            </p>
+                        Retry
+                      </button>
+                    </div>
+                  ) : recentBlocks.length > 0 ? (
+                    <div className="space-y-2">
+                      {recentBlocks.map((block) => (
+                        <div
+                          key={block.hash}
+                          className={`p-2 ${themeClasses.border} rounded-lg ${themeClasses.hoverBg} transition-all duration-200 animate-fade-in`}
+                        >
+                          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                            <div>
+                              <Link
+                                href={`/explorer/latest/block/${block.number}`}
+                                className="text-blue-400 font-semibold hover:underline text-sm"
+                              >
+                                Block #{block.number}
+                              </Link>
+                              <p className={`${themeClasses.secondaryText} text-xs mt-1`}>{block.timestamp}</p>
+                            </div>
+                            <div className="text-left sm:text-right space-y-1">
+                              <p className={`${themeClasses.text} text-xs`}>{block.transactionCount} txns</p>
+                              <p className={`${themeClasses.secondaryText} text-xs`}>Gas Used: {block.gasUsed}</p>
+                              <p className={`${themeClasses.secondaryText} text-xs`}>Difficulty: {block.difficulty}</p>
+                              <p className={`${themeClasses.secondaryText} text-xs truncate`}>
+                                Validator: {block.validator.slice(0, 6)}...{block.validator.slice(-4)}
+                              </p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                    <Link
-                      href="/explorer/blocks"
-                      className="text-blue-400 hover:underline text-sm sm:text-base block text-center mt-6 sm:mt-8 uppercase"
-                    >
-                      View All Blocks
-                    </Link>
-                  </div>
-                ) : (
-                  <p className={`${themeClasses.secondaryText} text-center py-6 uppercase flex-grow text-sm sm:text-base`}>No blocks found</p>
-                )}
+                      ))}
+                      <Link
+                        href="/explorer/blocks"
+                        className="text-blue-400 hover:underline text-xs block text-center mt-3 uppercase"
+                      >
+                        View All Blocks
+                      </Link>
+                    </div>
+                  ) : (
+                    <p className={`${themeClasses.secondaryText} text-center py-4 uppercase text-xs`}>No blocks found</p>
+                  )}
+                </div>
               </div>
+            </div>
 
-              {/* Latest Transactions */}
-              <div
-                className={`${themeClasses.containerBg} ${themeClasses.border} rounded-lg p-4 sm:p-6 ${themeClasses.shadow} flex flex-col min-h-[400px]`}
-              >
-                <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6 uppercase">Latest Transactions</h2>
-                {loading ? (
-                  <div className="flex justify-center items-center py-6 flex-grow">
-                    <svg
-                      className="w-6 h-6 animate-spin text-blue-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                        d="M4 12a8 8 0 018-8v8h8a8 8 0 01-16 0z"
-                      />
-                    </svg>
-                    <span className={`${themeClasses.secondaryText} ml-2 uppercase text-sm sm:text-base`}>Loading...</span>
-                  </div>
-                ) : error ? (
-                  <p className={`${themeClasses.errorText} text-center py-6 uppercase flex-grow text-sm sm:text-base`}>{error}</p>
-                ) : recentTransactions.length > 0 ? (
-                  <div className="space-y-4 sm:space-y-6 flex-grow">
-                    {recentTransactions.map((tx, index) => (
-                      <div
-                        key={index}
-                        className={`p-4 sm:p-5 ${themeClasses.border} rounded-lg ${themeClasses.hoverBg} transition-all duration-200`}
+            {/* Latest Transactions */}
+            <div className={`flex-1 ${themeClasses.containerBg}`}>
+              <div className="px-4 sm:px-6 py-6">
+                <div className="flex items-center p-3">
+                  <h2 className={`text-lg font-bold text-white uppercase ${themeClasses.panelHeader} flex-1`}>Latest Transactions</h2>
+                  {updating.transactions && <SpinnerIcon className="w-4 h-4 text-blue-400 animate-spin" />}
+                </div>
+                <div className="p-3">
+                  {loading.transactions ? (
+                    <div className="space-y-2">
+                      {[...Array(3)].map((_, i) => (
+                        <div key={i} className="animate-pulse">
+                          <div className="h-3 bg-gray-700/50 rounded w-3/4 mb-1"></div>
+                          <div className="h-2 bg-gray-700/50 rounded w-1/2"></div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : error.transactions ? (
+                    <div className="flex flex-col items-center justify-center py-4">
+                      <p className={`${themeClasses.errorText} text-center uppercase text-xs`}>{error.transactions}</p>
+                      <button
+                        onClick={() => retryFetch("transactions")}
+                        className={`mt-2 px-3 py-1 ${themeClasses.buttonBg} ${themeClasses.buttonHover} rounded-lg text-blue-400 border ${themeClasses.border} text-xs font-medium uppercase`}
                       >
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                          <div>
-                            <Link
-                              href={`/explorer/hash/${tx.hash}`}
-                              className="text-blue-400 font-semibold hover:underline text-base sm:text-lg truncate"
+                        Retry
+                      </button>
+                    </div>
+                  ) : recentTransactions.length > 0 ? (
+                    <div className="space-y-2">
+                      {recentTransactions.map((tx) => (
+                        <div
+                          key={tx.hash}
+                          className={`p-2 ${themeClasses.border} rounded-lg ${themeClasses.hoverBg} transition-all duration-200 animate-fade-in`}
+                        >
+                          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                            <div>
+                              <Link
+                                href={`/explorer/hash/${tx.hash}`}
+                                className="text-blue-400 font-semibold hover:underline text-sm truncate"
+                              >
+                                {tx.hash.slice(0, 6)}...{tx.hash.slice(-4)}
+                              </Link>
+                              <p className={`${themeClasses.secondaryText} text-xs mt-1`}>{tx.timestamp}</p>
+                            </div>
+                            <div className="text-left sm:text-right">
+                              <p className={`${themeClasses.text} text-xs truncate`}>From: {tx.from.slice(0, 6)}...{tx.from.slice(-4)}</p>
+                              <p className={`${themeClasses.text} text-xs mt-1 truncate`}>
+                                To: {tx.to === "N/A" ? "N/A" : `${tx.to.slice(0, 6)}...${tx.to.slice(-4)}`}
+                              </p>
+                              <p className={`${themeClasses.secondaryText} text-xs mt-1`}>{tx.value} ETH</p>
+                            </div>
+                          </div>
+                          <div className="flex justify-end gap-1 mt-2">
+                            <a href={`https://basescan.org/tx/${tx.hash}`} target="_blank" rel="noopener noreferrer">
+                              <ExternalLinkIcon className="w-4 h-4 text-blue-400 hover:text-blue-500 transition-all" />
+                            </a>
+                            <button
+                              onClick={() => copyToClipboard(tx.hash)}
+                              className={`p-1 ${themeClasses.buttonBg} ${themeClasses.buttonHover} rounded-full border ${themeClasses.border} transition-all`}
+                              aria-label="Copy transaction hash"
                             >
-                              {tx.hash.slice(0, 6)}...{tx.hash.slice(-4)}
-                            </Link>
-                            <p className={`${themeClasses.secondaryText} text-xs sm:text-sm mt-1`}>{tx.timestamp}</p>
-                          </div>
-                          <div className="text-left sm:text-right">
-                            <p className={`${themeClasses.text} text-sm sm:text-base truncate`}>
-                              From: {tx.from.slice(0, 6)}...{tx.from.slice(-4)}
-                            </p>
-                            <p className={`${themeClasses.text} text-sm sm:text-base mt-1 truncate`}>
-                              To: {tx.to === "N/A" ? "N/A" : `${tx.to.slice(0, 6)}...${tx.to.slice(-4)}`}
-                            </p>
-                            <p className={`${themeClasses.secondaryText} text-xs sm:text-sm mt-1`}>{tx.value} ETH</p>
+                              <ClipboardIcon className="w-4 h-4 text-blue-400" />
+                            </button>
                           </div>
                         </div>
-                        <div className="flex justify-end gap-2 sm:gap-3 mt-3">
-                          <a href={`https://basescan.org/tx/${tx.hash}`} target="_blank" rel="noopener noreferrer">
-                            <ExternalLinkIcon className="w-4 sm:w-5 h-4 sm:h-5 text-blue-400 hover:text-blue-500 transition-all" />
-                          </a>
-                          <button
-                            onClick={() => copyToClipboard(tx.hash)}
-                            className={`p-1 ${themeClasses.buttonBg} ${themeClasses.buttonHover} rounded-full border ${themeClasses.border} transition-all`}
-                          >
-                            <ClipboardIcon className="w-4 sm:w-5 h-4 sm:h-5 text-blue-400" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    <Link
-                      href="/explorer/transactions"
-                      className="text-blue-400 hover:underline text-sm sm:text-base block text-center mt-6 sm:mt-8 uppercase"
-                    >
-                      View All Transactions
-                    </Link>
-                  </div>
-                ) : (
-                  <p className={`${themeClasses.secondaryText} text-center py-6 uppercase flex-grow text-sm sm:text-base`}>No transactions found</p>
-                )}
+                      ))}
+                      <Link
+                        href="/explorer/transactions"
+                        className="text-blue-400 hover:underline text-xs block text-center mt-3 uppercase"
+                      >
+                        View All Transactions
+                      </Link>
+                    </div>
+                  ) : (
+                    <p className={`${themeClasses.secondaryText} text-center py-4 uppercase text-xs`}>No transactions found</p>
+                  )}
+                </div>
               </div>
+            </div>
 
-              {/* Top Whale Transactions */}
-              <div
-                className={`${themeClasses.containerBg} ${themeClasses.border} rounded-lg p-4 sm:p-6 ${themeClasses.shadow} flex flex-col min-h-[400px]`}
-              >
-                <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6 uppercase">Top Whale Transactions</h2>
-                {loading ? (
-                  <div className="flex justify-center items-center py-6 flex-grow">
-                    <svg
-                      className="w-6 h-6 animate-spin text-blue-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                        d="M4 12a8 8 0 018-8v8h8a8 8 0 01-16 0z"
-                      />
-                    </svg>
-                    <span className={`${themeClasses.secondaryText} ml-2 uppercase text-sm sm:text-base`}>Loading...</span>
-                  </div>
-                ) : error ? (
-                  <p className={`${themeClasses.errorText} text-center py-6 uppercase flex-grow text-sm sm:text-base`}>{error}</p>
-                ) : whaleTransactions.length > 0 ? (
-                  <div className="space-y-4 sm:space-y-6 flex-grow">
-                    {whaleTransactions.map((tx, index) => (
-                      <div
-                        key={index}
-                        className={`p-4 sm:p-5 ${themeClasses.border} rounded-lg ${themeClasses.hoverBg} transition-all duration-200`}
+            {/* Whale Transactions */}
+            <div className={`flex-1 ${themeClasses.containerBg}`}>
+              <div className="px-4 sm:px-6 py-6">
+                <div className="flex items-center p-3">
+                  <h2 className={`text-lg font-bold text-white uppercase ${themeClasses.panelHeader} flex-1`}>Whale Transactions</h2>
+                  {updating.whales && <SpinnerIcon className="w-4 h-4 text-blue-400 animate-spin" />}
+                </div>
+                <div className="p-3">
+                  {loading.whales ? (
+                    <div className="space-y-2">
+                      {[...Array(3)].map((_, i) => (
+                        <div key={i} className="animate-pulse">
+                          <div className="h-3 bg-gray-700/50 rounded w-3/4 mb-1"></div>
+                          <div className="h-2 bg-gray-700/50 rounded w-1/2"></div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : error.whales ? (
+                    <div className="flex flex-col items-center justify-center py-4">
+                      <p className={`${themeClasses.errorText} text-center uppercase text-xs`}>{error.whales}</p>
+                      <button
+                        onClick={() => retryFetch("whales")}
+                        className={`mt-2 px-3 py-1 ${themeClasses.buttonBg} ${themeClasses.buttonHover} rounded-lg text-blue-400 border ${themeClasses.border} text-xs font-medium uppercase`}
                       >
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                          <div>
-                            <Link
-                              href={`/explorer/hash/${tx.hash}`}
-                              className="text-blue-400 font-semibold hover:underline text-base sm:text-lg truncate"
+                        Retry
+                      </button>
+                    </div>
+                  ) : whaleTransactions.length > 0 ? (
+                    <div className="space-y-2">
+                      {whaleTransactions.map((tx) => (
+                        <div
+                          key={tx.hash}
+                          className={`p-2 ${themeClasses.border} rounded-lg ${themeClasses.hoverBg} transition-all duration-200 animate-fade-in`}
+                        >
+                          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                            <div>
+                              <Link
+                                href={`/explorer/hash/${tx.hash}`}
+                                className="text-blue-400 font-semibold hover:underline text-sm truncate"
+                              >
+                                {tx.hash.slice(0, 6)}...{tx.hash.slice(-4)}
+                              </Link>
+                              <p className={`${themeClasses.secondaryText} text-xs mt-1`}>{tx.timestamp}</p>
+                            </div>
+                            <div className="text-left sm:text-right">
+                              <p className={`${themeClasses.text} text-xs truncate`}>From: {tx.from.slice(0, 6)}...{tx.from.slice(-4)}</p>
+                              <p className={`${themeClasses.text} text-xs mt-1 truncate`}>
+                                To: {tx.to.slice(0, 6)}...{tx.to.slice(-4)}
+                              </p>
+                              <p className={`${themeClasses.secondaryText} text-xs mt-1`}>{tx.value} ETH</p>
+                            </div>
+                          </div>
+                          <div className="flex justify-end gap-1 mt-2">
+                            <a href={`https://basescan.org/tx/${tx.hash}`} target="_blank" rel="noopener noreferrer">
+                              <ExternalLinkIcon className="w-4 h-4 text-blue-400 hover:text-blue-500 transition-all" />
+                            </a>
+                            <button
+                              onClick={() => copyToClipboard(tx.hash)}
+                              className={`p-1 ${themeClasses.buttonBg} ${themeClasses.buttonHover} rounded-full border ${themeClasses.border} transition-all`}
+                              aria-label="Copy transaction hash"
                             >
-                              {tx.hash.slice(0, 6)}...{tx.hash.slice(-4)}
-                            </Link>
-                            <p className={`${themeClasses.secondaryText} text-xs sm:text-sm mt-1`}>{tx.timestamp}</p>
-                          </div>
-                          <div className="text-left sm:text-right">
-                            <p className={`${themeClasses.text} text-sm sm:text-base truncate`}>
-                              From: {tx.from.slice(0, 6)}...{tx.from.slice(-4)}
-                            </p>
-                            <p className={`${themeClasses.text} text-sm sm:text-base mt-1 truncate`}>
-                              To: {tx.to.slice(0, 6)}...{tx.to.slice(-4)}
-                            </p>
-                            <p className={`${themeClasses.secondaryText} text-xs sm:text-sm mt-1`}>{tx.value} ETH</p>
+                              <ClipboardIcon className="w-4 h-4 text-blue-400" />
+                            </button>
                           </div>
                         </div>
-                        <div className="flex justify-end gap-2 sm:gap-3 mt-3">
-                          <a href={`https://basescan.org/tx/${tx.hash}`} target="_blank" rel="noopener noreferrer">
-                            <ExternalLinkIcon className="w-4 sm:w-5 h-4 sm:h-5 text-blue-400 hover:text-blue-500 transition-all" />
-                          </a>
-                          <button
-                            onClick={() => copyToClipboard(tx.hash)}
-                            className={`p-1 ${themeClasses.buttonBg} ${themeClasses.buttonHover} rounded-full border ${themeClasses.border} transition-all`}
-                          >
-                            <ClipboardIcon className="w-4 sm:w-5 h-4 sm:h-5 text-blue-400" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    <Link
-                      href="/explorer/whale-transactions"
-                      className="text-blue-400 hover:underline text-sm sm:text-base block text-center mt-6 sm:mt-8 uppercase"
-                    >
-                      View All Whale Transactions
-                    </Link>
-                  </div>
-                ) : (
-                  <p className={`${themeClasses.secondaryText} text-center py-6 uppercase flex-grow text-sm sm:text-base`}>No whale transactions found</p>
-                )}
+                      ))}
+                      <Link
+                        href="/explorer/whale-transactions"
+                        className="text-blue-400 hover:underline text-xs block text-center mt-3 uppercase"
+                      >
+                        View All Whale Transactions
+                      </Link>
+                    </div>
+                  ) : (
+                    <p className={`${themeClasses.secondaryText} text-center py-4 uppercase text-xs`}>No whale transactions found</p>
+                  )}
+                </div>
               </div>
             </div>
           </div>

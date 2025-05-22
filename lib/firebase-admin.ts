@@ -17,8 +17,9 @@ if (typeof window === "undefined") {
       FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL,
       FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY,
     };
+    // @ts-ignore: '_' is intentionally unused
     const missingAdminEnvVars = Object.entries(requiredEnvVars).filter(
-      ([_key, value]) => !value
+      ([_, value]) => !value
     );
     if (missingAdminEnvVars.length > 0) {
       const errorMessage = `Missing server-side Firebase Admin environment variables: ${missingAdminEnvVars
@@ -52,12 +53,7 @@ if (typeof window === "undefined") {
     };
 
     const privateKey = normalizePrivateKey(process.env.FIREBASE_PRIVATE_KEY);
-    console.log(
-      "FIREBASE_PRIVATE_KEY validated: Length =",
-      privateKey.length,
-      "Starts with =",
-      privateKey.substring(0, 30)
-    );
+    console.log("FIREBASE_PRIVATE_KEY validated: Length =", privateKey.length);
 
     if (!admin.apps.length) {
       const adminApp = admin.initializeApp({
@@ -85,12 +81,16 @@ if (typeof window === "undefined") {
     } else {
       throw new Error("adminDb is null after initialization");
     }
-  } catch (error: any) {
-    console.error("Firebase Admin initialization error:", {
-      message: error.message,
-      code: error.code,
-      stack: error.stack,
-    });
+  } catch (error: unknown) {
+    const errorInfo: { message?: string; code?: string; stack?: string } = {};
+    if (error instanceof Error) {
+      errorInfo.message = error.message;
+      errorInfo.stack = error.stack;
+    }
+    if (error && typeof error === "object" && "code" in error) {
+      errorInfo.code = String((error as { code: unknown }).code);
+    }
+    console.error("Firebase Admin initialization error:", errorInfo);
     adminDb = null;
     adminStorage = null;
     throw new Error("Firebase Admin initialization failed");

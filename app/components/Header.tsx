@@ -77,7 +77,7 @@ const Header = () => {
             <IconLink href="/explorer/latest/block" label="Cypherscan" IconComponent={CommandLineIcon} />
             <IconLink href="/marketplace" label="Marketplace" IconComponent={ShoppingBagIcon} />
             <IconLink href="/explorer" label="Blockchain Explorer" IconComponent={CubeIcon} />
-            <IconLink href="/TradingCompetition" label="Tournaments" IconComponent={TrophyIcon} />
+            <IconLink href="/smart-money" label="Smart Money" IconComponent={TrophyIcon} />
             {!loading && (
               <div className="relative group">
                 <Link href={user ? "/account" : "/login"} className="flex items-center">

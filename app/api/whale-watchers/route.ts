@@ -5,9 +5,7 @@ import admin from "firebase-admin";
 
 // Environment variables
 const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY;
-const ALCHEMY_WS_URL =
-  process.env.ALCHEMY_WS_URL ||
-  `wss://base-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`;
+const ALCHEMY_HTTP_URL = `https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`;
 const COINGECKO_API_URL = "https://api.coingecko.com/api/v3";
 
 if (!ALCHEMY_API_KEY) {
@@ -15,30 +13,20 @@ if (!ALCHEMY_API_KEY) {
   throw new Error("ALCHEMY_API_KEY is not set in environment variables");
 }
 
-// Initialize ethers WebSocket provider
-let provider: ethers.WebSocketProvider;
-function initializeProvider() {
-  try {
-    provider = new ethers.WebSocketProvider(ALCHEMY_WS_URL);
-    console.log("WebSocket provider initialized");
-    provider.on("error", (err: any) => {
-      console.error("WebSocket provider error:", err);
-      setTimeout(initializeProvider, 5000);
-    });
-    provider.on("close", () => {
-      console.error("WebSocket closed, reconnecting...");
-      setTimeout(initializeProvider, 5000);
-    });
-  } catch (err) {
-    console.error("Failed to initialize WebSocket provider:", err);
-    setTimeout(initializeProvider, 5000);
-  }
-}
-initializeProvider();
+// Initialize ethers HTTP provider
+const provider = new ethers.JsonRpcProvider(ALCHEMY_HTTP_URL);
 
 // Thresholds for whale transactions
-const MIN_SWAP_USD_VALUE = 10000; // $10,000 for swaps
-const MIN_TRANSFER_USD_VALUE = 100000; // $100,000 for transfers
+const MIN_TRANSFER_USD_VALUE = 25000; // $25,000 for Transfer events
+const MIN_SWAP_USD_VALUE = 5000; // $5,000 for Swap events
+const MAX_BLOCKS_PER_CYCLE = 5; // Limit to 5 blocks per polling cycle
+const POLLING_INTERVAL = 30000; // 30 seconds
+const MAX_FIRESTORE_RETRIES = 3; // Retry Firestore writes up to 3 times
+
+// Token addresses to exclude
+const EXCLUDED_TOKENS = {
+  cbBTC: "0xcbB7C0000aB88B473b1f5aFd9ef808440eed7Bf".toLowerCase(), // cbBTC on Base
+};
 
 // Cache for token prices and metadata
 const priceCache: Record<string, { price: number; timestamp: number }> = {};
@@ -63,6 +51,10 @@ const erc20Abi = [
   "function totalSupply() view returns (uint256)",
   "function decimals() view returns (uint8)",
 ];
+const poolAbi = [
+  "function token0() view returns (address)",
+  "function token1() view returns (address)",
+];
 
 // Pool and stablecoin addresses
 const POOLS = [
@@ -73,6 +65,12 @@ const STABLECOINS = [
   { address: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", symbol: "USDC" },
   { address: "0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca", symbol: "USDbC" },
 ];
+
+// Interface for token pair data from API
+interface TokenPair {
+  baseToken: { address: string };
+  priceUsd: string;
+}
 
 // Fetch tokens from Firestore
 async function getTokensFromFirestore(): Promise<
@@ -132,7 +130,7 @@ async function getTokenPrice(tokenAddress: string): Promise<number> {
       if (res.ok) {
         const data = await res.json();
         const tokenPair = data.find(
-          (pair: any) =>
+          (pair: TokenPair) =>
             pair.baseToken.address.toLowerCase() === tokenAddress.toLowerCase()
         );
         const price = parseFloat(tokenPair?.priceUsd) || 0;
@@ -162,11 +160,11 @@ async function getTokenPrice(tokenAddress: string): Promise<number> {
       };
       console.log(`Fetched price from CoinGecko for ${tokenAddress}: $${price}`);
       return price;
-    } catch (err: any) {
+    } catch (err: unknown) {
       retries++;
       console.log(
         `Retry ${retries}/${maxRetries} for price ${tokenAddress}:`,
-        err.message
+        err instanceof Error ? err.message : String(err)
       );
       if (retries < maxRetries) await delay(2000 * retries);
       else {
@@ -187,7 +185,10 @@ async function getTokenPrice(tokenAddress: string): Promise<number> {
           price: 0,
           timestamp: Date.now(),
         };
-        console.error(`Failed to fetch price for ${tokenAddress}:`, err.message);
+        console.error(
+          `Failed to fetch price for ${tokenAddress}:`,
+          err instanceof Error ? err.message : String(err)
+        );
         return 0;
       }
     }
@@ -225,22 +226,29 @@ async function getTokenMetadata(tokenAddress: string): Promise<{
       };
       console.log(`Fetched metadata for ${tokenAddress}:`, result);
       return result;
-    } catch (err: any) {
+    } catch (err: unknown) {
       retries++;
       console.log(
         `Retry ${retries}/${maxRetries} for metadata ${tokenAddress}:`,
-        err.message
+        err instanceof Error ? err.message : String(err)
       );
       if (retries < maxRetries) await delay(2000 * retries);
       else {
-        const fallback = { decimals: 18, totalSupply: "0" };
+        // Fallback with better stablecoin handling
+        const isStablecoin = STABLECOINS.some(
+          (s) => s.address.toLowerCase() === tokenAddress.toLowerCase()
+        );
+        const fallback = {
+          decimals: isStablecoin ? 6 : 18,
+          totalSupply: "0",
+        };
         metadataCache[tokenAddress.toLowerCase()] = {
           ...fallback,
           timestamp: Date.now(),
         };
         console.error(
-          `Failed to fetch metadata for ${tokenAddress}:`,
-          err.message
+          `Failed to fetch metadata for ${tokenAddress}, using fallback:`,
+          fallback
         );
         return fallback;
       }
@@ -275,7 +283,37 @@ function determineTransactionType(
   return "Transfer";
 }
 
-// Monitor whale transactions via logs
+// Retry Firestore write
+async function writeToFirestoreWithRetry(
+  adminDb: admin.firestore.Firestore,
+  collectionName: string,
+  data: Record<string, unknown>,
+  retries: number = MAX_FIRESTORE_RETRIES
+): Promise<void> {
+  let attempt = 0;
+  while (attempt < retries) {
+    try {
+      await adminDb.collection(collectionName).add(data);
+      return;
+    } catch (err: unknown) {
+      attempt++;
+      console.error(
+        `Attempt ${attempt}/${retries} failed to write to ${collectionName}:`,
+        err instanceof Error ? err.message : String(err)
+      );
+      if (attempt === retries) {
+        throw new Error(
+          `Failed to write to ${collectionName} after ${retries} attempts: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        );
+      }
+      await delay(1000 * attempt);
+    }
+  }
+}
+
+// Monitor whale transactions by polling blocks
 async function monitorWhaleTransactions() {
   try {
     console.log("Starting monitorWhaleTransactions...");
@@ -301,185 +339,300 @@ async function monitorWhaleTransactions() {
     }
     console.log("Monitoring tokens:", Object.keys(tokenMapping));
 
-    provider.on("log", async (log: ethers.Log) => {
+    // Log tokens without pool mappings for Swap events
+    const tokensWithoutPool = Object.values(tokenMapping).filter((token) => !token.pool);
+    if (tokensWithoutPool.length > 0) {
+      console.warn(
+        "Tokens without pool mappings (Swap events may be missed):",
+        tokensWithoutPool.map((t) => `${t.symbol} (${t.address})`)
+      );
+    }
+
+    let lastBlockProcessed = await provider.getBlockNumber();
+
+    // Poll for new blocks every 30 seconds
+    while (isMonitoring) {
       try {
-        const { address, topics, data, transactionHash, blockNumber } = log;
-        console.log(`New log for address ${address}`);
-
-        if (topics[0] === TRANSFER_EVENT_TOPIC) {
-          const token = Object.values(tokenMapping).find(
-            (t) => t.address.toLowerCase() === address.toLowerCase()
-          );
-          if (!token) {
-            console.log(`No token found for address ${address}`);
-            return;
-          }
-
-          const [from, to, value] = [
-            ethers.getAddress(`0x${topics[1].slice(26)}`),
-            ethers.getAddress(`0x${topics[2].slice(26)}`),
-            BigInt(data).toString(),
-          ];
-
-          const { decimals, totalSupply } = await getTokenMetadata(token.address);
-          const price = await getTokenPrice(token.address);
-          const amountToken = Number(ethers.formatUnits(value, decimals));
-          const amountUSD = amountToken * price;
-          const percentSupply =
-            totalSupply !== "0"
-              ? (Number(value) / Number(totalSupply)) * 100
-              : 0;
-
-          if (price === 0 || amountUSD < MIN_TRANSFER_USD_VALUE) {
-            console.log(
-              `Skipping Transfer ${transactionHash}: $${amountUSD.toFixed(2)} (below threshold or no price)`
-            );
-            return;
-          }
-
-          const eventType = determineTransactionType(from, to, token.address);
-          const txData = {
-            tokenSymbol: token.symbol,
-            tokenName: token.name,
-            tokenAddress: token.address,
-            amountToken,
-            amountUSD,
-            blockNumber,
-            fromAddress: from,
-            toAddress: to,
-            source: "Base",
-            timestamp: admin.firestore.Timestamp.fromDate(new Date()),
-            hash: transactionHash,
-            eventType,
-            percentSupply,
-            createdAt: admin.firestore.Timestamp.now(),
-          };
-
-          const existingTx = await adminDb
-            .collection("whaleTransactions")
-            .where("hash", "==", txData.hash)
-            .get();
-          if (!existingTx.empty) {
-            console.log(`Skipping duplicate Transfer: ${txData.hash}`);
-            return;
-          }
-
-          console.log("Storing Transfer:", txData);
-          await adminDb.collection("whaleTransactions").add(txData);
-          console.log(`Stored Transfer: ${txData.hash}`);
-        } else if (
-          [UNISWAP_V3_SWAP_TOPIC, AERODROME_SWAP_TOPIC].includes(topics[0]) &&
-          POOLS.some((pool) => pool.address.toLowerCase() === address.toLowerCase())
-        ) {
-          const pool = POOLS.find(
-            (p) => p.address.toLowerCase() === address.toLowerCase()
-          );
-          if (!pool) {
-            console.log(`No pool found for address ${address}`);
-            return;
-          }
-
-          const [sender, recipient, amount0, amount1] = ethers.AbiCoder.defaultAbiCoder().decode(
-            ["address", "address", "int256", "int256"],
-            data
-          );
-
-          const token = Object.values(tokenMapping).find(
-            (t) => t.pool.toLowerCase() === pool.address.toLowerCase()
-          );
-          if (!token) {
-            console.log(`No token found for pool ${pool.address}`);
-            return;
-          }
-
-          const { decimals, totalSupply } = await getTokenMetadata(token.address);
-          const price = await getTokenPrice(token.address);
-
-          const isToken0 = amount0 > 0;
-          const amount = isToken0 ? amount0 : amount1;
-          const amountToken = Number(ethers.formatUnits(amount, decimals));
-          const amountUSD = amountToken * price;
-          const percentSupply =
-            totalSupply !== "0"
-              ? (Number(amount) / Number(totalSupply)) * 100
-              : 0;
-
-          if (price === 0 || amountUSD < MIN_SWAP_USD_VALUE) {
-            console.log(
-              `Skipping Swap ${transactionHash}: $${amountUSD.toFixed(2)} (below threshold or no price)`
-            );
-            return;
-          }
-
-          const stablecoin =
-            STABLECOINS.find(
-              (s) => s.address.toLowerCase() !== token.address.toLowerCase()
-            ) || STABLECOINS[0];
-          const swapDetails = {
-            amountIn: Number(
-              ethers.formatUnits(
-                isToken0 ? amount0 : amount1,
-                isToken0 ? decimals : 6
-              )
-            ),
-            amountOut: Number(
-              ethers.formatUnits(
-                isToken0 ? amount1 : amount0,
-                isToken0 ? 6 : decimals
-              )
-            ),
-            tokenIn: isToken0 ? token.symbol : stablecoin.symbol,
-            tokenOut: isToken0 ? stablecoin.symbol : token.symbol,
-          };
-
-          const eventType = isToken0 ? "Buy" : "Sell";
-          const txData = {
-            tokenSymbol: token.symbol,
-            tokenName: token.name,
-            tokenAddress: token.address,
-            amountToken,
-            amountUSD,
-            blockNumber,
-            fromAddress: sender,
-            toAddress: recipient,
-            source: pool.name,
-            timestamp: admin.firestore.Timestamp.fromDate(new Date()),
-            hash: transactionHash,
-            eventType,
-            swapDetails,
-            percentSupply,
-            createdAt: admin.firestore.Timestamp.now(),
-          };
-
-          const existingTx = await adminDb
-            .collection("whaleTransactions")
-            .where("hash", "==", txData.hash)
-            .get();
-          if (!existingTx.empty) {
-            console.log(`Skipping duplicate Swap: ${txData.hash}`);
-            return;
-          }
-
-          console.log("Storing Swap:", txData);
-          await adminDb.collection("whaleTransactions").add(txData);
-          console.log(`Stored Swap: ${txData.hash}`);
-
-          const notification = {
-            type: "swap",
-            message: `Whale Swap: ${token.symbol} - ${swapDetails.amountIn.toFixed(2)} ${swapDetails.tokenIn} for ${swapDetails.amountOut.toFixed(2)} ${swapDetails.tokenOut} ($${amountUSD.toFixed(2)})`,
-            userId: "system",
-            hash: txData.hash,
-            timestamp: admin.firestore.Timestamp.fromDate(new Date()),
-            createdAt: admin.firestore.Timestamp.now(),
-          };
-          console.log("Storing notification:", notification);
-          await adminDb.collection("notifications").add(notification);
-          console.log(`Stored notification for Swap: ${txData.hash}`);
+        const latestBlock = await provider.getBlockNumber();
+        if (latestBlock <= lastBlockProcessed) {
+          console.log(`No new blocks. Latest: ${latestBlock}, Last processed: ${lastBlockProcessed}`);
+          await delay(POLLING_INTERVAL);
+          continue;
         }
-      } catch (error: any) {
-        console.error(`Error processing log ${log.transactionHash}:`, error.message);
+
+        // Limit the number of blocks to process per cycle
+        const endBlock = Math.min(lastBlockProcessed + MAX_BLOCKS_PER_CYCLE, latestBlock);
+        console.log(`Fetching blocks ${lastBlockProcessed + 1} to ${endBlock}`);
+        for (let blockNumber = lastBlockProcessed + 1; blockNumber <= endBlock; blockNumber++) {
+          let block;
+          let retries = 0;
+          const maxRetries = 3;
+          while (retries < maxRetries) {
+            try {
+              block = await provider.getBlock(blockNumber, true);
+              break;
+            } catch (err: unknown) {
+              retries++;
+              console.error(
+                `Retry ${retries}/${maxRetries} for block ${blockNumber}:`,
+                err instanceof Error ? err.message : String(err)
+              );
+              if (retries === maxRetries) {
+                console.error(`Failed to fetch block ${blockNumber} after ${maxRetries} attempts`);
+                throw err;
+              }
+              await delay(2000 * retries);
+            }
+          }
+
+          if (!block || !block.transactions) {
+            console.log(`Block ${blockNumber} not found or has no transactions`);
+            continue;
+          }
+
+          console.log(`Processing block ${blockNumber} with ${block.transactions.length} transactions`);
+
+          for (const txHash of block.transactions) {
+            try {
+              let tx;
+              let retries = 0;
+              while (retries < maxRetries) {
+                try {
+                  tx = await provider.getTransactionReceipt(txHash);
+                  break;
+                } catch (err: unknown) {
+                  retries++;
+                  console.error(
+                    `Retry ${retries}/${maxRetries} for transaction receipt ${txHash}:`,
+                    err instanceof Error ? err.message : String(err)
+                  );
+                  if (retries === maxRetries) {
+                    console.error(
+                      `Failed to fetch transaction receipt ${txHash} after ${maxRetries} attempts`
+                    );
+                    throw err;
+                  }
+                  await delay(2000 * retries);
+                }
+              }
+
+              if (!tx || !tx.logs) continue;
+
+              for (const log of tx.logs) {
+                const { address, topics, data } = log;
+
+                // Handle Transfer events
+                if (topics[0] === TRANSFER_EVENT_TOPIC) {
+                  const token = Object.values(tokenMapping).find(
+                    (t) => t.address.toLowerCase() === address.toLowerCase()
+                  );
+                  if (!token) {
+                    console.log(`No token found for address ${address}`);
+                    continue;
+                  }
+
+                  // Exclude cbBTC transactions
+                  if (token.address.toLowerCase() === EXCLUDED_TOKENS.cbBTC) {
+                    console.log(`Skipping Transfer for cbBTC: ${txHash}`);
+                    continue;
+                  }
+
+                  const [from, to, value] = [
+                    ethers.getAddress(`0x${topics[1].slice(26)}`),
+                    ethers.getAddress(`0x${topics[2].slice(26)}`),
+                    BigInt(data).toString(),
+                  ];
+
+                  const { decimals, totalSupply } = await getTokenMetadata(token.address);
+                  const price = await getTokenPrice(token.address);
+                  const amountToken = Number(ethers.formatUnits(value, decimals));
+                  const amountUSD = amountToken * price;
+                  const percentSupply =
+                    totalSupply !== "0"
+                      ? (Number(value) / Number(totalSupply)) * 100
+                      : 0;
+
+                  if (price === 0 || amountUSD < MIN_TRANSFER_USD_VALUE) {
+                    console.log(
+                      `Skipping Transfer ${txHash}: $${amountUSD.toFixed(2)} (below threshold of $${MIN_TRANSFER_USD_VALUE} or no price)`
+                    );
+                    continue;
+                  }
+
+                  const eventType = determineTransactionType(from, to, token.address);
+                  const txData = {
+                    tokenSymbol: token.symbol,
+                    tokenName: token.name,
+                    tokenAddress: token.address,
+                    amountToken,
+                    amountUSD,
+                    blockNumber,
+                    fromAddress: from,
+                    toAddress: to,
+                    source: "Base",
+                    timestamp: admin.firestore.Timestamp.fromDate(new Date(block.timestamp * 1000)),
+                    hash: txHash,
+                    eventType,
+                    percentSupply,
+                    createdAt: admin.firestore.Timestamp.fromDate(new Date()),
+                  };
+
+                  const existingTx = await adminDb
+                    .collection("whaleTransactions")
+                    .where("hash", "==", txData.hash)
+                    .get();
+                  if (!existingTx.empty) {
+                    console.log(`Skipping duplicate Transfer: ${txData.hash}`);
+                    continue;
+                  }
+
+                  console.log("Storing Transfer:", txData);
+                  await writeToFirestoreWithRetry(adminDb, "whaleTransactions", txData);
+                  console.log(`Stored Transfer: ${txData.hash}`);
+                }
+
+                // Handle Swap events
+                else if (
+                  [UNISWAP_V3_SWAP_TOPIC, AERODROME_SWAP_TOPIC].includes(topics[0]) &&
+                  POOLS.some((pool) => pool.address.toLowerCase() === address.toLowerCase())
+                ) {
+                  const pool = POOLS.find(
+                    (p) => p.address.toLowerCase() === address.toLowerCase()
+                  );
+                  if (!pool) {
+                    console.log(`No pool found for address ${address}`);
+                    continue;
+                  }
+
+                  const poolContract = new ethers.Contract(pool.address, poolAbi, provider);
+                  const [token0, token1] = await Promise.all([
+                    poolContract.token0(),
+                    poolContract.token1(),
+                  ]);
+
+                  const token = Object.values(tokenMapping).find(
+                    (t) => t.pool.toLowerCase() === pool.address.toLowerCase()
+                  );
+                  if (!token) {
+                    console.log(`No token found for pool ${pool.address}`);
+                    continue;
+                  }
+
+                  // Exclude cbBTC transactions
+                  if (token.address.toLowerCase() === EXCLUDED_TOKENS.cbBTC) {
+                    console.log(`Skipping Swap for cbBTC: ${txHash}`);
+                    continue;
+                  }
+
+                  const [sender, recipient, amount0, amount1] = ethers.AbiCoder.defaultAbiCoder().decode(
+                    ["address", "address", "int256", "int256"],
+                    data
+                  );
+
+                  const isToken0 = token.address.toLowerCase() === token0.toLowerCase();
+                  const tokenAddress = isToken0 ? token0 : token1;
+                  const stablecoinAddress = isToken0 ? token1 : token0;
+
+                  const { decimals: tokenDecimals, totalSupply } = await getTokenMetadata(tokenAddress);
+                  const { decimals: stablecoinDecimals } = await getTokenMetadata(stablecoinAddress);
+                  const price = await getTokenPrice(tokenAddress);
+                  const amount = isToken0 ? amount0 : amount1;
+                  const amountToken = Number(ethers.formatUnits(amount, tokenDecimals));
+                  const amountUSD = amountToken * price;
+                  const percentSupply =
+                    totalSupply !== "0"
+                      ? (Number(amount) / Number(totalSupply)) * 100
+                      : 0;
+
+                  if (price === 0 || amountUSD < MIN_SWAP_USD_VALUE) {
+                    console.log(
+                      `Skipping Swap ${txHash}: $${amountUSD.toFixed(2)} (below USD threshold of $${MIN_SWAP_USD_VALUE} or no price)`
+                    );
+                    continue;
+                  }
+
+                  const stablecoin = STABLECOINS.find(
+                    (s) => s.address.toLowerCase() === stablecoinAddress.toLowerCase()
+                  ) || STABLECOINS[0];
+                  const swapDetails = {
+                    amountIn: Number(
+                      ethers.formatUnits(
+                        isToken0 ? amount0 : amount1,
+                        isToken0 ? tokenDecimals : stablecoinDecimals
+                      )
+                    ),
+                    amountOut: Number(
+                      ethers.formatUnits(
+                        isToken0 ? amount1 : amount0,
+                        isToken0 ? stablecoinDecimals : tokenDecimals
+                      )
+                    ),
+                    tokenIn: isToken0 ? token.symbol : stablecoin.symbol,
+                    tokenOut: isToken0 ? stablecoin.symbol : token.symbol,
+                  };
+
+                  const eventType = isToken0 ? "Buy" : "Sell";
+                  const txData = {
+                    tokenSymbol: token.symbol,
+                    tokenName: token.name,
+                    tokenAddress: token.address,
+                    amountToken,
+                    amountUSD,
+                    blockNumber,
+                    fromAddress: sender,
+                    toAddress: recipient,
+                    source: pool.name,
+                    timestamp: admin.firestore.Timestamp.fromDate(new Date(block.timestamp * 1000)),
+                    hash: txHash,
+                    eventType,
+                    swapDetails,
+                    percentSupply,
+                    createdAt: admin.firestore.Timestamp.fromDate(new Date()),
+                  };
+
+                  const existingTx = await adminDb
+                    .collection("whaleTransactions")
+                    .where("hash", "==", txData.hash)
+                    .get();
+                  if (!existingTx.empty) {
+                    console.log(`Skipping duplicate Swap: ${txData.hash}`);
+                    continue;
+                  }
+
+                  console.log("Storing Swap:", txData);
+                  await writeToFirestoreWithRetry(adminDb, "whaleTransactions", txData);
+                  console.log(`Stored Swap: ${txData.hash}`);
+
+                  const notification = {
+                    type: "swap",
+                    message: `Whale Swap: ${token.symbol} - ${swapDetails.amountIn.toFixed(2)} ${swapDetails.tokenIn} for ${swapDetails.amountOut.toFixed(2)} ${swapDetails.tokenOut} ($${amountUSD.toFixed(2)})`,
+                    userId: "system",
+                    hash: txData.hash,
+                    timestamp: admin.firestore.Timestamp.fromDate(new Date(block.timestamp * 1000)),
+                    createdAt: admin.firestore.Timestamp.fromDate(new Date()),
+                  };
+                  console.log("Storing notification:", notification);
+                  await writeToFirestoreWithRetry(adminDb, "notifications", notification);
+                  console.log(`Stored notification for Swap: ${txData.hash}`);
+                }
+              }
+            } catch (error: unknown) {
+              console.error(
+                `Error processing transaction ${txHash}:`,
+                error instanceof Error ? error.message : String(error)
+              );
+            }
+          }
+        }
+
+        lastBlockProcessed = endBlock;
+        console.log(`Processed blocks up to ${lastBlockProcessed}`);
+        await delay(POLLING_INTERVAL);
+      } catch (error) {
+        console.error("Error in polling loop:", error);
+        await delay(POLLING_INTERVAL * 2);
       }
-    });
+    }
   } catch (err) {
     console.error("Error in monitorWhaleTransactions:", err);
     isMonitoring = false;
@@ -520,10 +673,10 @@ export async function POST() {
       hash: "0x" + "0".repeat(64),
       eventType: "Transfer",
       percentSupply: 1.5,
-      createdAt: admin.firestore.Timestamp.now(),
+      createdAt: admin.firestore.Timestamp.fromDate(new Date()),
     };
     console.log("Writing test transaction:", testTx);
-    await adminDb.collection("whaleTransactions").add(testTx);
+    await writeToFirestoreWithRetry(adminDb, "whaleTransactions", testTx);
     console.log("Test transaction written successfully");
 
     if (isMonitoring) {
@@ -539,15 +692,18 @@ export async function POST() {
     console.log("Monitoring started");
     return NextResponse.json({
       success: true,
-      message: "Monitoring started for Transfer and Swap events",
+      message: "Monitoring started by polling blocks for Transfer and Swap events",
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error in POST handler:", {
-      message: error.message,
-      stack: error.stack,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
     });
     return NextResponse.json(
-      { error: "Failed to start monitoring", details: error.message },
+      {
+        error: "Failed to start monitoring",
+        details: error instanceof Error ? error.message : String(error),
+      },
       { status: 500 }
     );
   }

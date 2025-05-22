@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { CompetitionProvider } from './TradingCompetition/CompetitionContext';
 
 // -- FIREBASE IMPORTS --
 import { initializeApp, getApps, getApp } from 'firebase/app';
@@ -65,7 +64,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <RainbowKitProvider>
           {/* AuthContext provides user + loading to the entire app */}
           <AuthContext.Provider value={{ user, loading }}>
-            <CompetitionProvider>{children}</CompetitionProvider>
+            {children}
           </AuthContext.Provider>
         </RainbowKitProvider>
       </QueryClientProvider>
