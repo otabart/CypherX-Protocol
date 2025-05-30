@@ -7,68 +7,16 @@ import { ClipboardIcon, ArrowUpIcon, ArrowDownIcon } from "@heroicons/react/24/o
 import { Sparklines, SparklinesLine } from "react-sparklines";
 import { doc, getDoc } from "firebase/firestore";
 import Link from "next/link";
-import { FaExchangeAlt, FaWallet } from "react-icons/fa";
-import { useAccount, useConnect, useDisconnect, useBalance } from "wagmi";
-import { ethers } from "ethers";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { db } from "@/lib/firebase";
-import Footer from "../../../components/Footer"; // Import the Footer component
+import Footer from "../../../components/Footer";
+import Swap from "./swap";
 
 // Dynamically import ApexCharts to avoid SSR issues
 const Chart = dynamic(() => import("react-apexcharts"), { ssr: false });
 
-// Constants for Base network (Uniswap V3 addresses)
-const SWAP_ROUTER_ADDRESS = "0x2626664c2603E5475e998cB8976B0dF48E8b8A94"; // Uniswap V3 SwapRouter on Base
-const QUOTER_ADDRESS = "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6"; // Uniswap V3 Quoter on Base
-const WETH_ADDRESS = "0x4200000000000000000000000000000000000006"; // WETH on Base
-const ETH_ADDRESS = ethers.ZeroAddress; // ETH represented as zero address
-
-// ABI for Uniswap V3 Quoter
-const QUOTER_ABI = [
-  "function quoteExactInputSingle(address tokenIn, address tokenOut, uint24 fee, uint256 amountIn, uint160 sqrtPriceLimitX96) external view returns (uint256 amountOut)",
-];
-
-// WETH ABI for wrapping/unwrapping
-const WETH_ABI = [
-  "function deposit() external payable",
-  "function withdraw(uint256 wad) external",
-  "function balanceOf(address owner) public view returns (uint256)",
-  "function approve(address spender, uint256 amount) public returns (bool)",
-  "function allowance(address owner, address spender) public view returns (uint256)",
-];
-
-// ERC20 ABI
-const ERC20_ABI = [
-  "function approve(address spender, uint256 amount) public returns (bool)",
-  "function allowance(address owner, address spender) public view returns (uint256)",
-  "function balanceOf(address owner) public view returns (uint256)",
-  "function decimals() public view returns (uint8)",
-];
-
-// Swap Router ABI
-const SWAP_ROUTER_ABI = [
-  "function exactInputSingle(tuple(address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96)) external payable returns (uint256 amountOut)",
-  "function unwrapWETH9(uint256 amountMinimum, address recipient) external payable",
-];
-
 // Types
-type SwapToken = {
-  address: string;
-  symbol: string;
-  name: string;
-  decimals: number;
-};
-
-type TrendingToken = {
-  symbol: string;
-  name: string;
-  priceUsd: string;
-  priceChange24h: number;
-  imageUrl: string;
-  pairAddress: string;
-};
-
 interface TokenMetadata {
   poolAddress: string;
   pairAddress: string;
@@ -143,6 +91,15 @@ interface TrendInsight {
   crossoverType?: "Golden Cross" | "Death Cross";
 }
 
+type TrendingToken = {
+  symbol: string;
+  name: string;
+  priceUsd: string;
+  priceChange24h: number;
+  imageUrl: string;
+  pairAddress: string;
+};
+
 export default function ChartPage() {
   const { poolAddress } = useParams();
   const [token, setToken] = useState<TokenMetadata | null>(null);
@@ -174,43 +131,16 @@ export default function ChartPage() {
   const [transactionLoading, setTransactionLoading] = useState(false);
   const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
   const [pageKey, setPageKey] = useState<string | null>(null);
-  const [isUserScrolling, setIsUserScrolling] = useState(false); // Track user scrolling
+  const [isUserScrolling, setIsUserScrolling] = useState(false);
   const transactionLimit = 10;
   const [trendingTokens, setTrendingTokens] = useState<TrendingToken[]>([]);
   const [trendingLoading, setTrendingLoading] = useState(true);
   const [trendingError, setTrendingError] = useState<string | null>(null);
 
-  // Swap form state
-  const [amountIn, setAmountIn] = useState<string>("");
-  const [amountOut, setAmountOut] = useState<string>("");
-  const [tokenIn, setTokenIn] = useState<SwapToken | null>(null);
-  const [tokenOut, setTokenOut] = useState<SwapToken | null>(null);
-  const [isSwapLoading, setIsSwapLoading] = useState(false);
-  const [priceImpact, setPriceImpact] = useState<number>(0);
-  const [slippage] = useState<number>(0.5);
-  const [isApproved, setIsApproved] = useState<boolean>(false);
-  const [gasEstimate, setGasEstimate] = useState<string>("0");
-  const { address, isConnected } = useAccount();
-  const { connect, connectors } = useConnect();
-  const { disconnect } = useDisconnect();
-  const [walletBalance, setWalletBalance] = useState<string>("0.0");
-  const [showWalletModal, setShowWalletModal] = useState<boolean>(false);
-
-  // Fetch ETH/WETH balance using wagmi
-  const { data: ethBalance } = useBalance({
-    address: address as `0x${string}`,
-  });
-
-  const { data: wethBalance } = useBalance({
-    address: address as `0x${string}`,
-    token: WETH_ADDRESS as `0x${string}`,
-  });
-
   const observer = useRef<IntersectionObserver | null>(null);
   const lastTransactionRef = useRef<HTMLTableRowElement | null>(null);
-  const transactionContainerRef = useRef<HTMLDivElement | null>(null); // Ref for transaction table container
+  const transactionContainerRef = useRef<HTMLDivElement | null>(null);
   const availableIndicators = ["Volume", "SMA", "RSI", "MACD", "VWAP", "Supertrend"];
-  const provider = new ethers.JsonRpcProvider("https://base-mainnet.g.alchemy.com/v2/8KR6qwxbLlIISgrMCZfsrYeMmn6-S-bN");
 
   // Utility Functions
   const throttle = <F extends (...args: any[]) => void>(func: F, wait: number) => {
@@ -242,31 +172,6 @@ export default function ChartPage() {
       const timestamp = d.x.getTime ? d.x.getTime() : d.x;
       return timestamp >= xAxisRange.min && timestamp <= xAxisRange.max;
     });
-  };
-
-  const fromWei = (value: string, decimals: number = 18): number => {
-    try {
-      const numValue = BigInt(value);
-      const divisor = BigInt(10) ** BigInt(decimals);
-      const integerPart = numValue / divisor;
-      const fractionalPart = (numValue % divisor) * BigInt(10 ** 9) / divisor;
-      return parseFloat(`${integerPart.toString()}.${fractionalPart.toString().padStart(9, "0")}`);
-    } catch (err) {
-      console.error("fromWei error:", err);
-      return 0;
-    }
-  };
-
-  const decodeERC20Transfer = (input: string, tokenDecimals: number = 18): { amount: number } => {
-    try {
-      if (!input.startsWith("0xa9059cbb")) return { amount: 0 };
-      const amountHex = "0x" + input.slice(74);
-      const amount = fromWei(amountHex, tokenDecimals);
-      return { amount };
-    } catch (err) {
-      console.error("Error decoding ERC-20 transfer:", err);
-      return { amount: 0 };
-    }
   };
 
   // Indicator Calculations
@@ -336,246 +241,6 @@ export default function ChartPage() {
       return { change_5m: 0, change_1h: 0, change_4h: 0, change_24h: 0 };
     }
   }, []);
-
-  // Setup tokens for swapping
-  useEffect(() => {
-    if (token && token.baseToken && token.quoteToken) {
-      const baseToken: SwapToken = {
-        address: token.baseToken.address || ETH_ADDRESS,
-        symbol: token.baseToken.symbol === "ETH" ? "ETH" : token.baseToken.symbol,
-        name: token.baseToken.name,
-        decimals: 18,
-      };
-      const quoteToken: SwapToken = {
-        address: token.quoteToken.address || WETH_ADDRESS,
-        symbol: token.quoteToken.symbol === "WETH" ? "WETH" : token.quoteToken.symbol,
-        name: token.quoteToken.name,
-        decimals: 18,
-      };
-      setTokenIn(baseToken);
-      setTokenOut(quoteToken);
-    }
-  }, [token]);
-
-  // Fetch wallet balance
-  useEffect(() => {
-    const fetchBalance = async () => {
-      if (!isConnected || !address || !tokenIn) {
-        setWalletBalance("0.0");
-        return;
-      }
-
-      try {
-        if (tokenIn.address === ETH_ADDRESS) {
-          const balance = ethBalance ? ethers.formatEther(ethBalance.value) : "0";
-          setWalletBalance(parseFloat(balance).toFixed(4));
-        } else {
-          const balance = wethBalance ? ethers.formatUnits(wethBalance.value, tokenIn.decimals) : "0";
-          setWalletBalance(parseFloat(balance).toFixed(4));
-        }
-      } catch (error) {
-        console.error("Error fetching wallet balance:", error);
-        setWalletBalance("0.0");
-        toast.error("Failed to fetch wallet balance");
-      }
-    };
-
-    fetchBalance();
-  }, [isConnected, address, tokenIn, ethBalance, wethBalance]);
-
-  // Check allowance for tokenIn
-  useEffect(() => {
-    const checkAllowance = async () => {
-      if (!isConnected || !address || !tokenIn || tokenIn.address === ETH_ADDRESS || !amountIn || parseFloat(amountIn) <= 0) {
-        setIsApproved(false);
-        return;
-      }
-
-      try {
-        const tokenContract = new ethers.Contract(tokenIn.address, ERC20_ABI, provider);
-        const amountInWei = ethers.parseUnits(amountIn, tokenIn.decimals);
-        const allowance = await tokenContract.allowance(address, SWAP_ROUTER_ADDRESS);
-        setIsApproved(allowance >= amountInWei);
-      } catch (error) {
-        console.error("Error checking allowance:", error);
-        setIsApproved(false);
-      }
-    };
-
-    checkAllowance();
-  }, [isConnected, address, tokenIn, amountIn]);
-
-  // Fetch live quote and gas estimate
-  useEffect(() => {
-    if (!amountIn || parseFloat(amountIn) <= 0 || !tokenIn || !tokenOut) {
-      setAmountOut("");
-      setPriceImpact(0);
-      setGasEstimate("0");
-      return;
-    }
-
-    const fetchQuote = async () => {
-      try {
-        const quoterContract = new ethers.Contract(QUOTER_ADDRESS, QUOTER_ABI, provider);
-
-        let tokenInAddress = tokenIn.address;
-        let tokenOutAddress = tokenOut.address;
-
-        // Handle ETH/WETH conversion for quoting
-        if (tokenIn.address === ETH_ADDRESS) tokenInAddress = WETH_ADDRESS;
-        if (tokenOut.address === ETH_ADDRESS) tokenOutAddress = WETH_ADDRESS;
-
-        const amountInWei = ethers.parseUnits(amountIn, tokenIn.decimals);
-        const fee = 3000; // 0.3% fee tier
-        const quotedAmountOut = await quoterContract.quoteExactInputSingle.staticCall(
-          tokenInAddress,
-          tokenOutAddress,
-          fee,
-          amountInWei,
-          0
-        );
-
-        const amountOutFormatted = ethers.formatUnits(quotedAmountOut, tokenOut.decimals);
-        setAmountOut(parseFloat(amountOutFormatted).toFixed(4));
-
-        // Calculate price impact
-        const inputPrice = parseFloat(amountIn) * parseFloat(token?.priceUsd || "0");
-        const outputPrice = parseFloat(amountOutFormatted) * (tokenOut.symbol === "WETH" || tokenOut.symbol === "ETH" ? ethPrice : parseFloat(token?.priceUsd || "0"));
-        const impact = inputPrice && outputPrice ? ((inputPrice - outputPrice) / inputPrice) * 100 : 0;
-        setPriceImpact(Math.abs(impact));
-
-        // Estimate gas
-        if (isConnected && address) {
-          const signer = await new ethers.BrowserProvider(window.ethereum).getSigner();
-          const swapRouter = new ethers.Contract(SWAP_ROUTER_ADDRESS, SWAP_ROUTER_ABI, signer);
-          const params = {
-            tokenIn: tokenInAddress,
-            tokenOut: tokenOutAddress,
-            fee: 3000,
-            recipient: tokenOut.address === ETH_ADDRESS ? SWAP_ROUTER_ADDRESS : address,
-            deadline: Math.floor(Date.now() / 1000) + 60 * 20,
-            amountIn: amountInWei,
-            amountOutMinimum: BigInt(quotedAmountOut) * BigInt(Math.floor((100 - slippage) * 100)) / BigInt(10000),
-            sqrtPriceLimitX96: 0,
-          };
-          const gas = await swapRouter.exactInputSingle.estimateGas(params, {
-            value: tokenIn.address === ETH_ADDRESS ? amountInWei : 0,
-          });
-          setGasEstimate(ethers.formatUnits(gas, "gwei"));
-        }
-      } catch (error) {
-        console.error("Error fetching swap quote:", error);
-        setAmountOut("");
-        setPriceImpact(0);
-        setGasEstimate("0");
-        toast.error("Failed to fetch swap quote");
-      }
-    };
-
-    fetchQuote();
-  }, [amountIn, tokenIn, tokenOut, ethPrice, token, isConnected, address, slippage]);
-
-  // Handle wallet connection
-  const handleConnectWallet = (connector: any) => {
-    if (!isConnected) {
-      try {
-        connect({ connector });
-        setShowWalletModal(false);
-        toast.success("Wallet connected successfully");
-      } catch (error) {
-        console.error("Wallet connection failed:", error);
-        toast.error("Failed to connect wallet. Please try again.");
-      }
-    }
-  };
-
-  // Handle combined approve and swap
-  const handleSwapWithApproval = async () => {
-    if (!isConnected || !address || !tokenIn || !tokenOut) {
-      toast.error("Please connect your wallet");
-      return;
-    }
-
-    if (!amountIn || parseFloat(amountIn) <= 0) {
-      toast.error("Please enter a valid amount");
-      return;
-    }
-
-    setIsSwapLoading(true);
-    try {
-      const signer = await new ethers.BrowserProvider(window.ethereum).getSigner();
-      const amountInWei = ethers.parseUnits(amountIn, tokenIn.decimals);
-      const amountOutMin = ethers.parseUnits(amountOut || "0", tokenOut.decimals) * BigInt(Math.floor((100 - slippage) * 100)) / BigInt(10000);
-      const deadline = Math.floor(Date.now() / 1000) + 60 * 20;
-
-      // Step 1: Handle ETH to WETH conversion if necessary
-      let tokenInAddress = tokenIn.address;
-      if (tokenIn.address === ETH_ADDRESS) {
-        const wethContract = new ethers.Contract(WETH_ADDRESS, WETH_ABI, signer);
-        const depositTx = await wethContract.deposit({ value: amountInWei });
-        await depositTx.wait();
-        tokenInAddress = WETH_ADDRESS;
-      }
-
-      // Step 2: Approve token if necessary
-      if (tokenIn.address !== ETH_ADDRESS && !isApproved) {
-        const tokenContract = new ethers.Contract(tokenIn.address, ERC20_ABI, signer);
-        const allowance = await tokenContract.allowance(address, SWAP_ROUTER_ADDRESS);
-        if (allowance < amountInWei) {
-          const approveTx = await tokenContract.approve(SWAP_ROUTER_ADDRESS, amountInWei);
-          await approveTx.wait();
-          setIsApproved(true);
-          toast.success(`${tokenIn.symbol} approved for swapping`);
-        }
-      }
-
-      // Step 3: Execute the swap
-      const swapRouter = new ethers.Contract(SWAP_ROUTER_ADDRESS, SWAP_ROUTER_ABI, signer);
-      const params = {
-        tokenIn: tokenInAddress,
-        tokenOut: tokenOut.address === ETH_ADDRESS ? WETH_ADDRESS : tokenOut.address,
-        fee: 3000,
-        recipient: tokenOut.address === ETH_ADDRESS ? SWAP_ROUTER_ADDRESS : address,
-        deadline,
-        amountIn: amountInWei,
-        amountOutMinimum: amountOutMin,
-        sqrtPriceLimitX96: 0,
-      };
-
-      const swapTx = await swapRouter.exactInputSingle(params, {
-        value: tokenIn.address === ETH_ADDRESS ? amountInWei : 0,
-        gasLimit: 300000,
-      });
-      await swapTx.wait();
-
-      // Step 4: Unwrap WETH to ETH if necessary
-      if (tokenOut.address === ETH_ADDRESS) {
-        const unwrapTx = await swapRouter.unwrapWETH9(amountOutMin, address);
-        await unwrapTx.wait();
-      }
-
-      toast.success(`Successfully swapped ${amountIn} ${tokenIn.symbol} for ${amountOut} ${tokenOut.symbol}`);
-      setAmountIn("");
-      setAmountOut("");
-      setIsApproved(false);
-    } catch (error) {
-      console.error("Swap failed:", error);
-      toast.error("Swap failed");
-    } finally {
-      setIsSwapLoading(false);
-    }
-  };
-
-  // Handle token swap
-  const handleSwapTokens = () => {
-    if (tokenIn && tokenOut) {
-      setTokenIn(tokenOut);
-      setTokenOut(tokenIn);
-      setAmountIn("");
-      setAmountOut("");
-      setIsApproved(false);
-    }
-  };
 
   // Effects
   useEffect(() => {
@@ -656,11 +321,11 @@ export default function ChartPage() {
         try {
           if (isErc20 && transfer.value) {
             tokenAmount = parseFloat(transfer.value) || 0;
-            value = ethers.parseUnits(tokenAmount.toString() || "0", 18).toString();
+            value = (BigInt(Math.round(tokenAmount * 1e18))).toString();
             decimals = transfer.rawContract?.decimal ? parseInt(transfer.rawContract.decimal, 16) : 18;
           } else if (transfer.value) {
-            value = ethers.parseUnits(transfer.value.toString() || "0", 18).toString();
-            tokenAmount = fromWei(value, 18);
+            value = (BigInt(Math.round(transfer.value * 1e18))).toString();
+            tokenAmount = parseFloat(transfer.value) || 0;
           }
         } catch (err) {
           console.error(`Error parsing transaction value for hash ${transfer.hash}:`, err);
@@ -744,7 +409,6 @@ export default function ChartPage() {
     };
   }, [hasMoreTransactions, loadMoreTransactions, isUserScrolling]);
 
-  // Track user scrolling
   useEffect(() => {
     const handleScroll = () => {
       setIsUserScrolling(true);
@@ -793,13 +457,12 @@ export default function ChartPage() {
           let decimals = 18;
           try {
             if (isErc20) {
-              const decoded = decodeERC20Transfer(tx.input);
-              tokenAmount = decoded.amount;
-              value = ethers.parseUnits(tokenAmount.toString() || "0", 18).toString();
+              tokenAmount = parseFloat(token.priceUsd) || 0;
+              value = (BigInt(Math.round(tokenAmount * 1e18))).toString();
               decimals = token.baseToken.symbol === "ETH" ? 18 : 18;
             } else if (tx.value) {
               value = tx.value;
-              tokenAmount = fromWei(value, 18);
+              tokenAmount = parseFloat(tx.value) / 1e18 || 0;
             }
           } catch (err) {
             console.error(`Error parsing transaction value for hash ${tx.hash}:`, err);
@@ -820,7 +483,6 @@ export default function ChartPage() {
           };
           transactionBuffer.push(newTransaction);
 
-          // Update chart data
           const tokenPriceInUsd = token?.priceUsd ? parseFloat(token.priceUsd) : 0;
           const timestamp = newTransaction.timestamp;
           const newLinePoint = { x: timestamp, y: tokenPriceInUsd };
@@ -838,7 +500,6 @@ export default function ChartPage() {
     const processBuffer = () => {
       if (transactionBuffer.length === 0 && chartBuffer.length === 0) return;
 
-      // Process transactions
       if (transactionBuffer.length > 0) {
         transactionBuffer = transactionBuffer.filter((tx) => tx.from.toLowerCase() !== tx.to.toLowerCase());
         if (transactionBuffer.length > 0) {
@@ -851,7 +512,6 @@ export default function ChartPage() {
         transactionBuffer = [];
       }
 
-      // Process chart data
       if (chartBuffer.length > 0) {
         setLineData((prev) => {
           const newData = [...prev, ...chartBuffer.map(item => item.line)].slice(-300);
@@ -870,7 +530,6 @@ export default function ChartPage() {
           const supertrendValues = calculateSupertrend(newOhlcvList);
           setSupertrendData(supertrendValues);
 
-          // Update market cap data
           const totalSupply = token?.marketCap && token?.priceUsd ? token.marketCap / parseFloat(token.priceUsd) : 0;
           setMarketCapData((prev) => {
             const newMarketCapData = newData.map((d) => ({
@@ -886,7 +545,7 @@ export default function ChartPage() {
       }
 
       setLastUpdated(new Date().toLocaleString());
-      setIsUserScrolling(false); // Reset scrolling flag after WebSocket update
+      setIsUserScrolling(false);
     };
 
     ws.onopen = () => {
@@ -954,8 +613,8 @@ export default function ChartPage() {
       if (!dexScreenerData.pairs || dexScreenerData.pairs.length === 0) throw new Error("No token data found");
 
       const pair = dexScreenerData.pairs[0];
-      let logoUrl = pair.baseToken?.image || pair.info?.image || "https://i.imgur.com/QICJsOC.jpeg";
-      let bannerUrl = pair.info?.image || pair.baseToken?.image || "https://i.imgur.com/suFIyxm.png";
+      let logoUrl = pair.baseToken?.image || pair.info?.image || "https://i.imgur.com/NWLAQXV.jpeg";
+      let bannerUrl = pair.info?.image || pair.baseToken?.image || "https://i.imgur.com/NWLAQXV.jpeg";
       let adImageUrl = "";
 
       try {
@@ -982,7 +641,7 @@ export default function ChartPage() {
         quoteToken: {
           name: pair.quoteToken.name,
           symbol: pair.quoteToken.symbol,
-          address: pair.quoteToken.address || WETH_ADDRESS,
+          address: pair.quoteToken.address || "0x4200000000000000000000000000000000000006",
         },
         priceUsd: pair.priceUsd,
         liquidity: { usd: pair.liquidity?.usd || 0 },
@@ -1190,16 +849,15 @@ export default function ChartPage() {
           market_cap_usd: parseFloat(data.market_cap_usd || "0"),
           liquidity_usd: parseFloat(data.liquidity_usd || "0"),
         };
-        setToken((prev) =>
-          prev
-            ? {
-                ...prev,
-                priceUsd: parsedData.price_usd.toString(),
-                marketCap: parsedData.market_cap_usd,
-                liquidity: { usd: parsedData.liquidity_usd },
-              }
-            : prev
-        );
+        setToken((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            priceUsd: parsedData.price_usd.toString(),
+            marketCap: parsedData.market_cap_usd,
+            liquidity: { usd: parsedData.liquidity_usd },
+          };
+        });
         setLastUpdated(new Date().toLocaleString());
       };
       ws.onerror = (err) => {
@@ -1305,7 +963,7 @@ export default function ChartPage() {
           datetimeUTC: false,
           format: timeframe.includes("m") ? "HH:mm:ss" : "MMM d HH:mm",
           style: { colors: "#A1A1AA", fontSize: isMounted && window.innerWidth < 768 ? "8px" : "10px", fontFamily: "Inter, sans-serif" },
-          rotate: 0, // Straight labels
+          rotate: 0,
           rotateAlways: false,
         },
         tickAmount: 6,
@@ -1323,7 +981,7 @@ export default function ChartPage() {
       },
       grid: {
         borderColor: "#2A3B5A",
-        opacity: 0.1, // Make grid lines fainter
+        opacity: 0.1,
         strokeDashArray: 0,
         xaxis: { lines: { show: true } },
         yaxis: { lines: { show: true } },
@@ -1454,7 +1112,7 @@ export default function ChartPage() {
           datetimeUTC: false,
           format: timeframe.includes("m") ? "HH:mm:ss" : "MMM d HH:mm",
           style: { colors: "#A1A1AA", fontSize: isMounted && window.innerWidth < 768 ? "8px" : "10px", fontFamily: "Inter, sans-serif" },
-          rotate: 0, // Straight labels
+          rotate: 0,
           rotateAlways: false,
         },
         tickAmount: 6,
@@ -1472,7 +1130,7 @@ export default function ChartPage() {
       },
       grid: {
         borderColor: "#2A3B5A",
-        opacity: 0.1, // Make grid lines fainter
+        opacity: 0.1,
         strokeDashArray: 0,
         xaxis: { lines: { show: true } },
         yaxis: { lines: { show: true } },
@@ -1507,19 +1165,19 @@ export default function ChartPage() {
   const volumeOptions = useMemo<ApexCharts.ApexOptions>(() => ({
     chart: { type: "bar", height: isMounted && window.innerWidth < 768 ? 100 : 200, background: "transparent", foreColor: "#A1A1AA", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false } },
     title: { text: "Volume", align: "left", style: { color: "#D1D1D6", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
-    xaxis: { 
-      type: "datetime", 
-      min: xAxisRange ? xAxisRange.min : undefined, 
-      max: xAxisRange ? xAxisRange.max : undefined, 
-      labels: { show: false }, 
-      tickAmount: isMounted && window.innerWidth < 768 ? 6 : 8 
+    xaxis: {
+      type: "datetime",
+      min: xAxisRange ? xAxisRange.min : undefined,
+      max: xAxisRange ? xAxisRange.max : undefined,
+      labels: { show: false },
+      tickAmount: isMounted && window.innerWidth < 768 ? 6 : 8
     },
     yaxis: {
       title: { text: "Volume", style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" } },
-      labels: { 
-        show: true, 
-        style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" }, 
-        formatter: (val: number) => formatLargeNumber(val) 
+      labels: {
+        show: true,
+        style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" },
+        formatter: (val: number) => formatLargeNumber(val)
       },
       tickAmount: 3,
     },
@@ -1542,1517 +1200,1379 @@ export default function ChartPage() {
     },
     grid: {
       borderColor: "#2A3B5A",
-      opacity: 0.1, // Make grid lines fainter
+      opacity: 0.1,
     },
   }), [xAxisRange, token, isMounted]);
 
   const smaOptions = useMemo<ApexCharts.ApexOptions>(() => ({
     chart: { type: "line", height: isMounted && window.innerWidth < 768 ? 100 : 200, background: "transparent", foreColor: "#A1A1AA", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false } },
     title: { text: "SMA (20 & 50)", align: "left", style: { color: "#D1D1D6", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
-    xaxis: { type: "datetime",min: xAxisRange ? xAxisRange.min : undefined, 
-max: xAxisRange ? xAxisRange.max : undefined, 
-labels: { show: false } 
-},
-yaxis: {
-title: { text: "SMA", style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" } },
-labels: { show: true, offsetX: -15, style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" }, formatter: (val: number) => val.toFixed(2) },
-tickAmount: 6,
-},
-stroke: { curve: "smooth", width: 2 },
-colors: ["#FBBF24", "#F87171"],
-tooltip: { enabled: true, theme: "dark", x: { format: "dd MMM HH:mm:ss" }, y: { formatter: (val: number) => val.toFixed(2) }, style: { fontFamily: "Inter, sans-serif" } },
-annotations: {
-points: smaCrossovers.map((crossover) => ({
-x: crossover.x,
-y: crossover.y,
-marker: { size: 6, fillColor: crossover.type === "Golden Cross" ? "#10B981" : "#EF4444" },
-label: { text: crossover.type, style: { color: "#000000", background: crossover.type === "Golden Cross" ? "#10B981" : "#EF4444", fontSize: "10px", fontFamily: "Inter, sans-serif" } },
-})),
-},
-grid: {
-borderColor: "#2A3B5A",
-opacity: 0.1, // Make grid lines fainter
-},
-}), [xAxisRange, smaCrossovers, isMounted]);
+    xaxis: { type: "datetime", min: xAxisRange ? xAxisRange.min : undefined, max: xAxisRange ? xAxisRange.max : undefined, labels: { show: false } },
+    yaxis: {
+      title: { text: "SMA", style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" } },
+      labels: { show: true, offsetX: -15, style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" }, formatter: (val: number) => val.toFixed(2) },
+      tickAmount: 6,
+    },
+    stroke: { curve: "smooth", width: 2 },
+    colors: ["#FBBF24", "#F87171"],
+    tooltip: { enabled: true, theme: "dark", x: { format: "dd MMM HH:mm:ss" }, y: { formatter: (val: number) => val.toFixed(2) }, style: { fontFamily: "Inter, sans-serif" } },
+    annotations: {
+      points: smaCrossovers.map((crossover) => ({
+        x: crossover.x,
+        y: crossover.y,
+        marker: { size: 6, fillColor: crossover.type === "Golden Cross" ? "#10B981" : "#EF4444" },
+        label: { text: crossover.type, style: { color: "#000000", background: crossover.type === "Golden Cross" ? "#10B981" : "#EF4444", fontSize: "10px", fontFamily: "Inter, sans-serif" } },
+      })),
+    },
+    grid: {
+      borderColor: "#2A3B5A",
+      opacity: 0.1,
+    },
+  }), [xAxisRange, smaCrossovers, isMounted]);
 
-const rsiOptions = useMemo<ApexCharts.ApexOptions>(() => ({
-chart: {
-id: "rsi-chart",
-height: isMounted && window.innerWidth < 768 ? 100 : 200,
-type: "line",
-background: "transparent",
-foreColor: "#A1A1AA",
-toolbar: { show: false },
-zoom: { enabled: false },
-animations: { enabled: false },
-},
-title: { text: "RSI", align: "left", style: { color: "#D1D1D6", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
-xaxis: {
-type: "datetime",
-min: xAxisRange ? xAxisRange.min : undefined,
-max: xAxisRange ? xAxisRange.max : undefined,
-labels: { show: false },
-},
-yaxis: {
-min: 0,
-max: 100,
-title: { text: "RSI", style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" } },
-labels: {
-show: true,
-offsetX: -15,
-style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" },
-formatter: (val: number) => val.toFixed(0),
-},
-tickAmount: 5,
-},
-stroke: { curve: "smooth", width: 2 },
-colors: ["#3B82F6"],
-grid: { 
-borderColor: "#2A3B5A",
-opacity: 0.1, // Make grid lines fainter
-},
-tooltip: {
-enabled: true,
-theme: "dark",
-x: { format: "dd MMM HH:mm:ss" },
-y: { formatter: (val: number) => val.toFixed(2) },
-style: { fontFamily: "Inter, sans-serif" },
-},
-}), [xAxisRange, isMounted]);
+  const rsiOptions = useMemo<ApexCharts.ApexOptions>(() => ({
+    chart: {
+      id: "rsi-chart",
+      height: isMounted && window.innerWidth < 768 ? 100 : 200,
+      type: "line",
+      background: "transparent",
+      foreColor: "#A1A1AA",
+      toolbar: { show: false },
+      zoom: { enabled: false },
+      animations: { enabled: false },
+    },
+    title: { text: "RSI", align: "left", style: { color: "#D1D1D6", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
+    xaxis: {
+      type: "datetime",
+      min: xAxisRange ? xAxisRange.min : undefined,
+      max: xAxisRange ? xAxisRange.max : undefined,
+      labels: { show: false },
+    },
+    yaxis: {
+      min: 0,
+      max: 100,
+      title: { text: "RSI", style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" } },
+      labels: {
+        show: true,
+        offsetX: -15,
+        style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" },
+        formatter: (val: number) => val.toFixed(0),
+      },
+      tickAmount: 5,
+    },
+    stroke: { curve: "smooth", width: 2 },
+    colors: ["#3B82F6"],
+    grid: {
+      borderColor: "#2A3B5A",
+      opacity: 0.1,
+    },
+    tooltip: {
+      enabled: true,
+      theme: "dark",
+      x: { format: "dd MMM HH:mm:ss" },
+      y: { formatter: (val: number) => val.toFixed(2) },
+      style: { fontFamily: "Inter, sans-serif" },
+    },
+  }), [xAxisRange, isMounted]);
 
-const macdOptions = useMemo<ApexCharts.ApexOptions>(() => ({
-chart: {
-id: "macd-chart",
-height: isMounted && window.innerWidth < 768 ? 100 : 200,
-type: "line",
-background: "transparent",
-foreColor: "#A1A1AA",
-toolbar: { show: false },
-zoom: { enabled: false },
-animations: { enabled: false },
-},
-title: { text: "MACD", align: "left", style: { color: "#D1D1D6", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
-xaxis: {
-type: "datetime",
-min: xAxisRange ? xAxisRange.min : undefined,
-max: xAxisRange ? xAxisRange.max : undefined,
-labels: { show: false },
-},
-yaxis: {
-title: { text: "MACD", style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" } },
-labels: {
-show: true,
-offsetX: -15,
-style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" },
-formatter: (val: number) => val.toFixed(2),
-},
-tickAmount: 5,
-},
-stroke: { curve: "smooth", width: 2 },
-colors: ["#3B82F6", "#F97316", "#10B981"],
-grid: { 
-borderColor: "#2A3B5A",
-opacity: 0.1, // Make grid lines fainter
-},
-plotOptions: {
-bar: { columnWidth: "80%" },
-},
-tooltip: {
-enabled: true,
-theme: "dark",
-x: { format: "dd MMM HH:mm:ss" },
-y: { formatter: (val: number) => val.toFixed(2) },
-style: { fontFamily: "Inter, sans-serif" },
-},
-}), [xAxisRange, isMounted]);
+  const macdOptions = useMemo<ApexCharts.ApexOptions>(() => ({
+    chart: {
+      id: "macd-chart",
+      height: isMounted && window.innerWidth < 768 ? 100 : 200,
+      type: "line",
+      background: "transparent",
+      foreColor: "#A1A1AA",
+      toolbar: { show: false },
+      zoom: { enabled: false },
+      animations: { enabled: false },
+    },
+    title: { text: "MACD", align: "left", style: { color: "#D1D1D6", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
+    xaxis: {
+      type: "datetime",
+      min: xAxisRange ? xAxisRange.min : undefined,
+      max: xAxisRange ? xAxisRange.max : undefined,
+      labels: { show: false },
+    },
+    yaxis: {
+      title: { text: "MACD", style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" } },
+      labels: {
+        show: true,
+        offsetX: -15,
+        style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" },
+        formatter: (val: number) => val.toFixed(2),
+      },
+      tickAmount: 5,
+    },
+    stroke: { curve: "smooth", width: 2 },
+    colors: ["#3B82F6", "#F97316", "#10B981"],
+    grid: {
+      borderColor: "#2A3B5A",
+      opacity: 0.1,
+    },
+    plotOptions: {
+      bar: { columnWidth: "80%" },
+    },
+    tooltip: {
+      enabled: true,
+      theme: "dark",
+      x: { format: "dd MMM HH:mm:ss" },
+      y: { formatter: (val: number) => val.toFixed(2) },
+      style: { fontFamily: "Inter, sans-serif" },
+    },
+  }), [xAxisRange, isMounted]);
 
-const vwapOptions = useMemo<ApexCharts.ApexOptions>(() => ({
-chart: { 
-type: "line", 
-height: isMounted && window.innerWidth < 768 ? 100 : 200, 
-background: "transparent", 
-foreColor: "#A1A1AA", 
-toolbar: { show: false }, 
-zoom: { enabled: false }, 
-animations: { enabled: false } 
-},
-title: { 
-text: "VWAP", 
-align: "left", 
-style: { color: "#D1D1D6", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } 
-},
-xaxis: { 
-type: "datetime", 
-min: xAxisRange ? xAxisRange.min : undefined, 
-max: xAxisRange ? xAxisRange.max : undefined, 
-labels: { show: false } 
-},
-yaxis: {
-title: { text: "VWAP", style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" } },
-labels: { 
-show: true, 
-offsetX: -15, 
-style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" }, 
-formatter: (val: number) => val.toFixed(2)
-},
-tickAmount: 6,
-},
-stroke: { curve: "smooth", width: 2 },
-colors: ["#F97316"],
-tooltip: { 
-enabled: true, 
-theme: "dark", 
-x: { format: "dd MMM HH:mm:ss" }, 
-y: { formatter: (val: number) => val.toFixed(2) }, 
-style: { fontFamily: "Inter, sans-serif" } 
-},
-annotations: {
-points: vwapSignals.map((signal) => ({
-x: signal.x,
-y: signal.y,
-marker: { size: 6, fillColor: signal.type === "Buy" ? "#10B981" : "#EF4444" },
-label: { 
-text: signal.type, 
-style: { 
-color: "#000000", 
-background: signal.type === "Buy" ? "#10B981" : "#EF4444", 
-fontSize: "10px", 
-fontFamily: "Inter, sans-serif" 
-} 
-},
-})),
-},
-grid: {
-borderColor: "#2A3B5A",
-opacity: 0.1, // Make grid lines fainter
-},
-}), [xAxisRange, vwapSignals, isMounted]);
+  const vwapOptions = useMemo<ApexCharts.ApexOptions>(() => ({
+    chart: {
+      type: "line",
+      height: isMounted && window.innerWidth < 768 ? 100 : 200,
+      background: "transparent",
+      foreColor: "#A1A1AA",
+      toolbar: { show: false },
+      zoom: { enabled: false },
+      animations: { enabled: false }
+    },
+    title: {
+      text: "VWAP",
+      align: "left",
+      style: { color: "#D1D1D6", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" }
+    },
+    xaxis: {
+      type: "datetime",
+      min: xAxisRange ? xAxisRange.min : undefined,
+      max: xAxisRange ? xAxisRange.max : undefined,
+      labels: { show: false }
+    },
+    yaxis: {
+      title: { text: "VWAP", style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" } },
+      labels: {
+        show: true,
+        offsetX: -15,
+        style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" },
+        formatter: (val: number) => val.toFixed(2)
+      },
+      tickAmount: 6,
+    },
+    stroke: { curve: "smooth", width: 2 },
+    colors: ["#F97316"],
+    tooltip: {
+      enabled: true,
+      theme: "dark",
+      x: { format: "dd MMM HH:mm:ss" },
+      y: { formatter: (val: number) => val.toFixed(2) },
+      style: { fontFamily: "Inter, sans-serif" }
+    },
+    annotations: {
+      points: vwapSignals.map((signal) => ({
+        x: signal.x,
+        y: signal.y,
+        marker: { size: 6, fillColor: signal.type === "Buy" ? "#10B981" : "#EF4444" },
+        label: {
+          text: signal.type,
+          style: {
+            color: "#000000",
+            background: signal.type === "Buy" ? "#10B981" : "#EF4444",
+            fontSize: "10px",
+            fontFamily: "Inter, sans-serif"
+          }
+        },
+      })),
+    },
+    grid: {
+      borderColor: "#2A3B5A",
+      opacity: 0.1,
+    },
+  }), [xAxisRange, vwapSignals, isMounted]);
 
-const supertrendOptions = useMemo<ApexCharts.ApexOptions>(() => {
-const bullishData: IndicatorData[] = [];
-const bearishData: IndicatorData[] = [];
-let currentBullish: IndicatorData[] = [];
-let currentBearish: IndicatorData[] = [];
-supertrendData.forEach((point, index) => {
-const dataPoint = { xI: true, x: point.x, y: point.y };
-if (point.trend === "Bullish") {
-if (currentBearish.length > 0) {
-bearishData.push(...currentBearish);
-currentBearish = [];
-}
-currentBullish.push(dataPoint);
-} else {
-if (currentBullish.length > 0) {
-bullishData.push(...currentBullish);
-currentBullish = [];
-}
-currentBearish.push(dataPoint);
-}
-if (index === supertrendData.length - 1) {
-if (currentBullish.length > 0) bullishData.push(...currentBullish);
-if (currentBearish.length > 0) bearishData.push(...currentBearish);
-}
-});
-return {
-chart: {
-type: "line",
-height: isMounted && window.innerWidth < 768 ? 100 : 200,
-background: "transparent",
-foreColor: "#A1A1AA",
-toolbar: { show: false },
-zoom: { enabled: false },
-animations: { enabled: false },
-},
-title: { text: "Supertrend", align: "left", style: { color: "#D1D1D6", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
-xaxis: {
-type: "datetime",
-min: xAxisRange ? xAxisRange.min : undefined,
-max: xAxisRange ? xAxisRange.max : undefined,
-labels: { show: false },
-},
-yaxis: {
-title: { text: "Price", style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" } },
-labels: {
-show: true,
-offsetX: -15,
-style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" },
-formatter: (val: number) => val.toFixed(2),
-},
-tickAmount: 6,
-},
-stroke: { curve: "smooth", width: 2 },
-colors: ["#10B981", "#EF4444"],
-tooltip: {
-enabled: true,
-theme: "dark",
-x: { format: "dd MMM HH:mm:ss" },
-custom: ({ dataPointIndex }: any) => {
-const supertrend = supertrendData[dataPointIndex];
-return `
-<div class="p-2 bg-gray-800 rounded-lg shadow-lg">
-<p class="text-sm font-semibold text-gray-100"><span class="text-gray-400">Price:</span> $${supertrend.y.toFixed(2)}</p>
-<p class="text-sm text-gray-100"><span class="text-gray-400">Trend:</span> <span class="${supertrend.trend === "Bullish" ? "text-green-400" : "text-red-400"}">${supertrend.trend}</span></p>
-<p class="text-sm text-gray-100"><span class="text-gray-400">Signal Strength:</span> ${supertrend.signalStrength.toFixed(2)}</p>
-<p class="text-sm text-gray-100"><span class="text-gray-400">Action:</span> ${supertrend.action}</p>
-</div>
-`;
-},
-style: { fontFamily: "Inter, sans-serif" },
-},
-series: [
-{ name: "Supertrend (Bullish)", data: bullishData },
-{ name: "Supertrend (Bearish)", data: bearishData },
-],
-grid: {
-borderColor: "#2A3B5A",
-opacity: 0.1, // Make grid lines fainter
-},
-};
-}, [xAxisRange, supertrendData, isMounted]);
+  const supertrendOptions = useMemo<ApexCharts.ApexOptions>(() => {
+    const bullishData: IndicatorData[] = [];
+    const bearishData: IndicatorData[] = [];
+    let currentBullish: IndicatorData[] = [];
+    let currentBearish: IndicatorData[] = [];
+    supertrendData.forEach((point, index) => {
+      const dataPoint = { xI: true, x: point.x, y: point.y };
+      if (point.trend === "Bullish") {
+        if (currentBearish.length > 0) {
+          bearishData.push(...currentBearish);
+          currentBearish = [];
+        }
+        currentBullish.push(dataPoint);
+      } else {
+        if (currentBullish.length > 0) {
+          bullishData.push(...currentBullish);
+          currentBullish = [];
+        }
+        currentBearish.push(dataPoint);
+      }
+      if (index === supertrendData.length - 1) {
+        if (currentBullish.length > 0) bullishData.push(...currentBullish);
+        if (currentBearish.length > 0) bearishData.push(...currentBearish);
+      }
+    });
+    return {
+      chart: {
+        type: "line",
+        height: isMounted && window.innerWidth < 768 ? 100 : 200,
+        background: "transparent",
+        foreColor: "#A1A1AA",
+        toolbar: { show: false },
+        zoom: { enabled: false },
+        animations: { enabled: false },
+      },
+      title: { text: "Supertrend", align: "left", style: { color: "#D1D1D6", fontSize: "14px", fontWeight: 600, fontFamily: "Inter, sans-serif" } },
+      xaxis: {
+        type: "datetime",
+        min: xAxisRange ? xAxisRange.min : undefined,
+        max: xAxisRange ? xAxisRange.max : undefined,
+        labels: { show: false },
+      },
+      yaxis: {
+        title: { text: "Price", style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" } },
+        labels: {
+          show: true,
+          offsetX: -15,
+          style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" },
+          formatter: (val: number) => val.toFixed(2),
+        },
+        tickAmount: 6,
+      },
+      stroke: { curve: "smooth", width: 2 },
+      colors: ["#10B981", "#EF4444"],
+      tooltip: {
+        enabled: true,
+        theme: "dark",
+        x: { format: "dd MMM HH:mm:ss" },
+        custom: ({ dataPointIndex }: any) => {
+          const supertrend = supertrendData[dataPointIndex];
+          return `
+            <div class="p-2 bg-gray-800 rounded-lg shadow-lg">
+              <p class="text-sm font-semibold text-gray-100"><span class="text-gray-400">Price:</span> $${supertrend.y.toFixed(2)}</p>
+              <p class="text-sm text-gray-100"><span class="text-gray-400">Trend:</span> <span class="${supertrend.trend === "Bullish" ? "text-green-400" : "text-red-400"}">${supertrend.trend}</span></p>
+              <p class="text-sm text-gray-100"><span class="text-gray-400">Signal Strength:</span> ${supertrend.signalStrength.toFixed(2)}</p>
+              <p class="text-sm text-gray-100"><span class="text-gray-400">Action:</span> ${supertrend.action}</p>
+            </div>
+          `;
+        },
+        style: { fontFamily: "Inter, sans-serif" },
+      },
+      series: [
+        { name: "Supertrend (Bullish)", data: bullishData },
+        { name: "Supertrend (Bearish)", data: bearishData },
+      ],
+      grid: {
+        borderColor: "#2A3B5A",
+        opacity: 0.1,
+      },
+    };
+  }, [xAxisRange, supertrendData, isMounted]);
 
-// Ensure the component only renders after mounting to avoid SSR issues
-if (!isMounted) {
-return null;
-}
+  // Ensure the component only renders after mounting to avoid SSR issues
+  if (!isMounted) {
+    return null;
+  }
 
-// Calculate OHLC for the latest candle
-const latestCandle = candleData[candleData.length - 1];
-const ohlc = latestCandle
-? {
-open: latestCandle.y[0].toFixed(4),
-high: latestCandle.y[1].toFixed(4),
-low: latestCandle.y[2].toFixed(4),
-close: latestCandle.y[3].toFixed(4),
-}
-: { open: "-", high: "-", low: "-", close: "-" };
+  // Calculate OHLC for the latest candle
+  const latestCandle = candleData[candleData.length - 1];
+  const ohlc = latestCandle
+    ? {
+        open: latestCandle.y[0].toFixed(4),
+        high: latestCandle.y[1].toFixed(4),
+        low: latestCandle.y[2].toFixed(4),
+        close: latestCandle.y[3].toFixed(4),
+      }
+    : { open: "-", high: "-", low: "-", close: "-" };
 
-// Construct SYMBOL for branding overlay
-const symbol = token ? `${token.baseToken.symbol}/${token.quoteToken.symbol}` : "Loading...";
+  // Construct SYMBOL for branding overlay
+  const symbol = token ? `${token.baseToken.symbol}/${token.quoteToken.symbol}` : "Loading...";
 
-// Utility functions for trend analysis and sparkline
-const getSparklineData = () => {
-return lineData.slice(-50).map((d) => d.y);
-};
+  // Utility functions for trend analysis and sparkline
+  const getSparklineData = () => {
+    return lineData.slice(-50).map((d) => d.y);
+  };
 
-const getTrendAnalysis = () => {
-const latestSupertrend = supertrendData[supertrendData.length - 1];
-const latestRsi = rsiData[rsiData.length - 1];
-const latestSmaCrossover = smaCrossovers[smaCrossovers.length - 1];
+  const getTrendAnalysis = () => {
+    const latestSupertrend = supertrendData[supertrendData.length - 1];
+    const latestRsi = rsiData[rsiData.length - 1];
+    const latestSmaCrossover = smaCrossovers[smaCrossovers.length - 1];
 
-const insights: TrendInsight[] = [];
-if (latestSupertrend) {
-insights.push({
-text: `Supertrend indicates a ${latestSupertrend.trend} trend with a signal strength of ${latestSupertrend.signalStrength.toFixed(2)}. Suggested action: ${latestSupertrend.action}.`,
-trend: latestSupertrend.trend,
-});
-}
-if (latestRsi) {
-const rsiStatus = latestRsi.y > 70 ? "Overbought" : latestRsi.y < 30 ? "Oversold" : "Neutral";
-insights.push({
-text: `RSI is at ${latestRsi.y.toFixed(2)} (${rsiStatus}).`,
-rsiStatus,
-});
-}
-if (latestSmaCrossover) {
-insights.push({
-text: `Latest SMA Crossover: ${latestSmaCrossover.type} at ${new Date(latestSmaCrossover.x).toLocaleString()}.`,
-crossoverType: latestSmaCrossover.type,
-});
-}
-return insights.length > 0 ? insights : [{ text: "No trend analysis available." }];
-};
+    const insights: TrendInsight[] = [];
+    if (latestSupertrend) {
+      insights.push({
+        text: `Supertrend indicates a ${latestSupertrend.trend} trend with a signal strength of ${latestSupertrend.signalStrength.toFixed(2)}. Suggested action: ${latestSupertrend.action}.`,
+        trend: latestSupertrend.trend,
+      });
+    }
+    if (latestRsi) {
+      const rsiStatus = latestRsi.y > 70 ? "Overbought" : latestRsi.y < 30 ? "Oversold" : "Neutral";
+      insights.push({
+        text: `RSI is at ${latestRsi.y.toFixed(2)} (${rsiStatus}).`,
+        rsiStatus,
+      });
+    }
+    if (latestSmaCrossover) {
+      insights.push({
+        text: `Latest SMA Crossover: ${latestSmaCrossover.type} at ${new Date(latestSmaCrossover.x).toLocaleString()}.`,
+        crossoverType: latestSmaCrossover.type,
+      });
+    }
+    return insights.length > 0 ? insights : [{ text: "No trend analysis available." }];
+  };
 
-const copyToClipboard = (text: string) => {
-navigator.clipboard.writeText(text).then(() => {
-toast.success("Copied to clipboard!");
-}).catch((err) => {
-console.error("Failed to copy:", err);
-toast.error("Failed to copy to clipboard.");
-});
-};
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      toast.success("Copied to clipboard!");
+    }).catch((err) => {
+      console.error("Failed to copy:", err);
+      toast.error("Failed to copy to clipboard.");
+    });
+  };
 
-// JSX Return Statement
-return (
-<div className="min-h-screen font-sans bg-gray-950 text-gray-200 w-full">
-<style jsx>{`
-@keyframes fadeIn {
-0% { opacity: 0; transform: translateY(-10px); }
-100% { opacity: 1; transform: translateY(0); }
-}
-@keyframes pulse {
-0% { opacity: 0.5; }
-50% { opacity: 1; }
-100% { opacity: 0.5; }
-}
-.fade-in {
-animation: fadeIn 0.5s ease-in-out;
-}
-.pulse {
-animation: pulse 1.5s infinite ease-in-out;
-}
-.tooltip {
-position: relative;
-display: inline-block;
-}
-.tooltip .tooltiptext {
-visibility: hidden;
-width: 120px;
-background-color: #2A3B5A;
-color: #D1D1D6;
-text-align: center;
-border-radius: 4px;
-padding: 5px;
-position: absolute;
-z-index: 1;
-bottom: 125%;
-left: 50%;
-margin-left: -60px;
-opacity: 0;
-transition: opacity 0.3s;
-font-size: 10px;
-}
-.tooltip:hover .tooltiptext {
-visibility: visible;
-opacity: 1;
-}
-.custom-scrollbar {
-scrollbar-width: thin;
-scrollbar-color: #3B82F6 #0D1A2E;
-}
-.custom-scrollbar::-webkit-scrollbar {
-width: 8px;
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-background: #0D1A2E;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-background-color: #3B82F6;
-border-radius: 4px;
-border: 2px solid #0D1A2E;
-}
-.custom-scrollbar-x-none {
-overflow-x: hidden; /* Remove horizontal scrollbar */
-}
-.transaction-table-container {
-max-height: 200px; /* Fixed height to prevent layout shifts */
-overflow-y: auto;
-position: relative;
-}
-.transaction-table-container.loading {
-min-height: 200px; /* Ensure space for loading indicator */
-}
-.trending-banner {
-background-color: #0D1A2E;
-border-bottom: 1px solid #2A3B5A;
-padding: 0;
-overflow: hidden;
-white-space: nowrap;
-width: 100%;
-position: relative;
-margin: 0;
-}
-.trending-tokens-container {
-display: inline-flex;
-width: max-content;
-animation: marquee 20s linear infinite;
-}
-.trending-tokens-container:hover {
-animation-play-state: paused;
-}
-.trending-token-card {
-display: inline-flex;
-align-items: center;
-padding: 8px 12px;
-margin-right: 0;
-background-color: #0D1A2E;
-border: 1px solid #2A3B5A;
-border-right: none;
-min-width: 220px;
-white-space: nowrap;
-}
-.trending-token-card:last-child {
-border-right: 1px solid #2A3B5A;
-}
-.trending-token-card:not(:last-child)::after {
-content: '';
-width: 1px;
-height: 100%;
-background-color: #A1A1AA;
-position: absolute;
-right: 0;
-}
-.trending-token-card img {
-width: 24px;
-height: 24px;
-object-fit: cover;
-aspect-ratio: 1/1;
-background-color: #2A3B5A;
-border: 1px solid #2A3B5A;
-overflow: hidden;
-margin-right: 8px;
-}
-.rank-badge {
-background-color: #2A3B5A;
-color: #D1D1D6;
-font-size: 10px;
-font-weight: 600;
-padding: 2px 6px;
-border-radius: 4px;
-border: 1px solid #A1A1AA;
-margin-right: 8px;
-}
-@keyframes marquee {
-0% {
-transform: translateX(0);
-}
-100% {
-transform: translateX(-50%);
-}
-}
-.swap-form-container {
-background-color: #1A263F;
-border: 1px solid #2A3B5A;
-border-radius: 4px;
-padding: 16px;
-}
-.swap-input {
-background-color: #2A3B5A;
-border: 1px solid #2A3B5A;
-border-radius: 4px;
-padding: 8px;
-color: #D1D1D6;
-width: 100%;
-font-size: 14px;
-outline: none;
-}
-.swap-input:disabled {
-background-color: #1A263F;
-color: #A1A1AA;
-}
-.swap-button {
-background-color: #3B82F6;
-color: #FFFFFF;
-padding: 8px;
-border-radius: 4px;
-font-size: 14px;
-font-weight: 500;
-transition: background-color 0.2s ease-in-out;
-width: 100%;
-}
-.swap-button:hover {
-background-color: #2563EB;
-}
-.swap-button:disabled {
-background-color: #2563EB;
-opacity: 0.5;
-cursor: not-allowed;
-}
-.swap-arrow {
-background-color: #2A3B5A;
-border-radius: 4px;
-padding: 8px;
-cursor: pointer;
-transition: transform 0.2s ease-in-out;
-}
-.swap-arrow:hover {
-transform: scale(1.1);
-}
-.swap-info {
-font-size: 12px;
-color: #A1A1AA;
-}
-.wallet-button {
-background-color: #3B82F6;
-color: #FFFFFF;
-padding: 8px;
-border-radius: 4px;
-font-size: 14px;
-font-weight: 500;
-transition: background-color 0.2s ease-in-out;
-width: 100%;
-display: flex;
-align-items: center;
-justify-content: center;
-gap: 8px;
-}
-.wallet-button:hover {
-background-color: #2563EB;
-}
-.wallet-address {
-background-color: #2A3B5A;
-border: 1px solid #2A3B5A;
-border-radius: 4px;
-padding: 8px;
-color: #D1D1D6;
-font-size: 12px;
-display: flex;
-align-items: center;
-justify-content: space-between;
-}
-.wallet-modal {
-position: fixed;
-top: 0;
-left: 0;
-width: 100%;
-height: 100%;
-background-color: rgba(0, 0, 0, 0.5);
-display: flex;
-justify-content: center;
-align-items: center;
-z-index: 50;
-}
-.wallet-modal-content {
-background-color: #1A263F;
-border: 1px solid #2A3B5A;
-border-radius: 8px;
-padding: 16px;
-width: 300px;
-max-width: 90%;
-}
-.wallet-option {
-background-color: #2A3B5A;
-padding: 8px;
-border-radius: 4px;
-margin-bottom: 8px;
-cursor: pointer;
-display: flex;
-align-items: center;
-gap: 8px;
-}
-.wallet-option:hover {
-background-color: #3B4A6B;
-}
-.main-layout {
-display: flex;
-flex-direction: row;
-width: 100%;
-}
-.chart-section {
-flex: 1;
-display: flex;
-flex-direction: column;
-border-right: 1px solid #2A3B5A;
-min-height: calc(100vh - 80px); /* Adjusted for header and trending banner */
-}
-.sidebar {
-width: 300px;
-background-color: #0D1A2E;
-border-left: none;
-overflow-y: auto;
-}
-.sidebar-header {
-padding: 16px;
-border-bottom: 1px solid #2A3B5A; /* Aligned with chart section separator */
-}
-.branding-overlay {
-font-family: 'Inter', sans-serif;
-font-size: 12px;
-font-weight: 500;
-color: #D1D1D6;
-background: rgba(13, 26, 46, 0.8);
-padding: 4px 8px;
-border-radius: 4px;
-display: inline-flex;
-align-items: center;
-gap: 6px;
-box-sizing: border-box;
-}
-.branding-overlay .symbol {
-color: #D1D1D6;
-font-weight: 600;
-}
-.branding-overlay .price {
-color: #A1A1AA;
-font-size: 10px;
-}
-.branding-overlay .timeframe {
-color: #A1A1AA;
-font-size: 10px;
-}
-.branding-overlay .cypher {
-color: #3B82F6;
-font-size: 10px;
-}
-@media (max-width: 768px) {
-.main-layout {
-flex-direction: column;
-}
-.chart-section {
-border-right: none;
-border-bottom: 1px solid #2A3B5A;
-min-height: auto;
-}
-.sidebar {
-width: 100%;
-border-left: none;
-border-top: none;
-}
-.chart-container {
-padding: 0;
-}
-.header {
-flex-direction: column;
-align-items: flex-start;
-gap: 8px;
-}
-.timeframe-buttons {
-flex-wrap: wrap;
-gap: 4px;
-}
-.transactions-table th,
-.transactions-table td {
-padding: 4px;
-font-size: 10px;
-}
-.trending-banner {
-padding: 0;
-width: 100%;
-}
-.trending-token-card {
-padding: 6px 10px;
-margin-right: 0;
-min-width: 200px;
-}
-.trending-token-card img {
-width: 20px;
-height: 20px;
-margin-right: 6px;
-}
-.rank-badge {
-font-size: 9px;
-padding: 1px 4px;
-margin-right: 6px;
-}
-.swap-form-container {
-padding: 12px;
-}
-.swap-input {
-font-size: 12px;
-padding: 6px;
-}
-.swap-button,
-.wallet-button {
-font-size: 12px;
-padding: 6px;
-}
-.swap-info {
-font-size: 10px;
-}
-.wallet-address {
-font-size: 10px;
-padding: 6px;
-}
-.sidebar-header {
-padding: 12px;
-}
-.branding-overlay {
-font-size: 10px;
-gap: 4px;
-}
-.branding-overlay .price,
-.branding-overlay .timeframe,
-.branding-overlay .cypher {
-font-size: 8px;
-}
-}
-`}</style>
+  // JSX Return Statement
+  return (
+    <div className="min-h-screen font-sans bg-gray-950 text-gray-200 w-full">
+      <style jsx>{`
+        @keyframes fadeIn {
+          0% { opacity: 0; transform: translateY(-10px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes pulse {
+          0% { opacity: 0.5; }
+          50% { opacity: 1; }
+          100% { opacity: 0.5; }
+        }
+        .fade-in {
+          animation: fadeIn 0.5s ease-in-out;
+        }
+        .pulse {
+          animation: pulse 1.5s infinite ease-in-out;
+        }
+        .tooltip {
+          position: relative;
+          display: inline-block;
+        }
+        .tooltip .tooltiptext {
+          visibility: hidden;
+          width: 120px;
+          background-color: #2A3B5A;
+          color: #D1D1D6;
+          text-align: center;
+          border-radius: 4px;
+          padding: 5px;
+          position: absolute;
+          z-index: 1;
+          bottom: 125%;
+          left: 50%;
+          margin-left: -60px;
+          opacity: 0;
+          transition: opacity 0.3s;
+          font-size: 10px;
+        }
+        .tooltip:hover .tooltiptext {
+          visibility: visible;
+          opacity: 1;
+        }
+        .custom-scrollbar {
+          scrollbar-width: thin;
+          scrollbar-color: #3B82F6 #0D1A2E;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: #0D1A2E;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background-color: #3B82F6;
+          border-radius: 4px;
+          border: 2px solid #0D1A2E;
+        }
+        .custom-scrollbar-x-none {
+          overflow-x: hidden; /* Remove horizontal scrollbar */
+        }
+        .transaction-table-container {
+          max-height: 200px; /* Fixed height to prevent layout shifts */
+          overflow-y: auto;
+          position: relative;
+        }
+        .transaction-table-container.loading {
+          min-height: 200px; /* Ensure space for loading indicator */
+        }
+        .trending-banner {
+          background-color: #0D1A2E;
+          border-bottom: 1px solid #2A3B5A;
+          padding: 0;
+          overflow: hidden;
+          white-space: nowrap;
+          width: 100%;
+          position: relative;
+          margin: 0;
+        }
+        .trending-tokens-container {
+          display: inline-flex;
+          width: max-content;
+          animation: marquee 20s linear infinite;
+        }
+        .trending-tokens-container:hover {
+          animation-play-state: paused;
+        }
+        .trending-token-card {
+          display: inline-flex;
+          align-items: center;
+          padding: 8px 12px;
+          margin-right: 0;
+          background-color: #0D1A2E;
+          border: 1px solid #2A3B5A;
+          border-right: none;
+          min-width: 220px;
+          white-space: nowrap;
+        }
+        .trending-token-card:last-child {
+          border-right: 1px solid #2A3B5A;
+        }
+        .trending-token-card:not(:last-child)::after {
+          content: '';
+          width: 1px;
+          height: 100%;
+          background-color: #A1A1AA;
+          position: absolute;
+          right: 0;
+        }
+        .trending-token-card img {
+          width: 24px;
+          height: 24px;
+          object-fit: cover;
+          aspect-ratio: 1/1;
+          background-color: #2A3B5A;
+          border: 1px solid #2A3B5A;
+          overflow: hidden;
+          margin-right: 8px;
+        }
+        .rank-badge {
+          background-color: #2A3B5A;
+          color: #D1D1D6;
+          font-size: 10px;
+          font-weight: 600;
+          padding: 2px 6px;
+          border-radius: 4px;
+          border: 1px solid #A1A1AA;
+          margin-right: 8px;
+        }
+        @keyframes marquee {
+          0% {
+            transform: translateX(0);
+          }
+          100% {
+            transform: translateX(-50%);
+          }
+        }
+        .swap-form-container {
+          background-color: #1A263F;
+          border: 1px solid #2A3B5A;
+          border-radius: 4px;
+          padding: 16px;
+        }
+        .swap-input {
+          background-color: #2A3B5A;
+          border: 1px solid #2A3B5A;
+          border-radius: 4px;
+          padding: 8px;
+          color: #D1D1D6;
+          width: 100%;
+          font-size: 14px;
+          outline: none;
+        }
+        .swap-input:disabled {
+          background-color: #1A263F;
+          color: #A1A1AA;
+        }
+        .swap-button {
+          background-color: #3B82F6;
+          color: #FFFFFF;
+          padding: 8px;
+          border-radius: 4px;
+          font-size: 14px;
+          font-weight: 500;
+          transition: background-color 0.2s ease-in-out;
+          width: 100%;
+        }
+        .swap-button:hover {
+          background-color: #2563EB;
+        }
+        .swap-button:disabled {
+          background-color: #2563EB;
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .swap-arrow {
+          background-color: #2A3B5A;
+          border-radius: 4px;
+          padding: 8px;
+          cursor: pointer;
+          transition: transform 0.2s ease-in-out;
+        }
+        .swap-arrow:hover {
+          transform: scale(1.1);
+        }
+        .swap-info {
+          font-size: 12px;
+          color: #A1A1AA;
+        }
+        .wallet-button {
+          background-color: #3B82F6;
+          color: #FFFFFF;
+          padding: 8px;
+          border-radius: 4px;
+          font-size: 14px;
+          font-weight: 500;
+          transition: background-color 0.2s ease-in-out;
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+        }
+        .wallet-button:hover {
+          background-color: #2563EB;
+        }
+        .wallet-address {
+          background-color: #2A3B5A;
+          border: 1px solid #2A3B5A;
+          border-radius: 4px;
+          padding: 8px;
+          color: #D1D1D6;
+          font-size: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        .wallet-modal {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background-color: rgba(0, 0, 0, 0.5);
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          z-index: 50;
+        }
+        .wallet-modal-content {
+          background-color: #1A263F;
+          border: 1px solid #2A3B5A;
+          border-radius: 8px;
+          padding: 16px;
+          width: 300px;
+          max-width: 90%;
+        }
+        .wallet-option {
+          background-color: #2A3B5A;
+          padding: 8px;
+          border-radius: 4px;
+          margin-bottom: 8px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .wallet-option:hover {
+          background-color: #3B4A6B;
+        }
+        .main-layout {
+          display: flex;
+          flex-direction: row;
+          width: 100%;
+        }
+        .chart-section {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          border-right: 1px solid #2A3B5A;
+          min-height: calc(100vh - 80px); /* Adjusted for header and trending banner */
+        }
+        .sidebar {
+          width: 300px;
+          background-color: #0D1A2E;
+          border-left: none;
+          overflow-y: auto;
+        }
+        .sidebar-header {
+          padding: 16px;
+          border-bottom: 1px solid #2A3B5A; /* Aligned with chart section separator */
+        }
+        .branding-overlay {
+          font-family: 'Inter', sans-serif;
+          font-size: 12px;
+          font-weight: 500;
+          color: #D1D1D6;
+          background: rgba(13, 26, 46, 0.8);
+          padding: 4px 8px;
+          border-radius: 4px;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          box-sizing: border-box;
+        }
+        .branding-overlay .symbol {
+          color: #D1D1D6;
+          font-weight: 600;
+        }
+        .branding-overlay .price {
+          color: #A1A1AA;
+          font-size: 10px;
+        }
+        .branding-overlay .timeframe {
+          color: #A1A1AA;
+          font-size: 10px;
+        }
+        .branding-overlay .cypher {
+          color: #3B82F6;
+          font-size: 10px;
+        }
+        @media (max-width: 768px) {
+          .main-layout {
+            flex-direction: column;
+          }
+          .chart-section {
+            border-right: none;
+            border-bottom: 1px solid #2A3B5A;
+            min-height: auto;
+          }
+          .sidebar {
+            width: 100%;
+            border-left: none;
+            border-top: none;
+          }
+          .chart-container {
+            padding: 0;
+          }
+          .header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 8px;
+          }
+          .timeframe-buttons {
+            flex-wrap: wrap;
+            gap: 4px;
+          }
+          .transactions-table th,
+          .transactions-table td {
+            padding: 4px;
+            font-size: 10px;
+          }
+          .trending-banner {
+            padding: 0;
+            width: 100%;
+          }
+          .trending-token-card {
+            padding: 6px 10px;
+            margin-right: 0;
+            min-width: 200px;
+          }
+          .trending-token-card img {
+            width: 20px;
+            height: 20px;
+            margin-right: 6px;
+          }
+          .rank-badge {
+            font-size: 9px;
+            padding: 1px 4px;
+            margin-right: 6px;
+          }
+          .swap-form-container {
+            padding: 12px;
+          }
+          .swap-input {
+            font-size: 12px;
+            padding: 6px;
+          }
+          .swap-button,
+          .wallet-button {
+            font-size: 12px;
+            padding: 6px;
+          }
+          .swap-info {
+            font-size: 10px;
+          }
+          .wallet-address {
+            font-size: 10px;
+            padding: 6px;
+          }
+          .sidebar-header {
+            padding: 12px;
+          }
+          .branding-overlay {
+            font-size: 10px;
+            gap: 4px;
+          }
+          .branding-overlay .price,
+          .branding-overlay .timeframe,
+          .branding-overlay .cypher {
+            font-size: 8px;
+          }
+        }
+      `}</style>
 
-{/* Wallet Connection Modal */}
-{showWalletModal && (
-<div className="wallet-modal">
-<div className="wallet-modal-content">
-<h3 className="text-lg font-semibold mb-4 text-gray-100">Connect a Wallet</h3>
-{connectors.map((connector) => (
-<div
-key={connector.id}
-className="wallet-option"
-onClick={() => handleConnectWallet(connector)}
->
-<FaWallet className="w-5 h-5 text-blue-500" />
-<span className="text-gray-200">{connector.name}</span>
-</div>
-))}
-<button
-onClick={() => setShowWalletModal(false)}
-className="mt-4 text-gray-400 hover:text-red-400 text-sm"
->
-Cancel
-</button>
-</div>
-</div>
-)}
+      {/* Trending Tokens Banner */}
+      <div className="trending-banner">
+        {trendingError ? (
+          <div className="text-red-400 text-sm px-4 py-2">Error: {trendingError}</div>
+        ) : trendingLoading ? (
+          <div className="text-gray-400 text-sm px-4 py-2 flex items-center">
+            <svg
+              className="animate-spin h-5 w-5 text-blue-500 mr-2"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
+            </svg>
+            Loading trending tokens...
+          </div>
+        ) : trendingTokens.length === 0 ? (
+          <div className="text-gray-400 text-sm px-4 py-2">No trending tokens available.</div>
+        ) : (
+          <div className="trending-tokens-container">
+            {[...trendingTokens, ...trendingTokens].map((token, index) => (
+              <Link
+                href={`/token-screener/${token.pairAddress}/chart`}
+                key={`${token.pairAddress}-${index}`}
+                passHref
+              >
+                <div className="trending-token-card relative">
+                  <span className="rank-badge">#{(index % trendingTokens.length) + 1}</span>
+                  <img
+                    src={token.imageUrl}
+                    alt={`${token.symbol} logo`}
+                    onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/24/1F2937/FFFFFF?text=T")}
+                  />
+                  <div className="flex-1">
+                    <span className="font-semibold text-gray-100 text-sm">{token.symbol}</span>
+                    <span className="block text-xs text-gray-400 truncate max-w-[60px]">{token.name}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="block text-gray-100 text-sm">${parseFloat(token.priceUsd).toFixed(4)}</span>
+                    <span
+                      className={`text-xs ${token.priceChange24h >= 0 ? "text-green-400" : "text-red-400"}`}
+                    >
+                      {token.priceChange24h.toFixed(2)}%
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
 
-{/* Trending Tokens Banner */}
-<div className="trending-banner">
-{trendingError ? (
-<div className="text-red-400 text-sm px-4 py-2">Error: {trendingError}</div>
-) : trendingLoading ? (
-<div className="text-gray-400 text-sm px-4 py-2 flex items-center">
-<svg
-className="animate-spin h-5 w-5 text-blue-500 mr-2"
-xmlns="http://www.w3.org/2000/svg"
-fill="none"
-viewBox="0 0 24 24"
->
-<circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-<path
-className="opacity-75"
-fill="currentColor"
-d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-></path>
-</svg>
-Loading trending tokens...
-</div>
-) : trendingTokens.length === 0 ? (
-<div className="text-gray-400 text-sm px-4 py-2">No trending tokens available.</div>
-) : (
-<div className="trending-tokens-container">
-{[...trendingTokens, ...trendingTokens].map((token, index) => (
-<Link
-href={`/token-screener/${token.pairAddress}/chart`}
-key={`${token.pairAddress}-${index}`}
-passHref
->
-<div className="trending-token-card relative">
-<span className="rank-badge">#{(index % trendingTokens.length) + 1}</span>
-<img
-src={token.imageUrl}
-alt={`${token.symbol} logo`}
-onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/24/1F2937/FFFFFF?text=T")}
-/>
-<div className="flex-1">
-<span className="font-semibold text-gray-100 text-sm">{token.symbol}</span>
-<span className="block text-xs text-gray-400 truncate max-w-[60px]">{token.name}</span>
-</div>
-<div className="text-right">
-<span className="block text-gray-100 text-sm">${parseFloat(token.priceUsd).toFixed(4)}</span>
-<span
-className={`text-xs ${token.priceChange24h >= 0 ? "text-green-400" : "text-red-400"}`}
->
-{token.priceChange24h.toFixed(2)}%
-</span>
-</div>
-</div>
-</Link>
-))}
-</div>
-)}
-</div>
+      {/* Header */}
+      <header className="sticky top-0 z-50 px-4 py-2 border-b border-[#2A3B5A] flex flex-wrap justify-between items-center w-full bg-gray-950 shadow-sm header">
+        <div className="flex items-center gap-2">
+          {token?.logoUrl && (
+            <img
+              src={token.logoUrl}
+              alt={`${token.baseToken.name} logo`}
+              className="w-6 h-6 rounded-full border border-[#2A3B5A]"
+              onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/48")}
+            />
+          )}
+          <h1 className="text-base font-semibold tracking-tight text-gray-100">
+            {token ? `${token.baseToken.symbol}/${token.quoteToken.symbol}` : "Loading..."}
+            <span className="ml-2 text-xs text-gray-400 font-normal">on Base Chain</span>
+          </h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="text-xs text-gray-400">Last Updated: {lastUpdated}</div>
+        </div>
+      </header>
 
-{/* Header */}
-<header className="sticky top-0 z-50 px-4 py-2 border-b border-[#2A3B5A] flex flex-wrap justify-between items-center w-full bg-gray-950 shadow-sm header">
-<div className="flex items-center gap-2">
-{token?.logoUrl && (
-<img
-src={token.logoUrl}
-alt={`${token.baseToken.name} logo`}
-className="w-6 h-6 rounded-full border border-[#2A3B5A]"
-onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/48")}
-/>
-)}
-<h1 className="text-base font-semibold tracking-tight text-gray-100">
-{token ? `${token.baseToken.symbol}/${token.quoteToken.symbol}` : "Loading..."}
-<span className="ml-2 text-xs text-gray-400 font-normal">on Base Chain</span>
-</h1>
-</div>
-<div className="flex items-center gap-2">
-<div className="text-xs text-gray-400">Last Updated: {lastUpdated}</div>
-</div>
-</header>
+      {/* Main Content */}
+      <div className="main-layout">
+        {/* Chart Section */}
+        <div className="chart-section">
+          {initialLoading ? (
+            <div className="text-center text-sm flex items-center justify-center h-full bg-gray-950">
+              <svg className="animate-spin h-6 w-6 text-blue-500 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Loading...
+            </div>
+          ) : error ? (
+            <div className="text-red-400 text-center text-sm bg-gray-950 p-4 h-full flex items-center justify-center">{error}</div>
+          ) : (
+            <div className="bg-gray-950 w-full">
+              <div className="flex flex-wrap justify-between items-center px-4 py-3 border-b border-[#2A3B5A]">
+                <div className="flex space-x-2 mb-2 lg:mb-0">
+                  <button
+                    onClick={() => setChartView("Price")}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${chartView === "Price" ? "bg-blue-500 text-white shadow-sm" : "bg-[#1A263F] text-gray-400 hover:bg-[#2A3B5A]"}`}
+                  >
+                    Price
+                  </button>
+                  <button
+                    onClick={() => setChartView("MarketCap")}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${chartView === "MarketCap" ? "bg-blue-500 text-white shadow-sm" : "bg-[#1A263F] text-gray-400 hover:bg-[#2A3B5A]"}`}
+                  >
+                    Market Cap
+                  </button>
+                  {chartView === "Price" && (
+                    <>
+                      <button
+                        onClick={() => setChartType("Candlestick")}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${chartType === "Candlestick" ? "bg-blue-500 text-white shadow-sm" : "bg-[#1A263F] text-gray-400 hover:bg-[#2A3B5A]"}`}
+                      >
+                        Candlestick
+                      </button>
+                      <button
+                        onClick={() => setChartType("Line")}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${chartType === "Line" ? "bg-blue-500 text-white shadow-sm" : "bg-[#1A263F] text-gray-400 hover:bg-[#2A3B5A]"}`}
+                      >
+                        Line
+                      </button>
+                    </>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2 timeframe-buttons">
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <div className="flex gap-1 items-center">
+                      <span className="text-xs text-gray-400 px-2 py-1">Timeframe:</span>
+                      {["1m", "5m", "15m", "1h", "4h", "12h", "1d"].map((tf) => (
+                        <button
+                          key={tf}
+                          onClick={() => {
+                            setTimeframe(tf);
+                            if (token) fetchChartData(poolAddress as string, token);
+                          }}
+                          disabled={initialLoading}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                            timeframe === tf ? "bg-blue-500 text-white shadow-sm" : "bg-[#1A263F] text-gray-400 hover:bg-[#2A3B5A]"
+                          } ${initialLoading ? "opacity-50 cursor-not-allowed" : ""}`}
+                        >
+                          {initialLoading && timeframe === tf ? (
+                            <svg className="animate-spin h-4 w-4 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                          ) : (
+                            tf
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
 
-{/* Main Content */}
-<div className="main-layout">
-{/* Chart Section */}
-<div className="chart-section">
-{initialLoading ? (
-<div className="text-center text-sm flex items-center justify-center h-full bg-gray-950">
-<svg className="animate-spin h-6 w-6 text-blue-500 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-<circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-<path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-</svg>
-Loading...
-</div>
-) : error ? (
-<div className="text-red-400 text-center text-sm bg-gray-950 p-4 h-full flex items-center justify-center">{error}</div>
-) : (
-<div className="bg-gray-950 w-full">
-<div className="flex flex-wrap justify-between items-center px-4 py-3 border-b border-[#2A3B5A]">
-<div className="flex space-x-2 mb-2 lg:mb-0">
-<button
-onClick={() => setChartView("Price")}
-className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${chartView === "Price" ? "bg-blue-500 text-white shadow-sm" : "bg-[#1A263F] text-gray-400 hover:bg-[#2A3B5A]"}`}
->
-Price
-</button>
-<button
-onClick={() => setChartView("MarketCap")}
-className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${chartView === "MarketCap" ? "bg-blue-500 text-white shadow-sm" : "bg-[#1A263F] text-gray-400 hover:bg-[#2A3B5A]"}`}
->
-Market Cap
-</button>
-{chartView === "Price" && (
-<>
-<button
-onClick={() => setChartType("Candlestick")}
-className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${chartType === "Candlestick" ? "bg-blue-500 text-white shadow-sm" : "bg-[#1A263F] text-gray-400 hover:bg-[#2A3B5A]"}`}
->
-Candlestick
-</button>
-<button
-onClick={() => setChartType("Line")}
-className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${chartType === "Line" ? "bg-blue-500 text-white shadow-sm" : "bg-[#1A263F] text-gray-400 hover:bg-[#2A3B5A]"}`}
->
-Line
-</button>
-</>
-)}
-</div>
-<div className="flex flex-wrap gap-2 timeframe-buttons">
-<div className="flex flex-col sm:flex-row gap-2">
-<div className="flex gap-1 items-center">
-<span className="text-xs text-gray-400 px-2 py-1">Timeframe:</span>
-{["1m", "5m", "15m", "1h", "4h", "12h", "1d"].map((tf) => (
-<button
-key={tf}
-onClick={() => {
-setTimeframe(tf);
-if (token) fetchChartData(poolAddress as string, token);
-}}
-disabled={initialLoading}
-className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-timeframe === tf ? "bg-blue-500 text-white shadow-sm" : "bg-[#1A263F] text-gray-400 hover:bg-[#2A3B5A]"
-} ${initialLoading ? "opacity-50 cursor-not-allowed" : ""}`}
->
-{initialLoading && timeframe === tf ? (
-<svg className="animate-spin h-4 w-4 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-<circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-<path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-</svg>
-) : (
-tf
-)}
-</button>
-))}
-</div>
-</div>
-</div>
-</div>
+              <div className="relative px-4 py-3">
+                <div className="branding-overlay mb-2">
+                  <span className="symbol">{symbol}</span>
+                  <span className="price">Price: ${ohlc.close}</span>
+                  <span className="timeframe">{timeframe.toUpperCase()}</span>
+                  <span className="cypher">cypher.io</span>
+                </div>
 
-<div className="relative px-4 py-3">
-<div className="branding-overlay mb-2">
-<span className="symbol">{symbol}</span>
-<span className="price">Price: ${ohlc.close}</span>
-<span className="timeframe">{timeframe.toUpperCase()}</span>
-<span className="cypher">cypher.io</span>
-</div>
+                {chartView === "Price" ? (
+                  chartType === "Candlestick" ? (
+                    candleData.length > 0 ? (
+                      <Chart
+                        options={candlestickOptions}
+                        series={[{ data: candleData }]}
+                        type="candlestick"
+                        height={isMounted && window.innerWidth < 768 ? 300 : 400}
+                        width="100%"
+                      />
+                    ) : (
+                      <div className="text-center text-sm text-gray-400 h-full flex items-center justify-center">No chart data available.</div>
+                    )
+                  ) : (
+                    lineData.length > 0 ? (
+                      <Chart
+                        options={lineOptions}
+                        series={[{ name: "Price", data: lineData }]}
+                        type="line"
+                        height={isMounted && window.innerWidth < 768 ? 300 : 400}
+                        width="100%"
+                      />
+                    ) : (
+                      <div className="text-center text-sm text-gray-400 h-full flex items-center justify-center">No chart data available.</div>
+                    )
+                  )
+                ) : (
+                  marketCapData.length > 0 ? (
+                    <Chart
+                      options={candlestickOptions}
+                      series={[{ data: marketCapData }]}
+                      type="candlestick"
+                      height={isMounted && window.innerWidth < 768 ? 300 : 400}
+                      width="100%"
+                    />
+                  ) : (
+                    <div className="text-center text-sm text-gray-400 h-full flex items-center justify-center">No chart data available.</div>
+                  )
+                )}
+              </div>
 
-{chartView === "Price" ? (
-chartType === "Candlestick" ? (
-candleData.length > 0 ? (
-<Chart
-options={candlestickOptions}
-series={[{ data: candleData }]}
-type="candlestick"
-height={isMounted && window.innerWidth < 768 ? 300 : 400}
-width="100%"
-/>
-) : (
-<div className="text-center text-sm text-gray-400 h-full flex items-center justify-center">No chart data available.</div>
-)
-) : (
-lineData.length > 0 ? (
-<Chart
-options={lineOptions}
-series={[{ name: "Price", data: lineData }]}
-type="line"
-height={isMounted && window.innerWidth < 768 ? 300 : 400}
-width="100%"
-/>
-) : (
-<div className="text-center text-sm text-gray-400 h-full flex items-center justify-center">No chart data available.</div>
-)
-)
-) : (
-marketCapData.length > 0 ? (
-<Chart
-options={candlestickOptions}
-series={[{ data: marketCapData }]}
-type="candlestick"
-height={isMounted && window.innerWidth < 768 ? 300 : 400}
-width="100%"
-/>
-) : (
-<div className="text-center text-sm text-gray-400 h-full flex items-center justify-center">No chart data available.</div>
-)
-)}
-</div>
+              {/* Transactions Table */}
+              <div className="px-4 py-3">
+                <h3 className="text-sm font-semibold mb-2 text-gray-100">Transactions</h3>
+                <div className={`transaction-table-container custom-scrollbar custom-scrollbar-x-none w-full ${transactionLoading ? "loading" : ""}`} ref={transactionContainerRef}>
+                  <table className="w-full text-[12px] text-left font-sans transactions-table table-auto">
+                    <thead className="text-[10px] text-gray-400 uppercase bg-gray-950 sticky top-0 z-10">
+                      <tr>
+                        <th scope="col" className="px-2 py-2 whitespace-nowrap">Time</th>
+                        <th scope="col" className="px-2 py-2 whitespace-nowrap">Type</th>
+                        <th scope="col" className="px-2 py-2 whitespace-nowrap">Price (USD)</th>
+                        <th scope="col" className="px-2 py-2 whitespace-nowrap">Price (ETH)</th>
+                        <th scope="col" className="px-2 py-2 whitespace-nowrap text-right">Token Amount</th>
+                        <th scope="col" className="px-2 py-2 whitespace-nowrap text-right">Token Price</th>
+                        <th scope="col" className="px-2 py-2 whitespace-nowrap text-right">From</th>
+                        <th scope="col" className="px-2 py-2 whitespace-nowrap text-right">To</th>
+                        <th scope="col" className="px-2 py-2 whitespace-nowrap text-right">Maker</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transactions.length === 0 && !transactionLoading ? (
+                        <tr>
+                          <td colSpan={9} className="px-2 py-3 text-center text-gray-400">
+                            No transactions available.
+                          </td>
+                        </tr>
+                      ) : (
+                        transactions.slice(0, 5).map((tx, index) => {
+                          const tokenAmount = tx.tokenAmount || 0;
+                          const tokenPriceInUsd = token?.priceUsd ? parseFloat(token.priceUsd) : 0;
+                          const usdValue = Number.isFinite(tokenAmount * tokenPriceInUsd)
+                            ? (tokenAmount * tokenPriceInUsd).toFixed(2)
+                            : "0.00";
+                          const ethValue = ethPrice && Number.isFinite((tokenAmount * tokenPriceInUsd) / ethPrice)
+                            ? ((tokenAmount * tokenPriceInUsd) / ethPrice).toFixed(4)
+                            : "0.0000";
+                          const isBuy = token && tx.to.toLowerCase() === token.pairAddress.toLowerCase();
+                          const maker = isBuy ? tx.from : tx.to;
+                          const shortFrom = `${tx.from.slice(0, 4)}...${tx.from.slice(-4)}`;
+                          const shortTo = `${tx.to.slice(0, 4)}...${tx.to.slice(-4)}`;
+                          const shortMaker = `${maker.slice(0, 4)}...${maker.slice(-4)}`;
 
-{/* Transactions Table */}
-<div className="px-4 py-3">
-<h3 className="text-sm font-semibold mb-2 text-gray-100">Transactions</h3>
-<div className={`transaction-table-container custom-scrollbar custom-scrollbar-x-none w-full ${transactionLoading ? "loading" : ""}`} ref={transactionContainerRef}>
-<table className="w-full text-[12px] text-left font-sans transactions-table table-auto">
-<thead className="text-[10px] text-gray-400 uppercase bg-gray-950 sticky top-0 z-10">
-<tr>
-<th scope="col" className="px-2 py-2 whitespace-nowrap">Time</th>
-<th scope="col" className="px-2 py-2 whitespace-nowrap">Type</th>
-<th scope="col" className="px-2 py-2 whitespace-nowrap">Price (USD)</th>
-<th scope="col" className="px-2 py-2 whitespace-nowrap">Price (ETH)</th>
-<th scope="col" className="px-2 py-2 whitespace-nowrap text-right">Token Amount</th>
-<th scope="col" className="px-2 py-2 whitespace-nowrap text-right">Token Price</th>
-<th scope="col" className="px-2 py-2 whitespace-nowrap text-right">From</th>
-<th scope="col" className="px-2 py-2 whitespace-nowrap text-right">To</th>
-<th scope="col" className="px-2 py-2 whitespace-nowrap text-right">Maker</th>
-</tr>
-</thead>
-<tbody>
-{transactions.length === 0 && !transactionLoading ? (
-<tr>
-<td colSpan={9} className="px-2 py-3 text-center text-gray-400">
-No transactions available.
-</td>
-</tr>
-) : (
-transactions.slice(0, 5).map((tx, index) => {
-const tokenAmount = tx.tokenAmount || 0;
-const tokenPriceInUsd = token?.priceUsd ? parseFloat(token.priceUsd) : 0;
-const usdValue = Number.isFinite(tokenAmount * tokenPriceInUsd)
-? (tokenAmount * tokenPriceInUsd).toFixed(2)
-: "0.00";
-const ethValue = ethPrice && Number.isFinite((tokenAmount * tokenPriceInUsd) / ethPrice)
-? ((tokenAmount * tokenPriceInUsd) / ethPrice).toFixed(4)
-: "0.0000";
-const isBuy = token && tx.to.toLowerCase() === token.pairAddress.toLowerCase();
-const maker = isBuy ? tx.from : tx.to;
-const shortFrom = `${tx.from.slice(0, 4)}...${tx.from.slice(-4)}`;
-const shortTo = `${tx.to.slice(0, 4)}...${tx.to.slice(-4)}`;
-const shortMaker = `${maker.slice(0, 4)}...${maker.slice(-4)}`;
+                          return (
+                            <tr
+                              key={tx.id}
+                              className={`border-b border-[#2A3B5A] text-gray-100 fade-in ${
+                                index % 2 === 0 ? "bg-[#1A263F]" : "bg-[#0F1C34]"
+                              }`}
+                              ref={index === 4 ? lastTransactionRef : null}
+                            >
+                              <td className="px-2 py-3 whitespace-nowrap">
+                                {new Date(tx.timestamp).toLocaleString("en-US", {
+                                  month: "short",
+                                  day: "2-digit",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                  second: "2-digit",
+                                  hour12: true,
+                                }).replace(",", "")}
+                              </td>
+                              <td className={`px-2 py-3 whitespace-nowrap ${isBuy ? "text-green-400" : "text-red-400"} font-bold`}>
+                                {isBuy ? "BUY" : "SELL"}
+                              </td>
+                              <td className="px-2 py-3 whitespace-nowrap text-gray-100">${usdValue}</td>
+                              <td className="px-2 py-3 whitespace-nowrap text-gray-100">{ethValue}</td>
+                              <td className="px-2 py-3 whitespace-nowrap text-right">{Number.isFinite(tokenAmount) ? tokenAmount.toFixed(4) : "0.0000"}</td>
+                              <td className="px-2 py-3 whitespace-nowrap text-right text-gray-100">${Number.isFinite(tokenPriceInUsd) ? tokenPriceInUsd.toFixed(6) : "0.000000"}</td>
+                              <td className="px-2 py-3 whitespace-nowrap text-right">
+                                <div className="tooltip">
+                                  <a
+                                    href={`https://basescan.org/address/${tx.from}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-500 hover:underline"
+                                  >
+                                    {shortFrom}
+                                  </a>
+                                  <span className="tooltiptext">{tx.from}</span>
+                                </div>
+                              </td>
+                              <td className="px-2 py-3 whitespace-nowrap text-right">
+                                <div className="tooltip">
+                                  <a
+                                    href={`https://basescan.org/address/${tx.to}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-500 hover:underline"
+                                  >
+                                    {shortTo}
+                                  </a>
+                                  <span className="tooltiptext">{tx.to}</span>
+                                </div>
+                              </td>
+                              <td className="px-2 py-3 whitespace-nowrap text-right">
+                                <div className="tooltip">
+                                  <a
+                                    href={`https://basescan.org/address/${maker}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-500 hover:underline"
+                                  >
+                                    {shortMaker}
+                                  </a>
+                                  <span className="tooltiptext">{maker}</span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                  {transactionLoading && (
+                    <div className="text-center text-sm text-gray-400 py-2">
+                      <svg
+                        className="animate-spin h-5 w-5 text-blue-500 mx-auto pulse"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        ></path>
+                      </svg>
+                    </div>
+                  )}
+                </div>
+              </div>
 
-return (
-<tr
-key={tx.id}
-className={`border-b border-[#2A3B5A] text-gray-100 fade-in ${
-index % 2 === 0 ? "bg-[#1A263F]" : "bg-[#0F1C34]"
-}`}
-ref={index === 4 ? lastTransactionRef : null}
->
-<td className="px-2 py-3 whitespace-nowrap">
-{new Date(tx.timestamp).toLocaleString("en-US", {
-month: "short",
-day: "2-digit",
-hour: "2-digit",
-minute: "2-digit",
-second: "2-digit",
-hour12: true,
-}).replace(",", "")}
-</td>
-<td className={`px-2 py-3 whitespace-nowrap ${isBuy ? "text-green-400" : "text-red-400"} font-bold`}>
-{isBuy ? "BUY" : "SELL"}
-</td>
-<td className="px-2 py-3 whitespace-nowrap text-gray-100">${usdValue}</td>
-<td className="px-2 py-3 whitespace-nowrap text-gray-100">{ethValue}</td>
-<td className="px-2 py-3 whitespace-nowrap text-right">{Number.isFinite(tokenAmount) ? tokenAmount.toFixed(4) : "0.0000"}</td>
-<td className="px-2 py-3 whitespace-nowrap text-right text-gray-100">${Number.isFinite(tokenPriceInUsd) ? tokenPriceInUsd.toFixed(6) : "0.000000"}</td>
-<td className="px-2 py-3 whitespace-nowrap text-right">
-<div className="tooltip">
-<a
-href={`https://basescan.org/address/${tx.from}`}
-target="_blank"
-rel="noopener noreferrer"
-className="text-blue-500 hover:underline"
->
-{shortFrom}
-</a>
-<span className="tooltiptext">{tx.from}</span>
-</div>
-</td>
-<td className="px-2 py-3 whitespace-nowrap text-right">
-<div className="tooltip">
-<a
-href={`https://basescan.org/address/${tx.to}`}
-target="_blank"
-rel="noopener noreferrer"
-className="text-blue-500 hover:underline"
->
-{shortTo}
-</a>
-<span className="tooltiptext">{tx.to}</span>
-</div>
-</td>
-<td className="px-2 py-3 whitespace-nowrap text-right">
-<div className="tooltip">
-<a
-href={`https://basescan.org/address/${maker}`}
-target="_blank"
-rel="noopener noreferrer"
-className="text-blue-500 hover:underline"
->
-{shortMaker}
-</a>
-<span className="tooltiptext">{maker}</span>
-</div>
-</td>
-</tr>
-);
-})
-)}
-</tbody>
-</table>
-{transactionLoading && (
-<div className="text-center text-sm text-gray-400 py-2">
-<svg
-className="animate-spin h-5 w-5 text-blue-500 mx-auto pulse"
-xmlns="http://www.w3.org/2000/svg"
-fill="none"
-viewBox="0 0 24 24"
->
-<circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-<path
-className="opacity-75"
-fill="currentColor"
-d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-></path>
-</svg>
-</div>
-)}
-</div>
-</div>
+              {/* Indicators */}
+              <div className="px-4 py-3">
+                <div className="flex overflow-x-auto border-t border-b border-[#2A3B5A] bg-gray-950 mb-4 w-full">
+                  {availableIndicators.map((indicator) => (
+                    <button
+                      key={indicator}
+                      onClick={() => setActiveIndicatorTab(indicator)}
+                      className={`px-4 py-2 text-sm font-medium transition-all duration-200 ${
+                        activeIndicatorTab === indicator ? "bg-blue-500 text-white" : "text-gray-400 hover:bg-[#2A3B5A]"
+                      }`}
+                    >
+                      {indicator}
+                    </button>
+                  ))}
+                </div>
 
-{/* Indicators */}
-<div className="px-4 py-3">
-<div className="flex overflow-x-auto border-t border-b border-[#2A3B5A] bg-gray-950 mb-4 w-full">
-{availableIndicators.map((indicator) => (
-<button
-key={indicator}
-onClick={() => setActiveIndicatorTab(indicator)}
-className={`px-4 py-2 text-sm font-medium transition-all duration-200 ${
-activeIndicatorTab === indicator ? "bg-blue-500 text-white" : "text-gray-400 hover:bg-[#2A3B5A]"
-}`}
->
-{indicator}
-</button>
-))}
-</div>
+                <div className="w-full">
+                  {activeIndicatorTab === "Volume" && (
+                    <Chart
+                      options={volumeOptions}
+                      series={[{ name: "Volume", data: volumeData }]}
+                      type="bar"
+                      height={isMounted && window.innerWidth < 768 ? 100 : 200}
+                      width="100%"
+                    />
+                  )}
+                  {activeIndicatorTab === "SMA" && (
+                    <Chart
+                      options={smaOptions}
+                      series={[{ name: "SMA 20", data: sma20Data }, { name: "SMA 50", data: sma50Data }]}
+                      type="line"
+                      height={isMounted && window.innerWidth < 768 ? 100 : 200}
+                      width="100%"
+                    />
+                  )}
+                  {activeIndicatorTab === "RSI" && (
+                    <Chart
+                      options={rsiOptions}
+                      series={[{ name: "RSI", data: rsiData }]}
+                      type="line"
+                      height={isMounted && window.innerWidth < 768 ? 100 : 200}
+                      width="100%"
+                    />
+                  )}
+                  {activeIndicatorTab === "MACD" && (
+                    <Chart
+                      options={macdOptions}
+                      series={[
+                        { name: "MACD", data: macdData.map((d) => ({ x: d.x, y: d.macd })) },
+                        { name: "Signal", data: macdData.map((d) => ({ x: d.x, y: d.signal })) },
+                        { name: "Histogram", data: macdData.map((d) => ({ x: d.x, y: d.histogram })), type: "bar" },
+                      ]}
+                      type="line"
+                      height={isMounted && window.innerWidth < 768 ? 100 : 200}
+                      width="100%"
+                    />
+                  )}
+                  {activeIndicatorTab === "VWAP" && (
+                    <Chart
+                      options={vwapOptions}
+                      series={[{ name: "VWAP", data: vwapData }]}
+                      type="line"
+                      height={isMounted && window.innerWidth < 768 ? 100 : 200}
+                      width="100%"
+                    />
+                  )}
+                  {activeIndicatorTab === "Supertrend" && (
+                    <Chart
+                      options={supertrendOptions}
+                      series={supertrendOptions.series as any}
+                      type="line"
+                      height={isMounted && window.innerWidth < 768 ? 100 : 200}
+                      width="100%"
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
-<div className="w-full">
-{activeIndicatorTab === "Volume" && (
-<Chart
-options={volumeOptions}
-series={[{ name: "Volume", data: volumeData }]}
-type="bar"
-height={isMounted && window.innerWidth < 768 ? 100 : 200}
-width="100%"
-/>
-)}
-{activeIndicatorTab === "SMA" && (
-<Chart
-options={smaOptions}
-series={[{ name: "SMA 20", data: sma20Data }, { name: "SMA 50", data: sma50Data }]}
-type="line"
-height={isMounted && window.innerWidth < 768 ? 100 : 200}
-width="100%"
-/>
-)}
-{activeIndicatorTab === "RSI" && (
-<Chart
-options={rsiOptions}
-series={[{ name: "RSI", data: rsiData }]}
-type="line"
-height={isMounted && window.innerWidth < 768 ? 100 : 200}
-width="100%"
-/>
-)}
-{activeIndicatorTab === "MACD" && (
-<Chart
-options={macdOptions}
-series={[
-{ name: "MACD", data: macdData.map((d) => ({ x: d.x, y: d.macd })) },
-{ name: "Signal", data: macdData.map((d) => ({ x: d.x, y: d.signal })) },
-{ name: "Histogram", data: macdData.map((d) => ({ x: d.x, y: d.histogram })), type: "bar" },
-]}
-type="line"
-height={isMounted && window.innerWidth < 768 ? 100 : 200}
-width="100%"
-/>
-)}
-{activeIndicatorTab === "VWAP" && (
-<Chart
-options={vwapOptions}
-series={[{ name: "VWAP", data: vwapData }]}
-type="line"
-height={isMounted && window.innerWidth < 768 ? 100 : 200}
-width="100%"
-/>
-)}
-{activeIndicatorTab === "Supertrend" && (
-<Chart
-options={supertrendOptions}
-series={supertrendOptions.series as any}
-type="line"
-height={isMounted && window.innerWidth < 768 ? 100 : 200}
-width="100%"
-/>
-)}
-</div>
-</div>
-</div>
-)}
-</div>
+        {/* Sidebar */}
+        <div className="sidebar">
+          <div className="sidebar-header">
+            <h2 className="text-lg font-semibold text-gray-100">
+              {token ? `${token.baseToken.symbol}/${token.quoteToken.symbol}` : "Details"}
+            </h2>
+          </div>
+          <div className="p-4">
+            {initialLoading ? (
+              <div className="text-center text-sm text-gray-400 bg-[#1A263F] rounded-lg p-4">Loading token data...</div>
+            ) : error ? (
+              <div className="text-red-400 text-center text-sm bg-[#1A263F] rounded-lg p-4">{error}</div>
+            ) : token ? (
+              <div className="space-y-4">
+                {/* Token Info Card */}
+                <div className="bg-[#1A263F] rounded-lg p-4 border border-[#2A3B5A]">
+                  <div className="relative mb-4">
+                    <img
+                      src={token.bannerUrl}
+                      alt={`${token.baseToken.name} banner`}
+                      className="w-full h-20 object-cover rounded-lg border border-[#2A3B5A]"
+                      onError={(e) => (e.currentTarget.src = "https://i.imgur.com/Fo2D7cK.png")}
+                    />
+                    <img
+                      src={token.logoUrl}
+                      alt={`${token.baseToken.name} logo`}
+                      className="absolute -bottom-4 left-2 w-10 h-10 rounded-full border-2 border-[#2A3B5A]"
+                      onError={(e) => (e.currentTarget.src = "https://firebasestorage.googleapis.com/v0/b/homebase-dapp.firebasestorage.app/o/0x73cb479f2ccf77bad90bcda91e3987358437240a(2).png?alt=media&token=1cd408cf-c6a9-4264-8d30-0e1c5a544397")}
+                    />
+                  </div>
+                  <h2 className="text-lg font-semibold tracking-tight mt-4 text-gray-100">
+                    {token.baseToken.name} ({token.baseToken.symbol})
+                  </h2>
+                  <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
+                    <span>Pool:</span>
+                    <span className="truncate">{token.poolAddress}</span>
+                    <button onClick={() => copyToClipboard(token.poolAddress)} className="hover:text-blue-500">
+                      <ClipboardIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
+                    <span>Pair:</span>
+                    <span className="truncate">{token.pairAddress}</span>
+                    <button onClick={() => copyToClipboard(token.pairAddress)} className="hover:text-blue-500">
+                      <ClipboardIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
 
-{/* Sidebar */}
-<div className="sidebar">
-<div className="sidebar-header">
-<h2 className="text-lg font-semibold text-gray-100">
-{token ? `${token.baseToken.symbol}/${token.quoteToken.symbol}` : "Details"}
-</h2>
-</div>
-<div className="p-4">
-{initialLoading ? (
-<div className="text-center text-sm text-gray-400 bg-[#1A263F] rounded-lg p-4">Loading token data...</div>
-) : error ? (
-<div className="text-red-400 text-center text-sm bg-[#1A263F] rounded-lg p-4">{error}</div>
-) : token ? (
-<div className="space-y-4">
-{/* Token Info Card */}
-<div className="bg-[#1A263F] rounded-lg p-4 border border-[#2A3B5A]">
-<div className="relative mb-4">
-<img
-src={token.bannerUrl}
-alt={`${token.baseToken.name} banner`}
-className="w-full h-20 object-cover rounded-lg border border-[#2A3B5A]"
-onError={(e) => (e.currentTarget.src = "https://i.imgur.com/Fo2D7cK.png")}
-/>
-<img
-src={token.logoUrl}
-alt={`${token.baseToken.name} logo`}
-className="absolute -bottom-4 left-2 w-10 h-10 rounded-full border-2 border-[#2A3B5A]"
-onError={(e) => (e.currentTarget.src = "https://firebasestorage.googleapis.com/v0/b/homebase-dapp.firebasestorage.app/o/0x73cb479f2ccf77bad90bcda91e3987358437240a(2).png?alt=media&token=1cd408cf-c6a9-4264-8d30-0e1c5a544397")}
-/>
-</div>
-<h2 className="text-lg font-semibold tracking-tight mt-4 text-gray-100">
-{token.baseToken.name} ({token.baseToken.symbol})
-</h2>
-<div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
-<span>Pool:</span>
-<span className="truncate">{token.poolAddress}</span>
-<button onClick={() => copyToClipboard(token.poolAddress)} className="hover:text-blue-500">
-<ClipboardIcon className="w-4 h-4" />
-</button>
-</div>
-<div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
-<span>Pair:</span>
-<span className="truncate">{token.pairAddress}</span>
-<button onClick={() => copyToClipboard(token.pairAddress)} className="hover:text-blue-500">
-<ClipboardIcon className="w-4 h-4" />
-</button>
-</div>
-</div>
+                {/* Swap Form Card */}
+                <Swap token={token} ethPrice={ethPrice} />
 
-{/* Swap Form Card */}
-<div className="swap-form-container">
-<h3 className="text-sm font-semibold mb-3 text-gray-100">Swap Tokens</h3>
-{/* Wallet Connection */}
-<div className="mb-4">
-{isConnected ? (
-<div className="wallet-address">
-<div className="flex items-center gap-2">
-<FaWallet className="text-blue-500 w-4 h-4" />
-<span className="truncate">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
-</div>
-<button
-onClick={() => disconnect()}
-className="text-gray-400 hover:text-red-400 text-xs"
->
-Disconnect
-</button>
-</div>
-) : (
-<button
-onClick={() => setShowWalletModal(true)}
-className="wallet-button"
->
-<FaWallet className="w-4 h-4" />
-Connect Wallet
-</button>
-)}
-</div>
+                {/* Market Stats Card */}
+                <div className="bg-[#1A263F] rounded-lg p-4 border border-[#2A3B5A]">
+                  <h3 className="text-sm font-semibold mb-3 text-gray-100">Market Stats</h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400">Price (USD)</span>
+                      <span className="font-medium text-gray-100">${parseFloat(token.priceUsd).toFixed(4)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400">Market Cap</span>
+                      <span className="font-medium text-gray-100">{formatLargeNumber(token.marketCap)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400">Liquidity</span>
+                      <span className="font-medium text-gray-100">{formatLargeNumber(token.liquidity.usd)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400">FDV</span>
+                      <span className="font-medium text-gray-100">{formatLargeNumber(token.fdv)}</span>
+                    </div>
+                  </div>
+                </div>
 
-{/* Token In */}
-<div className="mb-4">
-<div className="flex items-center justify-between mb-2">
-<span className="text-sm text-gray-400">You Pay</span>
-<span className="text-xs text-gray-400">
-Balance: {walletBalance} {tokenIn?.symbol || ""}
-</span>
-</div>
-<div className="flex items-center gap-2">
-<span className="bg-[#2A3B5A] text-gray-100 rounded p-2 font-sans text-sm">
-{tokenIn ? tokenIn.symbol : "Select"}
-</span>
-<input
-type="number"
-placeholder="0.0"
-value={amountIn}
-onChange={(e) => setAmountIn(e.target.value)}
-className="swap-input"
-disabled={!tokenIn || !isConnected}
-/>
-</div>
-</div>
+                {/* Performance Metrics Card */}
+                {performanceMetrics && (
+                  <div className="bg-[#1A263F] rounded-lg p-4 border border-[#2A3B5A]">
+                    <h3 className="text-sm font-semibold mb-3 text-gray-100">Performance</h3>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div
+                        className={`flex justify-between items-center p-2 rounded-lg ${
+                          performanceMetrics.change_5m >= 0 ? "bg-green-400/10" : "bg-red-400/10"
+                        }`}
+                      >
+                        <span className="text-gray-400">5m</span>
+                        <span
+                          className={`flex items-center gap-1 font-medium ${
+                            performanceMetrics.change_5m >= 0 ? "text-green-400" : "text-red-400"
+                          }`}
+                        >
+                          {performanceMetrics.change_5m >= 0 ? (
+                            <ArrowUpIcon className="w-4 h-4" />
+                          ) : (
+                            <ArrowDownIcon className="w-4 h-4" />
+                          )}
+                          {performanceMetrics.change_5m.toFixed(2)}%
+                        </span>
+                      </div>
+                      <div
+                        className={`flex justify-between items-center p-2 rounded-lg ${
+                          performanceMetrics.change_1h >= 0 ? "bg-green-400/10" : "bg-red-400/10"
+                        }`}
+                      >
+                        <span className="text-gray-400">1h</span>
+                        <span
+                          className={`flex items-center gap-1 font-medium ${
+                            performanceMetrics.change_1h >= 0 ? "text-green-400" : "text-red-400"
+                          }`}
+                        >
+                          {performanceMetrics.change_1h >= 0 ? (
+                            <ArrowUpIcon className="w-4 h-4" />
+                          ) : (
+                            <ArrowDownIcon className="w-4 h-4" />
+                          )}
+                          {performanceMetrics.change_1h.toFixed(2)}%
+                        </span>
+                      </div>
+                      <div
+                        className={`flex justify-between items-center p-2 rounded-lg ${
+                          performanceMetrics.change_4h >= 0 ? "bg-green-400/10" : "bg-red-400/10"
+                        }`}
+                      >
+                        <span className="text-gray-400">4h</span>
+                        <span
+                          className={`flex items-center gap-1 font-medium ${
+                            performanceMetrics.change_4h >= 0 ? "text-green-400" : "text-red-400"
+                          }`}
+                        >
+                          {performanceMetrics.change_4h >= 0 ? (
+                            <ArrowUpIcon className="w-4 h-4" />
+                          ) : (
+                            <ArrowDownIcon className="w-4 h-4" />
+                          )}
+                          {performanceMetrics.change_4h.toFixed(2)}%
+                        </span>
+                      </div>
+                      <div
+                        className={`flex justify-between items-center p-2 rounded-lg ${
+                          performanceMetrics.change_24h >= 0 ? "bg-green-400/10" : "bg-red-400/10"
+                        }`}
+                      >
+                        <span className="text-gray-400">24h</span>
+                        <span
+                          className={`flex items-center gap-1 font-medium ${
+                            performanceMetrics.change_24h >= 0 ? "text-green-400" : "text-red-400"
+                          }`}
+                        >
+                          {performanceMetrics.change_24h >= 0 ? (
+                            <ArrowUpIcon className="w-4 h-4" />
+                          ) : (
+                            <ArrowDownIcon className="w-4 h-4" />
+                          )}
+                          {performanceMetrics.change_24h.toFixed(2)}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
-{/* Swap Arrow */}
-<div className="flex justify-center mb-4">
-<button
-onClick={handleSwapTokens}
-className="swap-arrow"
-disabled={!tokenIn || !tokenOut}
->
-<FaExchangeAlt className="w-5 h-5 text-blue-500" />
-</button>
-</div>
+                {/* Trend Analysis Card */}
+                <div className="bg-[#1A263F] rounded-lg p-4 border border-[#2A3B5A]">
+                  <h3 className="text-sm font-semibold mb-3 text-gray-100">Trend Analysis</h3>
+                  <div className="text-sm text-gray-400 space-y-2">
+                    {getTrendAnalysis().map((insight, index) => (
+                      <div key={index} className="flex items-start gap-2">
+                        {insight.trend && (
+                          <span
+                            className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                              insight.trend === "Bullish" ? "bg-green-400 text-gray-100" : "bg-red-400 text-gray-100"
+                            }`}
+                          >
+                            {insight.trend}
+                          </span>
+                        )}
+                        {insight.rsiStatus && (
+                          <span
+                            className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                              insight.rsiStatus === "Overbought"
+                                ? "bg-red-400 text-gray-100"
+                                : insight.rsiStatus === "Oversold"
+                                ? "bg-green-400 text-gray-100"
+                                : "bg-[#2A3B5A] text-gray-100"
+                            }`}
+                          >
+                            {insight.rsiStatus}
+                          </span>
+                        )}
+                        {insight.crossoverType && (
+                          <span
+                            className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                              insight.crossoverType === "Golden Cross"
+                                ? "bg-green-400 text-gray-100"
+                                : "bg-red-400 text-gray-100"
+                            }`}
+                          >
+                            {insight.crossoverType}
+                          </span>
+                        )}
+                        <span className="text-gray-400">{insight.text}</span>
+                      </div>
+                    ))}
+                    <div className="mt-2">
+                      <Sparklines data={getSparklineData()} width={200} height={30}>
+                        <SparklinesLine
+                          color={
+                            getSparklineData()[getSparklineData().length - 1] >= getSparklineData()[0]
+                              ? "#10B981"
+                              : "#EF4444"
+                          }
+                        />
+                      </Sparklines>
+                    </div>
+                  </div>
+                </div>
 
-{/* Token Out */}
-<div className="mb-4">
-<div className="flex items-center justify-between mb-2">
-<span className="text-sm text-gray-400">You Receive</span>
-<span className="text-xs text-gray-400">
-Est. {amountOut || "0.0"} {tokenOut?.symbol || ""}
-</span>
-</div>
-<div className="flex items-center gap-2">
-<span className="bg-[#2A3B5A] text-gray-100 rounded p-2 font-sans text-sm">
-{tokenOut ? tokenOut.symbol : "Select"}
-</span>
-<input
-type="number"
-placeholder="0.0"
-value={amountOut}
-disabled
-className="swap-input"
-/>
-</div>
-</div>
+                {/* Ads Card */}
+                <div className="bg-[#1A263F] rounded-lg p-4 border border-[#2A3B5A]">
+                  <h3 className="text-sm font-semibold mb-3 text-gray-100">Advertisement</h3>
+                  {token.adImageUrl ? (
+                    <img
+                      src={token.adImageUrl}
+                      alt="Project Ad"
+                      className="w-full h-20 object-cover rounded-lg border border-[#2A3B5A]"
+                      onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/300x100?text=Ad+Space")}
+                    />
+                  ) : (
+                    <div className="text-sm text-gray-400 text-center bg-[#2A3B5A] rounded-lg p-4">
+                      Advertise Here
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-sm text-gray-400 bg-[#1A263F] rounded-lg p-4">
+                No token data available.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
-{/* Swap Info */}
-<div className="swap-info mb-4">
-<div className="flex justify-between">
-<span>Price Impact:</span>
-<span className={priceImpact > 5 ? "text-red-400" : "text-gray-100"}>
-{priceImpact.toFixed(2)}%
-</span>
-</div>
-<div className="flex justify-between">
-<span>Slippage Tolerance:</span>
-<span>{slippage}%</span>
-</div>
-<div className="flex justify-between">
-<span>Gas Estimate:</span>
-<span>{gasEstimate} Gwei</span>
-</div>
-</div>
-
-{/* Swap Button */}
-<button
-onClick={handleSwapWithApproval}
-disabled={isSwapLoading || !isConnected || !amountIn || !tokenIn || !tokenOut}
-className="swap-button"
->
-{isSwapLoading ? "Processing..." : "Swap"}
-</button>
-</div>
-
-{/* Market Stats Card */}
-<div className="bg-[#1A263F] rounded-lg p-4 border border-[#2A3B5A]">
-<h3 className="text-sm font-semibold mb-3 text-gray-100">Market Stats</h3>
-<div className="space-y-2 text-sm">
-<div className="flex justify-between items-center">
-<span className="text-gray-400">Price (USD)</span>
-<span className="font-medium text-gray-100">${parseFloat(token.priceUsd).toFixed(4)}</span>
-</div>
-<div className="flex justify-between items-center">
-<span className="text-gray-400">Market Cap</span>
-<span className="font-medium text-gray-100">{formatLargeNumber(token.marketCap)}</span>
-</div>
-<div className="flex justify-between items-center">
-<span className="text-gray-400">Liquidity</span>
-<span className="font-medium text-gray-100">{formatLargeNumber(token.liquidity.usd)}</span>
-</div>
-<div className="flex justify-between items-center">
-<span className="text-gray-400">FDV</span>
-<span className="font-medium text-gray-100">{formatLargeNumber(token.fdv)}</span>
-</div>
-</div>
-</div>
-
-{/* Performance Metrics Card */}
-{performanceMetrics && (
-<div className="bg-[#1A263F] rounded-lg p-4 border border-[#2A3B5A]">
-<h3 className="text-sm font-semibold mb-3 text-gray-100">Performance</h3>
-<div className="grid grid-cols-2 gap-3 text-sm">
-<div
-className={`flex justify-between items-center p-2 rounded-lg ${
-performanceMetrics.change_5m >= 0 ? "bg-green-400/10" : "bg-red-400/10"
-}`}
->
-<span className="text-gray-400">5m</span>
-<span
-className={`flex items-center gap-1 font-medium ${
-performanceMetrics.change_5m >= 0 ? "text-green-400" : "text-red-400"
-}`}
->
-{performanceMetrics.change_5m >= 0 ? (
-<ArrowUpIcon className="w-4 h-4" />
-) : (
-<ArrowDownIcon className="w-4 h-4" />
-)}
-{performanceMetrics.change_5m.toFixed(2)}%
-</span>
-</div>
-<div
-className={`flex justify-between items-center p-2 rounded-lg ${
-performanceMetrics.change_1h >= 0 ? "bg-green-400/10" : "bg-red-400/10"
-}`}
->
-<span className="text-gray-400">1h</span>
-<span
-className={`flex items-center gap-1 font-medium ${
-performanceMetrics.change_1h >= 0 ? "text-green-400" : "text-red-400"
-}`}
->
-{performanceMetrics.change_1h >= 0 ? (
-<ArrowUpIcon className="w-4 h-4" />
-) : (
-<ArrowDownIcon className="w-4 h-4" />
-)}
-{performanceMetrics.change_1h.toFixed(2)}%
-</span>
-</div>
-<div
-className={`flex justify-between items-center p-2 rounded-lg ${
-performanceMetrics.change_4h >= 0 ? "bg-green-400/10" : "bg-red-400/10"
-}`}
->
-<span className="text-gray-400">4h</span>
-<span
-className={`flex items-center gap-1 font-medium ${
-performanceMetrics.change_4h >= 0 ? "text-green-400" : "text-red-400"
-}`}
->
-{performanceMetrics.change_4h >= 0 ? (
-<ArrowUpIcon className="w-4 h-4" />
-) : (
-<ArrowDownIcon className="w-4 h-4" />
-)}
-{performanceMetrics.change_4h.toFixed(2)}%
-</span>
-</div>
-<div
-className={`flex justify-between items-center p-2 rounded-lg ${
-performanceMetrics.change_24h >= 0 ? "bg-green-400/10" : "bg-red-400/10"
-}`}
->
-<span className="text-gray-400">24h</span>
-<span
-className={`flex items-center gap-1 font-medium ${
-performanceMetrics.change_24h >= 0 ? "text-green-400" : "text-red-400"
-}`}
->
-{performanceMetrics.change_24h >= 0 ? (
-<ArrowUpIcon className="w-4 h-4" />
-) : (
-<ArrowDownIcon className="w-4 h-4" />
-)}
-{performanceMetrics.change_24h.toFixed(2)}%
-</span>
-</div>
-</div>
-</div>
-)}
-
-{/* Trend Analysis Card */}
-<div className="bg-[#1A263F] rounded-lg p-4 border border-[#2A3B5A]">
-<h3 className="text-sm font-semibold mb-3 text-gray-100">Trend Analysis</h3>
-<div className="text-sm text-gray-400 space-y-2">
-{getTrendAnalysis().map((insight, index) => (
-<div key={index} className="flex items-start gap-2">
-{insight.trend && (
-<span
-className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-insight.trend === "Bullish" ? "bg-green-400 text-gray-100" : "bg-red-400 text-gray-100"
-}`}
->
-{insight.trend}
-</span>
-)}
-{insight.rsiStatus && (
-<span
-className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-insight.rsiStatus === "Overbought"
-? "bg-red-400 text-gray-100"
-: insight.rsiStatus === "Oversold"
-? "bg-green-400 text-gray-100"
-: "bg-[#2A3B5A] text-gray-100"
-}`}
->
-{insight.rsiStatus}
-</span>
-)}
-{insight.crossoverType && (
-<span
-className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-insight.crossoverType === "Golden Cross"
-? "bg-green-400 text-gray-100"
-: "bg-red-400 text-gray-100"
-}`}
->
-{insight.crossoverType}
-</span>
-)}
-<span className="text-gray-400">{insight.text}</span>
-</div>
-))}
-<div className="mt-2">
-<Sparklines data={getSparklineData()} width={200} height={30}>
-<SparklinesLine
-color={
-getSparklineData()[getSparklineData().length - 1] >= getSparklineData()[0]
-? "#10B981"
-: "#EF4444"
-}
-/>
-</Sparklines>
-</div>
-</div>
-</div>
-
-{/* Ads Card */}
-<div className="bg-[#1A263F] rounded-lg p-4 border border-[#2A3B5A]">
-<h3 className="text-sm font-semibold mb-3 text-gray-100">Advertisement</h3>
-{token.adImageUrl ? (
-<img
-src={token.adImageUrl}
-alt="Project Ad"
-className="w-full h-20 object-cover rounded-lg border border-[#2A3B5A]"
-onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/300x100?text=Ad+Space")}
-/>
-) : (
-<div className="text-sm text-gray-400 text-center bg-[#2A3B5A] rounded-lg p-4">
-Advertise Here
-</div>
-)}
-</div>
-</div>
-) : (
-<div className="text-center text-sm text-gray-400 bg-[#1A263F] rounded-lg p-4">
-No token data available.
-</div>
-)}
-</div>
-</div>
-</div>
-
-{/* Footer */}
-<Footer />
-</div>
-);
+      {/* Footer */}
+      <Footer />
+    </div>
+  );
 }

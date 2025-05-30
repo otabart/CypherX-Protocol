@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
-import { ClipboardIcon, ArrowTopRightOnSquareIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { ClipboardIcon, ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
 import Link from "next/link";
 
 // Components
@@ -139,9 +139,9 @@ export default function ExplorerPage() {
     buttonDisabled: "bg-gray-800",
     shadow: "shadow-[0_2px_8px_rgba(59,130,246,0.2)]",
     toastBg: "bg-blue-500/80",
-    panelHeader: "bg-gradient-to-r from-blue-500/30 to-blue-400/30",
-    statsBg: "bg-gradient-to-b from-[#0D1326] to-[#141A2F]",
-    separator: "bg-gradient-to-r from-transparent via-blue-400 to-transparent",
+    panelHeader: "bg-[#141A2F] w-full -mx-4 sm:-mx-6 -mt-6 pt-6 pb-3 px-4 sm:px-6",
+    statsBg: "bg-[#141A2F]",
+    separator: "bg-blue-400",
   };
 
   // Prevent background scrolling when mobile menu is open
@@ -177,6 +177,61 @@ export default function ExplorerPage() {
       return () => clearTimeout(timer);
     }
   }, [toastMessage]);
+
+  // Fetch whale transactions from Firestore
+  const fetchWhaleTransactions = async () => {
+    try {
+      const { getFirestore } = await import("firebase/firestore");
+      const { initializeApp, getApps } = await import("firebase/app");
+
+      // Initialize Firebase if not already initialized
+      if (!getApps().length) {
+        const firebaseConfig = {
+          apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+          authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+          projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+          storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+          messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+          appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+        };
+        initializeApp(firebaseConfig);
+      }
+
+      const db = getFirestore();
+      const { collection, query, orderBy, limit, getDocs } = await import("firebase/firestore");
+
+      const whaleQuery = query(
+        collection(db, "whaleTransactions"),
+        orderBy("timestamp", "desc"),
+        limit(3)
+      );
+      const whaleSnapshot = await getDocs(whaleQuery);
+      const whaleData: WhaleTransaction[] = whaleSnapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          hash: data.hash || "",
+          from: data.fromAddress || "",
+          to: data.toAddress || "",
+          value: data.amountToken ? data.amountToken.toFixed(4) : "0",
+          timestamp: data.timestamp
+            ? formatDistanceToNow(new Date(data.timestamp.toDate()), { addSuffix: true }).toUpperCase()
+            : "",
+        };
+      });
+
+      const hasNewWhaleTransactions = whaleData.some(
+        (tx, i) => !prevWhaleTransactionsRef.current[i] || tx.hash !== prevWhaleTransactionsRef.current[i].hash
+      );
+      if (hasNewWhaleTransactions) {
+        setWhaleTransactions(whaleData);
+        prevWhaleTransactionsRef.current = whaleData;
+      }
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Unknown error";
+      console.error("Error fetching whale transactions from Firestore:", errorMessage);
+      setError((prev) => ({ ...prev, whales: `Error: ${errorMessage}` }));
+    }
+  };
 
   // Fetch blockchain data
   const fetchData = async (isInitialFetch: boolean = false) => {
@@ -388,48 +443,8 @@ export default function ExplorerPage() {
       const newActiveAddresses = addresses.size;
       if (newActiveAddresses !== activeAddresses) setActiveAddresses(newActiveAddresses);
 
-      // Fetch Whale Transactions
-      const whaleResponse = await fetch(alchemyUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          method: "alchemy_getAssetTransfers",
-          params: [
-            {
-              fromBlock: `0x${(latestBlockNumber - 100).toString(16)}`,
-              toBlock: "latest",
-              category: ["external"],
-              maxCount: "0x32",
-            },
-          ],
-          id: 10,
-        }),
-      });
-      const whaleDataResponse = await whaleResponse.json();
-      if (whaleDataResponse.error) {
-        throw new Error(whaleDataResponse.error.message);
-      }
-
-      const whaleData: WhaleTransaction[] = whaleDataResponse.result.transfers
-        .filter((tx: any) => tx.value && tx.value > 100)
-        .map((tx: any) => ({
-          hash: tx.hash,
-          from: tx.from,
-          to: tx.to,
-          value: tx.value.toFixed(4),
-          timestamp: formatDistanceToNow(new Date(tx.metadata?.blockTimestamp || Date.now()), {
-            addSuffix: true,
-          }).toUpperCase(),
-        }))
-        .slice(0, 3);
-      const hasNewWhaleTransactions = whaleData.some(
-        (tx, i) => !prevWhaleTransactionsRef.current[i] || tx.hash !== prevWhaleTransactionsRef.current[i].hash
-      );
-      if (hasNewWhaleTransactions) {
-        setWhaleTransactions(whaleData);
-        prevWhaleTransactionsRef.current = whaleData;
-      }
+      // Fetch Whale Transactions from Firestore
+      await fetchWhaleTransactions();
 
       setLoading({ blocks: false, transactions: false, whales: false });
       setUpdating({ blocks: false, transactions: false, whales: false });
@@ -462,16 +477,12 @@ export default function ExplorerPage() {
     if (/^0x[a-fA-F0-9]{40}$/.test(query)) {
       router.push(`/explorer/address/${query}`);
     } else if (/^0x[a-fA-F0-9]{64}$/.test(query)) {
-      router.push(`/explorer/hash/${query}`);
+      router.push(`/explorer/latest/tx/${query}`);
     } else if (/^\d+$/.test(query)) {
       router.push(`/explorer/latest/block/${query}`);
     } else {
       setToastMessage("Invalid search query. Please enter a valid address, transaction hash, or block number.");
     }
-  };
-
-  const clearSearch = () => {
-    setSearchQuery("");
   };
 
   const retryFetch = (section: keyof typeof loading) => {
@@ -482,6 +493,13 @@ export default function ExplorerPage() {
 
   return (
     <div className={`min-h-screen w-full font-mono ${themeClasses.background} ${themeClasses.text}`}>
+      <style jsx>{`
+        /* Temporary override to hide potential tick mark in Header */
+        header svg:not(.search-icon) {
+          display: none !important;
+        }
+      `}</style>
+
       {/* Toast Notification */}
       {toastMessage && (
         <div
@@ -517,16 +535,7 @@ export default function ExplorerPage() {
                 className={`w-full py-3 pl-10 pr-10 text-base rounded-lg ${themeClasses.containerBg} ${themeClasses.text} border ${themeClasses.border} focus:outline-none focus:ring-2 focus:ring-blue-400/50 transition-all duration-300 placeholder-gray-500 transform focus:scale-[1.01] focus:shadow-glow`}
                 aria-label="Search blockchain data"
               />
-              <SearchIcon className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              {searchQuery && (
-                <button
-                  onClick={clearSearch}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-200"
-                  aria-label="Clear search"
-                >
-                  <XMarkIcon className="w-5 h-5" />
-                </button>
-              )}
+              <SearchIcon className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 search-icon" />
               <button
                 onClick={handleSearch}
                 disabled={!searchQuery}
@@ -553,7 +562,7 @@ export default function ExplorerPage() {
         <section className={`w-full ${themeClasses.statsBg}`}>
           <div className="mx-auto px-4 sm:px-6 py-3">
             <h2 className="text-lg sm:text-xl font-bold text-white uppercase mb-3 text-center">Network Stats</h2>
-            <div className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 border ${themeClasses.border} rounded-lg p-3`}>
+            <div className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 p-3 w-full -mx-4 sm:-mx-6`}>
               {[
                 { title: "Transactions", value: totalTxns.toLocaleString() },
                 { title: "Pending Txns", value: pendingTxns.toLocaleString() },
@@ -574,15 +583,18 @@ export default function ExplorerPage() {
           </div>
         </section>
 
+        {/* Separator Line */}
+        <div className={`h-px w-full ${themeClasses.separator}`} />
+
         {/* Data Sections */}
         <section className="w-full">
           <div className={`flex flex-col sm:flex-row divide-x divide-blue-500/30`}>
             {/* Latest Blocks */}
             <div className={`flex-1 ${themeClasses.containerBg}`}>
               <div className="px-4 sm:px-6 py-6">
-                <div className="flex items-center p-3">
+                <div className="flex items-center">
                   <h2 className={`text-lg font-bold text-white uppercase ${themeClasses.panelHeader} flex-1`}>Latest Blocks</h2>
-                  {updating.blocks && <SpinnerIcon className="w-4 h-4 text-blue-400 animate-spin" />}
+                  {updating.blocks && <SpinnerIcon className="w-4 h-4 text-blue-400 animate-spin mr-4 sm:mr-6" />}
                 </div>
                 <div className="p-3">
                   {loading.blocks ? (
@@ -632,12 +644,14 @@ export default function ExplorerPage() {
                           </div>
                         </div>
                       ))}
-                      <Link
-                        href="/explorer/blocks"
-                        className="text-blue-400 hover:underline text-xs block text-center mt-3 uppercase"
-                      >
-                        View All Blocks
-                      </Link>
+                      <div className="flex justify-end mt-2">
+                        <Link
+                          href="/explorer/latest/blocks"
+                          className="text-blue-400 hover:underline text-xs block text-center mt-3 uppercase"
+                        >
+                          View All Blocks
+                        </Link>
+                      </div>
                     </div>
                   ) : (
                     <p className={`${themeClasses.secondaryText} text-center py-4 uppercase text-xs`}>No blocks found</p>
@@ -649,9 +663,9 @@ export default function ExplorerPage() {
             {/* Latest Transactions */}
             <div className={`flex-1 ${themeClasses.containerBg}`}>
               <div className="px-4 sm:px-6 py-6">
-                <div className="flex items-center p-3">
+                <div className="flex items-center">
                   <h2 className={`text-lg font-bold text-white uppercase ${themeClasses.panelHeader} flex-1`}>Latest Transactions</h2>
-                  {updating.transactions && <SpinnerIcon className="w-4 h-4 text-blue-400 animate-spin" />}
+                  {updating.transactions && <SpinnerIcon className="w-4 h-4 text-blue-400 animate-spin mr-4 sm:mr-6" />}
                 </div>
                 <div className="p-3">
                   {loading.transactions ? (
@@ -683,7 +697,7 @@ export default function ExplorerPage() {
                           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                             <div>
                               <Link
-                                href={`/explorer/hash/${tx.hash}`}
+                                href={`/explorer/latest/tx/${tx.hash}`}
                                 className="text-blue-400 font-semibold hover:underline text-sm truncate"
                               >
                                 {tx.hash.slice(0, 6)}...{tx.hash.slice(-4)}
@@ -712,12 +726,14 @@ export default function ExplorerPage() {
                           </div>
                         </div>
                       ))}
-                      <Link
-                        href="/explorer/transactions"
-                        className="text-blue-400 hover:underline text-xs block text-center mt-3 uppercase"
-                      >
-                        View All Transactions
-                      </Link>
+                      <div className="flex justify-end mt-2">
+                        <Link
+                          href="/explorer/latest/transactions"
+                          className="text-blue-400 hover:underline text-xs block text-center mt-3 uppercase"
+                        >
+                          View All Transactions
+                        </Link>
+                      </div>
                     </div>
                   ) : (
                     <p className={`${themeClasses.secondaryText} text-center py-4 uppercase text-xs`}>No transactions found</p>
@@ -729,9 +745,9 @@ export default function ExplorerPage() {
             {/* Whale Transactions */}
             <div className={`flex-1 ${themeClasses.containerBg}`}>
               <div className="px-4 sm:px-6 py-6">
-                <div className="flex items-center p-3">
+                <div className="flex items-center">
                   <h2 className={`text-lg font-bold text-white uppercase ${themeClasses.panelHeader} flex-1`}>Whale Transactions</h2>
-                  {updating.whales && <SpinnerIcon className="w-4 h-4 text-blue-400 animate-spin" />}
+                  {updating.whales && <SpinnerIcon className="w-4 h-4 text-blue-400 animate-spin mr-4 sm:mr-6" />}
                 </div>
                 <div className="p-3">
                   {loading.whales ? (
@@ -763,7 +779,7 @@ export default function ExplorerPage() {
                           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                             <div>
                               <Link
-                                href={`/explorer/hash/${tx.hash}`}
+                                href={`/explorer/latest/tx/${tx.hash}`}
                                 className="text-blue-400 font-semibold hover:underline text-sm truncate"
                               >
                                 {tx.hash.slice(0, 6)}...{tx.hash.slice(-4)}
@@ -792,12 +808,14 @@ export default function ExplorerPage() {
                           </div>
                         </div>
                       ))}
-                      <Link
-                        href="/explorer/whale-transactions"
-                        className="text-blue-400 hover:underline text-xs block text-center mt-3 uppercase"
-                      >
-                        View All Whale Transactions
-                      </Link>
+                      <div className="flex justify-end mt-2">
+                        <Link
+                          href="/whale-watchers"
+                          className="text-blue-400 hover:underline text-xs block text-center mt-3 uppercase"
+                        >
+                          View All Whale Transactions
+                        </Link>
+                      </div>
                     </div>
                   ) : (
                     <p className={`${themeClasses.secondaryText} text-center py-4 uppercase text-xs`}>No whale transactions found</p>

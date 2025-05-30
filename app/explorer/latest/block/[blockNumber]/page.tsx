@@ -1,15 +1,10 @@
-// app/explorer/latest/block/[blockNumber]/page.tsx
 "use client";
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { db, auth } from "../../../../../lib/firebase.ts";
 import { doc, getDoc, setDoc } from "firebase/firestore";
-
-interface BlockDetailsProps {
-  blockNumber: string;
-}
 
 interface Transaction {
   hash: string;
@@ -27,18 +22,25 @@ interface Block {
   miner: string;
   gasUsed: string;
   gasLimit: string;
+  difficulty: string;
+  totalDifficulty: string;
+  size: string;
+  nonce: string;
+  extraData: string;
   transactionList?: Transaction[];
 }
 
 const alchemyUrl = process.env.NEXT_PUBLIC_ALCHEMY_API_URL || "";
 
-const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
+export default function BlockDetails() {
   const [block, setBlock] = useState<Block | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [theme, setTheme] = useState<string>("dark");
   const router = useRouter();
+  const params = useParams();
+  const blockNumber = params.blockNumber as string;
 
   const fetchBlock = async () => {
     setLoading(true);
@@ -48,6 +50,11 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
         throw new Error("Firestore is not initialized. Check Firebase configuration.");
       }
 
+      if (!alchemyUrl) {
+        throw new Error("Alchemy API URL is not configured.");
+      }
+
+      // Check Firestore first
       const blockRef = doc(db, "blocks", blockNumber);
       const blockSnap = await getDoc(blockRef);
 
@@ -58,10 +65,7 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
         return;
       }
 
-      if (!alchemyUrl) {
-        throw new Error("Alchemy API URL is not configured.");
-      }
-
+      // Fetch from Alchemy if not in Firestore
       const response = await fetch(alchemyUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -97,6 +101,11 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
         miner: block.miner || "N/A",
         gasUsed: parseInt(block.gasUsed, 16).toString() || "0",
         gasLimit: parseInt(block.gasLimit, 16).toString() || "0",
+        difficulty: (parseInt(block.difficulty, 16) / 1e12).toFixed(2) + "T" || "0",
+        totalDifficulty: (parseInt(block.totalDifficulty, 16) / 1e15).toFixed(2) + "P" || "0",
+        size: block.size ? parseInt(block.size, 16).toString() + " bytes" : "0 bytes",
+        nonce: block.nonce || "N/A",
+        extraData: block.extraData || "N/A",
         transactionList: block.transactions?.map((tx: any) => ({
           hash: tx.hash || "N/A",
           from: tx.from || "N/A",
@@ -396,6 +405,26 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
                 </div>
               </div>
               <div>
+                <h2 className="text-white text-base font-semibold border-b border-blue-500/30 pb-2 mb-4 uppercase">[ BLOCK DETAILS ]</h2>
+                <div className="grid grid-cols-1 gap-3">
+                  <p className="text-sm">
+                    <strong className="text-blue-400 uppercase">DIFFICULTY:</strong> {block.difficulty}
+                  </p>
+                  <p className="text-sm">
+                    <strong className="text-blue-400 uppercase">TOTAL DIFFICULTY:</strong> {block.totalDifficulty}
+                  </p>
+                  <p className="text-sm">
+                    <strong className="text-blue-400 uppercase">SIZE:</strong> {block.size}
+                  </p>
+                  <p className="text-sm">
+                    <strong className="text-blue-400 uppercase">NONCE:</strong> {block.nonce}
+                  </p>
+                  <p className="text-sm">
+                    <strong className="text-blue-400 uppercase">EXTRA DATA:</strong> {block.extraData}
+                  </p>
+                </div>
+              </div>
+              <div>
                 <h2 className="text-white text-base font-semibold border-b border-blue-500/30 pb-2 mb-4 uppercase">[ GAS INFORMATION ]</h2>
                 <div className="grid grid-cols-1 gap-3">
                   <p className="text-sm">
@@ -426,7 +455,7 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
                           <tr key={index} className={`border-b ${themeClasses.border} ${themeClasses.hoverBg} transition-colors`}>
                             <td className="py-2 px-2 truncate">
                               <a
-                                href={`https://basescan.org/tx/${tx.hash}`}
+                                href={`/explorer/tx/${tx.hash}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-blue-400 hover:underline"
@@ -436,7 +465,7 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
                             </td>
                             <td className="py-2 px-2 truncate">
                               <a
-                                href={`https://basescan.org/address/${tx.from}`}
+                                href={`/explorer/address/${tx.from}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-blue-400 hover:underline"
@@ -446,7 +475,7 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
                             </td>
                             <td className="py-2 px-2 truncate">
                               <a
-                                href={`https://basescan.org/address/${tx.to}`}
+                                href={`/explorer/address/${tx.to}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-blue-400 hover:underline"
@@ -473,6 +502,4 @@ const BlockDetails: React.FC<BlockDetailsProps> = ({ blockNumber }) => {
       </div>
     </div>
   );
-};
-
-export default BlockDetails;
+}

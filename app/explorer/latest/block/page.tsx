@@ -1,4 +1,3 @@
-// app/explorer/latest/block/page.tsx
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -27,12 +26,13 @@ export default function CypherScanPage() {
   const [filterStatus, setFilterStatus] = useState<string>("All");
   const [theme, setTheme] = useState<string>("dark");
   const router = useRouter();
-  const blocksPerPage = 50;
+  const blocksPerPage = 50; // Display 50 blocks per page, we'll fetch 100 total and paginate
 
-  const fetchBlocks = async (startPage: number, count: number) => {
+  const fetchBlocks = async (startPage: number) => {
     setLoading(true);
     setError(null);
     try {
+      // Fetch the latest block number
       const alchemyBlockRes = await fetch(alchemyUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -59,11 +59,22 @@ export default function CypherScanPage() {
         throw new Error("Invalid latest block number");
       }
 
-      const fetchedBlocks: Block[] = [];
-      for (let i = 0; i < count; i++) {
-        const blockNumber = latestBlock - (startPage - 1) * count - i;
-        if (blockNumber < 0) break;
+      // Calculate the range for the last 100 blocks, adjusted for pagination
+      const totalBlocksToFetch = 100; // We want the last 100 blocks
+      const startBlock = Math.max(latestBlock - totalBlocksToFetch + 1, 0); // Start from (latest - 99)
+      const endBlock = latestBlock; // Up to the latest block
 
+      // Adjust for pagination
+      const startIndex = (startPage - 1) * blocksPerPage;
+      const blocksToFetch = Math.min(blocksPerPage, totalBlocksToFetch - startIndex);
+      const fetchedBlocks: Block[] = [];
+
+      // Fetch blocks in the current page range
+      for (let i = 0; i < blocksToFetch; i++) {
+        const blockNumber = endBlock - (startIndex + i);
+        if (blockNumber < startBlock) break;
+
+        // Check Firestore first
         const blockRef = doc(db, "blocks", blockNumber.toString());
         const blockSnap = await getDoc(blockRef);
 
@@ -73,6 +84,7 @@ export default function CypherScanPage() {
           continue;
         }
 
+        // Fetch from Alchemy if not in Firestore
         const blockRes = await fetch(alchemyUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -110,6 +122,7 @@ export default function CypherScanPage() {
           };
           fetchedBlocks.push(blockInfo);
 
+          // Store in Firestore
           try {
             await setDoc(blockRef, blockInfo);
             console.log(`Block ${blockNumber} stored in Firestore`);
@@ -146,8 +159,7 @@ export default function CypherScanPage() {
         const querySnapshot = await getDocs(q);
 
         if (!querySnapshot.empty) {
-          // Removed unused blockData variable
-          router.push(`/latest/hash/${searchQuery}`);
+          router.push(`/explorer/latest/hash/${searchQuery}`);
         } else {
           setError("Block hash not found in local database");
         }
@@ -163,7 +175,7 @@ export default function CypherScanPage() {
   };
 
   const handleRefresh = () => {
-    fetchBlocks(page, blocksPerPage);
+    fetchBlocks(page);
   };
 
   const toggleTheme = () => {
@@ -197,7 +209,7 @@ export default function CypherScanPage() {
       return;
     }
     if (alchemyUrl) {
-      fetchBlocks(page, blocksPerPage);
+      fetchBlocks(page);
     } else {
       setError("Alchemy URL is not configured");
     }
@@ -207,7 +219,7 @@ export default function CypherScanPage() {
     <div className={`min-h-screen w-full font-mono ${themeClasses.background} ${themeClasses.text}`}>
       <div className={`border ${themeClasses.border} ${themeClasses.shadow} w-full min-h-screen`}>
         <div className={`flex items-center justify-between px-4 py-3 sm:px-3 sm:py-2 ${themeClasses.headerBg}`}>
-          <h1 className={`${themeClasses.text} text-lg sm:text-base font-semibold uppercase`}>[ CYPHERSCAN ]</h1>
+          <h1 className={`${themeClasses.text} text-lg sm:text-base font-semibold uppercase`}>[ CYPHERSCAN - LATEST BLOCKS ]</h1>
           <button
             onClick={toggleTheme}
             className={`p-2 sm:p-1 ${themeClasses.buttonBg} ${themeClasses.buttonHover} border border-blue-500/30 transition-colors ${themeClasses.shadow}`}
@@ -361,7 +373,7 @@ export default function CypherScanPage() {
                       <td className={`py-2 px-2 ${themeClasses.secondaryText}`}>{block.timestamp}</td>
                       <td className="py-2 px-2 truncate">
                         <Link
-                          href={`/latest/hash/${block.hash}`}
+                          href={`/explorer/latest/hash/${block.hash}`}
                           className="text-blue-400 hover:underline"
                         >
                           {block.hash}
@@ -385,7 +397,7 @@ export default function CypherScanPage() {
             <span className={`${themeClasses.secondaryText} text-sm sm:text-xs uppercase`}>[ PAGE {page} ]</span>
             <button
               onClick={() => setPage((p) => p + 1)}
-              disabled={loading}
+              disabled={loading || blocks.length < blocksPerPage} // Disable "Next" if fewer than blocksPerPage blocks are fetched
               className={`px-2 py-1 ${themeClasses.buttonBg} text-blue-400 ${themeClasses.buttonHover} border border-blue-500/30 disabled:${themeClasses.buttonDisabled} disabled:cursor-not-allowed transition-colors ${themeClasses.shadow} text-sm sm:text-xs uppercase`}
             >
               NEXT

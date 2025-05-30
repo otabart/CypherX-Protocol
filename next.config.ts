@@ -48,6 +48,10 @@ const nextConfig = {
   },
   webpack: (config, { isServer }) => {
     console.log("Webpack config running, isServer:", isServer);
+
+    // Add alias for `~` to resolve to `node_modules` (for @uniswap/widgets fonts)
+    config.resolve.alias['~'] = 'node_modules';
+
     if (!isServer) {
       console.log("Applying client-side Webpack fallback for Node.js modules");
       // Ensure config.resolve exists
@@ -60,8 +64,12 @@ const nextConfig = {
         net: false,
         tls: false,
         child_process: false,
+        fs: false, // Added to handle the 'fs' module error
+        path: false, // Added to handle potential 'path' module errors
+        process: false, // Added to handle potential 'process' module errors
       };
     }
+
     return config;
   },
 };
