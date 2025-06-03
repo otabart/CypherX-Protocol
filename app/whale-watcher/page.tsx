@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
@@ -697,7 +696,7 @@ export default function WhaleWatcherPage() {
                     rel="noopener noreferrer"
                     className="text-[#66B0FF] hover:text-[#88CFFF] focus:ring-2 focus:ring-[#66B0FF] rounded"
                   >
-                    {selectedTx.toAddress.slice(0, 6)}...{selectedTx.toAddress.slice(-4)}
+                    {selectedTx.fromAddress.slice(0, 6)}...{selectedTx.fromAddress.slice(-4)}
                   </a>
                 </div>
                 <div className="flex justify-between">
@@ -1042,7 +1041,7 @@ export default function WhaleWatcherPage() {
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
-                  Low Value (>$1K)
+                  Low Value ($1K)
                 </motion.button>
                 <motion.button
                   onClick={() => applyQuickFilter({ timeFilter: "hour" })}
@@ -1155,7 +1154,7 @@ export default function WhaleWatcherPage() {
       {/* Transactions Feed */}
       {!loading && filteredTransactions.length > 0 && (
         <motion.div
-          className="w-full"
+          className="w-full flex-1"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.5 }}
@@ -1231,7 +1230,7 @@ export default function WhaleWatcherPage() {
               <span className="text-center">Actions</span>
             </div>
           </div>
-          <div className="w-full" style={{ height: "calc(100vh - 200px)" }}>
+          <div className="w-full" style={{ height: `calc(100vh - ${calculateTableHeaderTop() + 60}px)` }}>
             <AutoSizer>
               {({ height, width }) => (
                 <List
@@ -1259,6 +1258,9 @@ export default function WhaleWatcherPage() {
       {totalPages > 1 && (
         <motion.div
           className="flex items-center justify-center space-x-2 p-4 bg-[#0A0F1C] border-t border-[#1E2A44] sticky bottom-0 z-10"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.3 }}
         >
           <motion.button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -1291,7 +1293,6 @@ export default function WhaleWatcherPage() {
           </motion.button>
         </motion.div>
       )}
-
       <Footer />
     </div>
   );

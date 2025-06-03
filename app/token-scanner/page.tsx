@@ -12,8 +12,6 @@ import {
   FaPlusCircle,
   FaUser,
   FaSearch,
-  FaFilter,
-  FaTimes,
 } from "react-icons/fa";
 import debounce from "lodash/debounce";
 import { onAuthStateChanged } from "firebase/auth";
@@ -27,7 +25,6 @@ import {
   serverTimestamp,
   getDocs,
   setDoc,
-  getDoc,
 } from "firebase/firestore";
 import type { Auth } from "firebase/auth";
 import type { Firestore } from "firebase/firestore";
@@ -53,7 +50,7 @@ ChartJS.register(LineElement, PointElement, LinearScale, TimeScale, Title, Toolt
 
 // ====== TYPES ======
 export type TokenData = {
-  pairAddress: string;
+  pairAddress: string; // Maps to Firestore 'pool' field
   baseToken: {
     address: string;
     name: string;
@@ -127,11 +124,11 @@ const baseAiTokens: BaseAiToken[] = [
 
 // ====== CONSTANTS ======
 const DECAY_CONSTANT = 7;
-const COOLDOWN_PERIOD = 300_000;
-const LONG_COOLDOWN_PERIOD = 1_800_000;
-const PRICE_CHECK_INTERVAL = 300_000;
-const TOP_MOVERS_LOSERS_INTERVAL = 3_600_000;
-const NOTIFICATION_EXPIRY = 3 * 60 * 60 * 1000;
+const COOLDOWN_PERIOD = 300_000; // 5 minutes
+const LONG_COOLDOWN_PERIOD = 1_800_000; // 30 minutes
+const PRICE_CHECK_INTERVAL = 300_000; // 5 minutes
+const TOP_MOVERS_LOSERS_INTERVAL = 3_600_000; // 1 hour
+const NOTIFICATION_EXPIRY = 3 * 60 * 60 * 1000; // 3 hours
 const MAX_NOTIFICATIONS_PER_HOUR = 18;
 const MAX_NOTIFICATIONS_PER_TOKEN = 5;
 const BASE_AI_TOKEN_SYMBOLS = baseAiTokens.map((token) => token.symbol.toUpperCase());
@@ -306,7 +303,7 @@ export default function TokenScreener() {
   const [toast, setToast] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [viewMode, setViewMode] = useState<"all" | "favorites" | "baseAI" | "alerts">("all");
+  const [viewMode, setViewMode] = useState<"all" | "favorites" | "baseAI" | "alerts" | "new">("all");
   const [sortFilter, setSortFilter] = useState("trending");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [searchQuery, setSearchQuery] = useState("");
@@ -316,7 +313,7 @@ export default function TokenScreener() {
     minAge: 0,
     maxAge: Infinity,
   });
-  const [viewerCount] = useState(0);
+  const [viewerCount, setViewerCount] = useState(0);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [previousPrices, setPreviousPrices] = useState<{ [symbol: string]: number }>({});
   const [lastAlertTimes, setLastAlertTimes] = useState<{
@@ -335,7 +332,6 @@ export default function TokenScreener() {
   const [indexHistory, setIndexHistory] = useState<{ timestamp: Date; value: number }[]>([]);
   const [isMounted, setIsMounted] = useState(false);
   const [initialTokenSnapshot, setInitialTokenSnapshot] = useState<string[]>([]);
-  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const pageSize = 25;
 
   // Boost Info Card Data
@@ -374,6 +370,11 @@ export default function TokenScreener() {
     return () => unsubscribe();
   }, []);
 
+  // Fetch Viewer Count
+  useEffect(() => {
+    setViewerCount(0);
+  }, []);
+
   // Fetch Tokens from Firebase and DexScreener
   useEffect(() => {
     const tokensQuery = query(collection(firestoreDb, "tokens"));
@@ -391,6 +392,7 @@ export default function TokenScreener() {
           docId: doc.id,
         }));
 
+        // Store initial token IDs to avoid false new token alerts
         if (initialTokenSnapshot.length === 0) {
           setInitialTokenSnapshot(tokenList.map((token) => token.docId));
         }
@@ -540,83 +542,48 @@ export default function TokenScreener() {
     return () => unsubscribe();
   }, [initialTokenSnapshot, lastAlertTimes]);
 
-  // Fetch Alerts from Firestore with Retry Logic
+  // Fetch Alerts from Firestore and Clean Up
   useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
+    const alertsQuery = query(collection(firestoreDb, "notifications"));
+    const unsubscribe = onSnapshot(
+      alertsQuery,
+      (snapshot) => {
+        const now = Date.now();
+        const newAlerts: Alert[] = [];
+        const alertsPerToken: { [pairAddress: string]: Alert[] } = {};
 
-    const fetchAlerts = () => {
-      setToast("Loading Alerts...");
-      const alertsQuery = query(collection(firestoreDb, "notifications"));
+        snapshot.forEach((doc) => {
+          const alert = { id: doc.id, ...doc.data() } as Alert;
+          const alertTime = new Date(alert.timestamp).getTime();
 
-      const retryFetch = async (attempts: number, delay: number) => {
-        for (let attempt = 1; attempt <= attempts; attempt++) {
-          try {
-            unsubscribe = onSnapshot(
-              alertsQuery,
-              (snapshot) => {
-                const now = Date.now();
-                const newAlerts: Alert[] = [];
-                const alertsPerToken: { [pairAddress: string]: Alert[] } = {};
-
-                snapshot.forEach((doc) => {
-                  const alert = { id: doc.id, ...doc.data() } as Alert;
-                  const alertTime = new Date(alert.timestamp).getTime();
-
-                  if (now - alertTime <= NOTIFICATION_EXPIRY) {
-                    const pairAddress = alert.pairAddress || "unknown";
-                    if (!alertsPerToken[pairAddress]) {
-                      alertsPerToken[pairAddress] = [];
-                    }
-                    alertsPerToken[pairAddress].push(alert);
-                  } else {
-                    deleteDoc(doc.ref).catch((err) => console.error(`Failed to delete alert: ${err}`));
-                  }
-                });
-
-                Object.keys(alertsPerToken).forEach((pairAddress) => {
-                  const tokenAlerts = alertsPerToken[pairAddress];
-                  tokenAlerts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-                  const limitedAlerts = tokenAlerts.slice(0, MAX_NOTIFICATIONS_PER_TOKEN);
-                  newAlerts.push(...limitedAlerts);
-                });
-
-                setAlerts(newAlerts);
-                setNotificationCount(newAlerts.length);
-                setToast(""); // Clear toast immediately after loading
-              },
-              (err) => {
-                console.error(`Attempt ${attempt} - Error fetching alerts:`, err);
-                if (attempt === attempts) {
-                  setToast("Failed to load alerts after retries");
-                  setTimeout(() => setToast(""), 5000); // Updated to 5 seconds
-                }
-              }
-            );
-            return;
-          } catch (err) {
-            console.error(`Attempt ${attempt} - Setup error:`, err);
-            if (attempt < attempts) {
-              await new Promise((resolve) => setTimeout(resolve, delay));
-              continue;
+          if (now - alertTime <= NOTIFICATION_EXPIRY) {
+            const pairAddress = alert.pairAddress || "unknown";
+            if (!alertsPerToken[pairAddress]) {
+              alertsPerToken[pairAddress] = [];
             }
-            setToast("Failed to load alerts after retries");
-            setTimeout(() => setToast(""), 5000); // Updated to 5 seconds
-            return;
+            alertsPerToken[pairAddress].push(alert);
+          } else {
+            deleteDoc(doc.ref).catch((err) => console.error(`Failed to delete alert: ${err}`));
           }
-        }
-      };
+        });
 
-      retryFetch(3, 2000); // Retry 3 times with 2-second delay
-    };
+        Object.keys(alertsPerToken).forEach((pairAddress) => {
+          const tokenAlerts = alertsPerToken[pairAddress];
+          tokenAlerts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          const limitedAlerts = tokenAlerts.slice(0, MAX_NOTIFICATIONS_PER_TOKEN);
+          newAlerts.push(...limitedAlerts);
+        });
 
-    fetchAlerts();
-
-    return () => {
-      if (unsubscribe) {
-        unsubscribe();
+        setAlerts(newAlerts);
+        setNotificationCount(newAlerts.length);
+      },
+      (err) => {
+        console.error("Error fetching alerts:", err);
+        setToast("Failed to load alerts");
+        setTimeout(() => setToast(""), 2000);
       }
-      setToast(""); // Clear toast on cleanup
-    };
+    );
+    return () => unsubscribe();
   }, []);
 
   // Price Spike and Volume Spike Alerts
@@ -933,6 +900,11 @@ export default function TokenScreener() {
           weight: baseAiToken ? parseFloat(baseAiToken.weight.replace("%", "")) : 0,
         };
       });
+    } else if (viewMode === "new") {
+      tokenList = tokenList.filter(
+        (token) =>
+          token.pairCreatedAt && Date.now() - token.pairCreatedAt <= 24 * 60 * 60 * 1000
+      );
     } else if (viewMode === "alerts") {
       tokenList = tokenList.filter((token) =>
         alerts.some((alert) => alert.pairAddress === token.pairAddress)
@@ -1031,7 +1003,7 @@ export default function TokenScreener() {
       {
         label: "Base AI Index Value",
         data: indexHistory.map((point) => ({ x: point.timestamp.getTime(), y: point.value })),
-        borderColor: "rgba(59, 130, 246, 1)",
+        borderColor: "rgba(59, 130, 246, 1)", // blue-400
         backgroundColor: "rgba(59, 130, 246, 0.2)",
         fill: true,
       },
@@ -1063,26 +1035,11 @@ export default function TokenScreener() {
   };
 
   // Handlers
-  const handleCopy = useCallback(async (pairAddress: string) => {
-    try {
-      // Fetch the correct address from the database
-      const tokenDocRef = doc(firestoreDb, "tokens", pairAddress);
-      const tokenDoc = await getDoc(tokenDocRef);
-      if (!tokenDoc.exists()) {
-        throw new Error("Token not found in database");
-      }
-      const tokenData = tokenDoc.data();
-      const addressToCopy = tokenData?.address || pairAddress; // Fallback to pairAddress if not found
-
-      // Copy the address to clipboard
-      await navigator.clipboard.writeText(addressToCopy);
-      setToast("Address copied to clipboard");
-      setTimeout(() => setToast(""), 5000); // Updated to 5 seconds
-    } catch (err) {
-      console.error("Failed to copy address:", err);
-      setToast("Failed to copy address");
-      setTimeout(() => setToast(""), 5000); // Updated to 5 seconds
-    }
+  const handleCopy = useCallback((address: string) => {
+    navigator.clipboard.writeText(address).then(() => {
+      setToast("Copied to clipboard");
+      setTimeout(() => setToast(""), 2000);
+    });
   }, []);
 
   const toggleFavorite = useCallback(
@@ -1108,7 +1065,7 @@ export default function TokenScreener() {
         console.error("Error toggling favorite:", err);
         setFavorites((prev) => (isFavorited ? [...prev, pairAddress] : prev.filter((fav) => fav !== pairAddress)));
         setToast("Error updating favorites");
-        setTimeout(() => setToast(""), 5000); // Updated to 5 seconds
+        setTimeout(() => setToast(""), 2000);
       }
     },
     [user, favorites]
@@ -1119,7 +1076,7 @@ export default function TokenScreener() {
       if (!pool || !/^0x[a-fA-F0-9]{40}$/.test(pool)) {
         console.error("Invalid pool address for navigation:", pool);
         setToast("Invalid token address. Please try again.");
-        setTimeout(() => setToast(""), 5000); // Updated to 5 seconds
+        setTimeout(() => setToast(""), 2000);
         return;
       }
 
@@ -1139,7 +1096,7 @@ export default function TokenScreener() {
       } catch (err) {
         console.error("Navigation error:", err);
         setToast("Failed to navigate to chart page. Using fallback navigation.");
-        setTimeout(() => setToast(""), 5000); // Updated to 5 seconds
+        setTimeout(() => setToast(""), 2000);
         window.location.href = targetUrl;
       }
     },
@@ -1171,7 +1128,7 @@ export default function TokenScreener() {
     } catch (err) {
       console.error(err);
       setToast("Submission error. Please try again.");
-      setTimeout(() => setToast(""), 5000); // Updated to 5 seconds
+      setTimeout(() => setToast(""), 2000);
     }
   }
 
@@ -1211,11 +1168,13 @@ export default function TokenScreener() {
   const currentTokens = sortedTokens.slice(indexOfFirstToken, indexOfLastToken);
   const totalPages = Math.ceil(sortedTokens.length / pageSize);
 
+  // Animation variants for table rows
   const rowVariants = {
     hidden: { opacity: 0, y: 20 },
     visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: "easeOut" } },
   };
 
+  // Render
   if (!isMounted) {
     return (
       <div className="w-screen h-screen bg-gray-950 text-gray-200 font-sans m-0 p-0 overflow-hidden">
@@ -1242,7 +1201,7 @@ export default function TokenScreener() {
       )}
 
       {toast && (
-        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-900 text-gray-200 py-2 px-4 rounded-lg shadow-xl z-50 border border-blue-500/30 font-sans uppercase animate-pulse">
+        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-900 text-gray-200 py-2 px-4 rounded-lg shadow-xl z-50 border border-blue-500/30 font-sans uppercase">
           {toast}
         </div>
       )}
@@ -1330,12 +1289,6 @@ export default function TokenScreener() {
       {showBoostModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30">
-            <button
-              onClick={() => setShowBoostModal(false)}
-              className="absolute top-2 right-2 text-xl font-bold font-sans"
-            >
-              ×
-            </button>
             <h2 className="text-xl font-bold mb-4 font-sans uppercase">Boost Info</h2>
             <p className="text-sm mb-4 font-sans uppercase">
               Purchase a boost with USDC on our website to increase your token's visibility. Boosts add a score to your
@@ -1454,13 +1407,13 @@ export default function TokenScreener() {
 
       <div className="flex flex-col w-full h-full">
         <div className="sticky top-0 z-50 bg-gray-900 shadow-lg w-full border-b border-blue-500/30">
-          <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between px-4 py-2 space-y-2 sm:space-y-0">
+          <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between px-4 py-3 space-y-2 sm:space-y-0">
             <div className="flex flex-row items-center space-x-4">
-              <div className="hidden sm:flex items-center space-x-2 bg-gray-900 border border-blue-500/30 rounded-lg px-4 py-1 shadow-inner">
+              <div className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 rounded-lg px-4 py-2 shadow-inner">
                 <span className="text-blue-400 animate-pulse font-sans uppercase" title="Live Pulse">
                   ●
                 </span>
-                <div className="text-xs sm:text-sm text-gray-200 font-sans flex items-center space-x-2 uppercase">
+                <div className="text-sm sm:text-base text-gray-200 font-sans flex items-center space-x-2 uppercase">
                   <span>LIVE {viewerCount} Traders</span>
                   <span className="flex items-center">
                     <FaBell className={`inline mr-1 ${getBellColor(alerts)}`} />
@@ -1469,10 +1422,9 @@ export default function TokenScreener() {
                 </div>
               </div>
             </div>
-            <div className="flex items-center space-x-2 flex-wrap gap-2">
-              {/* Desktop Search Bar */}
-              <div className="hidden sm:block relative w-full sm:w-64">
-                <div className="flex items-center bg-gray-900 rounded-lg px-3 py-1 border border-blue-500/30 w-full h-8 shadow-sm">
+            <div className="flex items-center space-x-4">
+              <div className="relative w-full sm:w-80">
+                <div className="flex items-center bg-gray-900 rounded-lg px-3 py-2 border border-blue-500/30 w-full h-9 shadow-sm">
                   <FaSearch className="text-gray-400 mr-2" />
                   <input
                     type="text"
@@ -1480,7 +1432,7 @@ export default function TokenScreener() {
                     onChange={(e) => debouncedSetSearchQuery(e.target.value)}
                     onFocus={() => setShowSearchDropdown(true)}
                     onBlur={() => setTimeout(() => setShowSearchDropdown(false), 200)}
-                    className="bg-transparent text-gray-200 focus:outline-none text-xs sm:text-sm font-sans w-full p-1 touch-friendly h-6 placeholder-gray-400 uppercase"
+                    className="bg-transparent text-gray-200 focus:outline-none text-sm font-sans w-full p-1 touch-friendly h-6 placeholder-gray-400 uppercase"
                   />
                 </div>
                 {showSearchDropdown && searchSuggestions.length > 0 && (
@@ -1517,7 +1469,7 @@ export default function TokenScreener() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setShowBoostModal(true)}
-                className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-xs sm:text-sm font-sans whitespace-nowrap px-3 py-1 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
+                className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
               >
                 <FaBolt className="text-blue-400" />
                 <span>[Boost Info]</span>
@@ -1526,7 +1478,7 @@ export default function TokenScreener() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setShowModal(true)}
-                className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-xs sm:text-sm font-sans whitespace-nowrap px-3 py-1 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
+                className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
               >
                 <FaPlusCircle className="text-blue-400" />
                 <span>[Submit Listing]</span>
@@ -1535,7 +1487,7 @@ export default function TokenScreener() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => router.push("/account")}
-                className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-xs sm:text-sm font-sans whitespace-nowrap px-3 py-1 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
+                className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
               >
                 <FaUser className="text-gray-200" />
                 <span>[Account]</span>
@@ -1544,7 +1496,7 @@ export default function TokenScreener() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleReturn}
-                className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-xs sm:text-sm font-sans whitespace-nowrap px-3 py-1 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
+                className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
               >
                 <span>[Return]</span>
               </motion.button>
@@ -1552,12 +1504,12 @@ export default function TokenScreener() {
           </div>
         </div>
 
-        <div className="bg-gray-900 p-2 sm:p-4 flex flex-col sm:flex-row gap-2 sm:gap-4 border-b border-blue-500/30 shadow-inner">
-          <div className="flex flex-wrap sm:flex-row gap-2 w-full items-center">
+        <div className="bg-gray-900 p-3 sm:p-4 flex flex-col sm:flex-row gap-3 sm:gap-4 border-b border-blue-500/30 shadow-inner">
+          <div className="flex flex-col sm:flex-row gap-2 w-full items-center">
             <motion.button
               whileHover={{ scale: 1.05 }}
               onClick={() => setViewMode("all")}
-              className={`p-1 sm:p-2 text-gray-200 rounded-lg text-xs sm:text-sm w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
+              className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
                 viewMode === "all" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
               }`}
               title="All Tokens"
@@ -1567,7 +1519,7 @@ export default function TokenScreener() {
             <motion.button
               whileHover={{ scale: 1.05 }}
               onClick={() => setViewMode("favorites")}
-              className={`p-1 sm:p-2 text-gray-200 rounded-lg text-xs sm:text-sm w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
+              className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
                 viewMode === "favorites" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
               }`}
               title="Favorites"
@@ -1577,7 +1529,7 @@ export default function TokenScreener() {
             <motion.button
               whileHover={{ scale: 1.05 }}
               onClick={() => setViewMode("baseAI")}
-              className={`p-1 sm:p-2 text-gray-200 rounded-lg text-xs sm:text-sm w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
+              className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
                 viewMode === "baseAI" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
               }`}
               title="Base AI Index"
@@ -1587,140 +1539,87 @@ export default function TokenScreener() {
             <motion.button
               whileHover={{ scale: 1.05 }}
               onClick={() => setViewMode("alerts")}
-              className={`p-1 sm:p-2 text-gray-200 rounded-lg text-xs sm:text-sm w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
+              className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
                 viewMode === "alerts" ? "bg-red-500/20 text-red-400" : "bg-gray-900 hover:bg-gray-800"
               }`}
               title="Alerts"
             >
               Alerts
             </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              onClick={() => setViewMode("new")}
+              className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
+                viewMode === "new" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
+              }`}
+              title="New Tokens"
+            >
+              New Tokens
+            </motion.button>
+            <motion.button
+              disabled
+              className="p-2 text-gray-400 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 bg-gray-900 opacity-50 cursor-not-allowed truncate uppercase"
+              title="New Pairs v2 (Locked)"
+            >
+              New Pairs v2
+            </motion.button>
 
-            {/* Mobile Filters Toggle Button */}
-            <div className="sm:hidden w-auto">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                onClick={() => setIsFiltersOpen(true)}
-                className="p-1 sm:p-2 text-gray-200 rounded-lg text-xs sm:text-sm w-auto font-sans transition-colors shadow-sm border border-blue-500/30 bg-gray-900 hover:bg-gray-800 uppercase flex items-center justify-center"
+            {/* Mobile Filters (Dropdowns) */}
+            <div className="sm:hidden flex flex-col gap-2 w-full">
+              <select
+                value={filters.minLiquidity || 0}
+                onChange={(e) => setFilters({ ...filters, minLiquidity: Number(e.target.value) })}
+                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                title="Minimum Liquidity ($)"
               >
-                <FaFilter className="mr-1 sm:mr-2" />
-                Filters
-              </motion.button>
+                <option value={0}>Min Liq ($): Any</option>
+                <option value={1000}>$1,000</option>
+                <option value={5000}>$5,000</option>
+                <option value={10000}>$10,000</option>
+                <option value={50000}>$50,000</option>
+              </select>
+              <select
+                value={filters.minVolume || 0}
+                onChange={(e) => setFilters({ ...filters, minVolume: Number(e.target.value) })}
+                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                title="Minimum Volume ($)"
+              >
+                <option value={0}>Min Vol ($): Any</option>
+                <option value={1000}>$1,000</option>
+                <option value={5000}>$5,000</option>
+                <option value={10000}>$10,000</option>
+                <option value={50000}>$50,000</option>
+              </select>
+              <select
+                value={filters.minAge || 0}
+                onChange={(e) => setFilters({ ...filters, minAge: Number(e.target.value) })}
+                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                title="Minimum Age (days)"
+              >
+                <option value={0}>Min Age (d): Any</option>
+                                <option value={1}>1 day</option>
+                <option value={7}>7 days</option>
+                <option value={30}>30 days</option>
+                <option value={90}>90 days</option>
+              </select>
+              <select
+                value={filters.maxAge === Infinity ? "Infinity" : filters.maxAge}
+                onChange={(e) =>
+                  setFilters({
+                    ...filters,
+                    maxAge: e.target.value === "Infinity" ? Infinity : Number(e.target.value),
+                  })
+                }
+                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                title="Maximum Age (days)"
+              >
+                <option value="Infinity">Max Age (d): Any</option>
+                <option value={1}>1 day</option>
+                <option value={7}>7 days</option>
+                <option value={30}>30 days</option>
+                <option value={90}>90 days</option>
+              </select>
             </div>
-
-            {/* Mobile Filters Collapsible Panel with Search Bar */}
-            {isFiltersOpen && (
-              <div className="fixed inset-0 bg-gray-900 z-50 flex flex-col sm:hidden">
-                <div className="flex justify-between items-center p-4 border-b border-blue-500/30">
-                  <h2 className="text-lg font-bold font-sans uppercase">Filters</h2>
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    onClick={() => setIsFiltersOpen(false)}
-                    className="text-gray-200"
-                  >
-                    <FaTimes className="w-6 h-6" />
-                  </motion.button>
-                </div>
-                <div className="p-4">
-                  <div className="relative w-full">
-                    <div className="flex items-center bg-gray-900 rounded-lg px-3 py-1 border border-blue-500/30 w-full h-8 shadow-sm">
-                      <FaSearch className="text-gray-400 mr-2" />
-                      <input
-                        type="text"
-                        placeholder="Search tokens..."
-                        onChange={(e) => debouncedSetSearchQuery(e.target.value)}
-                        onFocus={() => setShowSearchDropdown(true)}
-                        onBlur={() => setTimeout(() => setShowSearchDropdown(false), 200)}
-                        className="bg-transparent text-gray-200 focus:outline-none text-xs font-sans w-full p-1 touch-friendly h-6 placeholder-gray-400 uppercase"
-                      />
-                    </div>
-                    {showSearchDropdown && searchSuggestions.length > 0 && (
-                      <div className="absolute top-full left-0 mt-2 w-full bg-gray-900 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto border border-blue-500/30">
-                        {searchSuggestions.map((token) => (
-                          <div
-                            key={token.pairAddress}
-                            onClick={() => {
-                              setSearchQuery("");
-                              setShowSearchDropdown(false);
-                              handleTokenClick(token.pairAddress);
-                            }}
-                            className="flex items-center space-x-3 p-3 hover:bg-gray-800 cursor-pointer transition-colors duration-150"
-                          >
-                            {token.info && (
-                              <img
-                                src={token.info.imageUrl || "/fallback.png"}
-                                alt={token.baseToken.symbol}
-                                className="w-6 h-6 rounded-full border border-blue-500/30"
-                              />
-                            )}
-                           <span className="text-sm font-sans truncate text-gray-200 uppercase">
-                              {token.baseToken.name} / {token.quoteToken.symbol} ({token.baseToken.symbol})
-                            </span>
-                            <span className="text-sm text-gray-400 ml-auto font-sans uppercase">
-                              {formatPrice(token.priceUsd)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="flex flex-col gap-4 p-4 flex-1 overflow-y-auto">
-                  <select
-                    value={filters.minLiquidity || 0}
-                    onChange={(e) => setFilters({ ...filters, minLiquidity: Number(e.target.value) })}
-                    className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
-                    title="Minimum Liquidity ($)"
-                  >
-                    <option value={0}>Min Liq ($): Any</option>
-                    <option value={1000}>$1,000</option>
-                    <option value={5000}>$5,000</option>
-                    <option value={10000}>$10,000</option>
-                    <option value={50000}>$50,000</option>
-                  </select>
-                  <select
-                    value={filters.minVolume || 0}
-                    onChange={(e) => setFilters({ ...filters, minVolume: Number(e.target.value) })}
-                    className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
-                    title="Minimum Volume ($)"
-                  >
-                    <option value={0}>Min Vol ($): Any</option>
-                    <option value={1000}>$1,000</option>
-                    <option value={5000}>$5,000</option>
-                    <option value={10000}>$10,000</option>
-                    <option value={50000}>$50,000</option>
-                  </select>
-                  <select
-                    value={filters.minAge || 0}
-                    onChange={(e) => setFilters({ ...filters, minAge: Number(e.target.value) })}
-                    className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
-                    title="Minimum Age (days)"
-                  >
-                    <option value={0}>Min Age (d): Any</option>
-                    <option value={1}>1 day</option>
-                    <option value={7}>7 days</option>
-                    <option value={30}>30 days</option>
-                    <option value={90}>90 days</option>
-                  </select>
-                  <select
-                    value={filters.maxAge === Infinity ? "Infinity" : filters.maxAge}
-                    onChange={(e) =>
-                      setFilters({
-                        ...filters,
-                        maxAge: e.target.value === "Infinity" ? Infinity : Number(e.target.value),
-                      })
-                    }
-                    className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
-                    title="Maximum Age (days)"
-                  >
-                    <option value="Infinity">Max Age (d): Any</option>
-                    <option value={1}>1 day</option>
-                    <option value={7}>7 days</option>
-                    <option value={30}>30 days</option>
-                    <option value={90}>90 days</option>
-                  </select>
-                </div>
-              </div>
-            )}
 
             {/* Desktop Filters (Inputs) */}
             <div className="hidden sm:flex gap-2">
@@ -1794,10 +1693,10 @@ export default function TokenScreener() {
           </div>
         )}
 
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 flex flex-col overflow-x-auto overflow-y-auto">
           {loading ? (
-            <div className="flex-1 overflow-x-auto overflow-y-auto">
-              <table className="table-auto w-full h-full whitespace-nowrap text-sm font-sans uppercase">
+            <div className="p-4">
+              <table className="table-auto w-full whitespace-nowrap text-sm font-sans uppercase">
                 <thead className="bg-gray-900 text-gray-400 sticky top-0 z-10 border-b border-blue-500/30">
                   <tr>
                     <th className="p-3 text-left" title="Rank by trending score">
@@ -1852,11 +1751,11 @@ export default function TokenScreener() {
               </table>
             </div>
           ) : filteredTokens.length === 0 && viewMode !== "alerts" ? (
-            <div className="flex-1 flex items-center justify-center text-gray-400 font-sans uppercase">
+            <div className="p-4 text-center text-gray-400 font-sans uppercase">
               No tokens match your filters. Try adjusting filters or check Firebase data.
             </div>
           ) : viewMode === "alerts" ? (
-            <div className="flex-1 bg-gray-900 overflow-y-auto">
+            <div className="w-full h-full bg-gray-900 overflow-y-auto">
               <div className="p-4 border-b border-blue-500/30">
                 <h2 className="text-xl font-bold font-sans text-gray-200 uppercase">Alerts Feed</h2>
               </div>
@@ -1875,6 +1774,7 @@ export default function TokenScreener() {
                         ? "text-green-500"
                         : "text-red-500";
 
+                    // Extract the numeric part (e.g., % change or $ spike) for coloring
                     const messageParts = alert.message.split(/(\d+\.?\d*)/);
                     const formattedMessage = messageParts.map((part, index) => {
                       if (/^\d+\.?\d*$/.test(part)) {
@@ -1908,7 +1808,7 @@ export default function TokenScreener() {
                           <div>
                             <p className="text-sm font-sans uppercase">
                               <span className="font-bold">{alert.type.replace("_", " ").toUpperCase()}:</span>{" "}
-                              <span className={colorClass}>{formattedMessage}</span>
+                              {formattedMessage}
                             </p>
                             <p className="text-xs text-gray-400 font-sans uppercase">
                               {new Date(alert.timestamp).toLocaleString()}
@@ -1934,8 +1834,8 @@ export default function TokenScreener() {
           ) : (
             <>
               {/* Desktop Table View */}
-              <div className="hidden md:block flex-1 overflow-x-auto overflow-y-auto">
-                <table className="table-auto w-full h-full whitespace-nowrap text-sm font-sans uppercase">
+              <div className="hidden md:block">
+                <table className="table-auto w-full whitespace-nowrap text-sm font-sans uppercase">
                   <thead className="bg-gray-900 text-gray-400 sticky top-0 z-10 border-b border-blue-500/30">
                     <tr>
                       <th
@@ -2037,7 +1937,7 @@ export default function TokenScreener() {
                         return (
                           <motion.tr
                             key={token.pairAddress}
-                            className="border-b border-blue-500/30 hover:bg-gray-800 transition-colors duration-200"
+                            className="border-b border-blue-500/30 hover:bg-gradient-to-r hover:from-gray-900 hover:to-gray-800 transition-colors duration-200"
                             variants={rowVariants}
                             initial="hidden"
                             animate="visible"
@@ -2159,7 +2059,7 @@ export default function TokenScreener() {
               </div>
 
               {/* Mobile Table View */}
-              <div className="md:hidden flex-1 overflow-x-auto overflow-y-auto">
+              <div className="md:hidden">
                 <table className="table-auto w-full whitespace-nowrap text-xs font-sans uppercase">
                   <thead className="bg-gray-900 text-gray-400 sticky top-0 z-10 border-b border-blue-500/30">
                     <tr>
@@ -2262,7 +2162,7 @@ export default function TokenScreener() {
                         return (
                           <motion.tr
                             key={token.pairAddress}
-                            className="border-b border-blue-500/30 hover:bg-gray-800 transition-colors duration-200"
+                            className="border-b border-blue-500/30 hover:bg-gradient-to-r hover:from-gray-900 hover:to-gray-800 transition-colors duration-200"
                             variants={rowVariants}
                             initial="hidden"
                             animate="visible"

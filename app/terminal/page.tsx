@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { FaBell, FaTimes, FaEye, FaEyeSlash, FaThumbtack, FaChevronDown, FaChevronUp, FaMinus, FaPlus } from "react-icons/fa";
+import { FaBell, FaTimes, FaEye, FaEyeSlash, FaThumbtack, FaMinus } from "react-icons/fa";
 import { Bars3Icon } from "@heroicons/react/24/solid";
 import { onAuthStateChanged } from "firebase/auth";
 import type { User } from "firebase/auth";
@@ -26,7 +26,7 @@ import Fuse from "fuse.js";
 import { useAccount, useBalance, useDisconnect } from "wagmi";
 import { ethers } from "ethers";
 import toast, { Toaster } from "react-hot-toast";
-import { useSwipeable } from "react-swipeable"; // Changed from Swipeable
+import { useSwipeable } from "react-swipeable";
 
 // Alchemy Provider for Base Mainnet
 const provider = new ethers.JsonRpcProvider(
@@ -129,6 +129,27 @@ interface HoneypotScanResult {
   };
 }
 
+interface ChartDataResponse {
+  prices: number[];
+}
+
+interface WalletDataResponse {
+  ethBalance: number;
+  tokens: {
+    symbol: string;
+    name: string;
+    balance: string;
+    contractAddress: string;
+  }[];
+  txList: {
+    asset: string;
+    value: string;
+    from: string;
+    to: string;
+    timestamp: string;
+  }[];
+}
+
 // Constants
 const PRICE_CHECK_INTERVAL = 60_000;
 const ETH_STATS_INTERVAL = 1_800_000;
@@ -140,7 +161,7 @@ const getColorClass = (type: string, theme: string): string => {
   if (theme === "hacker") {
     return "bg-green-900/20 text-green-400 border-green-500/20";
   } else if (theme === "light") {
-    return "bg-gray-100/50 text-gray-800 border-gray-300/50";
+    return "bg-blue-100/50 text-gray-800 border-blue-300/50";
   }
   switch (type) {
     case "mover":
@@ -198,7 +219,7 @@ const terminalStyles: Record<string, TerminalStyle> = {
     panelBg: "bg-gray-950",
     panelBorder: "border-blue-500/20",
     statusBarBg: "bg-gray-900",
-    commandLineBg: "bg-gray-900",
+    commandLineBg: "bg-gray-950",
     buttonBg: "bg-blue-500/20 hover:bg-blue-500/40",
     buttonText: "text-blue-300 hover:text-blue-200",
     inputBg: "bg-gray-900",
@@ -212,42 +233,42 @@ const terminalStyles: Record<string, TerminalStyle> = {
     panelBg: "bg-gray-950",
     panelBorder: "border-green-500/20",
     statusBarBg: "bg-gray-900",
-    commandLineBg: "bg-gray-900",
+    commandLineBg: "bg-gray-950",
     buttonBg: "bg-green-500/20 hover:bg-green-500/40",
     buttonText: "text-green-400 hover:text-green-300",
     inputBg: "bg-gray-900",
   },
   dark: {
-    background: "bg-gray-800",
-    text: "text-gray-200",
+    background: "bg-black",
+    text: "text-gray-100",
     accentText: "text-blue-400",
-    border: "border-gray-600/20",
-    separator: "border-gray-600/20",
-    panelBg: "bg-gray-800",
-    panelBorder: "border-gray-600/20",
+    border: "border-gray-700/20",
+    separator: "border-gray-700/20",
+    panelBg: "bg-black",
+    panelBorder: "border-gray-700/20",
     statusBarBg: "bg-gray-900",
-    commandLineBg: "bg-gray-900",
+    commandLineBg: "bg-black",
     buttonBg: "bg-blue-600/20 hover:bg-blue-600/40",
     buttonText: "text-blue-300 hover:text-blue-200",
     inputBg: "bg-gray-900",
   },
   light: {
-    background: "bg-gray-100",
+    background: "bg-blue-50",
     text: "text-gray-800",
     accentText: "text-blue-600",
-    border: "border-gray-300/50",
-    separator: "border-gray-300/50",
-    panelBg: "bg-gray-100",
-    panelBorder: "border-gray-300/50",
-    statusBarBg: "bg-gray-200",
-    commandLineBg: "bg-gray-200",
+    border: "border-blue-300/50",
+    separator: "border-blue-300/50",
+    panelBg: "bg-blue-50",
+    panelBorder: "border-blue-300/50",
+    statusBarBg: "bg-blue-100",
+    commandLineBg: "bg-blue-50",
     buttonBg: "bg-blue-500/20 hover:bg-blue-500/40",
     buttonText: "text-blue-600 hover:text-blue-500",
     inputBg: "bg-white",
   },
 };
 
-export default function HomebaseTerminal() {
+export default function CypherXTerminal() {
   const router = useRouter();
   const { address: walletAddress, isConnected } = useAccount();
   const { data: balance } = useBalance({ address: walletAddress });
@@ -255,11 +276,12 @@ export default function HomebaseTerminal() {
   const [user, setUser] = useState<User | null>(null);
   const [input, setInput] = useState<string>("");
   const [output, setOutput] = useState<string[]>([
-    "Welcome to Homebase Terminal v2.0 - Type /menu for commands",
+    "Welcome to CypherX Terminal v2.0 - Type /menu for commands",
   ]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [notificationCache, setNotificationCache] = useState<Notification[]>([]);
   const [pinnedNotifications, setPinnedNotifications] = useState<string[]>([]);
+  const [unreadNotifications, setUnreadNotifications] = useState<number>(0);
   const [notificationFilter, setNotificationFilter] = useState<{
     type: string;
     excludeTypes: string[];
@@ -271,7 +293,6 @@ export default function HomebaseTerminal() {
   const [isAlertSoundEnabled, setIsAlertSoundEnabled] = useState<boolean>(true);
   const [showNotifications, setShowNotifications] = useState<boolean>(true);
   const [sysUpdates, setSysUpdates] = useState<string[]>([]);
-  const [bootSequenceComplete, setBootSequenceComplete] = useState<boolean>(false);
   const [preferences, setPreferences] = useState<UserPreferences>({
     notifications: {
       mover: true,
@@ -313,54 +334,55 @@ export default function HomebaseTerminal() {
     startWidths: {},
   });
 
-  const commands: string[] = [
-    "/menu",
-    "/clear",
-    "/refresh-notifications",
-    "/account",
-    "/news",
-    "/tournaments",
-    "/whales",
-    "/scan",
-    "/screener",
-    "/logout",
-    "/settings",
-    "/snooze",
-    "/status",
-    "/history",
-    "/notify-me",
-    "/ca",
-    "/address",
-    "/token-balance",
-    "/tx-history",
-    "/calendar",
-    "/smart-money",
-    "/marketplace",
-    "/connect-wallet",
-    "/disconnect-wallet",
-    "/price-alert",
-    "/chart",
-    "/block-info",
-    "/tx-receipt",
-    "/balance",
-    "/watch-token",
-    "/shortcuts",
-  ];
+  const fuse = useMemo(() => {
+    const commands: string[] = [
+      "/menu",
+      "/clear",
+      "/refresh-notifications",
+      "/account",
+      "/news",
+      "/tournaments",
+      "/whales",
+      "/scan",
+      "/screener",
+      "/logout",
+      "/settings",
+      "/snooze",
+      "/status",
+      "/history",
+      "/notify-me",
+      "/ca",
+      "/address",
+      "/token-balance",
+      "/tx-history",
+      "/calendar",
+      "/smart-money",
+      "/marketplace",
+      "/connect-wallet",
+      "/disconnect-wallet",
+      "/price-alert",
+      "/chart",
+      "/block-info",
+      "/tx-receipt",
+      "/balance",
+      "/watch-token",
+      "/shortcuts",
+    ];
 
-  // Fuzzy search for command suggestions
-  const fuse = useMemo(
-    () =>
-      new Fuse(commands, {
-        threshold: 0.3,
-        includeScore: true,
-      }),
-    []
-  );
+    return new Fuse(commands, {
+      threshold: 0.3,
+      includeScore: true,
+    });
+  }, []);
 
   const debouncedSetNotifications = useCallback(
-    debounce((newNotifications: Notification[]) => {
-      setNotifications(newNotifications);
-    }, 500),
+    (newNotifications: Notification[]) => {
+      const debouncedFn = debounce(() => {
+        setNotifications(newNotifications);
+      }, 500);
+      debouncedFn();
+      return debouncedFn.cancel;
+    },
     []
   );
 
@@ -369,29 +391,20 @@ export default function HomebaseTerminal() {
     [preferences.terminalStyle]
   );
 
-  // Calculate dynamic panel widths
-  const getPanelWidth = useCallback(
-    (panel: keyof PanelState): number => {
-      const activePanels = Object.keys(panelState).filter(
-        (p) => !panelState[p as keyof PanelState].minimized
-      );
-      if (panelState[panel].minimized) {
-        return 50; // Minimized width in pixels
-      }
-      if (activePanels.length === 0) {
-        return 33.33;
-      }
-      const availableWidth =
-        100 - (Object.keys(panelState).length - activePanels.length) * (50 / window.innerWidth) * 100;
-      return availableWidth / activePanels.length;
-    },
-    [panelState]
-  );
+  const getPanelWidth = useCallback((): number => {
+    const activePanels = Object.keys(panelState).filter(
+      (p) => !panelState[p as keyof PanelState].minimized
+    );
+    const isMobile = window.innerWidth < 768;
+    if (isMobile) return 100;
+    if (activePanels.length === 0) return 33.33;
+    const availableWidth = 100;
+    return availableWidth / activePanels.length;
+  }, [panelState]);
 
-  // Boot-Up Sequence
   useEffect(() => {
     const bootSteps: string[] = [
-      "[INIT] Booting Homebase Terminal v2.0...",
+      "[INIT] Booting CypherX Terminal v2.0...",
       "[SYS] Checking system integrity...",
       "[SEC] Fetching security patches...",
       "[DB] Optimizing database...",
@@ -409,7 +422,6 @@ export default function HomebaseTerminal() {
         setSysUpdates((prev) => [...prev, bootSteps[stepIndex]]);
         stepIndex++;
       } else {
-        setBootSequenceComplete(true);
         clearInterval(interval);
       }
     }, 300);
@@ -417,7 +429,6 @@ export default function HomebaseTerminal() {
     return () => clearInterval(interval);
   }, []);
 
-  // Authentication, Preferences, and Persistent Filters
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser: User | null) => {
       if (currentUser) {
@@ -536,7 +547,6 @@ export default function HomebaseTerminal() {
     }
   }, [notificationFilter, user, preferences, panelState]);
 
-  // Fetch tokens from tokenDataCache collection
   useEffect(() => {
     const tokenCacheQuery = query(collection(db, "tokenDataCache"), limit(100));
     const unsubscribe = onSnapshot(tokenCacheQuery, (snapshot) => {
@@ -550,7 +560,6 @@ export default function HomebaseTerminal() {
     return () => unsubscribe();
   }, []);
 
-  // Fetch notifications
   useEffect(() => {
     const enabledTypes = Object.keys(preferences.notifications).filter(
       (type) => preferences.notifications[type]
@@ -607,10 +616,13 @@ export default function HomebaseTerminal() {
       const newAlerts = finalNotifications.filter(
         (n) => !notificationCache.some((cached) => cached.id === n.id)
       );
-      if (newAlerts.length > 0 && isAlertSoundEnabled && audioRef.current) {
-        audioRef.current.play().catch((error) => {
-          console.error("Failed to play alert sound:", error);
-        });
+      if (newAlerts.length > 0) {
+        setUnreadNotifications((prev) => prev + newAlerts.length);
+        if (isAlertSoundEnabled && audioRef.current) {
+          audioRef.current.play().catch((error) => {
+            console.error("Failed to play alert sound:", error);
+          });
+        }
       }
 
       setNotificationCache((prev) => {
@@ -628,10 +640,11 @@ export default function HomebaseTerminal() {
     isAlertSoundEnabled,
     preferences.notifications,
     preferences.prioritizeNotifications,
+    notificationCache,
+    pinnedNotifications,
     debouncedSetNotifications,
   ]);
 
-  // Fetch news
   useEffect(() => {
     const fetchNews = debounce(async () => {
       try {
@@ -661,7 +674,6 @@ export default function HomebaseTerminal() {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch articles
   useEffect(() => {
     const fetchArticles = debounce(async () => {
       try {
@@ -691,7 +703,6 @@ export default function HomebaseTerminal() {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch AI Index
   useEffect(() => {
     const fetchAIIndex = debounce(async () => {
       try {
@@ -720,7 +731,6 @@ export default function HomebaseTerminal() {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch ETH Stats
   useEffect(() => {
     const fetchEthStats = async () => {
       try {
@@ -749,7 +759,6 @@ export default function HomebaseTerminal() {
     return () => clearInterval(interval);
   }, []);
 
-  // Check recurring price alerts
   useEffect(() => {
     const checkPriceAlerts = async () => {
       for (const alert of priceAlerts) {
@@ -780,41 +789,40 @@ export default function HomebaseTerminal() {
     return () => clearInterval(interval);
   }, [priceAlerts, tokens]);
 
-  // Check custom alerts (one-time)
   useEffect(() => {
-    const checkCustomAlerts = () => {
-      tokens.forEach((token) => {
-        if (!token.baseToken || !token.baseToken.symbol) {
+    const checkCustomAlerts = async () => {
+      const alertsToRemove: string[] = [];
+      for (const alert of customAlerts) {
+        const token = tokens.find((t) => t.baseToken.symbol === alert.symbol);
+        if (!token || !token.baseToken || !token.baseToken.symbol) {
           console.warn("Invalid token data:", token);
-          return;
+          continue;
         }
-        const symbol = token.baseToken.symbol;
         const currentPrice = parseFloat(token.priceUsd || "0");
-        customAlerts.forEach(async (alert: CustomAlert) => {
-          if (alert.symbol !== symbol) return;
-          const threshold = alert.threshold;
-          const shouldAlert =
-            (alert.direction === "above" && currentPrice >= threshold) ||
-            (alert.direction === "below" && currentPrice <= threshold);
-          if (shouldAlert) {
-            const notification: Notification = {
-              type: "price_spike",
-              message: `${symbol} price ${alert.direction} ${threshold}: $${currentPrice.toFixed(5)}`,
-              timestamp: new Date().toISOString(),
-              id: `price_spike_${symbol}_${Date.now()}`,
-              pairAddress: token.pairAddress,
-            };
-            await addDoc(collection(db, "notifications"), {
-              ...notification,
-              createdAt: serverTimestamp(),
-            });
-            setCustomAlerts((prev: CustomAlert[]) =>
-              prev.filter((a: CustomAlert) => a.symbol !== symbol)
-            );
-            toast.success(`Price alert triggered for ${symbol}!`);
-          }
-        });
-      });
+        const shouldAlert =
+          (alert.direction === "above" && currentPrice >= alert.threshold) ||
+          (alert.direction === "below" && currentPrice <= alert.threshold);
+        if (shouldAlert) {
+          const notification: Notification = {
+            type: "price_spike",
+            message: `${alert.symbol} price ${alert.direction} ${alert.threshold}: $${currentPrice.toFixed(5)}`,
+            timestamp: new Date().toISOString(),
+            id: `price_spike_${alert.symbol}_${Date.now()}`,
+            pairAddress: token.pairAddress,
+          };
+          await addDoc(collection(db, "notifications"), {
+            ...notification,
+            createdAt: serverTimestamp(),
+          });
+          alertsToRemove.push(alert.symbol);
+          toast.success(`Price alert triggered for ${alert.symbol}!`, { duration: 3000 });
+        }
+      }
+      if (alertsToRemove.length > 0) {
+        setCustomAlerts((prev) =>
+          prev.filter((a) => !alertsToRemove.includes(a.symbol))
+        );
+      }
     };
 
     checkCustomAlerts();
@@ -840,7 +848,6 @@ export default function HomebaseTerminal() {
     };
   }, []);
 
-  // Fetch token address from Firebase
   const fetchTokenAddress = useCallback(
     async (tokenSymbol: string): Promise<string | null> => {
       try {
@@ -864,7 +871,6 @@ export default function HomebaseTerminal() {
     []
   );
 
-  // Panel resizing
   const startResize = useCallback(
     (panel: string, e: React.MouseEvent<HTMLDivElement>) => {
       setIsResizing(panel);
@@ -876,6 +882,10 @@ export default function HomebaseTerminal() {
           notificationCenter: panelState.notificationCenter.width,
         },
       };
+      toast(`Resizing ${panel.replace(/([A-Z])/g, " $1").trim()} panel...`, {
+        icon: "ℹ",
+        duration: 3000,
+      });
     },
     [panelState]
   );
@@ -887,8 +897,7 @@ export default function HomebaseTerminal() {
       setPanelState((prev) => {
         if (isResizing === "sysUpdate") {
           const newSysWidth = Math.max(20, Math.min(60, resizeRef.current.startWidths.sysUpdate + deltaX));
-          const remainingWidth =
-            100 - newSysWidth - (prev.notificationCenter.minimized ? (50 / window.innerWidth) * 100 : prev.notificationCenter.width);
+          const remainingWidth = 100 - newSysWidth - (prev.notificationCenter.minimized ? 0 : prev.notificationCenter.width);
           return {
             ...prev,
             sysUpdate: { ...prev.sysUpdate, width: newSysWidth },
@@ -896,8 +905,7 @@ export default function HomebaseTerminal() {
           };
         } else if (isResizing === "terminalOutput") {
           const newTermWidth = Math.max(20, Math.min(60, resizeRef.current.startWidths.terminalOutput + deltaX));
-          const remainingWidth =
-            100 - newTermWidth - (prev.sysUpdate.minimized ? (50 / window.innerWidth) * 100 : prev.sysUpdate.width);
+          const remainingWidth = 100 - newTermWidth - (prev.sysUpdate.minimized ? 0 : prev.sysUpdate.width);
           return {
             ...prev,
             terminalOutput: { ...prev.terminalOutput, width: newTermWidth },
@@ -912,7 +920,10 @@ export default function HomebaseTerminal() {
 
   const stopResize = useCallback(() => {
     setIsResizing(null);
-  }, []);
+    if (isResizing) {
+      toast.success(`${isResizing.replace(/([A-Z])/g, " $1").trim()} panel resized.`, { duration: 3000 });
+    }
+  }, [isResizing]);
 
   useEffect(() => {
     if (isResizing) {
@@ -925,6 +936,142 @@ export default function HomebaseTerminal() {
     }
   }, [isResizing, onResize, stopResize]);
 
+  const handleTokenStats = useCallback(
+    async (tokenName: string, toastId: string) => {
+      setOutput([`Fetching stats for ${tokenName.toUpperCase()}...`]);
+      try {
+        const tokenAddress = await fetchTokenAddress(tokenName.toUpperCase());
+        if (!tokenAddress) {
+          setOutput([`Token ${tokenName.toUpperCase()} not found in tokens collection.`]);
+          toast.error(`Token ${tokenName.toUpperCase()} not found.`, { id: toastId, duration: 3000 });
+          return;
+        }
+
+        const response = await fetch(`/api/tokens?chainId=base&tokenAddresses=${tokenAddress}`);
+        if (!response.ok) {
+          const errorData = await response.json();
+          setOutput([`Failed to fetch stats for ${tokenName.toUpperCase()}: ${errorData.error || "Network error"}`]);
+          toast.error(`Failed to fetch stats for ${tokenName.toUpperCase()}.`, { id: toastId, duration: 3000 });
+          return;
+        }
+        const data: DexToken[] = await response.json();
+        if (data && data.length > 0) {
+          const token: DexToken = data[0];
+          setOutput([
+            `Stats for ${token.baseToken?.symbol || tokenName.toUpperCase()}:`,
+            `Price: $${Number(token.priceUsd || "0").toFixed(5)}`,
+            `24h Change: ${token.priceChange?.h24?.toFixed(2) ?? "N/A"}%`,
+            `Volume (24h): $${token.volume?.h24?.toLocaleString() || "N/A"}`,
+            `Liquidity: $${token.liquidity?.usd?.toLocaleString() || "N/A"}`,
+            `Market Cap: ${token.marketCap ? `$${token.marketCap.toLocaleString()}` : "N/A"}`,
+          ]);
+          toast.success(`Stats fetched for ${tokenName.toUpperCase()}.`, { id: toastId, duration: 3000 });
+        } else {
+          setOutput([`Token ${tokenName.toUpperCase()} data not available.`]);
+          toast.error(`No data for ${tokenName.toUpperCase()}.`, { id: toastId, duration: 3000 });
+        }
+      } catch (err) {
+        console.error("Failed to fetch token stats:", err);
+        setOutput([`Failed to fetch stats for ${tokenName.toUpperCase()}: An error occurred.`]);
+        toast.error(`Error fetching stats for ${tokenName.toUpperCase()}.`, { id: toastId, duration: 3000 });
+      }
+    },
+    [fetchTokenAddress]
+  );
+
+  const handlePriceAlert = useCallback(
+    async (args: string[]) => {
+      if (!user) {
+        setOutput(["Please login to set price alerts."]);
+        toast.error("Login required.", { duration: 3000 });
+        return;
+      }
+      if (args.length < 5 || args[3].toLowerCase() !== "repeat") {
+        setOutput([
+          "Usage: /price-alert <symbol> <threshold> <above|below> repeat <interval> (e.g., /price-alert HIGHER 0.01 above repeat 1h)",
+        ]);
+        toast.error("Invalid price-alert command.", { duration: 3000 });
+        return;
+      }
+      const symbol = args[0].toUpperCase();
+      const threshold = parseFloat(args[1]);
+      const direction = args[2].toLowerCase() as "above" | "below";
+      const intervalStr = args[4].toLowerCase();
+      const interval = intervalStr.endsWith("h")
+        ? parseInt(intervalStr) * 60 * 60 * 1000
+        : parseInt(intervalStr) * 60 * 1000;
+      if (
+        isNaN(threshold) ||
+        !["above", "below"].includes(direction) ||
+        isNaN(interval)
+      ) {
+        setOutput([
+          "Invalid parameters. Usage: /price-alert <symbol> <threshold> <above|below> repeat <interval>",
+        ]);
+        toast.error("Invalid price-alert parameters.", { duration: 3000 });
+        return;
+      }
+      await setDoc(doc(db, `users/${user.uid}/priceAlerts/${symbol}`), {
+        threshold,
+        direction,
+        interval,
+      });
+      setOutput([
+        `Recurring price alert set: Notify when ${symbol} goes ${direction} $${threshold} every ${interval / 1000 / 60} minutes.`,
+      ]);
+      toast.success(`Price alert set for ${symbol}.`, { duration: 3000 });
+    },
+    [user]
+  );
+
+  const handleChart = useCallback(
+    async (args: string[], toastId: string) => {
+      if (args.length < 2) {
+        setOutput(["Usage: /chart <token-symbol> <timeframe> (e.g., /chart HIGHER 1h)"]);
+        toast.error("Invalid chart command.", { duration: 3000 });
+        return;
+      }
+      const chartSymbol = args[0].toUpperCase();
+      const timeframe = args[1].toLowerCase();
+      if (!["1h", "6h", "24h"].includes(timeframe)) {
+        setOutput(["Supported timeframes: 1h, 6h, 24h"]);
+        toast.error("Unsupported timeframe.", { duration: 3000 });
+        return;
+      }
+      setOutput([`Fetching price chart for ${chartSymbol} (${timeframe})...`]);
+      try {
+        const response = await fetch(`/api/token-chart?symbol=${chartSymbol}&timeframe=${timeframe}`);
+        if (!response.ok) {
+          const errorData = await response.json();
+          setOutput([`Failed to fetch chart: ${errorData.error || "Network error"}`]);
+          toast.error("Failed to fetch chart.", { id: toastId, duration: 3000 });
+          return;
+        }
+        const data: ChartDataResponse = await response.json();
+        const prices = data.prices || [];
+        if (prices.length === 0) {
+          setOutput([`No chart data available for ${chartSymbol}.`]);
+          toast.error(`No chart data for ${chartSymbol}.`, { id: toastId, duration: 3000 });
+          return;
+        }
+        const sparkline = generateSparkline(prices);
+        setOutput([
+          `Price Chart for ${chartSymbol} (${timeframe}):`,
+          sparkline,
+          `Min: $${Math.min(...prices).toFixed(5)}`,
+          `Max: $${Math.max(...prices).toFixed(5)}`,
+          `Current: $${prices[prices.length - 1].toFixed(5)}`,
+        ]);
+        toast.success(`Chart fetched for ${chartSymbol}.`, { id: toastId, duration: 3000 });
+      } catch (err) {
+        console.error("Failed to fetch chart:", err);
+        setOutput(["Failed to fetch chart: An error occurred."]);
+        toast.error("Error fetching chart.", { id: toastId, duration: 3000 });
+      }
+    },
+    []
+  );
+
   const handleCommand = useCallback(
     async (command: string) => {
       if (!command.trim()) return;
@@ -934,58 +1081,17 @@ export default function HomebaseTerminal() {
 
       const [cmd, ...args] = command.trim().split(" ");
       const lowerCmd = cmd.toLowerCase();
-
-      const showLoading = () => toast.loading("Processing command...");
+      const showLoading = () => toast.loading("Processing command...", { duration: 1000 });
       const dismissLoading = (id: string) => toast.dismiss(id);
 
       if (lowerCmd.endsWith("-stats")) {
         const tokenName = lowerCmd.replace(/-stats$/, "").replace("/", "");
         if (tokenName) {
           const toastId = showLoading();
-          setOutput([`Fetching stats for ${tokenName.toUpperCase()}...`]);
-          try {
-            const tokenAddress = await fetchTokenAddress(tokenName.toUpperCase());
-            if (!tokenAddress) {
-              setOutput([`Token ${tokenName.toUpperCase()} not found in tokens collection.`]);
-              toast.error(`Token ${tokenName.toUpperCase()} not found.`, { id: toastId });
-              dismissLoading(toastId);
-              return;
-            }
-
-            const response = await fetch(`/api/tokens?chainId=base&tokenAddresses=${tokenAddress}`, {
-              method: "GET",
-            });
-            if (!response.ok) {
-              const errorData = await response.json();
-              setOutput([`Failed to fetch stats for ${tokenName.toUpperCase()}: ${errorData.error || "Network error"}`]);
-              toast.error(`Failed to fetch stats for ${tokenName.toUpperCase()}.`, { id: toastId });
-              dismissLoading(toastId);
-              return;
-            }
-            const data = await response.json();
-            if (data && data.length > 0) {
-              const token = data[0];
-              setOutput([
-                `Stats for ${token.baseToken?.symbol || tokenName.toUpperCase()}:`,
-                `Price: $${Number(token.priceUsd || "0").toFixed(5)}`,
-                `24h Change: ${token.priceChange?.h24?.toFixed(2) ?? "N/A"}%`,
-                `Volume (24h): $${token.volume?.h24?.toLocaleString() || "N/A"}`,
-                `Liquidity: $${token.liquidity?.usd?.toLocaleString() || "N/A"}`,
-                `Market Cap: ${token.marketCap ? `$${token.marketCap.toLocaleString()}` : "N/A"}`,
-              ]);
-              toast.success(`Stats fetched for ${tokenName.toUpperCase()}.`, { id: toastId });
-              dismissLoading(toastId);
-            } else {
-              setOutput([`Token ${tokenName.toUpperCase()} data not available.`]);
-              toast.error(`No data for ${tokenName.toUpperCase()}.`, { id: toastId });
-              dismissLoading(toastId);
-            }
-          } catch (err) {
-            console.error("Failed to fetch token stats:", err);
-            setOutput([`Failed to fetch stats for ${tokenName.toUpperCase()}: An error occurred.`]);
-            toast.error(`Error fetching stats for ${tokenName.toUpperCase()}.`, { id: toastId });
-            dismissLoading(toastId);
-          }
+          await handleTokenStats(tokenName, toastId);
+          dismissLoading(toastId);
+        } else {
+          toast.error("Invalid token name for stats command.", { duration: 3000 });
         }
         return;
       }
@@ -993,7 +1099,7 @@ export default function HomebaseTerminal() {
       switch (lowerCmd) {
         case "/menu":
           setOutput([
-            "Welcome to Homebase Terminal v2.0 - Type /menu for commands",
+            "Welcome to CypherX Terminal v2.0 - Type /menu for commands",
             "",
             "/menu - Show this menu",
             "/clear - Clear the terminal",
@@ -1020,7 +1126,7 @@ export default function HomebaseTerminal() {
             "/marketplace - Navigate to Marketplace",
             "/connect-wallet - Connect your wallet",
             "/disconnect-wallet - Disconnect your wallet",
-            "/price-alert <symbol> <threshold> <above|below> <repeat> <interval> - Set recurring price alert",
+            "/price-alert <symbol> <threshold> <above|below> repeat <interval> - Set recurring price alert",
             "/chart <token-symbol> <timeframe> - Show token price chart snapshot",
             "/block-info <number> - Fetch block details",
             "/tx-receipt <tx-hash> - Fetch transaction receipt",
@@ -1030,12 +1136,12 @@ export default function HomebaseTerminal() {
             "",
             user ? `Available commands:` : `Please login to access all commands`,
           ]);
-          toast.success("Menu displayed.");
+          toast.success("Menu displayed.", { duration: 3000 });
           break;
 
         case "/clear":
           setOutput(["Terminal cleared."]);
-          toast.success("Terminal cleared.");
+          toast.success("Terminal cleared.", { duration: 3000 });
           break;
 
         case "/refresh-notifications":
@@ -1043,28 +1149,29 @@ export default function HomebaseTerminal() {
           setNotifications([]);
           setNotificationCache([]);
           setPinnedNotifications([]);
+          setUnreadNotifications(0);
           setOutput(["Notifications refreshed."]);
-          toast.success("Notifications refreshed.");
+          toast.success("Notifications refreshed.", { duration: 3000 });
           break;
 
         case "/account":
           router.push("/account");
-          toast.success("Navigating to account.");
+          toast.success("Navigating to account.", { duration: 3000 });
           break;
 
         case "/news":
           router.push("/base-chain-news");
-          toast.success("Navigating to news.");
+          toast.success("Navigating to news.", { duration: 3000 });
           break;
 
         case "/tournaments":
           router.push("/tradingcompetition");
-          toast.success("Navigating to tournaments.");
+          toast.success("Navigating to tournaments.", { duration: 3000 });
           break;
 
         case "/whales":
           router.push("/whale-watchers");
-          toast.success("Navigating to whale watchers.");
+          toast.success("Navigating to whale watchers.", { duration: 3000 });
           break;
 
         case "/scan":
@@ -1072,13 +1179,11 @@ export default function HomebaseTerminal() {
             const toastId = showLoading();
             setOutput([`Scanning token: ${args[0]}...`]);
             try {
-              const response = await fetch(`/api/honeypot/scan?address=${args[0]}`, {
-                method: "GET",
-              });
+              const response = await fetch(`/api/honeypot/scan?address=${args[0]}`);
               if (!response.ok) {
                 const errorData = await response.json();
                 setOutput([`Failed to scan token ${args[0]}: ${errorData.error || "Network error"}`]);
-                toast.error(`Failed to scan token ${args[0]}.`, { id: toastId });
+                toast.error(`Failed to scan token ${args[0]}.`, { id: toastId, duration: 3000 });
                 dismissLoading(toastId);
                 return;
               }
@@ -1112,36 +1217,36 @@ export default function HomebaseTerminal() {
                 );
               }
               setOutput(outputLines);
-              toast.success(`Token ${args[0]} scanned.`, { id: toastId });
+              toast.success(`Token ${args[0]} scanned.`, { id: toastId, duration: 3000 });
               dismissLoading(toastId);
             } catch (err) {
               console.error("Honeypot scan failed:", err);
               setOutput(["Failed to scan token: An error occurred."]);
-              toast.error("Failed to scan token.", { id: toastId });
+              toast.error("Failed to scan token.", { id: toastId, duration: 3000 });
               dismissLoading(toastId);
             }
           } else {
             setOutput(["Please provide a token address: /scan <token-address>"]);
-            toast.error("Token address required.");
+            toast.error("Token address required.", { duration: 3000 });
           }
           break;
 
         case "/screener":
           router.push("/token-scanner");
-          toast.success("Navigating to token scanner.");
+          toast.success("Navigating to token scanner.", { duration: 3000 });
           break;
 
         case "/logout":
           setOutput(["Logging out..."]);
           await auth.signOut();
           setOutput(["Logged out successfully."]);
-          toast.success("Logged out successfully.");
+          toast.success("Logged out successfully.", { duration: 3000 });
           break;
 
         case "/settings":
           if (!user) {
             setOutput(["Please login to manage settings."]);
-            toast.error("Login required.");
+            toast.error("Login required.", { duration: 3000 });
             return;
           }
           if (args[0]?.toLowerCase() === "notifications" && args[1] && args[2]) {
@@ -1163,15 +1268,15 @@ export default function HomebaseTerminal() {
                 { merge: true }
               );
               setOutput([`Notification ${type} set to ${value ? "on" : "off"}.`]);
-              toast.success(`Notification ${type} set to ${value ? "on" : "off"}.`);
+              toast.success(`Notification ${type} set to ${value ? "on" : "off"}.`, { duration: 3000 });
             } else {
               setOutput(["Invalid notification type."]);
-              toast.error("Invalid notification type.");
+              toast.error("Invalid notification type.", { duration: 3000 });
             }
           } else if (args[0]?.toLowerCase() === "favorites" && args[1]) {
             if (args[1].toLowerCase() === "list") {
               setOutput(["Favorites:", ...preferences.favorites]);
-              toast.success("Favorites listed.");
+              toast.success("Favorites listed.", { duration: 3000 });
             } else {
               const pairAddress = args[1];
               const isFavorited = preferences.favorites.includes(pairAddress);
@@ -1179,14 +1284,14 @@ export default function HomebaseTerminal() {
               if (isFavorited) {
                 await deleteDoc(favoriteDocRef);
                 setOutput([`Removed ${pairAddress} from favorites.`]);
-                toast.success(`Removed ${pairAddress} from favorites.`);
+                toast.success(`Removed ${pairAddress} from favorites.`, { duration: 3000 });
               } else {
                 await setDoc(favoriteDocRef, {
                   pairAddress,
                   createdAt: serverTimestamp(),
                 });
                 setOutput([`Added ${pairAddress} to favorites.`]);
-                toast.success(`Added ${pairAddress} to favorites.`);
+                toast.success(`Added ${pairAddress} to favorites.`, { duration: 3000 });
               }
             }
           } else if (args[0]?.toLowerCase() === "prioritize" && args[1]) {
@@ -1202,22 +1307,22 @@ export default function HomebaseTerminal() {
               { merge: true }
             );
             setOutput([`Notification prioritization ${value ? "enabled" : "disabled"}.`]);
-            toast.success(`Notification prioritization ${value ? "enabled" : "disabled"}.`);
+            toast.success(`Notification prioritization ${value ? "enabled" : "disabled"}.`, { duration: 3000 });
           } else {
             setOutput(["Usage: /settings <notifications|favorites|prioritize> <option> <value>"]);
-            toast.error("Invalid settings command.");
+            toast.error("Invalid settings command.", { duration: 3000 });
           }
           break;
 
         case "/snooze":
           if (!user) {
             setOutput(["Please login to snooze notifications."]);
-            toast.error("Login required.");
+            toast.error("Login required.", { duration: 3000 });
             return;
           }
           if (args.length < 2) {
             setOutput(["Usage: /snooze <symbol> <duration> (e.g., /snooze HIGHER 1h)"]);
-            toast.error("Invalid snooze command.");
+            toast.error("Invalid snooze command.", { duration: 3000 });
             return;
           }
           const symbol = args[0].toUpperCase();
@@ -1230,7 +1335,7 @@ export default function HomebaseTerminal() {
             expiry,
           });
           setOutput([`Notifications for ${symbol} snoozed until ${new Date(expiry).toLocaleString()}.`]);
-          toast.success(`Notifications for ${symbol} snoozed.`);
+          toast.success(`Notifications for ${symbol} snoozed.`, { duration: 3000 });
           break;
 
         case "/status":
@@ -1244,18 +1349,18 @@ export default function HomebaseTerminal() {
             `Wallet: ${isConnected ? walletAddress ?? "Unknown" : "Not connected"}`,
             `Network Latency: ${networkLatency}ms`,
           ]);
-          toast.success("System status displayed.");
+          toast.success("System status displayed.", { duration: 3000 });
           break;
 
         case "/history":
           setOutput(["Command History:", ...history.slice(-10)]);
-          toast.success("Command history displayed.");
+          toast.success("Command history displayed.", { duration: 3000 });
           break;
 
         case "/notify-me":
           if (args.length < 3) {
             setOutput(["Usage: /notify-me <symbol> <threshold> <above|below>"]);
-            toast.error("Invalid notify-me command.");
+            toast.error("Invalid notify-me command.", { duration: 3000 });
             return;
           }
           const alertSymbol = args[0].toUpperCase();
@@ -1263,7 +1368,7 @@ export default function HomebaseTerminal() {
           const direction = args[2].toLowerCase() as "above" | "below";
           if (isNaN(threshold) || !["above", "below"].includes(direction)) {
             setOutput(["Invalid threshold or direction. Usage: /notify-me <symbol> <threshold> <above|below>"]);
-            toast.error("Invalid threshold or direction.");
+            toast.error("Invalid threshold or direction.", { duration: 3000 });
             return;
           }
           setCustomAlerts((prev: CustomAlert[]) => [
@@ -1271,13 +1376,13 @@ export default function HomebaseTerminal() {
             { symbol: alertSymbol, threshold, direction },
           ]);
           setOutput([`Custom alert set: Notify when ${alertSymbol} goes ${direction} $${threshold}.`]);
-          toast.success(`Alert set for ${alertSymbol}.`);
+          toast.success(`Alert set for ${alertSymbol}.`, { duration: 3000 });
           break;
 
         case "/ca":
           if (args.length < 1) {
             setOutput(["Usage: /ca <token-symbol> (e.g., /ca HIGHER)"]);
-            toast.error("Token symbol required.");
+            toast.error("Token symbol required.", { duration: 3000 });
             return;
           }
           const tokenSymbol = args[0].toUpperCase();
@@ -1287,17 +1392,17 @@ export default function HomebaseTerminal() {
             const contractAddress = await fetchTokenAddress(tokenSymbol);
             if (!contractAddress) {
               setOutput([`Token ${tokenSymbol} not found in tokens collection.`]);
-              toast.error(`Token ${tokenSymbol} not found.`, { id: toastId });
+              toast.error(`Token ${tokenSymbol} not found.`, { id: toastId, duration: 3000 });
               dismissLoading(toastId);
               return;
             }
             setOutput([`Contract Address for ${tokenSymbol}: ${contractAddress}`]);
-            toast.success(`Contract address fetched for ${tokenSymbol}.`, { id: toastId });
+            toast.success(`Contract address fetched for ${tokenSymbol}.`, { id: toastId, duration: 3000 });
             dismissLoading(toastId);
           } catch (err) {
             console.error("Failed to fetch contract address:", err);
             setOutput([`Failed to fetch contract address for ${tokenSymbol}: An error occurred.`]);
-            toast.error(`Error fetching contract address for ${tokenSymbol}.`, { id: toastId });
+            toast.error(`Error fetching contract address for ${tokenSymbol}.`, { id: toastId, duration: 3000 });
             dismissLoading(toastId);
           }
           break;
@@ -1305,49 +1410,47 @@ export default function HomebaseTerminal() {
         case "/address":
           if (args.length < 1) {
             setOutput(["Usage: /address <wallet-address>"]);
-            toast.error("Wallet address required.");
+            toast.error("Wallet address required.", { duration: 3000 });
             return;
           }
           const walletAddressInput = args[0];
           if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddressInput)) {
             setOutput(["Invalid wallet address."]);
-            toast.error("Invalid wallet address.");
+            toast.error("Invalid wallet address.", { duration: 3000 });
             return;
           }
           const toastIdAddress = showLoading();
           setOutput([`Fetching wallet data for ${walletAddressInput}...`]);
           try {
-            const response = await fetch(`/api/wallet/${walletAddressInput}`, {
-              method: "GET",
-            });
+            const response = await fetch(`/api/wallet/${walletAddressInput}`);
             if (!response.ok) {
               const errorData = await response.json();
               setOutput([`Failed to fetch wallet data: ${errorData.error || "Network error"}`]);
-              toast.error("Failed to fetch wallet data.", { id: toastIdAddress });
+              toast.error("Failed to fetch wallet data.", { id: toastIdAddress, duration: 3000 });
               dismissLoading(toastIdAddress);
               return;
             }
-            const data = await response.json();
+            const data: WalletDataResponse = await response.json();
             setOutput([
               `Wallet Data for ${walletAddressInput}:`,
               `ETH Balance: ${data.ethBalance.toFixed(4)} ETH`,
               `Tokens:`,
               ...data.tokens.map(
-                (token: any) =>
+                (token) =>
                   `${token.symbol} (${token.name}): ${token.balance} (Contract: ${token.contractAddress})`
               ),
               `Recent Transactions:`,
               ...data.txList.slice(0, 5).map(
-                (tx: any) =>
+                (tx) =>
                   `${tx.asset} - ${tx.value} from ${tx.from} to ${tx.to} at ${tx.timestamp}`
               ),
             ]);
-            toast.success("Wallet data fetched.", { id: toastIdAddress });
+            toast.success("Wallet data fetched.", { id: toastIdAddress, duration: 3000 });
             dismissLoading(toastIdAddress);
           } catch (err) {
             console.error("Failed to fetch wallet data:", err);
             setOutput(["Failed to fetch wallet data: An error occurred."]);
-            toast.error("Error fetching wallet data.", { id: toastIdAddress });
+            toast.error("Error fetching wallet data.", { id: toastIdAddress, duration: 3000 });
             dismissLoading(toastIdAddress);
           }
           break;
@@ -1355,42 +1458,40 @@ export default function HomebaseTerminal() {
         case "/token-balance":
           if (args.length < 1) {
             setOutput(["Usage: /token-balance <wallet-address>"]);
-            toast.error("Wallet address required.");
+            toast.error("Wallet address required.", { duration: 3000 });
             return;
           }
           const tokenBalanceAddress = args[0];
           if (!/^0x[a-fA-F0-9]{40}$/.test(tokenBalanceAddress)) {
             setOutput(["Invalid wallet address."]);
-            toast.error("Invalid wallet address.");
+            toast.error("Invalid wallet address.", { duration: 3000 });
             return;
           }
           const toastIdToken = showLoading();
           setOutput([`Fetching token balances for ${tokenBalanceAddress}...`]);
           try {
-            const response = await fetch(`/api/wallet/${tokenBalanceAddress}`, {
-              method: "GET",
-            });
+            const response = await fetch(`/api/wallet/${tokenBalanceAddress}`);
             if (!response.ok) {
               const errorData = await response.json();
               setOutput([`Failed to fetch token balances: ${errorData.error || "Network error"}`]);
-              toast.error("Failed to fetch token balances.", { id: toastIdToken });
+              toast.error("Failed to fetch token balances.", { id: toastIdToken, duration: 3000 });
               dismissLoading(toastIdToken);
               return;
             }
-            const data = await response.json();
+            const data: WalletDataResponse = await response.json();
             setOutput([
               `Token Balances for ${tokenBalanceAddress}:`,
               ...data.tokens.map(
-                (token: any) =>
+                (token) =>
                   `${token.symbol} (${token.name}): ${token.balance} (Contract: ${token.contractAddress})`
               ),
             ]);
-            toast.success("Token balances fetched.", { id: toastIdToken });
+            toast.success("Token balances fetched.", { id: toastIdToken, duration: 3000 });
             dismissLoading(toastIdToken);
           } catch (err) {
             console.error("Failed to fetch token balances:", err);
             setOutput(["Failed to fetch token balances: An error occurred."]);
-            toast.error("Error fetching token balances.", { id: toastIdToken });
+            toast.error("Error fetching token balances.", { id: toastIdToken, duration: 3000 });
             dismissLoading(toastIdToken);
           }
           break;
@@ -1398,42 +1499,40 @@ export default function HomebaseTerminal() {
         case "/tx-history":
           if (args.length < 1) {
             setOutput(["Usage: /tx-history <wallet-address>"]);
-            toast.error("Wallet address required.");
+            toast.error("Wallet address required.", { duration: 3000 });
             return;
           }
           const txHistoryAddress = args[0];
           if (!/^0x[a-fA-F0-9]{40}$/.test(txHistoryAddress)) {
             setOutput(["Invalid wallet address."]);
-            toast.error("Invalid wallet address.");
+            toast.error("Invalid wallet address.", { duration: 3000 });
             return;
           }
           const toastIdTx = showLoading();
           setOutput([`Fetching transaction history for ${txHistoryAddress}...`]);
           try {
-            const response = await fetch(`/api/wallet/${txHistoryAddress}`, {
-              method: "GET",
-            });
+            const response = await fetch(`/api/wallet/${txHistoryAddress}`);
             if (!response.ok) {
               const errorData = await response.json();
               setOutput([`Failed to fetch transactions: ${errorData.error || "Network error"}`]);
-              toast.error("Failed to fetch transactions.", { id: toastIdTx });
+              toast.error("Failed to fetch transactions.", { id: toastIdTx, duration: 3000 });
               dismissLoading(toastIdTx);
               return;
             }
-            const data = await response.json();
+            const data: WalletDataResponse = await response.json();
             setOutput([
               `Recent Transactions for ${txHistoryAddress}:`,
               ...data.txList.slice(0, 5).map(
-                (tx: any) =>
+                (tx) =>
                   `${tx.asset} - ${tx.value} from ${tx.from} to ${tx.to} at ${tx.timestamp}`
               ),
             ]);
-            toast.success("Transactions fetched.", { id: toastIdTx });
+            toast.success("Transactions fetched.", { id: toastIdTx, duration: 3000 });
             dismissLoading(toastIdTx);
           } catch (err) {
             console.error("Failed to fetch transactions:", err);
             setOutput(["Failed to fetch transactions: An error occurred."]);
-            toast.error("Error fetching transactions.", { id: toastIdTx });
+            toast.error("Error fetching transactions.", { id: toastIdTx, duration: 3000 });
             dismissLoading(toastIdTx);
           }
           break;
@@ -1452,7 +1551,7 @@ export default function HomebaseTerminal() {
             }));
             if (events.length === 0) {
               setOutput(["No upcoming events found."]);
-              toast.success("No upcoming events.", { id: toastIdCalendar });
+              toast.success("No upcoming events.", { id: toastIdCalendar, duration: 3000 });
               dismissLoading(toastIdCalendar);
             } else {
               setOutput([
@@ -1462,25 +1561,25 @@ export default function HomebaseTerminal() {
                     `${event.title} - ${new Date(event.date).toLocaleString()}: ${event.description}`
                 ),
               ]);
-              toast.success("Events fetched.", { id: toastIdCalendar });
+              toast.success("Events fetched.", { id: toastIdCalendar, duration: 3000 });
               dismissLoading(toastIdCalendar);
             }
           } catch (err) {
             console.error("Failed to fetch events:", err);
             setOutput(["Failed to fetch events: An error occurred."]);
-            toast.error("Error fetching events.", { id: toastIdCalendar });
+            toast.error("Error fetching events.", { id: toastIdCalendar, duration: 3000 });
             dismissLoading(toastIdCalendar);
           }
           break;
 
         case "/smart-money":
           router.push("/smart-money");
-          toast.success("Navigating to smart money.");
+          toast.success("Navigating to smart money.", { duration: 3000 });
           break;
 
         case "/marketplace":
           router.push("/marketplace");
-          toast.success("Navigating to marketplace.");
+          toast.success("Navigating to marketplace.", { duration: 3000 });
           break;
 
         case "/connect-wallet":
@@ -1490,120 +1589,40 @@ export default function HomebaseTerminal() {
               walletAddress ?? "Unknown",
               `Balance: ${balance?.formatted || "0"} ETH`,
             ]);
-            toast.success("Wallet already connected.");
+            toast.success("Wallet already connected.", { duration: 3000 });
           } else {
             setOutput(["Please connect your wallet via the UI."]);
-            toast.error("Connect wallet via UI.");
+            toast.error("Connect wallet via UI.", { duration: 3000 });
           }
           break;
 
         case "/disconnect-wallet":
           if (!isConnected) {
             setOutput(["No wallet connected."]);
-            toast.error("No wallet connected.");
+            toast.error("No wallet connected.", { duration: 3000 });
           } else {
             disconnect();
             setOutput(["Wallet disconnected."]);
-            toast.success("Wallet disconnected.");
+            toast.success("Wallet disconnected.", { duration: 3000 });
           }
           break;
 
         case "/price-alert":
-          if (!user) {
-            setOutput(["Please login to set price alerts."]);
-            toast.error("Login required.");
-            return;
-          }
-          if (args.length < 5 || args[3].toLowerCase() !== "repeat") {
-            setOutput([
-              "Usage: /price-alert <symbol> <threshold> <above|below> repeat <interval> (e.g., /price-alert HIGHER 0.01 above repeat 1h)",
-            ]);
-            toast.error("Invalid price-alert command.");
-            return;
-          }
-          const priceAlertSymbol = args[0].toUpperCase();
-          const priceAlertThreshold = parseFloat(args[1]);
-          const priceAlertDirection = args[2].toLowerCase() as "above" | "below";
-          const intervalStr = args[4].toLowerCase();
-          const interval = intervalStr.endsWith("h")
-            ? parseInt(intervalStr) * 60 * 60 * 1000
-            : parseInt(intervalStr) * 60 * 1000;
-          if (
-            isNaN(priceAlertThreshold) ||
-            !["above", "below"].includes(priceAlertDirection) ||
-            isNaN(interval)
-          ) {
-            setOutput([
-              "Invalid parameters. Usage: /price-alert <symbol> <threshold> <above|below> repeat <interval>",
-            ]);
-            toast.error("Invalid price-alert parameters.");
-            return;
-          }
-          await setDoc(doc(db, `users/${user.uid}/priceAlerts/${priceAlertSymbol}`), {
-            threshold: priceAlertThreshold,
-            direction: priceAlertDirection,
-            interval,
-          });
-          setOutput([
-            `Recurring price alert set: Notify when ${priceAlertSymbol} goes ${priceAlertDirection} $${priceAlertThreshold} every ${interval / 1000 / 60} minutes.`,
-          ]);
-          toast.success(`Price alert set for ${priceAlertSymbol}.`);
+          const toastIdPriceAlert = showLoading();
+          await handlePriceAlert(args);
+          dismissLoading(toastIdPriceAlert);
           break;
 
         case "/chart":
-          if (args.length < 2) {
-            setOutput(["Usage: /chart <token-symbol> <timeframe> (e.g., /chart HIGHER 1h)"]);
-            toast.error("Invalid chart command.");
-            return;
-          }
-          const chartSymbol = args[0].toUpperCase();
-          const timeframe = args[1].toLowerCase();
-          if (!["1h", "6h", "24h"].includes(timeframe)) {
-            setOutput(["Supported timeframes: 1h, 6h, 24h"]);
-            toast.error("Unsupported timeframe.");
-            return;
-          }
           const toastIdChart = showLoading();
-          setOutput([`Fetching price chart for ${chartSymbol} (${timeframe})...`]);
-          try {
-            const response = await fetch(`/api/token-chart?symbol=${chartSymbol}&timeframe=${timeframe}`);
-            if (!response.ok) {
-              const errorData = await response.json();
-              setOutput([`Failed to fetch chart: ${errorData.error || "Network error"}`]);
-              toast.error("Failed to fetch chart.", { id: toastIdChart });
-              dismissLoading(toastIdChart);
-              return;
-            }
-            const data = await response.json();
-            const prices = data.prices || [];
-            if (prices.length === 0) {
-              setOutput([`No chart data available for ${chartSymbol}.`]);
-              toast.error(`No chart data for ${chartSymbol}.`, { id: toastIdChart });
-              dismissLoading(toastIdChart);
-              return;
-            }
-            const sparkline = generateSparkline(prices);
-            setOutput([
-              `Price Chart for ${chartSymbol} (${timeframe}):`,
-              sparkline,
-              `Min: $${Math.min(...prices).toFixed(5)}`,
-              `Max: $${Math.max(...prices).toFixed(5)}`,
-              `Current: $${prices[prices.length - 1].toFixed(5)}`,
-            ]);
-            toast.success(`Chart fetched for ${chartSymbol}.`, { id: toastIdChart });
-            dismissLoading(toastIdChart);
-          } catch (err) {
-            console.error("Failed to fetch chart:", err);
-            setOutput(["Failed to fetch chart: An error occurred."]);
-            toast.error("Error fetching chart.", { id: toastIdChart });
-            dismissLoading(toastIdChart);
-          }
+          await handleChart(args, toastIdChart);
+          dismissLoading(toastIdChart);
           break;
 
         case "/block-info":
           if (args.length < 1) {
             setOutput(["Usage: /block-info <number>"]);
-            toast.error("Block number required.");
+            toast.error("Block number required.", { duration: 3000 });
             return;
           }
           const blockNumber = args[0];
@@ -1613,7 +1632,7 @@ export default function HomebaseTerminal() {
             const block = await provider.getBlock(parseInt(blockNumber));
             if (!block) {
               setOutput([`Block ${blockNumber} not found.`]);
-              toast.error(`Block ${blockNumber} not found.`, { id: toastIdBlock });
+              toast.error(`Block ${blockNumber} not found.`, { id: toastIdBlock, duration: 3000 });
               dismissLoading(toastIdBlock);
               return;
             }
@@ -1625,12 +1644,12 @@ export default function HomebaseTerminal() {
               `Gas Used: ${block.gasUsed.toString()}`,
               `Gas Limit: ${block.gasLimit.toString()}`,
             ]);
-            toast.success(`Block info fetched for ${blockNumber}.`, { id: toastIdBlock });
+            toast.success(`Block info fetched for ${blockNumber}.`, { id: toastIdBlock, duration: 3000 });
             dismissLoading(toastIdBlock);
           } catch (err) {
             console.error("Failed to fetch block info:", err);
             setOutput(["Failed to fetch block info: An error occurred."]);
-            toast.error("Error fetching block info.", { id: toastIdBlock });
+            toast.error("Error fetching block info.", { id: toastIdBlock, duration: 3000 });
             dismissLoading(toastIdBlock);
           }
           break;
@@ -1638,7 +1657,7 @@ export default function HomebaseTerminal() {
         case "/tx-receipt":
           if (args.length < 1) {
             setOutput(["Usage: /tx-receipt <tx-hash>"]);
-            toast.error("Transaction hash required.");
+            toast.error("Transaction hash required.", { duration: 3000 });
             return;
           }
           const txHash = args[0];
@@ -1648,7 +1667,7 @@ export default function HomebaseTerminal() {
             const receipt = await provider.getTransactionReceipt(txHash);
             if (!receipt) {
               setOutput([`Transaction receipt not found for ${txHash}.`]);
-              toast.error(`Receipt not found for ${txHash}.`, { id: toastIdTxReceipt });
+              toast.error(`Receipt not found for ${txHash}.`, { id: toastIdTxReceipt, duration: 3000 });
               dismissLoading(toastIdTxReceipt);
               return;
             }
@@ -1660,12 +1679,12 @@ export default function HomebaseTerminal() {
               `From: ${receipt.from}`,
               `To: ${receipt.to || "Contract Creation"}`,
             ]);
-            toast.success(`Receipt fetched for ${txHash}.`, { id: toastIdTxReceipt });
+            toast.success(`Receipt fetched for ${txHash}.`, { id: toastIdTxReceipt, duration: 3000 });
             dismissLoading(toastIdTxReceipt);
           } catch (err) {
             console.error("Failed to fetch transaction receipt:", err);
             setOutput(["Failed to fetch transaction receipt: An error occurred."]);
-            toast.error("Error fetching transaction receipt.", { id: toastIdTxReceipt });
+            toast.error("Error fetching transaction receipt.", { id: toastIdTxReceipt, duration: 3000 });
             dismissLoading(toastIdTxReceipt);
           }
           break;
@@ -1673,13 +1692,13 @@ export default function HomebaseTerminal() {
         case "/balance":
           if (args.length < 1) {
             setOutput(["Usage: /balance <address>"]);
-            toast.error("Address required.");
+            toast.error("Address required.", { duration: 3000 });
             return;
           }
           const address = args[0];
           if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
             setOutput(["Invalid address."]);
-            toast.error("Invalid address.");
+            toast.error("Invalid address.", { duration: 3000 });
             return;
           }
           const toastIdBalance = showLoading();
@@ -1688,12 +1707,12 @@ export default function HomebaseTerminal() {
             const balance = await provider.getBalance(address);
             const ethBalance = ethers.formatEther(balance);
             setOutput([`Balance for ${address}: ${ethBalance} ETH`]);
-            toast.success(`Balance fetched for ${address}.`, { id: toastIdBalance });
+            toast.success(`Balance fetched for ${address}.`, { id: toastIdBalance, duration: 3000 });
             dismissLoading(toastIdBalance);
           } catch (err) {
             console.error("Failed to fetch balance:", err);
             setOutput(["Failed to fetch balance: An error occurred."]);
-            toast.error("Error fetching balance.", { id: toastIdBalance });
+            toast.error("Error fetching balance.", { id: toastIdBalance, duration: 3000 });
             dismissLoading(toastIdBalance);
           }
           break;
@@ -1701,19 +1720,19 @@ export default function HomebaseTerminal() {
         case "/watch-token":
           if (!user) {
             setOutput(["Please login to watch tokens."]);
-            toast.error("Login required.");
+            toast.error("Login required.", { duration: 3000 });
             return;
           }
           if (args.length < 1) {
             setOutput(["Usage: /watch-token <symbol>"]);
-            toast.error("Token symbol required.");
+            toast.error("Token symbol required.", { duration: 3000 });
             return;
           }
           const watchSymbol = args[0].toUpperCase();
           const token = tokens.find((t) => t.baseToken.symbol === watchSymbol);
           if (!token) {
             setOutput([`Token ${watchSymbol} not found.`]);
-            toast.error(`Token ${watchSymbol} not found.`);
+            toast.error(`Token ${watchSymbol} not found.`, { duration: 3000 });
             return;
           }
           await setDoc(doc(db, `users/${user.uid}/watchTokens/${watchSymbol}`), {
@@ -1721,7 +1740,7 @@ export default function HomebaseTerminal() {
             createdAt: serverTimestamp(),
           });
           setOutput([`Watching ${watchSymbol} for price updates.`]);
-          toast.success(`Watching ${watchSymbol}.`);
+          toast.success(`Watching ${watchSymbol}.`, { duration: 3000 });
           break;
 
         case "/shortcuts":
@@ -1732,12 +1751,12 @@ export default function HomebaseTerminal() {
             "ArrowUp - Previous command",
             "ArrowDown - Next command",
           ]);
-          toast.success("Shortcuts displayed.");
+          toast.success("Shortcuts displayed.", { duration: 3000 });
           break;
 
         default:
           setOutput([`Command not found: ${command}`, "Type /menu for available commands."]);
-          toast.error("Command not found.");
+          toast.error("Command not found.", { duration: 3000 });
       }
     },
     [
@@ -1745,19 +1764,21 @@ export default function HomebaseTerminal() {
       preferences,
       notifications,
       router,
-      snoozedTokens,
       tokens,
       uptime,
       isOnline,
       lastCommand,
       history,
-      customAlerts,
       networkLatency,
-      fetchTokenAddress,
       isConnected,
       walletAddress,
       balance,
       disconnect,
+      fetchTokenAddress,
+      handleChart,
+      handlePriceAlert,
+      handleTokenStats,
+      pinnedNotifications,
     ]
   );
 
@@ -1842,7 +1863,7 @@ export default function HomebaseTerminal() {
       } else {
         setPreferences((prev) => ({ ...prev, terminalStyle: style }));
       }
-      toast.success(`Theme changed to ${style}.`);
+      toast.success(`Theme switched to ${style.charAt(0).toUpperCase() + style.slice(1)}.`, { duration: 3000 });
     },
     [user, preferences]
   );
@@ -1855,7 +1876,7 @@ export default function HomebaseTerminal() {
           ? prev.excludeTypes.filter((t) => t !== type)
           : [...prev.excludeTypes, type],
       }));
-      toast.success(`Toggled filter for ${type}.`);
+      toast.success(`Toggled filter for ${type}.`, { duration: 3000 });
     },
     []
   );
@@ -1864,11 +1885,12 @@ export default function HomebaseTerminal() {
     setNotifications([]);
     setNotificationCache([]);
     setPinnedNotifications([]);
-    toast.success("All notifications cleared.");
+    setUnreadNotifications(0);
+    toast.success("All notifications cleared.", { duration: 3000 });
   }, []);
 
-  const togglePinNotification = useCallback(
-    (id: string) => {
+const togglePinNotification = useCallback(
+      (id: string) => {
       setPinnedNotifications((prev) => {
         const isPinned = prev.includes(id);
         if (isPinned) {
@@ -1889,7 +1911,7 @@ export default function HomebaseTerminal() {
           return preferences.prioritizeNotifications ? [notification, ...others] : prev;
         }
       });
-      toast.success(pinnedNotifications.includes(id) ? "Notification unpinned." : "Notification pinned.");
+      toast.success(pinnedNotifications.includes(id) ? "Notification unpinned." : "Notification pinned.", { duration: 3000 });
     },
     [pinnedNotifications, preferences.prioritizeNotifications]
   );
@@ -1898,13 +1920,13 @@ export default function HomebaseTerminal() {
     async (symbol: string) => {
       if (!user) {
         setOutput(["Please login to snooze notifications."]);
-        toast.error("Login required.");
+        toast.error("Login required.", { duration: 3000 });
         return;
       }
       const expiry = Date.now() + 60 * 60 * 1000; // 1 hour
       await setDoc(doc(db, `users/${user.uid}/snoozed/${symbol}`), { expiry });
       setOutput([`Notifications for ${symbol} snoozed until ${new Date(expiry).toLocaleString()}.`]);
-      toast.success(`Notifications for ${symbol} snoozed.`);
+      toast.success(`Notifications for ${symbol} snoozed.`, { duration: 3000 });
     },
     [user]
   );
@@ -1913,7 +1935,8 @@ export default function HomebaseTerminal() {
     (id: string) => {
       setNotifications((prev) => prev.filter((n) => n.id !== id));
       setPinnedNotifications((prev) => prev.filter((pid) => pid !== id));
-      toast.success("Notification dismissed.");
+      setUnreadNotifications((prev) => Math.max(0, prev - 1));
+      toast.success("Notification dismissed.", { duration: 3000 });
     },
     []
   );
@@ -1926,13 +1949,14 @@ export default function HomebaseTerminal() {
           [panel]: { ...prev[panel], minimized: !prev[panel].minimized },
         };
         Object.keys(newState).forEach((p) => {
-          newState[p as keyof PanelState].width = getPanelWidth(p as keyof PanelState);
+          if (!newState[p as keyof PanelState].minimized) {
+            newState[p as keyof PanelState].width = getPanelWidth();
+          }
         });
         return newState;
       });
-      toast.success(
-        `${panel.replace(/([A-Z])/g, " $1").trim()} ${panelState[panel].minimized ? "restored" : "minimized"}.`
-      );
+      const panelName = panel.replace(/([A-Z])/g, " $1").trim();
+      toast.success(`${panelName} ${panelState[panel].minimized ? "restored" : "minimized"}.`, { duration: 3000 });
     },
     [getPanelWidth, panelState]
   );
@@ -1941,7 +1965,7 @@ export default function HomebaseTerminal() {
     async () => {
       if (!user) {
         setOutput(["Please login to manage settings."]);
-        toast.error("Login required.");
+        toast.error("Login required.", { duration: 3000 });
         return;
       }
       const newValue = !preferences.prioritizeNotifications;
@@ -1955,860 +1979,444 @@ export default function HomebaseTerminal() {
         },
         { merge: true }
       );
-      setPreferences((prev) => ({
-        ...prev,
-        prioritizeNotifications: newValue,
-      }));
-      setOutput([`Notification prioritization ${newValue ? "enabled" : "disabled"}.`]);
-      toast.success(`Notification prioritization ${newValue ? "enabled" : "disabled"}.`);
+      setPreferences((prev) => ({ ...prev, prioritizeNotifications: newValue }));
+      setNotifications((prev) => {
+        if (!newValue) return prev.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        const pinned = prev.filter((n) => pinnedNotifications.includes(n.id));
+        const unpinned = prev.filter((n) => !pinnedNotifications.includes(n.id));
+        return [...pinned, ...unpinned];
+      });
+      toast.success(`Notification prioritization ${newValue ? "enabled" : "disabled"}.`, { duration: 3000 });
     },
-    [user, preferences]
+    [user, preferences, pinnedNotifications]
   );
 
-  // Section Header Component
-  interface SectionHeaderProps {
-    title: string;
-    showDots?: boolean;
-    currentStyle: TerminalStyle;
-    panelKey: keyof PanelState;
-    isMinimized: boolean;
-  }
+  const swipeHandlers = useSwipeable({
+    onSwipedLeft: () => {
+      setShowNotifications(false);
+      toast(`Notifications hidden.`, { icon: "ℹ", duration: 3000 });
+    },
+    onSwipedRight: () => {
+      setShowNotifications(true);
+      toast(`Notifications shown.`, { icon: "ℹ", duration: 3000 });
+    },
+  });
 
-  const SectionHeader = ({
-    title,
-    showDots = false,
-    currentStyle,
-    panelKey,
-    isMinimized,
-  }: SectionHeaderProps) => (
-    <div className="mb-3 -mx-3 -mt-3">
-      <div
-        className={`w-full py-2 px-3 flex justify-between items-center border-b ${currentStyle.separator}`}
-      >
-        <h2
-        className={`text-base font-bold uppercase ${currentStyle.accentText}`}
-        >
-          {title.replace("_", " ")}
-        </h2>
-        <div className="flex items-center space-x-2">
-          {showDots && (
-            <div className="flex items-center space-x-1">
-              <div className="w-2.5 h-2.5 bg-red-500 rounded-full opacity-80 hover:opacity-100 transition-opacity duration-150" />
-              <div className="w-2.5 h-2.5 bg-yellow-500 rounded-full opacity-80 hover:opacity-100 transition-opacity duration-150" />
-              <div className="w-2.5 h-2.5 bg-green-500 rounded-full opacity-80 hover:opacity-100 transition-opacity duration-150" />
-            </div>
-          )}
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() => togglePanelMinimize(panelKey)}
-            className={`p-1 rounded-full ${currentStyle.buttonBg} ${currentStyle.buttonText}`}
-            aria-label={isMinimized ? `Restore ${title} panel` : `Minimize ${title} panel`}
-            title={isMinimized ? "Restore panel" : "Minimize panel"}
-          >
-            {isMinimized ? <FaPlus className="w-3 h-3" /> : <FaMinus className="w-3 h-3" />}
-          </motion.button>
-        </div>
-      </div>
-    </div>
-  );
+  // Determine minimized panels for tabbed interface
+  const minimizedPanels = Object.keys(panelState).filter(
+    (panel) => panelState[panel as keyof PanelState].minimized
+  ) as (keyof PanelState)[];
 
   return (
     <div
-      className={`w-screen h-screen ${currentStyle.background} ${currentStyle.text} font-mono m-0 p-0 overflow-hidden flex flex-col touch-none select-none`}
+      className={`flex flex-col h-screen overflow-hidden ${currentStyle.background} ${currentStyle.text} font-mono`}
+      {...swipeHandlers}
     >
+      <style jsx global>{`
+        .tooltip {
+          position: relative;
+        }
+        .tooltip:hover::after {
+          content: attr(data-tooltip);
+          position: absolute;
+          bottom: 100%;
+          left: 50%;
+          transform: translateX(-50%);
+          background: rgba(0, 0, 0, 0.8);
+          color: white;
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 12px;
+          white-space: nowrap;
+          z-index: 10;
+        }
+        .panel-shadow {
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        .minimized-tab {
+          transition: background-color 0.2s;
+        }
+        .command-prefix::before {
+          content: "> ";
+          position: absolute;
+          left: 10px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: inherit;
+          opacity: 0.7;
+        }
+        @media (max-width: 768px) {
+          .panel-width {
+            width: 100% !important;
+          }
+          .separator {
+            display: none;
+          }
+          .text-sm {
+            font-size: 0.85rem;
+          }
+          .text-xs {
+            font-size: 0.7rem;
+          }
+          .p-3 {
+            padding: 0.75rem;
+          }
+        }
+      `}</style>
       <Toaster position="top-right" />
       <audio ref={audioRef} src="/alert.mp3" preload="auto" />
+      <div className={`relative flex items-center justify-between p-3 ${currentStyle.statusBarBg}`}>
+        <div className="flex items-center space-x-3 flex-wrap">
+          <Bars3Icon className="w-6 h-6" />
+          <span className="text-sm font-semibold">CypherX Terminal v2.0</span>
+          <span className="text-xs opacity-75">
+            Status: {isOnline ? "Online" : "Offline"} | Uptime: {uptime}
+          </span>
+          <span className="text-xs opacity-75">
+            Latency: {networkLatency}ms
+          </span>
+          <span className="text-xs opacity-75">
+            Theme: {preferences.terminalStyle.charAt(0).toUpperCase() + preferences.terminalStyle.slice(1)}
+          </span>
+          <span className="text-xs opacity-75">
+            Alerts: {priceAlerts.length}
+          </span>
+          <span className="text-xs opacity-75">
+            Favorites: {preferences.favorites.length}
+          </span>
+        </div>
+        <div className="flex items-center space-x-3">
+          {minimizedPanels.length > 0 && (
+            <div className="flex space-x-2">
+              {minimizedPanels.map((panel) => (
+                <button
+                  key={panel}
+                  onClick={() => togglePanelMinimize(panel)}
+                  className={`${currentStyle.buttonBg} ${currentStyle.buttonText} p-2 rounded text-xs minimized-tab tooltip transition-colors duration-200`}
+                  data-tooltip={`Restore ${panel.replace(/([A-Z])/g, " $1").trim()}`}
+                  aria-label={`Restore ${panel.replace(/([A-Z])/g, " $1").trim()} panel`}
+                >
+                  {panel.replace(/([A-Z])/g, " $1").trim()}
+                </button>
+              ))}
+            </div>
+          )}
+          {isConnected && walletAddress && (
+            <span className="text-xs">
+              Wallet: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+            </span>
+          )}
+          <button
+            onClick={() => {
+              setIsAlertSoundEnabled(!isAlertSoundEnabled);
+              toast.success(isAlertSoundEnabled ? "Alerts muted." : "Alerts unmuted.", { duration: 3000 });
+            }}
+            className={`${currentStyle.buttonBg} ${currentStyle.buttonText} p-2 rounded text-sm tooltip transition-colors duration-200`}
+            data-tooltip={isAlertSoundEnabled ? "Mute Alerts" : "Unmute Alerts"}
+            aria-label={isAlertSoundEnabled ? "Mute alerts" : "Unmute alerts"}
+          >
+            {isAlertSoundEnabled ? "Mute" : "Unmute"}
+          </button>
+        </div>
+      </div>
 
-      {/* Desktop Layout: Three Columns */}
-      <div className="hidden md:flex flex-1 w-full h-[calc(100vh-64px)] relative">
-        {/* SYS_UPDATE Panel */}
-        <motion.div
-          animate={{ width: panelState.sysUpdate.minimized ? "50px" : `${panelState.sysUpdate.width}%` }}
-          transition={{ duration: 0.15 }}
-          className={`h-full ${currentStyle.panelBg} ${currentStyle.panelBorder} p-3 overflow-y-auto shadow-lg overscroll-contain scrollbar-hidden border-r ${currentStyle.separator} relative`}
-        >
-          {panelState.sysUpdate.minimized ? (
-            <motion.div
-              className="flex items-center justify-center h-full"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.15 }}
-            >
-              <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
+      <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
+        {/* System Updates Panel */}
+        {!panelState.sysUpdate.minimized && (
+          <motion.div
+            className={`flex flex-col h-full ${currentStyle.panelBg} ${currentStyle.panelBorder} panel-shadow rounded-none panel-width relative`}
+            style={{ width: `${panelState.sysUpdate.width}%` }}
+            animate={{ width: `${panelState.sysUpdate.width}%` }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+          >
+            <div className={`flex items-center justify-between p-3 ${currentStyle.statusBarBg}`}>
+              <span className="text-sm font-semibold">System Updates</span>
+              <button
                 onClick={() => togglePanelMinimize("sysUpdate")}
-                className={`flex items-center space-x-1 p-2 rounded-md ${currentStyle.buttonBg} ${currentStyle.buttonText}`}
-                aria-label="Restore SYS_UPDATE panel"
-                title="Restore SYS_UPDATE"
+                className={`${currentStyle.buttonBg} ${currentStyle.buttonText} p-2 rounded tooltip transition-colors duration-200`}
+                data-tooltip="Minimize Panel"
+                aria-label="Minimize System Updates"
               >
-                <FaPlus className="w-4 h-4" />
-                <span className="text-xs uppercase">SYS</span>
-              </motion.button>
-            </motion.div>
-          ) : (
-            <>
-              <SectionHeader
-                title="SYS_UPDATE"
-                showDots={true}
-                currentStyle={currentStyle}
-                panelKey="sysUpdate"
-                isMinimized={panelState.sysUpdate.minimized}
-              />
-              <div className="space-y-2">
-                {sysUpdates.map((update, idx) => (
-                  <motion.p
-                    key={idx}
-                    initial={{ x: -15, opacity: 0 }}
-                    animate={{ x: 0, opacity: 1 }}
-                    transition={{ duration: 0.15 }}
-                    className={`text-sm ${
-                      update.includes("[READY]")
-                        ? currentStyle.accentText
-                        : "opacity-80"
-                    } hover:opacity-100 transition-opacity duration-150`}
-                  >
-                    {update}
-                  </motion.p>
-                ))}
-                {bootSequenceComplete && (
-                  <motion.p
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.15 }}
-                    className="text-xs opacity-60"
-                  >
-                    Last update: {new Date().toLocaleTimeString()}
-                  </motion.p>
+                <FaMinus />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3">
+              {sysUpdates.map((update, index) => (
+                <div key={index} className="text-sm mb-2">
+                  {update}
+                </div>
+              ))}
+            </div>
+            {window.innerWidth >= 768 && (
+              <>
+                <div
+                  className="absolute top-0 right-0 w-1 h-full cursor-col-resize bg-gray-500/20 hover:bg-gray-500/40 transition-colors"
+                  onMouseDown={(e) => startResize("sysUpdate", e)}
+                  aria-label="Resize System Updates panel"
+                />
+                <div className={`separator absolute top-0 right-0 w-px h-full ${currentStyle.separator}`} />
+              </>
+            )}
+          </motion.div>
+        )}
+
+        {/* Terminal Output Panel */}
+        {!panelState.terminalOutput.minimized && (
+          <motion.div
+            className={`flex flex-col h-full ${currentStyle.panelBg} ${currentStyle.panelBorder} panel-shadow rounded-none panel-width relative`}
+            style={{ width: `${panelState.terminalOutput.width}%` }}
+            animate={{ width: `${panelState.terminalOutput.width}%` }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+          >
+            <div className={`flex items-center justify-between p-3 ${currentStyle.statusBarBg}`}>
+              <span className="text-sm font-semibold">Terminal Output</span>
+              <button
+                onClick={() => togglePanelMinimize("terminalOutput")}
+                className={`${currentStyle.buttonBg} ${currentStyle.buttonText} p-2 rounded tooltip transition-colors duration-200`}
+                data-tooltip="Minimize Panel"
+                aria-label="Minimize Terminal Output"
+              >
+                <FaMinus />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3" ref={outputRef}>
+              {output.map((line, index) => (
+                <div key={index} className="text-sm mb-2">
+                  {line}
+                </div>
+              ))}
+            </div>
+            <div className={`p-3 ${currentStyle.commandLineBg} border-t ${currentStyle.border}`}>
+              {history.length > 0 && (
+                <select
+                  className={`w-full p-2 mb-2 rounded ${currentStyle.inputBg} ${currentStyle.text} text-sm shadow-sm`}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    handleCommand(e.target.value);
+                  }}
+                  value=""
+                  aria-label="Select previous command"
+                >
+                  <option value="" disabled>
+                    Recent Commands
+                  </option>
+                  {history.slice(-5).reverse().map((cmd, index) => (
+                    <option key={index} value={cmd}>
+                      {cmd}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <div className="relative">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={input}
+                  onChange={(e) => handleInputChange(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  className={`w-full p-3 pl-8 ${currentStyle.inputBg} ${currentStyle.text} text-sm focus:outline-none border ${currentStyle.border} rounded shadow-sm command-prefix`}
+                  placeholder="Enter command..."
+                  aria-label="Command input"
+                />
+              </div>
+              {suggestions.length > 0 && (
+                <div className={`mt-2 p-2 ${currentStyle.panelBg} ${currentStyle.border} rounded shadow-sm`}>
+                  {suggestions.map((suggestion, index) => (
+                    <div
+                      key={index}
+                      className={`text-sm p-1 hover:${currentStyle.buttonBg} cursor-pointer transition-colors duration-150 rounded`}
+                      onClick={() => {
+                        setInput(suggestion);
+                        setSuggestions([]);
+                      }}
+                    >
+                      {suggestion}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {window.innerWidth >= 768 && (
+              <>
+                <div
+                  className="absolute top-0 right-0 w-1 h-full cursor-col-resize bg-gray-500/20 hover:bg-gray-500/40 transition-colors"
+                  onMouseDown={(e) => startResize("terminalOutput", e)}
+                  aria-label="Resize Terminal Output panel"
+                />
+                <div className={`separator absolute top-0 right-0 w-px h-full ${currentStyle.separator}`} />
+              </>
+            )}
+          </motion.div>
+        )}
+
+        {/* Notification Center Panel */}
+        {!panelState.notificationCenter.minimized && (
+          <motion.div
+            className={`flex flex-col h-full ${currentStyle.panelBg} ${currentStyle.panelBorder} panel-shadow rounded-none panel-width`}
+            style={{ width: `${panelState.notificationCenter.width}%` }}
+            animate={{ width: `${panelState.notificationCenter.width}%` }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+          >
+            <div className={`flex items-center justify-between p-3 ${currentStyle.statusBarBg}`}>
+              <div className="flex items-center space-x-2">
+                <span className="text-sm font-semibold">Notification Center</span>
+                {unreadNotifications > 0 && (
+                  <span className="bg-red-500 text-white text-xs rounded-full px-2 py-1">
+                    {unreadNotifications}
+                  </span>
                 )}
               </div>
-              {bootSequenceComplete && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.15 }}
-                  className="mt-3 space-y-2"
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => {
+                    setShowNotifications(!showNotifications);
+                    toast.success(showNotifications ? "Notifications hidden." : "Notifications shown.", { duration: 3000 });
+                  }}
+                  className={`${currentStyle.buttonBg} ${currentStyle.buttonText} p-2 rounded tooltip transition-colors duration-200`}
+                  data-tooltip={showNotifications ? "Hide Notifications" : "Show Notifications"}
+                  aria-label={showNotifications ? "Hide Notifications" : "Show Notifications"}
                 >
-                  <div className="flex items-center space-x-2">
-                    <label className="text-sm font-medium uppercase">Terminal Style:</label>
-                    <select
-                      value={preferences.terminalStyle}
-                      onChange={(e) => handleStyleChange(e.target.value)}
-                      className={`rounded-md px-2 py-1 text-sm border focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all duration-150 ${currentStyle.inputBg} ${currentStyle.text}`}
-                      aria-label="Select terminal style"
-                    >
-                      <option value="classic">Classic</option>
-                      <option value="hacker">Hacker</option>
-                      <option value="dark">Dark</option>
-                      <option value="light">Light</option>
-                    </select>
-                  </div>
-                </motion.div>
-              )}
-            </>
-          )}
-          {!panelState.sysUpdate.minimized && !panelState.terminalOutput.minimized && (
-            <motion.div
-              className="absolute top-0 right-0 w-2 h-full cursor-col-resize bg-gray-500/20 hover:bg-gray-500/40 transition-colors duration-150"
-              onMouseDown={(e) => startResize("sysUpdate", e)}
-              aria-label="Resize SYS_UPDATE panel"
-              title="Drag to resize"
-            >
-              <Bars3Icon className="w-4 h-4 absolute top-1/2 transform -translate-y-1/2 text-gray-400" />
-            </motion.div>
-          )}
-        </motion.div>
-
-        {/* TERMINAL_OUTPUT Panel */}
-        <motion.div
-          animate={{ width: panelState.terminalOutput.minimized ? "50px" : `${panelState.terminalOutput.width}%` }}
-          transition={{ duration: 0.15 }}
-          className={`h-full ${currentStyle.panelBg} p-3 flex flex-col shadow-lg overscroll-contain scrollbar-hidden border-r ${currentStyle.separator} relative`}
-        >
-          {panelState.terminalOutput.minimized ? (
-            <motion.div
-              className="flex items-center justify-center h-full"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.15 }}
-            >
-              <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={() => togglePanelMinimize("terminalOutput")}
-                className={`flex items-center space-x-1 p-2 rounded-md ${currentStyle.buttonBg} ${currentStyle.buttonText}`}
-                aria-label="Restore TERMINAL_OUTPUT panel"
-                title="Restore TERMINAL_OUTPUT"
-              >
-                <FaPlus className="w-4 h-4" />
-                <span className="text-xs uppercase">TERM</span>
-              </motion.button>
-            </motion.div>
-          ) : (
-            <>
-              <SectionHeader
-                title="TERMINAL_OUTPUT"
-                currentStyle={currentStyle}
-                panelKey="terminalOutput"
-                isMinimized={panelState.terminalOutput.minimized}
-              />
-              <div ref={outputRef} className="flex-1 overflow-y-auto space-y-1.5">
-                <AnimatePresence>
-                  {output.map((line, idx) => (
-                    <motion.p
-                      key={idx}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -8 }}
-                      transition={{ duration: 0.15 }}
-                      className="text-sm opacity-80 hover:opacity-100 transition-opacity duration-150"
-                    >
-                      {line}
-                    </motion.p>
-                  ))}
-                </AnimatePresence>
+                  {showNotifications ? <FaEyeSlash /> : <FaEye />}
+                </button>
+                <button
+                  onClick={() => togglePanelMinimize("notificationCenter")}
+                  className={`${currentStyle.buttonBg} ${currentStyle.buttonText} p-2 rounded tooltip transition-colors duration-200`}
+                  data-tooltip="Minimize Panel"
+                  aria-label="Minimize Notification Center"
+                >
+                  <FaMinus />
+                </button>
               </div>
-            </>
-          )}
-          {!panelState.terminalOutput.minimized && !panelState.notificationCenter.minimized && (
-            <motion.div
-              className="absolute top-0 right-0 w-2 h-full cursor-col-resize bg-gray-500/20 hover:bg-gray-500/40 transition-colors duration-150"
-              onMouseDown={(e) => startResize("terminalOutput", e)}
-              aria-label="Resize TERMINAL_OUTPUT panel"
-              title="Drag to resize"
-            >
-              <Bars3Icon className="w-4 h-4 absolute top-1/2 transform -translate-y-1/2 text-gray-400" />
-            </motion.div>
-          )}
-        </motion.div>
-
-        {/* NOTIFICATION_CENTER Panel */}
-        <motion.div
-          animate={{ width: panelState.notificationCenter.minimized ? "50px" : `${panelState.notificationCenter.width}%` }}
-          transition={{ duration: 0.15 }}
-          className={`h-full ${currentStyle.panelBg} ${currentStyle.panelBorder} p-3 overflow-y-auto shadow-lg overscroll-contain scrollbar-hidden`}
-          ref={notificationRef}
-        >
-          {panelState.notificationCenter.minimized ? (
-            <motion.div
-              className="flex items-center justify-center h-full"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.15 }}
-            >
-              <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={() => togglePanelMinimize("notificationCenter")}
-                className={`flex items-center space-x-1 p-2 rounded-md ${currentStyle.buttonBg} ${currentStyle.buttonText}`}
-                aria-label="Restore NOTIFICATION_CENTER panel"
-                title="Restore NOTIFICATION_CENTER"
-              >
-                <FaPlus className="w-4 h-4" />
-                <span className="text-xs uppercase">NOTIF</span>
-              </motion.button>
-            </motion.div>
-          ) : (
-            <>
-              <SectionHeader
-                title="NOTIFICATION_CENTER"
-                currentStyle={currentStyle}
-                panelKey="notificationCenter"
-                isMinimized={panelState.notificationCenter.minimized}
-              />
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.15 }}
-                className="mb-3 space-y-3"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium uppercase">
-                    Pinned: {pinnedNotifications.length}
-                  </span>
+            </div>
+            {showNotifications && (
+              <>
+                <div className="p-3 flex space-x-2">
+                  <select
+                    value={notificationFilter.type}
+                    onChange={(e) =>
+                      setNotificationFilter((prev) => ({ ...prev, type: e.target.value }))
+                    }
+                    className={`p-2 rounded ${currentStyle.inputBg} ${currentStyle.text} text-sm focus:outline-none shadow-sm`}
+                    aria-label="Filter notification type"
+                  >
+                    <option value="all">All</option>
+                    <option value="mover">Movers</option>
+                    <option value="loser">Losers</option>
+                    <option value="volume_spike">Volume Spikes</option>
+                    <option value="price_spike">Price Spikes</option>
+                    <option value="news">News</option>
+                    <option value="article">Articles</option>
+                    <option value="ai_index">AI Index</option>
+                    <option value="eth_stats">ETH Stats</option>
+                    <option value="new_token">New Tokens</option>
+                  </select>
                   <button
                     onClick={handleClearAllNotifications}
-                    className={`text-xs px-3 py-1 rounded-md uppercase transition-all duration-150 ${currentStyle.buttonBg} ${currentStyle.buttonText}`}
+                    className={`${currentStyle.buttonBg} ${currentStyle.buttonText} p-2 rounded text-sm tooltip transition-colors duration-200`}
+                    data-tooltip="Clear All Notifications"
                     aria-label="Clear all notifications"
-                    title="Clear all notifications"
                   >
                     Clear All
                   </button>
                 </div>
-                <div className="space-y-2">
-                  <div className="flex items-center space-x-2">
-                    <label className="text-sm font-medium uppercase">Exclude Types:</label>
-                    <div className="flex flex-wrap gap-1">
-                      {[
-                        "mover",
-                        "loser",
-                        "volume_spike",
-                        "price_spike",
-                        "news",
-                        "article",
-                        "ai_index",
-                        "eth_stats",
-                        "new_token",
-                      ].map((type, idx) => (
-                        <motion.button
-                          key={type}
-                          initial={{ scale: 0.9, opacity: 0 }}
-                          animate={{ scale: 1, opacity: 1 }}
-                          transition={{ delay: idx * 0.015, duration: 0.15 }}
-                          onClick={() => toggleExcludeType(type)}
-                          className={`text-xs px-2 py-1 rounded-md border uppercase transition-all duration-150 flex items-center space-x-1 ${currentStyle.buttonBg} ${currentStyle.buttonText} ${
-                            notificationFilter.excludeTypes.includes(type)
-                              ? "bg-red-600/20 text-red-300 border-red-500/20"
-                              : ""
-                          }`}
-                          aria-label={`Toggle ${type.replace("_", " ")} filter`}
-                          title={`Toggle ${type.replace("_", " ")} filter`}
-                        >
-                          <span>{type.replace("_", " ")}</span>
-                          {notificationFilter.excludeTypes.includes(type) && (
-                            <FaTimes className="w-3 h-3" />
-                          )}
-                        </motion.button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <label className="text-sm font-medium uppercase">Show Only:</label>
-                    <select
-                      value={notificationFilter.type}
-                      onChange={(e) =>
-                        setNotificationFilter((prev) => ({
-                          ...prev,
-                          type: e.target.value,
-                        }))
-                      }
-                      className={`rounded-md px-2 py-1 text-sm border focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all duration-150 ${currentStyle.inputBg} ${currentStyle.text}`}
-                      aria-label="Filter notification type"
-                    >
-                      <option value="all">All</option>
-                      <option value="mover">Movers</option>
-                      <option value="loser">Losers</option>
-                      <option value="volume_spike">Volume Spikes</option>
-                      <option value="price_spike">Price Spikes</option>
-                      <option value="news">News</option>
-                      <option value="article">Articles</option>
-                      <option value="ai_index">AI Index</option>
-                      <option value="eth_stats">ETH Stats</option>
-                      <option value="new_token">New Tokens</option>
-                    </select>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <label className="text-sm font-medium uppercase">Alert Sound:</label>
-                    <input
-                      type="checkbox"
-                      checked={isAlertSoundEnabled}
-                      onChange={(e) => setIsAlertSoundEnabled(e.target.checked)}
-                      className={`w-4 h-4 rounded focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all duration-150 ${currentStyle.inputBg}`}
-                      aria-label="Toggle alert sound"
-                      title="Toggle alert sound"
-                    />
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <label className="text-sm font-medium uppercase">Prioritize Pinned:</label>
-                    <input
-                      type="checkbox"
-                      checked={preferences.prioritizeNotifications}
-                      onChange={togglePrioritizeNotifications}
-                      className={`w-4 h-4 rounded focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all duration-150 ${currentStyle.inputBg}`}
-                      aria-label="Toggle prioritize pinned notifications"
-                      title="Toggle prioritize pinned notifications"
-                    />
-                  </div>
+                <div className="p-3">
+                  {Object.keys(preferences.notifications).map((type) => (
+                    <label key={type} className="flex items-center space-x-2 text-sm mb-2">
+                      <input
+                        type="checkbox"
+                        checked={!notificationFilter.excludeTypes.includes(type)}
+                        onChange={() => toggleExcludeType(type)}
+                        className="rounded"
+                        aria-label={`Toggle ${type} notifications`}
+                      />
+                      <span>{type.replace("_", " ").toUpperCase()}</span>
+                    </label>
+                  ))}
                 </div>
-              </motion.div>
-              <div className="space-y-1.5">
-                {notifications.length === 0 ? (
-                  <motion.p
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.15 }}
-                    className="text-xs opacity-60"
-                  >
-                    No notifications.
-                  </motion.p>
-                ) : (
-                  notifications.map((notification) => {
-                    const handlers = useSwipeable({
-                      onSwipedRight: () => handleDismissNotification(notification.id),
-                      trackMouse: true,
-                    });
-                    return (
+                <div className="flex-1 overflow-y-auto p-3" ref={notificationRef}>
+                  <AnimatePresence>
+                    {notifications.map((notification) => (
                       <motion.div
                         key={notification.id}
-                        {...handlers}
-                        initial={{ opacity: 0, y: 8 }}
+                        initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.15 }}
-                        className={`text-xs ${getColorClass(
+                        exit={{ opacity: 0, y: -20 }}
+                        transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                        className={`p-3 mb-2 rounded border ${getColorClass(
                           notification.type,
                           preferences.terminalStyle
-                        )} flex p-2 rounded-md border transition-all duration-150 hover:brightness-125 cursor-pointer relative shadow-sm min-h-[56px]`}
+                        )} flex justify-between items-center transition-all duration-200`}
+                        onClick={() => setUnreadNotifications((prev) => Math.max(0, prev - 1))}
                       >
-                        <div className="flex items-start space-x-2 flex-1">
-                          <FaBell className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 opacity-80" />
-                          <div className="flex-1">
-                            <p className="font-semibold leading-tight">
-                              {notification.message}
-                            </p>
-                            <div className="mt-0.5">
-                              <p className="text-xs opacity-80 leading-tight">
-                                {new Date(notification.timestamp).toLocaleString()}
-                              </p>
-                              {notification.pairAddress && (
-                                <button
-                                  onClick={() =>
-                                    router.push(`/app/token-scanner/${notification.pairAddress}/chart/page.tsx`)
-                                  }
-                                  className={`text-xs underline mt-0.5 transition-all duration-150 ${currentStyle.buttonText}`}
-                                  aria-label={`View chart for ${notification.message}`}
-                                  title="View token chart"
-                                >
-                                  View Chart
-                                </button>
-                              )}
-                            </div>
+                        <div>
+                          <div className="text-sm">{notification.message}</div>
+                          <div className="text-xs opacity-75">
+                            {new Date(notification.timestamp).toLocaleString()}
                           </div>
                         </div>
-                        <div className="flex flex-col items-center space-y-1 ml-2">
-                          <motion.button
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
+                        <div className="flex space-x-2">
+                          <button
                             onClick={() => togglePinNotification(notification.id)}
-                            className={`p-1 rounded-full transition-all duration-150 ${
-                              pinnedNotifications.includes(notification.id)
-                                ? "text-yellow-400"
-                                : "text-gray-400 hover:text-yellow-400"
-                            }`}
-                            aria-label={
-                              pinnedNotifications.includes(notification.id)
-                                ? "Unpin notification"
-                                : "Pin notification"
-                            }
-                            title={pinnedNotifications.includes(notification.id) ? "Unpin" : "Pin"}
+                            className={`${currentStyle.buttonBg} ${currentStyle.buttonText} p-2 rounded tooltip transition-colors duration-200`}
+                            data-tooltip={pinnedNotifications.includes(notification.id) ? "Unpin" : "Pin"}
+                            aria-label={pinnedNotifications.includes(notification.id) ? "Unpin notification" : "Pin notification"}
                           >
-                            <FaThumbtack className="w-3.5 h-3.5" />
-                          </motion.button>
-                          <motion.button
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
+                            <FaThumbtack
+                              className={pinnedNotifications.includes(notification.id) ? "text-yellow-400" : ""}
+                            />
+                          </button>
+                          <button
                             onClick={() => handleSnoozeNotification(notification.message.split(" ")[0])}
-                            className="p-1 rounded-full text-gray-400 hover:text-blue-400 transition-all duration-150 text-xs"
-                            aria-label="Snooze notification for 1 hour"
-                            title="Snooze for 1h"
+                            className={`${currentStyle.buttonBg} ${currentStyle.buttonText} p-2 rounded tooltip transition-colors duration-200`}
+                            data-tooltip="Snooze"
+                            aria-label="Snooze notification"
                           >
-                            Snooze
-                          </motion.button>
-                          <motion.button
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
+                            <FaBell />
+                          </button>
+                          <button
                             onClick={() => handleDismissNotification(notification.id)}
-                            className="p-1 rounded-full text-gray-400 hover:text-red-400 transition-all duration-150 text-xs"
+                            className={`${currentStyle.buttonBg} ${currentStyle.buttonText} p-2 rounded tooltip transition-colors duration-200`}
+                            data-tooltip="Dismiss"
                             aria-label="Dismiss notification"
-                            title="Dismiss"
                           >
-                            Dismiss
-                          </motion.button>
+                            <FaTimes />
+                          </button>
                         </div>
                       </motion.div>
-                    );
-                  })
-                )}
-              </div>
-            </>
-          )}
-        </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </>
+            )}
+          </motion.div>
+        )}
       </div>
 
-      {/* Mobile Layout: Stacked with Collapsible Notifications */}
-      <div className="md:hidden flex-1 w-full h-screen flex flex-col relative">
-        {/* TERMINAL_OUTPUT Panel */}
-        <div className="flex-1 p-3 pb-[120px]">
-          <SectionHeader
-            title="TERMINAL_OUTPUT"
-            currentStyle={currentStyle}
-            panelKey="terminalOutput"
-            isMinimized={panelState.terminalOutput.minimized}
-          />
-          {!panelState.terminalOutput.minimized && (
-            <>
-              <div
-                ref={outputRef}
-                className="h-[calc(100vh-220px)] overflow-y-auto space-y-1.5 overscroll-contain scrollbar-hidden"
-              >
-                <AnimatePresence>
-                  {output.map((line, idx) => (
-                    <motion.p
-                      key={idx}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -8 }}
-                      transition={{ duration: 0.15 }}
-                      className="text-sm opacity-80 hover:opacity-100 transition-opacity duration-150"
-                    >
-                      {line}
-                    </motion.p>
-                  ))}
-                </AnimatePresence>
-              </div>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.15 }}
-                className="mt-2"
-              >
-                <button
-                  onClick={() => setShowNotifications(!showNotifications)}
-                  className={`flex items-center justify-center space-x-1.5 text-xs px-3 py-1.5 rounded-md uppercase w-full transition-all duration-150 ${currentStyle.buttonBg} ${currentStyle.buttonText}`}
-                  aria-label={showNotifications ? "Hide notifications" : "Show notifications"}
-                  title={showNotifications ? "Hide notifications" : "Show notifications"}
-                >
-                  {showNotifications ? (
-                    <>
-                      <FaEyeSlash className="w-3.5 h-3.5" />
-                      <span>Hide Notifications</span>
-                    </>
-                  ) : (
-                    <>
-                      <FaEye className="w-3.5 h-3.5" />
-                      <span>Show Notifications</span>
-                    </>
-                  )}
-                  {showNotifications ? (
-                    <FaChevronUp className="w-3.5 h-3.5 ml-1" />
-                  ) : (
-                    <FaChevronDown className="w-3.5 h-3.5 ml-1" />
-                  )}
-                </button>
-                <AnimatePresence>
-                  {showNotifications && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.15 }}
-                      className="mt-2 space-y-1.5 overflow-hidden max-h-[140px] overflow-y-auto overscroll-contain scrollbar-hidden"
-                    >
-                      {notifications.length === 0 ? (
-                        <motion.p
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          transition={{ duration: 0.15 }}
-                          className="text-xs opacity-60"
-                        >
-                          No notifications.
-                        </motion.p>
-                      ) : (
-                        notifications.slice(0, 10).map((notification) => {
-                          const handlers = useSwipeable({
-                            onSwipedRight: () => handleDismissNotification(notification.id),
-                            trackMouse: true,
-                          });
-                          return (
-                            <motion.div
-                              key={notification.id}
-                              {...handlers}
-                              initial={{ opacity: 0, y: 8 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              transition={{ duration: 0.15 }}
-                              className={`text-xs ${getColorClass(
-                                notification.type,
-                                preferences.terminalStyle
-                              )} flex p-2 rounded-md border transition-all duration-150 hover:brightness-125 cursor-pointer relative shadow-sm min-h-[56px]`}
-                            >
-                              <div className="flex items-start space-x-2 flex-1">
-                                <FaBell className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 opacity-80" />
-                                <div className="flex-1">
-                                  <p className="font-semibold leading-tight">
-                                    {notification.message}
-                                  </p>
-                                  <div className="mt-0.5">
-                                    <p className="text-xs opacity-80 leading-tight">
-                                      {new Date(notification.timestamp).toLocaleString()}
-                                    </p>
-                                    {notification.pairAddress && (
-                                      <button
-                                        onClick={() =>
-                                          router.push(`/app/token-scanner/${notification.pairAddress}/chart/page.tsx`)
-                                        }
-                                        className={`text-xs underline mt-0.5 transition-all duration-150 ${currentStyle.buttonText}`}
-                                        aria-label={`View chart for ${notification.message}`}
-                                        title="View token chart"
-                                      >
-                                        View Chart
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="flex flex-col items-center space-y-1 ml-2">
-                                <motion.button
-                                  whileHover={{ scale: 1.1 }}
-                                  whileTap={{ scale: 0.9 }}
-                                  onClick={() => togglePinNotification(notification.id)}
-                                  className={`p-1 rounded-full transition-all duration-150 ${
-                                    pinnedNotifications.includes(notification.id)
-                                      ? "text-yellow-400"
-                                      : "text-gray-400 hover:text-yellow-400"
-                                  }`}
-                                  aria-label={
-                                    pinnedNotifications.includes(notification.id)
-                                      ? "Unpin notification"
-                                      : "Pin notification"
-                                  }
-                                  title={
-                                    pinnedNotifications.includes(notification.id) ? "Unpin" : "Pin"
-                                  }
-                                >
-                                  <FaThumbtack className="w-3.5 h-3.5" />
-                                </motion.button>
-                                <motion.button
-                                  whileHover={{ scale: 1.1 }}
-                                  whileTap={{ scale: 0.9 }}
-                                  onClick={() => handleSnoozeNotification(notification.message.split(" ")[0])}
-                                  className="p-1 rounded-full text-gray-400 hover:text-blue-400 transition-all duration-150 text-xs"
-                                  aria-label="Snooze notification for 1 hour"
-                                  title="Snooze for 1h"
-                                >
-                                  Snooze
-                                </motion.button>
-                                <motion.button
-                                  whileHover={{ scale: 1.1 }}
-                                  whileTap={{ scale: 0.9 }}
-                                  onClick={() => handleDismissNotification(notification.id)}
-                                  className="p-1 rounded-full text-gray-400 hover:text-red-400 transition-all duration-150 text-xs"
-                                  aria-label="Dismiss notification"
-                                  title="Dismiss"
-                                >
-                                  Dismiss
-                                </motion.button>
-                              </div>
-                            </motion.div>
-                          );
-                        })
-                      )}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.div>
-            </>
-          )}
-        </div>
-
-        {/* Command Line - Fixed to Bottom on Mobile */}
-        <motion.div
-          initial={{ y: 15, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ duration: 0.15 }}
-          className={`fixed bottom-10 left-0 right-0 h-10 flex items-center space-x-2 px-3 py-2 border-t ${currentStyle.commandLineBg} ${currentStyle.separator} md:static md:bottom-auto md:border-b-0 z-10`}
-        >
-          <span className={`text-sm font-medium uppercase ${currentStyle.accentText}`}>
-            user@homebase ~ v2 $
-          </span>
-          <div className="relative flex-1">
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={(e) => handleInputChange(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className={`w-full rounded-md px-2 py-1 ${currentStyle.inputBg} ${currentStyle.text} focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all duration-150 text-sm placeholder-opacity-50`}
-              placeholder="Type command here..."
-              aria-label="Enter terminal command"
-            />
-            {suggestions.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 8 }}
-                transition={{ duration: 0.15 }}
-                className={`absolute bottom-full left-0 w-full rounded-md shadow-xl z-50 max-h-36 overflow-y-auto ${currentStyle.panelBg} ${currentStyle.text} scrollbar-hidden`}
-              >
-                {suggestions.map((suggestion, idx) => (
-                  <motion.div
-                    key={idx}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: idx * 0.015, duration: 0.15 }}
-                    className={`p-1.5 cursor-pointer text-sm ${currentStyle.buttonBg} ${currentStyle.buttonText} rounded-md`}
-                    onMouseDown={() => {
-                      setInput(suggestion);
-                      setSuggestions([]);
-                    }}
-                    role="option"
-                    aria-selected={input === suggestion}
-                  >
-                    {suggestion}
-                  </motion.div>
-                ))}
-              </motion.div>
-            )}
-          </div>
-          {/* Minimized Panel Buttons on Mobile */}
-          <div className="flex items-center space-x-2">
-            {Object.entries(panelState).map(([panel, state]) =>
-              state.minimized ? (
-                <motion.button
-                  key={panel}
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => togglePanelMinimize(panel as keyof PanelState)}
-                  className={`flex items-center space-x-1 p-1 rounded-md ${currentStyle.buttonBg} ${currentStyle.buttonText}`}
-                  aria-label={`Restore ${panel.replace(/([A-Z])/g, " $1").trim()} panel`}
-                  title={`Restore ${panel.replace(/([A-Z])/g, " $1").trim()}`}
-                >
-                  <FaPlus className="w-3 h-3" />
-                  <span className="text-xs uppercase">
-                    {panel === "sysUpdate" ? "SYS" : panel === "terminalOutput" ? "TERM" : "NOTIF"}
-                  </span>
-                </motion.button>
-              ) : null
-            )}
-          </div>
-        </motion.div>
-
-        {/* Status Bar - Fixed to Bottom on Mobile */}
-        <motion.div
-          initial={{ y: 15, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ duration: 0.15 }}
-          className={`fixed bottom-0 left-0 right-0 ${currentStyle.statusBarBg} ${currentStyle.text} p-2 text-xs flex justify-between items-center ${currentStyle.separator} border-t md:static md:bottom-auto z-10`}
-        >
-          <span className="flex items-center space-x-1.5">
-            <span
-              className="text-red-400 cursor-pointer hover:text-red-300 transition-colors duration-150 uppercase"
-              aria-label="View issues"
-              title="View issues"
+      <div className={`p-3 ${currentStyle.statusBarBg} flex flex-col md:flex-row justify-between items-center space-y-2 md:space-y-0`}>
+        <div className="flex space-x-3 flex-wrap justify-center">
+          {Object.keys(terminalStyles).map((style) => (
+            <button
+              key={style}
+              onClick={() => handleStyleChange(style)}
+              className={`${currentStyle.buttonBg} ${currentStyle.buttonText} p-2 rounded capitalize text-sm tooltip transition-colors duration-200 ${
+                preferences.terminalStyle === style ? "border-2 border-blue-500" : ""
+              }`}
+              data-tooltip={`Switch to ${style} theme`}
+              aria-label={`Switch to ${style} theme`}
             >
-              O 1 ISSUE
-            </span>
-            <span className="text-green-400 uppercase">X v2.0</span>
-          </span>
-          <span className="uppercase">OS: web</span>
-          <span className="uppercase">Uptime: {uptime}</span>
-          <span className="flex items-center space-x-1">
-            <span className="uppercase">Network: {networkLatency}ms</span>
-            <span
-              className={`w-2 h-2 rounded-full ${isOnline ? "bg-green-400" : "bg-red-400"} animate-pulse`}
-              aria-label={isOnline ? "Network online" : "Network offline"}
-            />
-          </span>
-        </motion.div>
+              {style}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={togglePrioritizeNotifications}
+          className={`${currentStyle.buttonBg} ${currentStyle.buttonText} p-2 rounded text-sm tooltip transition-colors duration-200`}
+          data-tooltip={preferences.prioritizeNotifications ? "Disable Prioritization" : "Enable Prioritization"}
+          aria-label={preferences.prioritizeNotifications ? "Disable notification prioritization" : "Enable notification prioritization"}
+        >
+          {preferences.prioritizeNotifications ? "Disable" : "Enable"} Prioritization
+        </button>
       </div>
-
-      {/* Command Line - Desktop Only */}
-      <motion.div
-        initial={{ y: 15, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.15 }}
-        className={`hidden md:flex w-full h-10 items-center space-x-2 px-3 py-2 border-t ${currentStyle.commandLineBg} ${currentStyle.separator}`}
-      >
-        <span className={`text-sm font-medium uppercase ${currentStyle.accentText}`}>
-          user@homebase ~ v2 $
-        </span>
-        <div className="relative flex-1">
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => handleInputChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className={`w-full rounded-md px-2 py-1 ${currentStyle.inputBg} ${currentStyle.text} focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all duration-150 text-sm placeholder-opacity-50`}
-            placeholder="Type command here..."
-            aria-label="Enter terminal command"
-          />
-          {suggestions.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 8 }}
-              transition={{ duration: 0.15 }}
-              className={`absolute bottom-full left-0 w-full rounded-md shadow-xl z-50 max-h-36 overflow-y-auto ${currentStyle.panelBg} ${currentStyle.text} scrollbar-hidden`}
-            >
-              {suggestions.map((suggestion, idx) => (
-                <motion.div
-                  key={idx}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: idx * 0.015, duration: 0.15 }}
-                  className={`p-1.5 cursor-pointer text-sm ${currentStyle.buttonBg} ${currentStyle.buttonText} rounded-md`}
-                  onMouseDown={() => {
-                    setInput(suggestion);
-                    setSuggestions([]);
-                  }}
-                  role="option"
-                  aria-selected={input === suggestion}
-                >
-                  {suggestion}
-                </motion.div>
-              ))}
-            </motion.div>
-          )}
-        </div>
-      </motion.div>
-
-      {/* Status Bar - Desktop Only */}
-      <motion.div
-        initial={{ y: 15, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.15 }}
-        className={`hidden md:flex w-full ${currentStyle.statusBarBg} ${currentStyle.text} p-2 text-xs justify-between items-center ${currentStyle.separator} border-t`}
-      >
-        <span className="flex items-center space-x-2">
-          <span
-            className="text-red-400 cursor-pointer hover:text-red-300 transition-colors duration-150 uppercase"
-            aria-label="View issues"
-            title="View issues"
-          >
-            O 1 ISSUE
-          </span>
-          <span className="text-green-400 uppercase">X v2.0</span>
-          {/* Minimized Panel Buttons */}
-          {Object.entries(panelState).map(([panel, state]) =>
-            state.minimized ? (
-              <motion.button
-                key={panel}
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={() => togglePanelMinimize(panel as keyof PanelState)}
-                className={`flex items-center space-x-1 p-1 rounded-md ${currentStyle.buttonBg} ${currentStyle.buttonText}`}
-                aria-label={`Restore ${panel.replace(/([A-Z])/g, " $1").trim()} panel`}
-                title={`Restore ${panel.replace(/([A-Z])/g, " $1").trim()}`}
-              >
-                <FaPlus className="w-3 h-3" />
-                <span className="text-xs uppercase">
-                  {panel === "sysUpdate" ? "SYS" : panel === "terminalOutput" ? "TERM" : "NOTIF"}
-                </span>
-              </motion.button>
-            ) : null
-          )}
-        </span>
-        <span className="uppercase">OS: web</span>
-        <span className="uppercase">Uptime: {uptime}</span>
-        <span className="flex items-center space-x-1">
-          <span className="uppercase">Network: {networkLatency}ms</span>
-          <span
-            className={`w-2 h-2 rounded-full ${isOnline ? "bg-green-400" : "bg-red-400"} animate-pulse`}
-            aria-label={isOnline ? "Network online" : "Network offline"}
-          />
-        </span>
-      </motion.div>
-
-      {/* Global Scrollbar Styles */}
-      <style jsx global>{`
-        .scrollbar-hidden::-webkit-scrollbar {
-          display: none;
-        }
-        .scrollbar-hidden {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
-      `}</style>
     </div>
   );
 }
