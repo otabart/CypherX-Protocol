@@ -1,7 +1,9 @@
+// app/account/page.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { motion } from "framer-motion";
 import {
   GoogleAuthProvider,
   signInWithPopup,
@@ -20,8 +22,10 @@ import {
   setDoc,
   serverTimestamp,
 } from "firebase/firestore";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { UserIcon } from "@heroicons/react/24/solid";
 
-export default function LoginPage() {
+export default function AccountPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectParam = searchParams.get("redirect") || "/account";
@@ -158,7 +162,7 @@ export default function LoginPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-black text-white">
+      <div className="min-h-screen flex items-center justify-center bg-gray-950 text-gray-200 px-4">
         Checking authentication...
       </div>
     );
@@ -166,46 +170,120 @@ export default function LoginPage() {
   if (user) return null;
 
   return (
-    <div className="min-h-screen flex flex-col bg-black text-white font-sans">
-      {/* Header */}
-      <header className="border-b border-gray-800 px-6 py-4 flex items-center justify-between bg-black">
-        <div className="flex items-center space-x-3">
-          <svg className="h-8 w-8 text-[#0052FF]" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6z" />
-          </svg>
-          <span className="text-white text-xl font-bold">Cypher</span>
+    <div className="min-h-screen bg-gray-950 text-gray-200 font-sans flex flex-col">
+      {/* NavBar */}
+      <nav className="bg-gray-950 p-3 flex justify-between items-center sticky top-0 z-10 border-b border-[#0052FF]/30">
+        {/* Hidden on mobile */}
+        <div className="hidden sm:flex items-center space-x-2">
+          <UserIcon className="h-6 w-6 text-[#0052FF]" />
+          <h1 className="text-xl font-bold text-[#0052FF] uppercase">Account</h1>
         </div>
-        <nav className="flex items-center space-x-6 text-sm text-gray-400">
-          <a href="#" className="hover:text-[#0052FF] transition-colors">Support</a>
-          <a href="#" className="hover:text-[#0052FF] transition-colors">English</a>
-        </nav>
+
+        {/* Always visible: Home link */}
+        <a
+          href="/"
+          className="text-gray-400 hover:text-[#0052FF] text-sm uppercase tracking-wide transition-colors duration-300"
+        >
+          Home
+        </a>
+
+        {/* Connect Wallet button */}
+        <ConnectButton.Custom>
+          {({
+            account,
+            chain,
+            openConnectModal,
+            openChainModal,
+            openAccountModal,
+            mounted,
+          }) => {
+            const connected = mounted && account && chain;
+            return (
+              <div>
+                {!connected ? (
+                  <button
+                    onClick={openConnectModal}
+                    className="bg-[#0052FF]/20 text-[#0052FF] text-sm uppercase tracking-wide px-3 py-1 rounded-lg hover:bg-[#0052FF]/40 border border-[#0052FF]/30 transition-all duration-300"
+                  >
+                    Connect Wallet
+                  </button>
+                ) : chain?.unsupported ? (
+                  <button
+                    onClick={openChainModal}
+                    className="bg-red-500/20 text-red-400 text-sm uppercase tracking-wide px-3 py-1 rounded-lg hover:bg-red-500/40 border border-red-500/30 transition-all duration-300"
+                  >
+                    Wrong Network
+                  </button>
+                ) : (
+                  <button
+                    onClick={openAccountModal}
+                    className="bg-[#0052FF]/20 text-[#0052FF] text-sm uppercase tracking-wide px-3 py-1 rounded-lg hover:bg-[#0052FF]/40 border border-[#0052FF]/30 transition-all duration-300"
+                  >
+                    {account.displayName ||
+                      `${account.address.slice(0, 6)}...${account.address.slice(-4)}`}
+                  </button>
+                )}
+              </div>
+            );
+          }}
+        </ConnectButton.Custom>
+      </nav>
+
+      {/* Hero Section */}
+      <header className="p-4 text-center">
+        <motion.h2
+          initial={{ opacity: 0, y: -15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          className="text-xl md:text-2xl font-bold tracking-tight mb-1 uppercase text-[#0052FF]"
+        >
+          Manage Your Account
+        </motion.h2>
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2, duration: 0.6 }}
+          className="text-gray-400 text-sm md:text-base max-w-lg mx-auto px-2"
+        >
+          Log in or sign up to access your profile, voting rights, referral code, and more.
+        </motion.p>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.4, duration: 0.6 }}
+          className="mt-3"
+        >
+          <span className="inline-block bg-[#0052FF]/20 text-[#0052FF] px-3 py-1 rounded-full text-xs font-medium uppercase">
+            Powered by Base
+          </span>
+        </motion.div>
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 flex items-center justify-center bg-black px-4">
-        <div className="w-full max-w-md bg-black p-8 rounded-xl shadow-lg border border-gray-800">
-          <h1 className="text-3xl font-bold mb-6 text-white">
+      <main className="flex-1 flex items-center justify-center px-4 pb-6">
+        <div className="w-full max-w-sm sm:max-w-md bg-gray-900 p-4 sm:p-6 rounded-xl shadow-lg border border-[#0052FF]/30">
+          <h3 className="text-xl sm:text-2xl font-bold mb-3 text-white text-center uppercase">
             {mode === "login"
-              ? "Log in to Cypher"
+              ? "Log In"
               : mode === "signup"
-              ? "Sign up for Cypher"
-              : "Reset your Password"}
-          </h1>
+              ? "Sign Up"
+              : "Reset Password"}
+          </h3>
 
           {errorMsg && (
-            <div className="mb-6 p-4 border border-red-500 bg-red-900/30 text-red-300 rounded-lg">
+            <div className="mb-3 p-2 border border-red-500 bg-red-900/30 text-red-300 rounded-lg text-sm">
               {errorMsg}
             </div>
           )}
           {successMsg && (
-            <div className="mb-6 p-4 border border-green-500 bg-green-900/30 text-green-300 rounded-lg">
+            <div className="mb-3 p-2 border border-green-500 bg-green-900/30 text-green-300 rounded-lg text-sm">
               {successMsg}
             </div>
           )}
 
-          {/* Option to toggle username login */}
+          {/* Toggle username login */}
           {mode === "login" && (
-            <div className="flex items-center mb-6">
+            <div className="flex items-center mb-3">
               <input
                 type="checkbox"
                 checked={useUsername}
@@ -219,7 +297,7 @@ export default function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-3">
             {(mode === "login" || mode === "signup" || mode === "forgot") && (
               <div>
                 <label className="block text-sm font-medium text-gray-300">
@@ -236,8 +314,12 @@ export default function LoginPage() {
                       setEmail(e.target.value);
                     }
                   }}
-                  placeholder={useUsername && mode === "login" ? "yourusername" : "you@example.com"}
-                  className="mt-1 block w-full border border-gray-700 rounded-lg px-4 py-3 bg-gray-900 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#0052FF] transition-all"
+                  placeholder={
+                    useUsername && mode === "login"
+                      ? "yourusername"
+                      : "you@example.com"
+                  }
+                  className="mt-1 block w-full border border-gray-700 rounded-lg px-3 py-2 bg-gray-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#0052FF] transition-all text-sm"
                 />
               </div>
             )}
@@ -254,12 +336,12 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="mt-1 block w-full border border-gray-700 rounded-lg px-4 py-3 bg-gray-900 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#0052FF] transition-all"
+                    className="mt-1 block w-full border border-gray-700 rounded-lg px-3 py-2 bg-gray-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#0052FF] transition-all text-sm"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-3 text-sm text-[#0052FF] hover:text-[#0033CC]"
+                    className="absolute right-3 top-3 text-xs text-[#0052FF] hover:text-[#0033CC]"
                   >
                     {showPassword ? "Hide" : "Show"}
                   </button>
@@ -278,34 +360,34 @@ export default function LoginPage() {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Choose a unique username"
-                  className="mt-1 block w-full border border-gray-700 rounded-lg px-4 py-3 bg-gray-900 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#0052FF] transition-all"
+                  className="mt-1 block w-full border border-gray-700 rounded-lg px-3 py-2 bg-gray-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#0052FF] transition-all text-sm"
                 />
               </div>
             )}
 
             {(mode === "login" || mode === "signup") && (
-              <div className="text-sm text-gray-500">Let us know you're human</div>
+              <div className="text-xs text-gray-500">Let us know you're human</div>
             )}
 
             <button
               type="submit"
-              className="w-full py-3 rounded-lg bg-gradient-to-r from-[#0052FF] to-[#0033CC] text-white font-medium hover:from-[#0033CC] hover:to-[#0022AA] focus:ring-2 focus:ring-[#0052FF] focus:ring-offset-2 focus:ring-offset-black transition-all"
+              className="w-full py-2 rounded-lg bg-gradient-to-r from-[#0052FF] to-[#0033CC] text-white font-medium hover:from-[#0033CC] hover:to-[#0022AA] focus:ring-2 focus:ring-[#0052FF] focus:ring-offset-2 focus:ring-offset-black transition-all text-sm"
             >
-              {mode === "login" && "Log in"}
-              {mode === "signup" && "Sign up"}
-              {mode === "forgot" && "Send reset email"}
+              {mode === "login" && "Log In"}
+              {mode === "signup" && "Sign Up"}
+              {mode === "forgot" && "Send Reset Email"}
             </button>
 
             <button
               type="button"
               onClick={handleGoogleSignIn}
-              className="w-full py-3 rounded-lg bg-gray-800 text-white font-medium hover:bg-gray-700 focus:ring-2 focus:ring-[#0052FF] focus:ring-offset-2 focus:ring-offset-black transition-all"
+              className="w-full py-2 rounded-lg bg-gray-800 text-white font-medium hover:bg-gray-700 focus:ring-2 focus:ring-[#0052FF] focus:ring-offset-2 focus:ring-offset-black transition-all text-sm"
             >
               Sign in with Google
             </button>
           </form>
 
-          <div className="mt-6 flex flex-wrap gap-4 text-sm text-[#0052FF]">
+          <div className="mt-4 flex flex-col sm:flex-row justify-center items-center gap-2 text-xs sm:text-sm text-[#0052FF]">
             {mode === "login" && (
               <>
                 <button
@@ -313,21 +395,23 @@ export default function LoginPage() {
                   onClick={() => setMode("signup")}
                   className="hover:underline hover:text-[#0033CC] transition-colors"
                 >
-                  Sign up
+                  Sign Up
                 </button>
                 <button
                   type="button"
                   onClick={() => setMode("forgot")}
                   className="hover:underline hover:text-[#0033CC] transition-colors"
                 >
-                  Forgot your password?
+                  Forgot Password?
                 </button>
                 <button
                   type="button"
-                  onClick={() => alert("Please contact support or check your records.")}
+                  onClick={() =>
+                    alert("Please contact support or check your records.")
+                  }
                   className="hover:underline hover:text-[#0033CC] transition-colors"
                 >
-                  Forgot your email?
+                  Forgot Email?
                 </button>
               </>
             )}
@@ -337,7 +421,7 @@ export default function LoginPage() {
                 onClick={() => setMode("login")}
                 className="hover:underline hover:text-[#0033CC] transition-colors"
               >
-                Already have an account? Log in
+                Already have an account? Log In
               </button>
             )}
             {mode === "forgot" && (
@@ -346,31 +430,27 @@ export default function LoginPage() {
                 onClick={() => setMode("login")}
                 className="hover:underline hover:text-[#0033CC] transition-colors"
               >
-                Back to login
+                Back to Log In
               </button>
             )}
           </div>
         </div>
       </main>
 
-      <footer className="border-t border-gray-800 bg-black">
-        <div className="max-w-screen-xl mx-auto py-6 px-6 flex flex-col md:flex-row items-center md:justify-between text-sm text-gray-400 space-y-4 md:space-y-0">
-          <div className="space-x-4">
-            <a href="#" className="hover:text-[#0052FF] transition-colors">Support</a>
-            <a href="#" className="hover:text-[#0052FF] transition-colors">System Status</a>
-            <a href="#" className="hover:text-[#0052FF] transition-colors">Careers</a>
-            <a href="#" className="hover:text-[#0052FF] transition-colors">Terms of Use</a>
-            <a href="#" className="hover:text-[#0052FF] transition-colors">Report Security Issues</a>
-            <a href="#" className="hover:text-[#0052FF] transition-colors">Privacy Policy</a>
-          </div>
-          <div className="text-gray-500">
-            © {new Date().getFullYear()} Cypher, Inc.
-          </div>
-        </div>
+      {/* Footer */}
+      <footer className="p-4 text-center text-gray-400 text-xs sm:text-sm border-t border-[#0052FF]/30 bg-gray-950">
+        <p>
+          © 2025 Cypher Systems. Powered by{" "}
+          <span className="text-[#0052FF]">Base</span>.
+        </p>
       </footer>
     </div>
   );
 }
+
+
+
+
 
 
 

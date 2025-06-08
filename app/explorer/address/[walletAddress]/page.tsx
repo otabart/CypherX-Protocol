@@ -1,54 +1,66 @@
 "use client";
 
+import { useState, useEffect, useCallback } from "react";
 import { notFound } from "next/navigation";
-import { useState, useEffect } from "react";
-import { ClipboardIcon, ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
 import Link from "next/link";
+import { ClipboardIcon } from "@heroicons/react/24/outline";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, getDocs } from "firebase/firestore";
 
-// Firebase configuration (replace with your actual config)
+// ─────────────────────────────────────────────────────────────────────────────
+// FIREBASE INITIALIZATION (UNCHANGED)
+// ─────────────────────────────────────────────────────────────────────────────
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "YOUR_FIREBASE_API_KEY",
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "YOUR_FIREBASE_AUTH_DOMAIN",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "YOUR_FIREBASE_PROJECT_ID",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "YOUR_FIREBASE_STORAGE_BUCKET",
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "YOUR_FIREBASE_MESSAGING_SENDER_ID",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "YOUR_FIREBASE_APP_ID",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "",
 };
+initializeApp(firebaseConfig);
+const db = getFirestore();
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+// ─────────────────────────────────────────────────────────────────────────────
+// LOADER (SPINNER) COMPONENT
+// ─────────────────────────────────────────────────────────────────────────────
+function Loader() {
+  return <div className="w-5 h-5 border-4 border-blue-400 border-t-transparent rounded-full animate-spin" />;
+}
 
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPE DEFINITIONS
+// ─────────────────────────────────────────────────────────────────────────────
 interface Token {
   name: string;
   symbol: string;
-  balance: string;
+  balance: string;            // RAW token balance (string)
   contractAddress: string;
-  usdValue: number | null;
-  recentActivity: number; // Number of transfers in the last 24 hours
-  tokenType: "ERC-20" | "ERC-721"; // Added for filtering
+  usdValue: number;           // Computed (balance × live price)
+  recentActivity: number;     // # of transfers in last 24h
+  tokenType: "ERC-20" | "ERC-721";
 }
 
 interface Transaction {
   hash: string;
   from: string;
   to: string;
-  value: string;
-  asset: string;
-  gasUsed?: string; // Added for gas usage
-  timestamp?: number; // Added for timeline
+  value: string;             // RAW ETH value (string)
+  asset: string;             // "ETH" or token symbol
+  gasUsed?: string;          // Hex → converted
+  timestamp?: number;        // epoch seconds
 }
 
 interface WalletData {
-  ethBalance: number;
-  ethUsdValue: number;
-  totalUsdValue: number; // Added for summary
+  ethBalance: number;        // in ETH
+  ethUsdValue: number;       // in USD
+  totalUsdValue: number;     // in USD (ETH + tokens)
   tokens: Token[];
   txList: Transaction[];
-  ensName?: string;
   lastScannedBlock?: { number: string; timestamp: number };
+  nonce?: number;
+  isContract?: boolean;
+  chainId?: string;
 }
 
 interface Ad {
@@ -58,27 +70,88 @@ interface Ad {
   type: "banner" | "sidebar" | "inline";
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN COMPONENT: WalletPage
+// ─────────────────────────────────────────────────────────────────────────────
 export default function WalletPage({ params }: { params: Promise<{ walletAddress: string }> }) {
+  // ─── STATE HOOKS ────────────────────────────────────────────────────────────
+  const [walletAddress, setWalletAddress] = useState<string>("");
   const [walletData, setWalletData] = useState<WalletData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<string>("overview");
-  const [walletAddress, setWalletAddress] = useState<string>("");
-  const [ethPrice, setEthPrice] = useState<number>(0);
-  const [txPage, setTxPage] = useState<number>(1);
+
+  // Tabs: "overview" | "transactions" | "tokens"
+  const [activeTab, setActiveTab] = useState<"overview" | "transactions" | "tokens">("overview");
+
+  // Token filters & sorting
   const [tokenSearch, setTokenSearch] = useState<string>("");
-  const [tokenSort, setTokenSort] = useState<string>("usd-desc");
-  const [tokenTypes, setTokenTypes] = useState<string[]>(["ERC-20", "ERC-721"]);
-  const [showInactiveTokens, setShowInactiveTokens] = useState<boolean>(false);
-  const [ads, setAds] = useState<Ad[]>([]);
+  const [tokenSort, setTokenSort] = useState<"usd-desc" | "usd-asc" | "activity-desc" | "activity-asc">(
+    "usd-desc"
+  );
+  const [tokenTypes, setTokenTypes] = useState<("ERC-20" | "ERC-721")[]>(["ERC-20", "ERC-721"]);
+
+  // Pagination for transactions
+  const [txPage, setTxPage] = useState<number>(1);
   const itemsPerPage = 10;
 
-  // Theme classes (reverted to original)
-  const themeClasses = {
+  // ETH price in USD (from CoinGecko)
+  const [ethPrice, setEthPrice] = useState<number>(0);
+
+  // Deposits / Withdrawals summary
+  const [depositCount, setDepositCount] = useState<number>(0);
+  const [withdrawalCount, setWithdrawalCount] = useState<number>(0);
+
+  // Toast (“Copied!”)
+  const [toast, setToast] = useState<string | null>(null);
+  const copyToClipboard = useCallback((text: string) => {
+    navigator.clipboard.writeText(text);
+    setToast("Copied!");
+  }, []);
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 1500);
+    return () => clearTimeout(id);
+  }, [toast]);
+
+  // Ads from Firestore (fallback if none exist)
+  const [ads, setAds] = useState<Ad[]>([]);
+  const fallbackAds: Ad[] = [
+    {
+      createdAt: "May 12, 2025",
+      destinationUrl: "https://x.com/CypherSystems_",
+      imageUrl:
+        "https://firebasestorage.googleapis.com/v0/b/homebase-dapp.firebasestorage.app/o/photo_2025-05-12_09-21-39.jpg?alt=media&token=b0b00101-e9f3-408f-bd19-89305dcef807",
+      type: "banner",
+    },
+    {
+      createdAt: "May 12, 2025",
+      destinationUrl: "https://x.com/CypherSystems_",
+      imageUrl:
+        "https://firebasestorage.googleapis.com/v0/b/homebase-dapp.firebasestorage.app/o/photo_2025-05-12_09-21-44.jpg?alt=media&token=45799df2-1492-49aa-a842-a032d8d9df9c",
+      type: "banner",
+    },
+  ];
+  useEffect(() => {
+    async function fetchAds() {
+      try {
+        const adsCol = collection(db, "ads");
+        const snap = await getDocs(adsCol);
+        const list = snap.docs.map((doc) => doc.data() as Ad);
+        setAds(list.length ? list : fallbackAds);
+      } catch {
+        setAds(fallbackAds);
+      }
+    }
+    fetchAds();
+  }, []);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // TAILWIND THEME CLASSES
+  // ─────────────────────────────────────────────────────────────────────────────
+  const theme = {
     background: "bg-gray-950",
     text: "text-gray-200",
     border: "border-blue-500/30",
-    headerBg: "bg-gray-950",
     containerBg: "bg-[#141A2F]",
     hoverBg: "hover:bg-[#1E263B] hover:border-blue-400/50",
     secondaryText: "text-gray-400",
@@ -87,744 +160,924 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
     buttonHover: "hover:bg-blue-500/40",
     buttonDisabled: "bg-gray-800",
     shadow: "shadow-[0_2px_8px_rgba(59,130,246,0.2)]",
-    tabActive: "border-blue-400 text-blue-400",
-    tabInactive: "border-transparent text-gray-400",
+    tabActive: "border-b-2 border-blue-400 text-blue-400",
+    tabInactive: "border-b-2 border-transparent text-gray-400",
     inputBg: "bg-[#1E263B]",
     selectBg: "bg-[#1E263B]",
-    dropdownBg: "bg-[#1E263B]",
   };
 
-  // Fallback ads
-  const fallbackAds: Ad[] = [
-    {
-      createdAt: "May 12, 2025 at 9:27:33 AM UTC-7",
-      destinationUrl: "https://x.com/CypherSystems_",
-      imageUrl:
-        "https://firebasestorage.googleapis.com/v0/b/homebase-dapp.firebasestorage.app/o/photo_2025-05-12_09-21-39.jpg?alt=media&token=b0b00101-e9f3-408f-bd19-89305dcef807",
-      type: "banner",
-    },
-    {
-      createdAt: "May 12, 2025 at 9:28:30 AM UTC-7",
-      destinationUrl: "https://x.com/CypherSystems_",
-      imageUrl:
-        "https://firebasestorage.googleapis.com/v0/b/homebase-dapp.firebasestorage.app/o/photo_2025-05-12_09-21-44.jpg?alt=media&token=45799df2-1492-49aa-a842-a032d8d9df9c",
-      type: "sidebar",
-    },
-  ];
-
-  // Fetch ads from Firebase
+  // ─────────────────────────────────────────────────────────────────────────────
+  // FETCH ETH PRICE FROM COINGECKO
+  // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    async function fetchAds() {
+    async function fetchPrice() {
       try {
-        const adsCollection = collection(db, "ads");
-        const adsSnapshot = await getDocs(adsCollection);
-        const adsList = adsSnapshot.docs.map((doc) => doc.data() as Ad);
-        console.log("Fetched ads:", adsList);
-        setAds(adsList.length > 0 ? adsList : fallbackAds);
-      } catch (err) {
-        console.error("Error fetching ads:", err);
-        setAds(fallbackAds);
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_COINGECKO_API_URL}/simple/price?ids=ethereum&vs_currencies=usd`
+        );
+        if (!res.ok) throw new Error("Failed to fetch ETH price");
+        const data = await res.json();
+        setEthPrice(data.ethereum.usd);
+      } catch {
+        setEthPrice(3000); // fallback
       }
     }
-    fetchAds();
+    fetchPrice();
   }, []);
 
-  // Fetch ETH price and token prices
-  useEffect(() => {
-    const fetchPrices = async () => {
-      try {
-        const ethRes = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd");
-        if (!ethRes.ok) throw new Error("Failed to fetch ETH price");
-        const ethData = await ethRes.json();
-        setEthPrice(ethData.ethereum.usd);
-
-        if (walletData) {
-          const updatedTokens = walletData.tokens.map((token) => {
-            const usdValue = token.usdValue != null ? token.usdValue : null;
-            return { ...token, usdValue };
-          });
-          setWalletData((prev) => (prev ? { ...prev, tokens: updatedTokens } : null));
-        }
-      } catch (err) {
-        console.error("Error fetching prices:", err);
-        setEthPrice(3000);
-      }
-    };
-    fetchPrices();
-  }, [walletData]);
-
-  // Fetch wallet data with Alchemy enhancements
+  // ─────────────────────────────────────────────────────────────────────────────
+  // MAIN DATA FETCH: ALCHEMY + COINGECKO + FIREBASE
+  // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
       setError(null);
 
       try {
-        const resolvedParams = await params;
-        const address = resolvedParams.walletAddress.toLowerCase();
+        const resolved = await params;
+        const address = resolved.walletAddress.toLowerCase();
         setWalletAddress(address);
 
-        // Validate wallet address
-        const isValidAddress = /^0x[a-fA-F0-9]{40}$/.test(address);
-        if (!isValidAddress) notFound();
+        // Validate address
+        if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+          notFound();
+          return;
+        }
 
-        // Alchemy API setup (replace with your Alchemy API URL)
-        const alchemyUrl = "https://base-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_API_KEY";
+        // ALCHEMY RPC URL from env
+        const alchemyUrl = process.env.NEXT_PUBLIC_ALCHEMY_API_URL!;
+        if (!alchemyUrl) throw new Error("Missing ALCHEMY_API_URL");
 
-        // Fetch latest block number
-        let latestBlock = "0";
-        let blockTimestamp = 0;
+        // 1) Get chainId
+        let chainId: string | undefined = undefined;
         try {
-          const blockNumberRes = await fetch(alchemyUrl, {
+          const res = await fetch(alchemyUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ jsonrpc: "2.0", method: "eth_blockNumber", params: [], id: 1 }),
+            body: JSON.stringify({ jsonrpc: "2.0", method: "eth_chainId", params: [], id: 1 }),
           });
-          if (!blockNumberRes.ok) throw new Error("Failed to fetch block number");
-          const blockNumberData = await blockNumberRes.json();
-          if (blockNumberData.error) throw new Error(blockNumberData.error.message);
-          latestBlock = parseInt(blockNumberData.result, 16).toString();
+          const data = await res.json();
+          chainId = parseInt(data.result, 16).toString();
+        } catch {
+          chainId = undefined;
+        }
 
-          // Fetch block details for timestamp
-          const blockDetailsRes = await fetch(alchemyUrl, {
+        // 2) Get latest block & timestamp
+        let latestBlockHex = "0x0";
+        let blockTimestamp = 0;
+        try {
+          const bnRes = await fetch(alchemyUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jsonrpc: "2.0", method: "eth_blockNumber", params: [], id: 2 }),
+          });
+          const bnData = await bnRes.json();
+          latestBlockHex = bnData.result;
+
+          const blockRes = await fetch(alchemyUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               jsonrpc: "2.0",
               method: "eth_getBlockByNumber",
-              params: [latestBlock, false],
-              id: 1,
+              params: [latestBlockHex, false],
+              id: 3,
             }),
           });
-          if (!blockDetailsRes.ok) throw new Error("Failed to fetch block details");
-          const blockDetails = await blockDetailsRes.json();
-          if (blockDetails.error) throw new Error(blockDetails.error.message);
-          blockTimestamp = blockDetails.result?.timestamp ? parseInt(blockDetails.result.timestamp, 16) : 0;
-        } catch (blockErr) {
-          console.error("Error fetching block data:", blockErr);
+          const blockData = await blockRes.json();
+          blockTimestamp = blockData.result?.timestamp ? parseInt(blockData.result.timestamp, 16) : 0;
+        } catch {
+          blockTimestamp = 0;
         }
 
-        // Fetch ENS name via eth_getLogs (simplified for Base Mainnet ENS)
-        let ensName: string | undefined;
+        // 3) Get nonce & contract‐check
+        let nonce: number | undefined = undefined;
+        let isContract = false;
         try {
-          const ensLogsRes = await fetch(alchemyUrl, {
+          // nonce
+          const txCountRes = await fetch(alchemyUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               jsonrpc: "2.0",
-              method: "eth_getLogs",
-              params: [
-                {
-                  fromBlock: "0x0",
-                  toBlock: "latest",
-                  address: "0x00000000000C2E074eC69A0dFb2997BA6C7d2e1", // ENS Registry (simplified)
-                  topics: [
-                    "0x3a77e426f1f0a5283f7d0f3a836f fashiona0a4b6e2b8c9e8e5f0c9", // NameRegistered event (simplified)
-                    `0x000000000000000000000000${address.slice(2)}`,
-                  ],
-                },
-              ],
-              id: 1,
+              method: "eth_getTransactionCount",
+              params: [address, "latest"],
+              id: 4,
             }),
           });
-          if (!ensLogsRes.ok) throw new Error("Failed to fetch ENS logs");
-          const ensLogs = await ensLogsRes.json();
-          if (ensLogs.error) throw new Error(ensLogs.error.message);
-          if (ensLogs.result?.length > 0) {
-            ensName = `${address.slice(2, 6)}.base.eth`; // Placeholder; decode log data in production
-          }
-        } catch (ensErr) {
-          console.warn("Failed to fetch ENS name:", ensErr);
+          const txCountData = await txCountRes.json();
+          nonce = parseInt(txCountData.result, 16);
+
+          // code
+          const codeRes = await fetch(alchemyUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              method: "eth_getCode",
+              params: [address, "latest"],
+              id: 5,
+            }),
+          });
+          const codeData = await codeRes.json();
+          isContract = codeData.result && codeData.result !== "0x";
+        } catch {
+          nonce = undefined;
+          isContract = false;
         }
 
-        // Fetch wallet data from server-side API route
-        let data: any = null;
+        // 4) Fetch raw wallet data from your server‐side API
+        let rawData: any;
         try {
-          const response = await fetch(`/api/wallet/${address}`);
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error("Wallet API fetch failed:", response.status, errorText);
-            throw new Error(`Failed to fetch wallet data: ${errorText || response.statusText}`);
-          }
-
-          const contentType = response.headers.get("content-type");
-          if (!contentType || !contentType.includes("application/json")) {
-            const errorText = await response.text();
-            console.error("Unexpected response format:", errorText);
-            throw new Error("Response is not JSON");
-          }
-
-          data = await response.json();
-          if (data.error) throw new Error(data.error);
-        } catch (apiErr) {
-          console.error("Error fetching wallet data from API:", apiErr);
-          // Fallback data to prevent UI from breaking
-          data = {
-            ethBalance: 0,
-            tokens: [],
-            txList: [],
-          };
+          const resp = await fetch(`/api/wallet/${address}`);
+          if (!resp.ok) throw new Error(`API error ${resp.status}`);
+          rawData = await resp.json();
+        } catch {
+          rawData = { ethBalance: 0, tokens: [], txList: [] };
         }
 
-        // Enhance tokens with recent activity using eth_getLogs
-        const updatedTokens = await Promise.all(
-          data.tokens.map(async (token: Token) => {
-            let recentActivity = 0;
-            try {
-              const logsRes = await fetch(alchemyUrl, {
+        // 5) Process tokens: filter out < $5k, no activity, and fetch live USD price
+        const latestBlockNum = parseInt(latestBlockHex, 16);
+        const enhancedTokens: Token[] = [];
+
+        for (let tk of (rawData.tokens as Token[])) {
+          // Compute raw balance & skip if zero
+          const rawBal = parseFloat(tk.balance);
+          if (isNaN(rawBal) || rawBal <= 0) continue;
+
+          // Fetch on‐chain logs for “Transfer” in last ~24h (86400s)
+          let recentActivity = 0;
+          try {
+            const logsRes = await fetch(alchemyUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                jsonrpc: "2.0",
+                method: "eth_getLogs",
+                params: [
+                  {
+                    fromBlock: "0x" + (latestBlockNum - 86400 * 2).toString(16),
+                    toBlock: "latest",
+                    address: tk.contractAddress,
+                    topics: [
+                      "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef", // Transfer
+                    ],
+                  },
+                ],
+                id: 6,
+              }),
+            });
+            const logsData = await logsRes.json();
+            recentActivity = logsData.result?.length || 0;
+          } catch {
+            recentActivity = 0;
+          }
+
+          // Skip if no recent activity
+          if (recentActivity === 0) continue;
+
+          // Fetch USD price from CoinGecko by contract address on Ethereum
+          let tokenPriceUsd = 0;
+          try {
+            const priceRes = await fetch(
+              `${process.env.NEXT_PUBLIC_COINGECKO_API_URL}/simple/token_price/ethereum?contract_addresses=${tk.contractAddress}&vs_currencies=usd`
+            );
+            const priceData = await priceRes.json();
+            const key = tk.contractAddress.toLowerCase();
+            tokenPriceUsd = priceData[key]?.usd || 0;
+          } catch {
+            tokenPriceUsd = 0;
+          }
+
+          // Compute total USD value
+          const usdTotal = tokenPriceUsd * rawBal;
+          // Filter out if < $5k
+          if (usdTotal < 5000) continue;
+
+          enhancedTokens.push({
+            name: tk.name,
+            symbol: tk.symbol,
+            balance: tk.balance,
+            contractAddress: tk.contractAddress,
+            usdValue: usdTotal,
+            recentActivity,
+            tokenType: "ERC-20",
+          });
+        }
+
+        // 6) Process transactions: fetch gasUsed and block timestamps
+        const enhancedTxs: Transaction[] = [];
+        for (let tx of (rawData.txList as Transaction[])) {
+          let gasUsed = "—";
+          let timestamp = 0;
+          try {
+            const receiptRes = await fetch(alchemyUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                jsonrpc: "2.0",
+                method: "eth_getTransactionReceipt",
+                params: [tx.hash],
+                id: 7,
+              }),
+            });
+            const receiptData = await receiptRes.json();
+            if (receiptData.result?.gasUsed) {
+              gasUsed = parseInt(receiptData.result.gasUsed, 16).toString();
+              // fetch block for timestamp
+              const blockRes2 = await fetch(alchemyUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   jsonrpc: "2.0",
-                  method: "eth_getLogs",
-                  params: [
-                    {
-                      fromBlock: "0x" + (parseInt(latestBlock) - 172800).toString(16), // Approx 24 hours
-                      toBlock: "latest",
-                      address: token.contractAddress,
-                      topics: ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"], // Transfer event
-                    },
-                  ],
-                  id: 1,
+                  method: "eth_getBlockByHash",
+                  params: [receiptData.result.blockHash, false],
+                  id: 8,
                 }),
               });
-              if (!logsRes.ok) throw new Error("Failed to fetch token logs");
-              const logs = await logsRes.json();
-              if (logs.error) throw new Error(logs.error.message);
-              recentActivity = logs.result?.length || 0;
-            } catch (tokenErr) {
-              console.warn(`Failed to fetch token activity for ${token.contractAddress}:`, tokenErr);
+              const blockData2 = await blockRes2.json();
+              timestamp = blockData2.result?.timestamp
+                ? parseInt(blockData2.result.timestamp, 16)
+                : 0;
             }
-            return { ...token, recentActivity, tokenType: "ERC-20" as const }; // Simplified
-          })
-        );
+          } catch {
+            gasUsed = "—";
+            timestamp = 0;
+          }
 
-        // Enhance transactions with gas usage and timestamps
-        const updatedTxList = await Promise.all(
-          data.txList.map(async (tx: Transaction) => {
-            let gasUsed = "N/A";
-            let timestamp = 0;
+          enhancedTxs.push({
+            hash: tx.hash,
+            from: tx.from,
+            to: tx.to,
+            value: tx.value,
+            asset: tx.asset,
+            gasUsed,
+            timestamp,
+          });
+        }
 
-            try {
-              const txReceiptRes = await fetch(alchemyUrl, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  jsonrpc: "2.0",
-                  method: "eth_getTransactionReceipt",
-                  params: [tx.hash],
-                  id: 1,
-                }),
-              });
-              if (!txReceiptRes.ok) throw new Error("Failed to fetch transaction receipt");
-              const txReceipt = await txReceiptRes.json();
-              if (txReceipt.error) throw new Error(txReceipt.error.message);
+        // 7) Compute USD values
+        const ethUsd = (rawData.ethBalance || 0) * ethPrice;
+        const totalUsd =
+          ethUsd + enhancedTokens.reduce((sum, t) => sum + t.usdValue, 0);
 
-              if (txReceipt.result && txReceipt.result.gasUsed) {
-                gasUsed = parseInt(txReceipt.result.gasUsed, 16).toString();
-
-                // Fetch transaction block for timestamp
-                const txBlockRes = await fetch(alchemyUrl, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    jsonrpc: "2.0",
-                    method: "eth_getBlockByHash",
-                    params: [txReceipt.result.blockHash, false],
-                    id: 1,
-                  }),
-                });
-                if (!txBlockRes.ok) throw new Error("Failed to fetch block by hash");
-                const txBlock = await txBlockRes.json();
-                if (txBlock.error) throw new Error(txBlock.error.message);
-                timestamp = txBlock.result?.timestamp ? parseInt(txBlock.result.timestamp, 16) : 0;
-              }
-            } catch (txErr) {
-              console.warn(`Failed to fetch transaction details for hash ${tx.hash}:`, txErr);
-            }
-
-            return { ...tx, gasUsed, timestamp };
-          })
-        );
-
-        const ethUsdValue = data.ethBalance * ethPrice;
-        const totalUsdValue = ethUsdValue + updatedTokens.reduce((sum, token) => sum + (token.usdValue || 0), 0);
-
-        setWalletData({
-          ethBalance: data.ethBalance,
-          ethUsdValue,
-          totalUsdValue,
-          tokens: updatedTokens,
-          txList: updatedTxList,
-          ensName,
-          lastScannedBlock: { number: latestBlock, timestamp: blockTimestamp },
+        // 8) Compute deposit/withdrawal counts
+        let deposits = 0;
+        let withdrawals = 0;
+        enhancedTxs.forEach((tx) => {
+          if (tx.to.toLowerCase() === address) deposits++;
+          if (tx.from.toLowerCase() === address) withdrawals++;
         });
+        setDepositCount(deposits);
+        setWithdrawalCount(withdrawals);
 
-        if (data.ethBalance === 0 && data.tokens.length === 0 && data.txList.length === 0) {
+        // 9) If no data, show error
+        if (
+          (rawData.ethBalance || 0) === 0 &&
+          enhancedTokens.length === 0 &&
+          enhancedTxs.length === 0
+        ) {
           setError("No data found for this address on Base Mainnet.");
           setWalletData(null);
+        } else {
+          setWalletData({
+            ethBalance: rawData.ethBalance || 0,
+            ethUsdValue: ethUsd,
+            totalUsdValue: totalUsd,
+            tokens: enhancedTokens,
+            txList: enhancedTxs,
+            lastScannedBlock: {
+              number: parseInt(latestBlockHex, 16).toString(),
+              timestamp: blockTimestamp,
+            },
+            nonce,
+            isContract,
+            chainId,
+          });
         }
-      } catch (err: unknown) {
-        const errorMessage = err instanceof Error ? err.message : "Unknown error";
-        console.error("Error fetching wallet data:", errorMessage);
-        setError(`Failed to load wallet data: ${errorMessage}`);
+      } catch (err: any) {
+        setError(`Failed to load: ${err.message || "Unknown error"}`);
+        setWalletData(null);
       } finally {
         setLoading(false);
       }
     }
-
     fetchData();
   }, [params, ethPrice]);
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    alert("Copied to clipboard!");
-  };
-
-  // Token filtering and sorting
-  const filteredTokens = walletData?.tokens
-    .filter((token) => tokenTypes.includes(token.tokenType))
+  // ─────────────────────────────────────────────────────────────────────────────
+  // FILTER & SORT TOKENS
+  // ─────────────────────────────────────────────────────────────────────────────
+  const filteredTokens = (walletData?.tokens || [])
+    .filter((t) => tokenTypes.includes(t.tokenType))
     .filter(
-      (token) =>
-        token.name.toLowerCase().includes(tokenSearch.toLowerCase()) ||
-        token.symbol.toLowerCase().includes(tokenSearch.toLowerCase())
+      (t) =>
+        t.name.toLowerCase().includes(tokenSearch.toLowerCase()) ||
+        t.symbol.toLowerCase().includes(tokenSearch.toLowerCase())
     )
     .sort((a, b) => {
-      if (tokenSort === "usd-desc") {
-        return (b.usdValue || 0) - (a.usdValue || 0);
-      } else if (tokenSort === "usd-asc") {
-        return (a.usdValue || 0) - (b.usdValue || 0);
-      } else if (tokenSort === "activity-desc") {
-        return b.recentActivity - a.recentActivity;
-      } else if (tokenSort === "activity-asc") {
-        return a.recentActivity - b.recentActivity;
+      switch (tokenSort) {
+        case "usd-desc":
+          return b.usdValue - a.usdValue;
+        case "usd-asc":
+          return a.usdValue - b.usdValue;
+        case "activity-desc":
+          return b.recentActivity - a.recentActivity;
+        case "activity-asc":
+          return a.recentActivity - b.recentActivity;
+        default:
+          return 0;
       }
-      return 0;
     });
 
-  const activeTokens = filteredTokens?.filter((token) => parseFloat(token.balance) > 0);
-  const inactiveTokens = filteredTokens?.filter((token) => parseFloat(token.balance) === 0);
-
-  const paginatedTxList = walletData?.txList.slice((txPage - 1) * itemsPerPage, txPage * itemsPerPage);
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PAGINATE TRANSACTIONS
+  // ─────────────────────────────────────────────────────────────────────────────
+  const paginatedTxList = walletData?.txList.slice(
+    (txPage - 1) * itemsPerPage,
+    txPage * itemsPerPage
+  );
   const totalTxPages = Math.ceil((walletData?.txList.length || 0) / itemsPerPage);
 
-  return (
-    <div className={`min-h-screen w-full font-mono ${themeClasses.background} ${themeClasses.text}`}>
-      {/* Header */}
-      <div className={`w-full py-4 sm:py-6 px-4 sm:px-6 ${themeClasses.headerBg} border-b ${themeClasses.border}`}>
-        <div className="flex items-center justify-between max-w-7xl mx-auto">
-          <h1 className="text-xl sm:text-2xl font-bold uppercase">Wallet Scan</h1>
-          <span className={`${themeClasses.secondaryText} text-xs sm:text-sm uppercase`}>
-            {walletData?.lastScannedBlock
-              ? `Last Scanned Block: ${parseInt(walletData.lastScannedBlock.number, 16)}`
-              : "Scanning..."}
-          </span>
-        </div>
-      </div>
+  // ─────────────────────────────────────────────────────────────────────────────
+  // UNIQUE COUNTERPARTIES
+  // ─────────────────────────────────────────────────────────────────────────────
+  let uniqueCounterparties = 0;
+  if (walletData) {
+    const addrSet = new Set<string>();
+    walletData.txList.forEach((tx) => {
+      addrSet.add(tx.from);
+      if (tx.to && tx.to !== "") addrSet.add(tx.to);
+    });
+    uniqueCounterparties = addrSet.size;
+  }
 
-      {/* Banner Ad */}
-      <div className="max-w-7xl mx-auto mt-4 px-4 sm:px-6">
+  // ─────────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────────
+  return (
+    <div className={`min-h-screen w-full flex flex-col ${theme.background} ${theme.text}`}>
+      {/* ─── TOAST ──────────────────────────────────────────────────────────────── */}
+      {toast && (
+        <div className="fixed top-4 right-4 px-3 py-2 rounded-md bg-blue-500/80 text-white text-xs z-50">
+          {toast}
+        </div>
+      )}
+
+      {/* ─── HEADER: "WALLET SCAN" + ADDRESS + COPY, ETH PRICE/LOGO ON RIGHT ─────── */}
+      <header className={`w-full border-b ${theme.border} bg-[#0F172A]`}>
+        <div className="max-w-full px-6 py-6 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          {/* Left: Title + Address + Copy */}
+          <div className="flex flex-col gap-1 w-full lg:w-auto">
+            <h1 className="text-2xl lg:text-3xl font-extrabold uppercase tracking-tight">
+              WALLET SCAN
+            </h1>
+            <div className="flex items-center gap-2">
+              <p className="break-all text-gray-400 text-sm lg:text-base">{walletAddress || "—"}</p>
+              <button
+                onClick={() => copyToClipboard(walletAddress)}
+                disabled={!walletAddress}
+                className={`flex items-center gap-1 ${
+                  walletAddress ? theme.buttonBg : theme.buttonDisabled
+                } border ${theme.border} px-2 py-1 rounded-md text-xs lg:text-sm uppercase ${
+                  walletAddress ? theme.buttonHover : "opacity-50 cursor-not-allowed"
+                }`}
+              >
+                <ClipboardIcon className="w-4 h-4 text-blue-400" />
+                <span className="text-blue-400 font-medium">Copy</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Right: ETH Logo + Price */}
+          <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
+            <img
+              src="https://assets.coingecko.com/coins/images/279/small/ethereum.png"
+              alt="ETH Logo"
+              className="w-8 h-8"
+            />
+            {ethPrice > 0 ? (
+              <span className="text-lg lg:text-xl font-semibold">${ethPrice.toLocaleString()}</span>
+            ) : (
+              <Loader />
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* ─── METRIC ROW: FULL WIDTH, NO GAPS ──────────────────────────────────────── */}
+      <section className="w-full bg-[#0F172A]">
+        <div className="w-full max-w-full px-6 py-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-5 gap-4">
+          {/* ETH BALANCE */}
+          <div className={`flex flex-col p-4 rounded-lg border ${theme.border} ${theme.containerBg} ${theme.shadow}`}>
+            <span className="text-xs lg:text-sm font-semibold text-blue-400 uppercase">ETH Balance</span>
+            <span className="mt-1 text-lg lg:text-xl font-bold">
+              {walletData
+                ? walletData.ethBalance.toLocaleString(undefined, {
+                    minimumFractionDigits: 4,
+                    maximumFractionDigits: 4,
+                  })
+                : "—"}{" "}
+              ETH
+            </span>
+            <span className="mt-1 text-gray-400 text-xs lg:text-xs">
+              $
+              {walletData
+                ? walletData.ethUsdValue.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })
+                : "—"}{" "}
+              USD
+            </span>
+          </div>
+
+          {/* TOTAL VALUE */}
+          <div className={`flex flex-col p-4 rounded-lg border ${theme.border} ${theme.containerBg} ${theme.shadow}`}>
+            <span className="text-xs lg:text-sm font-semibold text-blue-400 uppercase">Total Value</span>
+            <span className="mt-1 text-lg lg:text-xl font-bold">
+              {walletData
+                ? `$${walletData.totalUsdValue.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}`
+                : "—"}
+            </span>
+          </div>
+
+          {/* TOKENS HELD */}
+          <div className={`flex flex-col p-4 rounded-lg border ${theme.border} ${theme.containerBg} ${theme.shadow}`}>
+            <span className="text-xs lg:text-sm font-semibold text-blue-400 uppercase">Tokens Held</span>
+            <span className="mt-1 text-lg lg:text-xl font-bold">
+              {walletData ? walletData.tokens.length.toLocaleString() : "—"}
+            </span>
+          </div>
+
+          {/* TRANSACTIONS */}
+          <div className={`flex flex-col p-4 rounded-lg border ${theme.border} ${theme.containerBg} ${theme.shadow}`}>
+            <span className="text-xs lg:text-sm font-semibold text-blue-400 uppercase">Txns</span>
+            <span className="mt-1 text-lg lg:text-xl font-bold">
+              {walletData ? walletData.txList.length.toLocaleString() : "—"}
+            </span>
+          </div>
+
+          {/* UNIQUE COUNTERPARTIES */}
+          <div className={`flex flex-col p-4 rounded-lg border ${theme.border} ${theme.containerBg} ${theme.shadow}`}>
+            <span className="text-xs lg:text-sm font-semibold text-blue-400 uppercase">Unique Parties</span>
+            <span className="mt-1 text-lg lg:text-xl font-bold">
+              {walletData ? uniqueCounterparties.toLocaleString() : "—"}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── DEPOSITS / WITHDRAWALS (replaces Coinbase section) ─────────────────── */}
+      {walletData && (
+        <section className="w-full bg-[#0F172A] border-t border-b border-blue-500/30">
+          <div className="max-w-full px-6 py-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className={`flex flex-col p-4 rounded-lg border ${theme.border} ${theme.containerBg} ${theme.shadow}`}>
+              <span className="text-xs lg:text-sm font-semibold text-blue-400 uppercase">Deposits</span>
+              <span className="mt-1 text-lg lg:text-xl font-bold">
+                {depositCount.toLocaleString()}
+              </span>
+            </div>
+            <div className={`flex flex-col p-4 rounded-lg border ${theme.border} ${theme.containerBg} ${theme.shadow}`}>
+              <span className="text-xs lg:text-sm font-semibold text-blue-400 uppercase">Withdrawals</span>
+              <span className="mt-1 text-lg lg:text-xl font-bold">
+                {withdrawalCount.toLocaleString()}
+              </span>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ─── 3-COLUMN, FULL-WIDTH NAVIGATION MENU ────────────────────────────────── */}
+      <nav className={`w-full bg-[#0F172A] border-t border-b ${theme.border}`}>
+        <div className="max-w-full px-6">
+          <ul className="grid grid-cols-3 text-center text-xs lg:text-sm uppercase">
+            <li>
+              <button
+                onClick={() => setActiveTab("overview")}
+                className={`py-3 w-full ${
+                  activeTab === "overview" ? theme.tabActive : theme.tabInactive
+                } hover:${theme.tabActive} transition-colors`}
+              >
+                Overview
+              </button>
+            </li>
+            <li>
+              <button
+                onClick={() => setActiveTab("transactions")}
+                className={`py-3 w-full ${
+                  activeTab === "transactions" ? theme.tabActive : theme.tabInactive
+                } hover:${theme.tabActive} transition-colors`}
+              >
+                Transactions
+              </button>
+            </li>
+            <li>
+              <button
+                onClick={() => setActiveTab("tokens")}
+                className={`py-3 w-full ${
+                  activeTab === "tokens" ? theme.tabActive : theme.tabInactive
+                } hover:${theme.tabActive} transition-colors`}
+              >
+                Tokens
+              </button>
+            </li>
+          </ul>
+        </div>
+      </nav>
+
+      {/* ─── MAIN CONTENT (FULL WIDTH/HEIGHT) ────────────────────────────────────── */}
+      <main className="flex-1 w-full overflow-auto px-6 py-6">
+        {loading ? (
+          <div className="flex flex-col items-center justify-center h-full">
+            <Loader />
+            <span className="mt-2 text-gray-400 uppercase text-xs lg:text-sm">
+              Loading data…
+            </span>
+          </div>
+        ) : error ? (
+          <p className="text-center text-red-400 uppercase text-xs lg:text-sm">{error}</p>
+        ) : !walletData ? (
+          <p className="text-center text-gray-400 uppercase text-xs lg:text-sm">
+            No data available
+          </p>
+        ) : (
+          <>
+            {/* ─── OVERVIEW PANEL ─────────────────────────────────────────────────── */}
+            {activeTab === "overview" && (
+              <section className="w-full space-y-8">
+                <h2 className="text-xl lg:text-2xl font-semibold text-blue-400 uppercase">
+                  Overview
+                </h2>
+
+                {/* Top: Portfolio Table & Balances History Chart */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
+                  {/* Portfolio Table */}
+                  <div className="rounded-lg border border-blue-500/30 bg-[#111827] overflow-hidden flex flex-col h-full">
+                    <div className="px-4 py-3 border-b border-blue-500/30 bg-[#1F2937]">
+                      <h3 className="text-base lg:text-lg font-semibold text-gray-200 uppercase">
+                        Portfolio
+                      </h3>
+                    </div>
+                    <div className="overflow-y-auto flex-1">
+                      <table className="min-w-full text-xs lg:text-sm">
+                        <thead>
+                          <tr className="text-blue-400 bg-[#1F2937]">
+                            <th className="px-3 py-2 text-left uppercase">Asset</th>
+                            <th className="px-3 py-2 text-left uppercase">Price (USD)</th>
+                            <th className="px-3 py-2 text-left uppercase">Holdings</th>
+                            <th className="px-3 py-2 text-left uppercase">Value (USD)</th>
+                            <th className="px-3 py-2 text-left uppercase">24h %∆</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {/* ETH Row */}
+                          <tr className="border-b border-blue-500/30 hover:bg-[#1E263B] transition">
+                            <td className="px-3 py-2 flex items-center gap-2">
+                              <img
+                                src="https://assets.coingecko.com/coins/images/279/large/ethereum.png"
+                                alt="ETH"
+                                className="w-4 h-4 rounded-full"
+                              />
+                              <span>ETH</span>
+                            </td>
+                            <td className="px-3 py-2">
+                              {ethPrice > 0
+                                ? `$${ethPrice.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}`
+                                : "—"}
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              {walletData.ethBalance.toLocaleString(undefined, {
+                                minimumFractionDigits: 4,
+                                maximumFractionDigits: 4,
+                              })}{" "}
+                              ETH
+                            </td>
+                            <td className="px-3 py-2">
+                              {walletData.ethUsdValue.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
+                            <td className="px-3 py-2 text-gray-400">—{/* placeholder */}</td>
+                          </tr>
+
+                          {/* Token Rows */}
+                          {walletData.tokens.map((token, idx) => {
+                            const rawBal = parseFloat(token.balance);
+                            const tokenPriceUsd = rawBal > 0 ? token.usdValue / rawBal : 0;
+                            // Placeholder for 24h percentage change
+                            const pctChange24h = 0;
+                            const changeColor =
+                              pctChange24h > 0
+                                ? "text-green-400"
+                                : pctChange24h < 0
+                                ? "text-red-400"
+                                : "text-gray-400";
+
+                            return (
+                              <tr
+                                key={idx}
+                                className="border-b border-blue-500/30 hover:bg-[#1E263B] transition"
+                              >
+                                <td className="px-3 py-2 flex items-center gap-2">
+                                  <div className="w-4 h-4 rounded-full bg-gray-500" />
+                                  <span>{token.symbol}</span>
+                                </td>
+                                <td className="px-3 py-2">
+                                  {tokenPriceUsd > 0
+                                    ? `$${tokenPriceUsd.toLocaleString(undefined, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      })}`
+                                    : "—"}
+                                </td>
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                  {rawBal.toLocaleString(undefined, {
+                                    minimumFractionDigits: 3,
+                                    maximumFractionDigits: 3,
+                                  })}{" "}
+                                  {token.symbol}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {token.usdValue.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}
+                                </td>
+                                <td className={`px-3 py-2 ${changeColor}`}>
+                                  {pctChange24h.toFixed(2)}%
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Balances History Chart (Placeholder) */}
+                  <div className="rounded-lg border border-blue-500/30 bg-[#111827] p-4 h-full flex flex-col">
+                    <div className="border-b border-blue-500/30 pb-2 mb-2">
+                      <h3 className="text-base lg:text-lg font-semibold text-gray-200 uppercase">
+                        Balances History
+                      </h3>
+                    </div>
+                    <div className="flex-1 bg-[#1F2937] rounded-md animate-pulse" />
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* ─── TRANSACTIONS PANEL ───────────────────────────────────────────────── */}
+            {activeTab === "transactions" && (
+              <section className="w-full h-full flex flex-col">
+                <h2 className="text-xl lg:text-2xl font-semibold text-blue-400 uppercase mb-4">
+                  All Transfers
+                </h2>
+                <div className="flex-1 overflow-x-auto">
+                  <table className="min-w-full text-xs lg:text-sm h-full w-full table-fixed">
+                    <thead className="sticky top-0 bg-[#1F2937] z-10">
+                      <tr className="text-blue-400">
+                        <th className="px-3 py-2 text-left uppercase w-[15%]">Time</th>
+                        <th className="px-3 py-2 text-left uppercase w-[20%]">From</th>
+                        <th className="px-3 py-2 text-left uppercase w-[20%]">To</th>
+                        <th className="px-3 py-2 text-left uppercase w-[10%]">Value (ETH)</th>
+                        <th className="px-3 py-2 text-left uppercase w-[10%]">Asset</th>
+                        <th className="px-3 py-2 text-left uppercase w-[10%]">Gas Used</th>
+                        <th className="px-3 py-2 text-left uppercase w-[15%]">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedTxList?.map((tx, idx) => (
+                        <tr
+                          key={idx}
+                          className="border-b border-blue-500/30 hover:bg-[#1E263B] transition"
+                        >
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {tx.timestamp
+                              ? new Date(tx.timestamp * 1000).toLocaleString()
+                              : "—"}
+                          </td>
+                          <td className="px-3 py-2 truncate">
+                            <Link
+                              href={`/explorer/address/${tx.from}`}
+                              className="text-blue-400 hover:underline"
+                            >
+                              {tx.from.slice(0, 6)}…{tx.from.slice(-4)}
+                            </Link>
+                          </td>
+                          <td className="px-3 py-2 truncate">
+                            {tx.to && tx.to !== "" ? (
+                              <Link
+                                href={`/explorer/address/${tx.to}`}
+                                className="text-blue-400 hover:underline"
+                              >
+                                {tx.to.slice(0, 6)}…{tx.to.slice(-4)}
+                              </Link>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {parseFloat(tx.value).toLocaleString(undefined, {
+                              minimumFractionDigits: 3,
+                              maximumFractionDigits: 3,
+                            })}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">{tx.asset}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {tx.gasUsed && !isNaN(Number(tx.gasUsed))
+                              ? Number(tx.gasUsed).toLocaleString()
+                              : "—"}
+                          </td>
+                          <td className="px-3 py-2 flex items-center gap-2">
+                            <button
+                              onClick={() => copyToClipboard(tx.hash)}
+                              className={`p-1 ${theme.buttonBg} ${theme.buttonHover} rounded-full border ${theme.border}`}
+                            >
+                              <ClipboardIcon className="w-4 h-4 text-blue-400" />
+                            </button>
+                            <Link
+                              href={`/explorer/hash/${tx.hash}`}
+                              className="text-blue-400 hover:text-blue-500"
+                            >
+                              {/* We removed the ArrowTopRightOnSquareIcon in header,
+                                  but for transactions, you still want a “view” icon.
+                                  Feel free to swap this for any “external link” icon. */}
+                              <span className="underline text-xs">View Hash</span>
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination Controls */}
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-3 mt-4">
+                  <button
+                    onClick={() => setTxPage((p) => Math.max(p - 1, 1))}
+                    disabled={txPage === 1}
+                    className={`px-3 py-2 ${theme.buttonBg} ${theme.buttonHover} ${
+                      txPage === 1 ? theme.buttonDisabled : ""
+                    } rounded-md text-xs lg:text-sm uppercase w-full sm:w-auto ${theme.shadow}`}
+                  >
+                    ← Previous
+                  </button>
+                  <span className="text-gray-200 text-xs lg:text-sm uppercase">
+                    Page {txPage} of {totalTxPages}
+                  </span>
+                  <button
+                    onClick={() => setTxPage((p) => Math.min(p + 1, totalTxPages))}
+                    disabled={txPage === totalTxPages}
+                    className={`px-3 py-2 ${theme.buttonBg} ${theme.buttonHover} ${
+                      txPage === totalTxPages ? theme.buttonDisabled : ""
+                    } rounded-md text-xs lg:text-sm uppercase w-full sm:w-auto ${theme.shadow}`}
+                  >
+                    Next →
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {/* ─── TOKENS PANEL ───────────────────────────────────────────────────── */}
+            {activeTab === "tokens" && (
+              <section className="w-full">
+                <h2 className="text-xl lg:text-2xl font-semibold text-blue-400 uppercase mb-4">
+                  Token Holdings
+                </h2>
+
+                {/* Search / Sort / Filter Bar */}
+                <div className="flex flex-col lg:flex-row gap-2 mb-4">
+                  <input
+                    type="text"
+                    placeholder="Search tokens by name or symbol…"
+                    value={tokenSearch}
+                    onChange={(e) => setTokenSearch(e.target.value)}
+                    className={`flex-1 ${theme.inputBg} ${theme.text} border ${theme.border} p-1 rounded-md text-xs lg:text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50`}
+                  />
+                  <select
+                    value={tokenSort}
+                    onChange={(e) => setTokenSort(e.target.value as any)}
+                    className={`${theme.selectBg} ${theme.text} border ${theme.border} p-1 rounded-md text-xs lg:text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50 uppercase`}
+                  >
+                    <option value="usd-desc">USD Value ↓</option>
+                    <option value="usd-asc">USD Value ↑</option>
+                    <option value="activity-desc">Activity ↓</option>
+                    <option value="activity-asc">Activity ↑</option>
+                  </select>
+                  <select
+                    multiple
+                    value={tokenTypes}
+                    onChange={(e) =>
+                      setTokenTypes(Array.from(e.target.selectedOptions, (opt) => opt.value as any))
+                    }
+                    className={`${theme.selectBg} ${theme.text} border ${theme.border} p-1 rounded-md text-xs lg:text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50 uppercase`}
+                    title="Hold Ctrl (Windows) / Cmd (Mac) to select multiple"
+                  >
+                    <option value="ERC-20">ERC-20</option>
+                    <option value="ERC-721">ERC-721</option>
+                  </select>
+                </div>
+
+                {/* Token Table */}
+                {filteredTokens.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-xs lg:text-sm">
+                      <thead>
+                        <tr className="text-blue-400 bg-[#1F2937]">
+                          <th className="px-3 py-2 text-left uppercase">Name</th>
+                          <th className="px-3 py-2 text-left uppercase">Symbol</th>
+                          <th className="px-3 py-2 text-left uppercase">Balance</th>
+                          <th className="px-3 py-2 text-left uppercase">USD Value</th>
+                          <th className="px-3 py-2 text-left uppercase">Activity (24h)</th>
+                          <th className="px-3 py-2 text-left uppercase">Token Price (USD)</th>
+                          <th className="px-3 py-2 text-left uppercase">Contract</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredTokens.map((token, idx) => {
+                          const rawBal = parseFloat(token.balance);
+                          const tokenPriceUsd = rawBal > 0 ? token.usdValue / rawBal : 0;
+                          return (
+                            <tr
+                              key={idx}
+                              className="border-b border-blue-500/30 hover:bg-[#1E263B] transition"
+                            >
+                              <td className="px-3 py-2">{token.name}</td>
+                              <td className="px-3 py-2">{token.symbol}</td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                {rawBal.toLocaleString(undefined, {
+                                  minimumFractionDigits: 3,
+                                  maximumFractionDigits: 3,
+                                })}{" "}
+                                {token.symbol}
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                {token.usdValue.toLocaleString(undefined, {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                {token.recentActivity.toLocaleString()}
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                {tokenPriceUsd > 0
+                                  ? `$${tokenPriceUsd.toLocaleString(undefined, {
+                                      minimumFractionDigits: 4,
+                                      maximumFractionDigits: 4,
+                                    })}`
+                                  : "—"}
+                              </td>
+                              <td className="px-3 py-2 truncate max-w-[140px]">
+                                <Link
+                                  href={`/explorer/address/${token.contractAddress}`}
+                                  className="text-blue-400 hover:underline text-xs lg:text-xs"
+                                >
+                                  {token.contractAddress.slice(0, 6)}…{token.contractAddress.slice(-4)}
+                                </Link>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-gray-400 text-xs lg:text-sm uppercase">No tokens found</p>
+                )}
+              </section>
+            )}
+          </>
+        )}
+      </main>
+
+      {/* ─── INLINE BANNER AD (FLEXIBLE FULL‐WIDTH) ───────────────────────────────── */}
+      <section className="w-full px-6 mb-6">
         {ads
           .filter((ad) => ad.type === "banner")
           .slice(0, 1)
-          .map((ad, index) => (
+          .map((ad, idx) => (
             <a
-              key={index}
+              key={idx}
               href={ad.destinationUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className={`block mx-auto mb-4 rounded-lg overflow-hidden ${themeClasses.shadow}`}
-              style={{ width: "728px", height: "90px" }}
+              className={`block mx-auto overflow-hidden rounded-md ${theme.shadow}`}
+              style={{ maxWidth: "728px", height: "90px" }}
             >
               <img src={ad.imageUrl} alt="Advertisement" className="w-full h-full object-cover" />
             </a>
           ))}
-      </div>
-
-      {/* Main Content */}
-      <div className="p-4 sm:p-6 max-w-7xl mx-auto flex flex-col lg:flex-row gap-6">
-        {/* Main Content Area */}
-        <div className="flex-1">
-          {loading ? (
-            <div className="flex justify-center items-center py-6">
-              <svg
-                className="w-6 h-6 animate-spin text-blue-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 12a8 8 0 018-8v8h8a8 8 0 01-16 0z" />
-              </svg>
-              <span className={`${themeClasses.secondaryText} ml-2 text-sm sm:text-base uppercase`}>Loading...</span>
-            </div>
-          ) : error ? (
-            <p className={`${themeClasses.errorText} text-center py-6 text-sm sm:text-base uppercase`}>Error: {error}</p>
-          ) : !walletData ? (
-            <p className={`${themeClasses.secondaryText} text-center py-6 text-sm sm:text-base uppercase`}>No Data Available</p>
-          ) : (
-            <div className="space-y-6 sm:space-y-8">
-              {/* Address Section */}
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
-                <div className="flex items-center space-x-2 flex-wrap">
-                  <h2 className="text-lg sm:text-xl font-semibold uppercase">Address</h2>
-                  <span className="text-blue-400 truncate max-w-[200px] sm:max-w-[300px] text-sm sm:text-base">
-                    {walletData.ensName || walletAddress}
-                  </span>
-                  <button
-                    onClick={() => copyToClipboard(walletAddress)}
-                    className={`p-1 ${themeClasses.buttonBg} ${themeClasses.buttonHover} rounded-full border ${themeClasses.border}`}
-                  >
-                    <ClipboardIcon className="w-4 sm:w-5 h-4 sm:h-5 text-blue-400" />
-                  </button>
-                  <a
-                    href={`https://basescan.org/address/${walletAddress}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`p-1 ${themeClasses.buttonBg} ${themeClasses.buttonHover} rounded-full border ${themeClasses.border}`}
-                  >
-                    <ArrowTopRightOnSquareIcon className="w-4 sm:w-5 h-4 sm:h-5 text-blue-400" />
-                  </a>
-                </div>
-                <span className={`${themeClasses.secondaryText} text-xs sm:text-sm uppercase`}>Base Mainnet</span>
-              </div>
-
-              {/* Wallet Summary */}
-              <div className={`${themeClasses.containerBg} border ${themeClasses.border} p-4 sm:p-6 rounded-lg`}>
-                <h3 className="text-base sm:text-lg font-semibold text-blue-400 mb-4 uppercase">Wallet Summary</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                  <div className={`p-4 rounded-lg border ${themeClasses.border} ${themeClasses.shadow}`}>
-                    <h4 className="text-sm font-semibold text-blue-400 uppercase">Total Value</h4>
-                    <p className={`${themeClasses.text} text-base sm:text-lg mt-1`}>${walletData.totalUsdValue.toFixed(2)} USD</p>
-                  </div>
-                  <div className={`p-4 rounded-lg border ${themeClasses.border} ${themeClasses.shadow}`}>
-                    <h4 className="text-sm font-semibold text-blue-400 uppercase">Active Tokens</h4>
-                    <p className={`${themeClasses.text} text-base sm:text-lg mt-1`}>{activeTokens?.length || 0}</p>
-                  </div>
-                  <div className={`p-4 rounded-lg border ${themeClasses.border} ${themeClasses.shadow}`}>
-                    <h4 className="text-sm font-semibold text-blue-400 uppercase">Recent Activity</h4>
-                    <p className={`${themeClasses.text} text-base sm:text-lg mt-1`}>{walletData.txList.length} Txns</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Tabs */}
-              <div className="border-b border-blue-400">
-                <nav className="flex space-x-2 sm:space-x-4 overflow-x-auto">
-                  {["overview", "transactions", "tokens", "activity"].map((tab) => (
-                    <button
-                      key={tab}
-                      onClick={() => setActiveTab(tab)}
-                      className={`py-2 px-3 sm:px-4 text-sm sm:text-base font-semibold border-b-2 whitespace-nowrap ${
-                        activeTab === tab ? themeClasses.tabActive : themeClasses.tabInactive
-                      } hover:${themeClasses.tabActive} transition-all duration-200 uppercase`}
-                    >
-                      {tab}
-                    </button>
-                  ))}
-                </nav>
-              </div>
-
-              {/* Tab Content */}
-              <div className="mt-4 sm:mt-6">
-                {activeTab === "overview" && (
-                  <div className={`${themeClasses.containerBg} border ${themeClasses.border} p-4 sm:p-6 rounded-lg`}>
-                    <h3 className="text-base sm:text-lg font-semibold text-blue-400 mb-4 uppercase">Overview</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                      <div className={`p-4 rounded-lg border ${themeClasses.border} ${themeClasses.shadow}`}>
-                        <h4 className="text-sm font-semibold text-blue-400 uppercase">Balance</h4>
-                        <p className={`${themeClasses.text} text-base sm:text-lg mt-1`}>{walletData.ethBalance.toFixed(4)} BASE ETH</p>
-                        <p className={`${themeClasses.secondaryText} text-xs sm:text-sm`}>${walletData.ethUsdValue.toFixed(2)} USD</p>
-                      </div>
-                      <div className={`p-4 rounded-lg border ${themeClasses.border} ${themeClasses.shadow}`}>
-                        <h4 className="text-sm font-semibold text-blue-400 uppercase">Tokens</h4>
-                        <p className={`${themeClasses.text} text-base sm:text-lg mt-1`}>{walletData.tokens.length}</p>
-                      </div>
-                      <div className={`p-4 rounded-lg border ${themeClasses.border} ${themeClasses.shadow}`}>
-                        <h4 className="text-sm font-semibold text-blue-400 uppercase">Transactions</h4>
-                        <p className={`${themeClasses.text} text-base sm:text-lg mt-1`}>{walletData.txList.length}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {activeTab === "transactions" && (
-                  <div className={`${themeClasses.containerBg} border ${themeClasses.border} p-4 sm:p-6 rounded-lg`}>
-                    <h3 className="text-base sm:text-lg font-semibold text-blue-400 mb-4 uppercase">Transactions</h3>
-                    {walletData.txList.length > 0 ? (
-                      <>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-xs sm:text-sm">
-                            <thead>
-                              <tr className={`text-blue-400 border-b ${themeClasses.border}`}>
-                                <th className="py-3 px-3 sm:px-4 text-left font-semibold uppercase">Hash</th>
-                                <th className="py-3 px-3 sm:px-4 text-left font-semibold uppercase">From</th>
-                                <th className="py-3 px-3 sm:px-4 text-left font-semibold uppercase">To</th>
-                                <th className="py-3 px-3 sm:px-4 text-left font-semibold uppercase">Value</th>
-                                <th className="py-3 px-3 sm:px-4 text-left font-semibold uppercase">Asset</th>
-                                <th className="py-3 px-3 sm:px-4 text-left font-semibold uppercase">Gas Used</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {paginatedTxList?.map((tx: Transaction, index: number) => (
-                                <tr key={index} className={`border-b ${themeClasses.border} ${themeClasses.hoverBg} transition-colors`}>
-                                  <td className="py-3 px-3 sm:px-4 truncate">
-                                    <div className="flex items-center space-x-2">
-                                      <Link href={`/explorer/hash/${tx.hash}`} className="text-blue-400 hover:underline">
-                                        {tx.hash.slice(0, 6)}...{tx.hash.slice(-4)}
-                                      </Link>
-                                      <a
-                                        href={`https://basescan.org/tx/${tx.hash}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-blue-400"
-                                      >
-                                        <ArrowTopRightOnSquareIcon className="w-4 h-4" />
-                                      </a>
-                                      <button
-                                        onClick={() => copyToClipboard(tx.hash)}
-                                        className={`p-1 ${themeClasses.buttonBg} ${themeClasses.buttonHover} rounded-full border ${themeClasses.border}`}
-                                      >
-                                        <ClipboardIcon className="w-4 h-4 text-blue-400" />
-                                      </button>
-                                    </div>
-                                  </td>
-                                  <td className="py-3 px-3 sm:px-4 truncate">
-                                    <Link href={`/explorer/address/${tx.from}`} className="text-blue-400 hover:underline">
-                                      {tx.from.slice(0, 6)}...{tx.from.slice(-4)}
-                                    </Link>
-                                  </td>
-                                  <td className="py-3 px-3 sm:px-4 truncate">
-                                    {tx.to === "N/A" ? (
-                                      "N/A"
-                                    ) : (
-                                      <Link href={`/explorer/address/${tx.to}`} className="text-blue-400 hover:underline">
-                                        {tx.to.slice(0, 6)}...{tx.to.slice(-4)}
-                                      </Link>
-                                    )}
-                                  </td>
-                                  <td className="py-3 px-3 sm:px-4">{tx.value}</td>
-                                  <td className="py-3 px-3 sm:px-4">{tx.asset}</td>
-                                  <td className="py-3 px-3 sm:px-4">{tx.gasUsed}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                        <div className="flex flex-col sm:flex-row justify-between items-center mt-4 gap-3">
-                          <button
-                            onClick={() => setTxPage((prev) => Math.max(prev - 1, 1))}
-                            disabled={txPage === 1}
-                            className={`px-4 py-2 ${themeClasses.buttonBg} ${themeClasses.buttonHover} ${txPage === 1 ? themeClasses.buttonDisabled : ""} rounded-lg text-sm uppercase w-full sm:w-auto ${themeClasses.shadow}`}
-                          >
-                            Previous
-                          </button>
-                          <span className={`${themeClasses.text} text-sm uppercase`}>
-                            Page {txPage} of {totalTxPages}
-                          </span>
-                          <button
-                            onClick={() => setTxPage((prev) => Math.min(prev + 1, totalTxPages))}
-                            disabled={txPage === totalTxPages}
-                            className={`px-4 py-2 ${themeClasses.buttonBg} ${themeClasses.buttonHover} ${txPage === totalTxPages ? themeClasses.buttonDisabled : ""} rounded-lg text-sm uppercase w-full sm:w-auto ${themeClasses.shadow}`}
-                          >
-                            Next
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <p className={`${themeClasses.secondaryText} text-sm sm:text-base uppercase`}>No Transactions Found</p>
-                    )}
-                  </div>
-                )}
-
-                {activeTab === "tokens" && (
-                  <div className={`${themeClasses.containerBg} border ${themeClasses.border} p-4 sm:p-6 rounded-lg`}>
-                    <h3 className="text-base sm:text-lg font-semibold text-blue-400 mb-4 uppercase">Token Holdings</h3>
-                    {/* Filtering and Sorting Controls */}
-                    <div className="flex flex-col sm:flex-row gap-3 mb-4">
-                      <input
-                        type="text"
-                        placeholder="Search tokens by name or symbol..."
-                        value={tokenSearch}
-                        onChange={(e) => setTokenSearch(e.target.value)}
-                        className={`flex-1 ${themeClasses.inputBg} ${themeClasses.text} border ${themeClasses.border} p-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50`}
-                      />
-                      <select
-                        value={tokenSort}
-                        onChange={(e) => setTokenSort(e.target.value)}
-                        className={`${themeClasses.selectBg} ${themeClasses.text} border ${themeClasses.border} p-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50 uppercase`}
-                      >
-                        <option value="usd-desc">USD Value (High to Low)</option>
-                        <option value="usd-asc">USD Value (Low to High)</option>
-                        <option value="activity-desc">Activity (High to Low)</option>
-                        <option value="activity-asc">Activity (Low to High)</option>
-                      </select>
-                      <select
-                        multiple
-                        value={tokenTypes}
-                        onChange={(e) => setTokenTypes(Array.from(e.target.selectedOptions, (option) => option.value))}
-                        className={`${themeClasses.selectBg} ${themeClasses.text} border ${themeClasses.border} p-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50 uppercase`}
-                      >
-                        <option value="ERC-20">ERC-20</option>
-                        <option value="ERC-721">ERC-721</option>
-                      </select>
-                    </div>
-                    {/* Active Tokens */}
-                    <div className="mb-6">
-                      <h4 className="text-sm font-semibold text-blue-400 mb-2 uppercase">Active Tokens</h4>
-                      {activeTokens && activeTokens.length > 0 ? (
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-xs sm:text-sm">
-                            <thead>
-                              <tr className={`text-blue-400 border-b ${themeClasses.border}`}>
-                                <th className="py-3 px-3 sm:px-4 text-left font-semibold uppercase">Name</th>
-                                <th className="py-3 px-3 sm:px-4 text-left font-semibold uppercase">Symbol</th>
-                                <th className="py-3 px-3 sm:px-4 text-left font-semibold uppercase">Balance</th>
-                                <th className="py-3 px-3 sm:px-4 text-left font-semibold uppercase">USD Value</th>
-                                <th className="py-3 px-3 sm:px-4 text-left font-semibold uppercase">Contract</th>
-                                <th className="py-3 px-3 sm:px-4 text-left font-semibold uppercase">Recent Activity</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {activeTokens.map((token: Token, index: number) => (
-                                <tr key={index} className={`border-b ${themeClasses.border} ${themeClasses.hoverBg} transition-colors`}>
-                                  <td className="py-3 px-3 sm:px-4">{token.name}</td>
-                                  <td className="py-3 px-3 sm:px-4">{token.symbol}</td>
-                                  <td className="py-3 px-3 sm:px-4">{token.balance}</td>
-                                  <td className="py-3 px-3 sm:px-4">
-                                    {token.usdValue != null ? `$${token.usdValue.toFixed(2)}` : "Price Unavailable"}
-                                  </td>
-                                  <td className="py-3 px-3 sm:px-4 truncate">
-                                    <Link href={`/explorer/address/${token.contractAddress}`} className="text-blue-400 hover:underline">
-                                      {token.contractAddress.slice(0, 6)}...{token.contractAddress.slice(-4)}
-                                    </Link>
-                                  </td>
-                                  <td className="py-3 px-3 sm:px-4">{token.recentActivity} Transfers</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <p className={`${themeClasses.secondaryText} text-sm sm:text-base uppercase`}>No Active Tokens Found</p>
-                      )}
-                    </div>
-                    {/* Inactive Tokens (Collapsible) */}
-                    {inactiveTokens && inactiveTokens.length > 0 && (
-                      <div>
-                        <button
-                          onClick={() => setShowInactiveTokens(!showInactiveTokens)}
-                          className={`flex items-center space-x-2 px-4 py-2 ${themeClasses.buttonBg} ${themeClasses.buttonHover} rounded-lg text-sm uppercase ${themeClasses.shadow}`}
-                        >
-                          <span>{showInactiveTokens ? "Hide Inactive Tokens" : "Show Inactive Tokens"}</span>
-                          <svg
-                            className={`w-4 h-4 transform ${showInactiveTokens ? "rotate-180" : "rotate-0"} transition-transform`}
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                            xmlns="http://www.w3.org/2000/svg"
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </button>
-                        {showInactiveTokens && (
-                          <div className="mt-4 overflow-x-auto">
-                            <table className="w-full text-xs sm:text-sm">
-                              <thead>
-                                <tr className={`text-blue-400 border-b ${themeClasses.border}`}>
-                                  <th className="py-3 px-3 sm:px-4 text-left font-semibold uppercase">Name</th>
-                                  <th className="py-3 px-3 sm:px-4 text-left font-semibold uppercase">Symbol</th>
-                                  <th className="py-3 px-3 sm:px-4 text-left font-semibold uppercase">Balance</th>
-                                  <th className="py-3 px-3 sm:px-4 text-left font-semibold uppercase">USD Value</th>
-                                  <th className="py-3 px-3 sm:px-4 text-left font-semibold uppercase">Contract</th>
-                                  <th className="py-3 px-3 sm:px-4 text-left font-semibold uppercase">Recent Activity</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {inactiveTokens.map((token: Token, index: number) => (
-                                  <tr key={index} className={`border-b ${themeClasses.border} ${themeClasses.hoverBg} transition-colors`}>
-                                    <td className="py-3 px-3 sm:px-4">{token.name}</td>
-                                    <td className="py-3 px-3 sm:px-4">{token.symbol}</td>
-                                    <td className="py-3 px-3 sm:px-4">{token.balance}</td>
-                                    <td className="py-3 px-3 sm:px-4">
-                                      {token.usdValue != null ? `$${token.usdValue.toFixed(2)}` : "Price Unavailable"}
-                                    </td>
-                                    <td className="py-3 px-3 sm:px-4 truncate">
-                                      <Link href={`/explorer/address/${token.contractAddress}`} className="text-blue-400 hover:underline">
-                                        {token.contractAddress.slice(0, 6)}...{token.contractAddress.slice(-4)}
-                                      </Link>
-                                    </td>
-                                    <td className="py-3 px-3 sm:px-4">{token.recentActivity} Transfers</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {activeTab === "activity" && (
-                  <div className={`${themeClasses.containerBg} border ${themeClasses.border} p-4 sm:p-6 rounded-lg`}>
-                    <h3 className="text-base sm:text-lg font-semibold text-blue-400 mb-4 uppercase">Activity Timeline</h3>
-                    {walletData.txList.length > 0 ? (
-                      <div className="overflow-x-auto">
-                        <div className="flex flex-wrap gap-4 pb-4">
-                          {walletData.txList.slice(0, 10).map((tx, index) => (
-                            <div
-                              key={index}
-                              className={`flex-shrink-0 w-full sm:w-64 p-4 rounded-lg border ${themeClasses.border} ${themeClasses.shadow}`}
-                            >
-                              <p className={`${themeClasses.secondaryText} text-xs uppercase`}>
-                                {tx.timestamp ? new Date(tx.timestamp * 1000).toLocaleString() : "N/A"}
-                              </p>
-                              <p className="text-sm mt-1">
-                                <span className="font-medium">Hash:</span>{" "}
-                                <Link href={`/explorer/hash/${tx.hash}`} className="text-blue-400 hover:underline">
-                                  {tx.hash.slice(0, 6)}...{tx.hash.slice(-4)}
-                                </Link>
-                              </p>
-                              <p className="text-sm mt-1">
-                                <span className="font-medium">Value:</span> {tx.value} {tx.asset}
-                              </p>
-                              <p className="text-sm mt-1">
-                                <span className="font-medium">Gas Used:</span> {tx.gasUsed}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <p className={`${themeClasses.secondaryText} text-sm sm:text-base uppercase`}>No Recent Activity</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Sidebar Ad (Visible on Larger Screens) */}
-        <div className="hidden lg:block w-64 flex-shrink-0">
-          {ads
-            .filter((ad) => ad.type === "sidebar")
-            .slice(0, 1)
-            .map((ad, index) => (
-              <a
-                key={index}
-                href={ad.destinationUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`block rounded-lg overflow-hidden ${themeClasses.shadow}`}
-                style={{ width: "300px", height: "600px" }}
-              >
-                <img src={ad.imageUrl} alt="Advertisement" className="w-full h-full object-contain" />
-              </a>
-            ))}
-        </div>
-      </div>
+      </section>
     </div>
   );
 }

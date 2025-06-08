@@ -1,3 +1,4 @@
+// app/token-scanner/page.tsx
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -12,6 +13,7 @@ import {
   FaPlusCircle,
   FaUser,
   FaSearch,
+  FaFilter,
 } from "react-icons/fa";
 import debounce from "lodash/debounce";
 import { onAuthStateChanged } from "firebase/auth";
@@ -29,6 +31,7 @@ import {
 import type { Auth } from "firebase/auth";
 import type { Firestore } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
   LineElement,
@@ -39,18 +42,16 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
-import { Line } from "react-chartjs-2";
+
+ChartJS.register(LineElement, PointElement, LinearScale, TimeScale, Title, Tooltip, Legend);
 
 // Explicitly type auth and db
 const firebaseAuth: Auth = auth;
 const firestoreDb: Firestore = db;
 
-// Register Chart.js components
-ChartJS.register(LineElement, PointElement, LinearScale, TimeScale, Title, Tooltip, Legend);
-
 // ====== TYPES ======
 export type TokenData = {
-  pairAddress: string; // Maps to Firestore 'pool' field
+  pairAddress: string;
   baseToken: {
     address: string;
     name: string;
@@ -76,7 +77,6 @@ export type TokenData = {
   liquidity: {
     usd: number;
   };
-  fdv?: number;
   pairCreatedAt?: number;
   info?: {
     imageUrl?: string;
@@ -97,15 +97,6 @@ export type BaseAiToken = {
   address: string;
   weight: string;
   pairAddress?: string;
-};
-
-type Alert = {
-  id?: string;
-  type: "price_spike" | "price_spike_long" | "volume_spike" | "mover" | "loser" | "boost" | "new_token";
-  message: string;
-  timestamp: string;
-  pairAddress?: string;
-  priceChangePercent?: number;
 };
 
 // ====== STATIC BASE AI TOKENS LIST ======
@@ -293,7 +284,22 @@ function getBellColor(alerts: Alert[]): string {
   }
 }
 
-// ====== MAIN COMPONENT ======
+type Alert = {
+  id?: string;
+  type:
+    | "price_spike"
+    | "price_spike_long"
+    | "volume_spike"
+    | "mover"
+    | "loser"
+    | "boost"
+    | "new_token";
+  message: string;
+  timestamp: string;
+  pairAddress?: string;
+  priceChangePercent?: number;
+};
+
 export default function TokenScreener() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
@@ -303,7 +309,9 @@ export default function TokenScreener() {
   const [toast, setToast] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [viewMode, setViewMode] = useState<"all" | "favorites" | "baseAI" | "alerts" | "new">("all");
+  const [viewMode, setViewMode] = useState<"all" | "favorites" | "baseAI" | "alerts" | "new">(
+    "all"
+  );
   const [sortFilter, setSortFilter] = useState("trending");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [searchQuery, setSearchQuery] = useState("");
@@ -313,7 +321,6 @@ export default function TokenScreener() {
     minAge: 0,
     maxAge: Infinity,
   });
-  const [viewerCount, setViewerCount] = useState(0);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [previousPrices, setPreviousPrices] = useState<{ [symbol: string]: number }>({});
   const [lastAlertTimes, setLastAlertTimes] = useState<{
@@ -332,30 +339,36 @@ export default function TokenScreener() {
   const [indexHistory, setIndexHistory] = useState<{ timestamp: Date; value: number }[]>([]);
   const [isMounted, setIsMounted] = useState(false);
   const [initialTokenSnapshot, setInitialTokenSnapshot] = useState<string[]>([]);
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
   const pageSize = 25;
-
-  // Boost Info Card Data
-  const boostInfo = [
-    { boost: 10, cost: 10, duration: "12HR" },
-    { boost: 20, cost: 15, duration: "12HR" },
-    { boost: 30, cost: 20, duration: "12HR" },
-    { boost: 40, cost: 25, duration: "12HR" },
-    { boost: 50, cost: 35, duration: "24HR" },
-    { boost: 100, cost: 50, duration: "24HR" },
-    { boost: 150, cost: 75, duration: "36HR" },
-    { boost: 200, cost: 90, duration: "36HR" },
-    { boost: 250, cost: 100, duration: "36HR" },
-    { boost: 500, cost: 175, duration: "48HR" },
-    { boost: 1000, cost: 300, duration: "48HR" },
-  ];
-  const adInfo = { cost: 50, type: "Banner Ad" };
 
   // Ensure component is mounted on client
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
-  // Check Authentication
+  // Prevent scrolling when filter menu is open
+  useEffect(() => {
+    if (showFilterMenu) {
+      document.body.style.overflow = "hidden";
+      document.body.style.height = "100vh";
+      document.body.style.position = "fixed";
+      document.body.style.width = "100%";
+    } else {
+      document.body.style.overflow = "";
+      document.body.style.height = "";
+      document.body.style.position = "";
+      document.body.style.width = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+      document.body.style.height = "";
+      document.body.style.position = "";
+      document.body.style.width = "";
+    };
+  }, [showFilterMenu]);
+
+  // Check Authentication & fetch favorites
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(firebaseAuth, (currentUser) => {
       setUser(currentUser);
@@ -368,11 +381,6 @@ export default function TokenScreener() {
       }
     });
     return () => unsubscribe();
-  }, []);
-
-  // Fetch Viewer Count
-  useEffect(() => {
-    setViewerCount(0);
   }, []);
 
   // Fetch Tokens from Firebase and DexScreener
@@ -392,7 +400,6 @@ export default function TokenScreener() {
           docId: doc.id,
         }));
 
-        // Store initial token IDs to avoid false new token alerts
         if (initialTokenSnapshot.length === 0) {
           setInitialTokenSnapshot(tokenList.map((token) => token.docId));
         }
@@ -452,7 +459,6 @@ export default function TokenScreener() {
                   volume: pair.volume || { h1: 0, h24: 0 },
                   liquidity: pair.liquidity || { usd: 0 },
                   marketCap: pair.marketCap || 0,
-                  fdv: pair.fdv || 0,
                   pairCreatedAt: firestoreToken?.createdAt || pair.pairCreatedAt || 0,
                   info: pair.info ? { imageUrl: pair.info.imageUrl } : undefined,
                 };
@@ -477,7 +483,6 @@ export default function TokenScreener() {
               volume: { h1: 0, h24: 0 },
               liquidity: { usd: 0 },
               marketCap: 0,
-              fdv: 0,
               pairCreatedAt: token.createdAt || 0,
               info: { imageUrl: undefined },
             }))
@@ -579,7 +584,7 @@ export default function TokenScreener() {
       },
       (err) => {
         console.error("Error fetching alerts:", err);
-        setToast("Failed to load alerts");
+        setToast("Loading Alerts...");
         setTimeout(() => setToast(""), 2000);
       }
     );
@@ -610,7 +615,13 @@ export default function TokenScreener() {
 
         newPrices[symbol] = currentPrice;
 
-        const lastTimes = lastAlertTimes[symbol] || { volume: 0, price: 0, priceLong: 0, boost: 0, new: 0 };
+        const lastTimes = lastAlertTimes[symbol] || {
+          volume: 0,
+          price: 0,
+          priceLong: 0,
+          boost: 0,
+          new: 0,
+        };
 
         const volumeSpikeThresholdMarketCap = marketCap * 0.1;
         const volumeSpikeThresholdLiquidity = liquidity * 0.5;
@@ -816,7 +827,9 @@ export default function TokenScreener() {
           addDoc(collection(firestoreDb, "notifications"), {
             ...alert,
             createdAt: serverTimestamp(),
-          }).catch((err) => console.error(`Failed to save mover alert for ${token.baseToken.symbol}:`, err));
+          }).catch((err) =>
+            console.error(`Failed to save mover alert for ${token.baseToken.symbol}:`, err)
+          );
           setNotificationCount((prev) => prev + 1);
         }
       });
@@ -840,7 +853,9 @@ export default function TokenScreener() {
           addDoc(collection(firestoreDb, "notifications"), {
             ...alert,
             createdAt: serverTimestamp(),
-          }).catch((err) => console.error(`Failed to save loser alert for ${token.baseToken.symbol}:`, err));
+          }).catch((err) =>
+            console.error(`Failed to save loser alert for ${token.baseToken.symbol}:`, err)
+          );
           setNotificationCount((prev) => prev + 1);
         }
       });
@@ -1003,7 +1018,7 @@ export default function TokenScreener() {
       {
         label: "Base AI Index Value",
         data: indexHistory.map((point) => ({ x: point.timestamp.getTime(), y: point.value })),
-        borderColor: "rgba(59, 130, 246, 1)", // blue-400
+        borderColor: "rgba(59, 130, 246, 1)",
         backgroundColor: "rgba(59, 130, 246, 0.2)",
         fill: true,
       },
@@ -1063,7 +1078,9 @@ export default function TokenScreener() {
         }
       } catch (err) {
         console.error("Error toggling favorite:", err);
-        setFavorites((prev) => (isFavorited ? [...prev, pairAddress] : prev.filter((fav) => fav !== pairAddress)));
+        setFavorites((prev) =>
+          isFavorited ? [...prev, pairAddress] : prev.filter((fav) => fav !== pairAddress)
+        );
         setToast("Error updating favorites");
         setTimeout(() => setToast(""), 2000);
       }
@@ -1079,26 +1096,13 @@ export default function TokenScreener() {
         setTimeout(() => setToast(""), 2000);
         return;
       }
-
       const targetUrl = `/token-scanner/${pool}/chart`;
-      console.log("Attempting navigation to:", targetUrl);
-
-      try {
-        router.push(targetUrl);
-        console.log("Navigation initiated successfully to:", targetUrl);
-
-        setTimeout(() => {
-          if (window.location.pathname !== targetUrl) {
-            console.warn("Router navigation failed, falling back to window.location.href");
-            window.location.href = targetUrl;
-          }
-        }, 1000);
-      } catch (err) {
-        console.error("Navigation error:", err);
-        setToast("Failed to navigate to chart page. Using fallback navigation.");
-        setTimeout(() => setToast(""), 2000);
-        window.location.href = targetUrl;
-      }
+      router.push(targetUrl);
+      setTimeout(() => {
+        if (window.location.pathname !== targetUrl) {
+          window.location.href = targetUrl;
+        }
+      }, 500);
     },
     [router]
   );
@@ -1168,21 +1172,21 @@ export default function TokenScreener() {
   const currentTokens = sortedTokens.slice(indexOfFirstToken, indexOfLastToken);
   const totalPages = Math.ceil(sortedTokens.length / pageSize);
 
-  // Animation variants for table rows
   const rowVariants = {
     hidden: { opacity: 0, y: 20 },
     visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: "easeOut" } },
   };
 
-  // Render
   if (!isMounted) {
     return (
       <div className="w-screen h-screen bg-gray-950 text-gray-200 font-sans m-0 p-0 overflow-hidden">
         <div className="flex flex-col w-full h-full">
           <div className="sticky top-0 z-50 bg-gray-900 shadow-lg w-full border-b border-blue-500/30 h-16"></div>
-          <div className="bg-gray-900 p-3 sm:p-4 border-b border-blue-500/30 shadow-inner h-16"></div>
-          <div className="flex-1 flex flex-col overflow-x-auto overflow-y-auto">
-            <div className="p-4 text-center text-gray-400 font-sans uppercase">Loading...</div>
+          <div className="bg-gray-900 p-0 border-b border-blue-500/30 shadow-inner h-16"></div>
+          <div className="flex-1 flex flex-col w-full h-full overflow-hidden">
+            <div className="flex-1 flex items-center justify-center">
+              <span className="text-gray-400 uppercase font-sans">Loading...</span>
+            </div>
           </div>
         </div>
       </div>
@@ -1191,6 +1195,7 @@ export default function TokenScreener() {
 
   return (
     <div className="w-screen h-screen bg-gray-950 text-gray-200 font-sans m-0 p-0 overflow-hidden">
+      {/* Error Toast */}
       {error && (
         <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-900 text-gray-200 font-sans py-2 px-4 rounded-lg shadow-xl z-50 border border-blue-500/30 uppercase">
           {error}
@@ -1200,16 +1205,18 @@ export default function TokenScreener() {
         </div>
       )}
 
+      {/* Copy / General Toast */}
       {toast && (
         <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-900 text-gray-200 py-2 px-4 rounded-lg shadow-xl z-50 border border-blue-500/30 font-sans uppercase">
           {toast}
         </div>
       )}
 
+      {/* Submit Listing Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30">
-            <button onClick={closeModal} className="absolute top-2 right-2 text-xl font-bold font-sans">
+            <button onClick={closeModal} className="absolute top-2 right-2 text-xl font-bold">
               ×
             </button>
             {!submissionSuccess ? (
@@ -1286,21 +1293,31 @@ export default function TokenScreener() {
         </div>
       )}
 
+      {/* Boost Info Modal */}
       {showBoostModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30">
+            <button onClick={() => setShowBoostModal(false)} className="absolute top-2 right-2 text-xl font-bold">
+              ×
+            </button>
             <h2 className="text-xl font-bold mb-4 font-sans uppercase">Boost Info</h2>
             <p className="text-sm mb-4 font-sans uppercase">
               Purchase a boost with USDC on our website to increase your token's visibility. Boosts add a score to your
               token's trending rank:
             </p>
             <ul className="text-sm mb-4 list-disc list-inside font-sans uppercase">
-              {boostInfo.map((info) => (
-                <li key={info.boost} className="font-sans uppercase">
-                  Boost ({info.boost}) - {info.cost} USDC ({info.duration})
-                </li>
-              ))}
-              <li className="font-sans uppercase">Ad ({adInfo.type}) - {adInfo.cost} USDC</li>
+              <li className="font-sans uppercase">Boost (10) - 10 USDC (12HR)</li>
+              <li className="font-sans uppercase">Boost (20) - 15 USDC (12HR)</li>
+              <li className="font-sans uppercase">Boost (30) - 20 USDC (12HR)</li>
+              <li className="font-sans uppercase">Boost (40) - 25 USDC (12HR)</li>
+              <li className="font-sans uppercase">Boost (50) - 35 USDC (24HR)</li>
+              <li className="font-sans uppercase">Boost (100) - 50 USDC (24HR)</li>
+              <li className="font-sans uppercase">Boost (150) - 75 USDC (36HR)</li>
+              <li className="font-sans uppercase">Boost (200) - 90 USDC (36HR)</li>
+              <li className="font-sans uppercase">Boost (250) - 100 USDC (36HR)</li>
+              <li className="font-sans uppercase">Boost (500) - 175 USDC (48HR)</li>
+              <li className="font-sans uppercase">Boost (1000) - 300 USDC (48HR)</li>
+              <li className="font-sans uppercase">Ad (Banner Ad) - 50 USDC</li>
             </ul>
             <p className="text-sm mb-4 font-sans uppercase">
               Once the transaction is confirmed, your token will appear boosted in the screener!
@@ -1319,12 +1336,13 @@ export default function TokenScreener() {
         </div>
       )}
 
+      {/* Favorite Popup Modal */}
       {showFavoritePopup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30">
             <button
               onClick={() => setShowFavoritePopup(false)}
-              className="absolute top-2 right-2 text-xl font-bold font-sans"
+              className="absolute top-2 right-2 text-xl font-bold"
             >
               ×
             </button>
@@ -1355,9 +1373,10 @@ export default function TokenScreener() {
         </div>
       )}
 
+      {/* Selected Alerts Modal */}
       {selectedAlerts && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-900 text-gray-200 p-8 rounded-lg shadow-xl w-[448px] border border-blue-500/30">
+          <div className="bg-gray-900 text-gray-200 p-8 rounded-lg shadow-xl w-[90%] max-w-xl border border-blue-500/30">
             <h2 className="text-xl font-bold mb-4 font-sans uppercase">Alerts ({selectedAlerts.length})</h2>
             <ul className="space-y-3 max-h-96 overflow-y-auto">
               {selectedAlerts.map((alert, idx) => {
@@ -1405,25 +1424,22 @@ export default function TokenScreener() {
         </div>
       )}
 
+      {/* Main Container */}
       <div className="flex flex-col w-full h-full">
+        {/* Header Bar */}
         <div className="sticky top-0 z-50 bg-gray-900 shadow-lg w-full border-b border-blue-500/30">
-          <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between px-4 py-3 space-y-2 sm:space-y-0">
-            <div className="flex flex-row items-center space-x-4">
-              <div className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 rounded-lg px-4 py-2 shadow-inner">
-                <span className="text-blue-400 animate-pulse font-sans uppercase" title="Live Pulse">
-                  ●
-                </span>
-                <div className="text-sm sm:text-base text-gray-200 font-sans flex items-center space-x-2 uppercase">
-                  <span>LIVE {viewerCount} Traders</span>
-                  <span className="flex items-center">
-                    <FaBell className={`inline mr-1 ${getBellColor(alerts)}`} />
-                    <span className={alerts.length === 0 ? "text-gray-400" : ""}>{notificationCount}</span>
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center space-x-4">
-              <div className="relative w-full sm:w-80">
+          <div className="w-full flex justify-between items-center px-4 py-3">
+            <div className="flex items-center space-x-2">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setShowFilterMenu(true)}
+                className="flex items-center space-x-1 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
+              >
+                <FaFilter className="text-blue-400" />
+                <span>Menu</span>
+              </motion.button>
+              <div className="relative w-full max-w-xs">
                 <div className="flex items-center bg-gray-900 rounded-lg px-3 py-2 border border-blue-500/30 w-full h-9 shadow-sm">
                   <FaSearch className="text-gray-400 mr-2" />
                   <input
@@ -1432,7 +1448,7 @@ export default function TokenScreener() {
                     onChange={(e) => debouncedSetSearchQuery(e.target.value)}
                     onFocus={() => setShowSearchDropdown(true)}
                     onBlur={() => setTimeout(() => setShowSearchDropdown(false), 200)}
-                    className="bg-transparent text-gray-200 focus:outline-none text-sm font-sans w-full p-1 touch-friendly h-6 placeholder-gray-400 uppercase"
+                    className="bg-transparent text-gray-200 focus:outline-none text-sm font-sans w-full p-1 h-6 placeholder-gray-400 uppercase"
                   />
                 </div>
                 {showSearchDropdown && searchSuggestions.length > 0 && (
@@ -1465,6 +1481,8 @@ export default function TokenScreener() {
                   </div>
                 )}
               </div>
+            </div>
+            <div className="hidden sm:flex items-center space-x-4">
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -1472,7 +1490,7 @@ export default function TokenScreener() {
                 className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
               >
                 <FaBolt className="text-blue-400" />
-                <span>[Boost Info]</span>
+                <span>Boost Info</span>
               </motion.button>
               <motion.button
                 whileHover={{ scale: 1.05 }}
@@ -1481,7 +1499,7 @@ export default function TokenScreener() {
                 className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
               >
                 <FaPlusCircle className="text-blue-400" />
-                <span>[Submit Listing]</span>
+                <span>Submit Listing</span>
               </motion.button>
               <motion.button
                 whileHover={{ scale: 1.05 }}
@@ -1490,7 +1508,7 @@ export default function TokenScreener() {
                 className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
               >
                 <FaUser className="text-gray-200" />
-                <span>[Account]</span>
+                <span>Account</span>
               </motion.button>
               <motion.button
                 whileHover={{ scale: 1.05 }}
@@ -1498,137 +1516,225 @@ export default function TokenScreener() {
                 onClick={handleReturn}
                 className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
               >
-                <span>[Return]</span>
+                <span>Return</span>
               </motion.button>
             </div>
           </div>
         </div>
 
-        <div className="bg-gray-900 p-3 sm:p-4 flex flex-col sm:flex-row gap-3 sm:gap-4 border-b border-blue-500/30 shadow-inner">
-          <div className="flex flex-col sm:flex-row gap-2 w-full items-center">
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              onClick={() => setViewMode("all")}
-              className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
-                viewMode === "all" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
-              }`}
-              title="All Tokens"
-            >
-              All Tokens
-            </motion.button>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              onClick={() => setViewMode("favorites")}
-              className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
-                viewMode === "favorites" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
-              }`}
-              title="Favorites"
-            >
-              Favorites
-            </motion.button>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              onClick={() => setViewMode("baseAI")}
-              className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
-                viewMode === "baseAI" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
-              }`}
-              title="Base AI Index"
-            >
-              Base AI Index
-            </motion.button>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              onClick={() => setViewMode("alerts")}
-              className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
-                viewMode === "alerts" ? "bg-red-500/20 text-red-400" : "bg-gray-900 hover:bg-gray-800"
-              }`}
-              title="Alerts"
-            >
-              Alerts
-            </motion.button>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              onClick={() => setViewMode("new")}
-              className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
-                viewMode === "new" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
-              }`}
-              title="New Tokens"
-            >
-              New Tokens
-            </motion.button>
-            <motion.button
-              disabled
-              className="p-2 text-gray-400 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 bg-gray-900 opacity-50 cursor-not-allowed truncate uppercase"
-              title="New Pairs v2 (Locked)"
-            >
-              New Pairs v2
-            </motion.button>
+        {/* Filter & ViewMode Overlay (Mobile full-page) */}
+        {showFilterMenu && (
+          <div className="fixed inset-0 bg-gray-900 z-50 overflow-y-auto">
+            <div className="p-4 relative">
+              <button
+                onClick={() => setShowFilterMenu(false)}
+                className="absolute top-4 right-4 text-gray-200 text-xl font-bold"
+              >
+                ×
+              </button>
+              <h2 className="text-lg font-bold text-gray-200 mb-4 uppercase">Menu</h2>
+              {/* ViewMode Buttons */}
+              <div className="grid grid-cols-2 gap-3 mb-6">
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  onClick={() => {
+                    setViewMode("all");
+                    setShowFilterMenu(false);
+                  }}
+                  className={`p-3 text-gray-200 rounded-lg text-base font-sans transition-colors border border-blue-500/30 uppercase ${
+                    viewMode === "all" ? "bg-blue-500/20 text-blue-400" : "bg-gray-800 hover:bg-gray-700"
+                  }`}
+                >
+                  All Tokens
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  onClick={() => {
+                    setViewMode("favorites");
+                    setShowFilterMenu(false);
+                  }}
+                  className={`p-3 text-gray-200 rounded-lg text-base font-sans transition-colors border border-blue-500/30 uppercase ${
+                    viewMode === "favorites"
+                      ? "bg-blue-500/20 text-blue-400"
+                      : "bg-gray-800 hover:bg-gray-700"
+                  }`}
+                >
+                  Favorites
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  onClick={() => {
+                    setViewMode("baseAI");
+                    setShowFilterMenu(false);
+                  }}
+                  className={`p-3 text-gray-200 rounded-lg text-base font-sans transition-colors border border-blue-500/30 uppercase ${
+                    viewMode === "baseAI"
+                      ? "bg-blue-500/20 text-blue-400"
+                      : "bg-gray-800 hover:bg-gray-700"
+                  }`}
+                >
+                  Base AI Index
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  onClick={() => {
+                    setViewMode("alerts");
+                    setShowFilterMenu(false);
+                  }}
+                  className={`p-3 text-gray-200 rounded-lg text-base font-sans transition-colors border border-blue-500/30 uppercase ${
+                    viewMode === "alerts" ? "bg-red-500/20 text-red-400" : "bg-gray-800 hover:bg-gray-700"
+                  }`}
+                >
+                  Alerts
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  onClick={() => {
+                    setViewMode("new");
+                    setShowFilterMenu(false);
+                  }}
+                  className={`p-3 text-gray-200 rounded-lg text-base font-sans transition-colors border border-blue-500/30 uppercase ${
+                    viewMode === "new" ? "bg-blue-500/20 text-blue-400" : "bg-gray-800 hover:bg-gray-700"
+                  }`}
+                >
+                  New Tokens
+                </motion.button>
+                <motion.button
+                  disabled
+                  className="p-3 text-gray-400 rounded-lg text-base font-sans transition-colors border border-blue-500/30 bg-gray-800 opacity-50 cursor-not-allowed truncate uppercase"
+                >
+                  New Pairs v2
+                </motion.button>
+              </div>
 
-            {/* Mobile Filters (Dropdowns) */}
-            <div className="sm:hidden flex flex-col gap-2 w-full">
-              <select
-                value={filters.minLiquidity || 0}
-                onChange={(e) => setFilters({ ...filters, minLiquidity: Number(e.target.value) })}
-                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
-                title="Minimum Liquidity ($)"
+              {/* Filter Inputs */}
+              <div className="grid grid-cols-1 gap-4 mb-6">
+                <div>
+                  <label className="block mb-1 text-gray-400 uppercase text-sm font-sans">Min Liq ($)</label>
+                  <input
+                    type="number"
+                    placeholder="Any"
+                    value={filters.minLiquidity || ""}
+                    onChange={(e) => setFilters({ ...filters, minLiquidity: Number(e.target.value) })}
+                    className="w-full p-3 bg-gray-800 text-gray-200 border border-blue-500/30 rounded-lg text-base font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                  />
+                </div>
+                <div>
+                  <label className="block mb-1 text-gray-400 uppercase text-sm font-sans">Min Vol ($)</label>
+                  <input
+                    type="number"
+                    placeholder="Any"
+                    value={filters.minVolume || ""}
+                    onChange={(e) => setFilters({ ...filters, minVolume: Number(e.target.value) })}
+                    className="w-full p-3 bg-gray-800 text-gray-200 border border-blue-500/30 rounded-lg text-base font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                  />
+                </div>
+                <div>
+                  <label className="block mb-1 text-gray-400 uppercase text-sm font-sans">Min Age (d)</label>
+                  <input
+                    type="number"
+                    placeholder="Any"
+                    value={filters.minAge || ""}
+                    onChange={(e) => setFilters({ ...filters, minAge: Number(e.target.value) })}
+                    className="w-full p-3 bg-gray-800 text-gray-200 border border-blue-500/30 rounded-lg text-base font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                  />
+                </div>
+                <div>
+                  <label className="block mb-1 text-gray-400 uppercase text-sm font-sans">Max Age (d)</label>
+                  <input
+                    type="number"
+                    placeholder="Any"
+                    value={filters.maxAge === Infinity ? "" : filters.maxAge}
+                    onChange={(e) =>
+                      setFilters({
+                        ...filters,
+                        maxAge: e.target.value ? Number(e.target.value) : Infinity,
+                      })
+                    }
+                    className="w-full p-3 bg-gray-800 text-gray-200 border border-blue-500/30 rounded-lg text-base font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end space-x-2">
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => {
+                    setShowFilterMenu(false);
+                  }}
+                  className="bg-gray-800 hover:bg-gray-700 text-gray-200 py-3 px-6 rounded-lg font-sans uppercase border border-blue-500/30"
+                >
+                  Apply
+                </motion.button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Desktop Filter Bar & ViewMode Tabs */}
+        {!showFilterMenu && (
+          <div className="hidden sm:flex bg-gray-900 p-3 sm:p-4 flex-col sm:flex-row gap-3 sm:gap-4 border-b border-blue-500/30 shadow-inner">
+            <div className="flex flex-col sm:flex-row gap-2 w-full items-center">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                onClick={() => setViewMode("all")}
+                className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
+                  viewMode === "all" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
+                }`}
               >
-                <option value={0}>Min Liq ($): Any</option>
-                <option value={1000}>$1,000</option>
-                <option value={5000}>$5,000</option>
-                <option value={10000}>$10,000</option>
-                <option value={50000}>$50,000</option>
-              </select>
-              <select
-                value={filters.minVolume || 0}
-                onChange={(e) => setFilters({ ...filters, minVolume: Number(e.target.value) })}
-                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
-                title="Minimum Volume ($)"
+                All Tokens
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                onClick={() => setViewMode("favorites")}
+                className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
+                  viewMode === "favorites" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
+                }`}
               >
-                <option value={0}>Min Vol ($): Any</option>
-                <option value={1000}>$1,000</option>
-                <option value={5000}>$5,000</option>
-                <option value={10000}>$10,000</option>
-                <option value={50000}>$50,000</option>
-              </select>
-              <select
-                value={filters.minAge || 0}
-                onChange={(e) => setFilters({ ...filters, minAge: Number(e.target.value) })}
-                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
-                title="Minimum Age (days)"
+                Favorites
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                onClick={() => setViewMode("baseAI")}
+                className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
+                  viewMode === "baseAI" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
+                }`}
               >
-                <option value={0}>Min Age (d): Any</option>
-                                <option value={1}>1 day</option>
-                <option value={7}>7 days</option>
-                <option value={30}>30 days</option>
-                <option value={90}>90 days</option>
-              </select>
-              <select
-                value={filters.maxAge === Infinity ? "Infinity" : filters.maxAge}
-                onChange={(e) =>
-                  setFilters({
-                    ...filters,
-                    maxAge: e.target.value === "Infinity" ? Infinity : Number(e.target.value),
-                  })
-                }
-                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
-                title="Maximum Age (days)"
+                Base AI Index
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                onClick={() => setViewMode("alerts")}
+                className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
+                  viewMode === "alerts" ? "bg-red-500/20 text-red-400" : "bg-gray-900 hover:bg-gray-800"
+                }`}
               >
-                <option value="Infinity">Max Age (d): Any</option>
-                <option value={1}>1 day</option>
-                <option value={7}>7 days</option>
-                <option value={30}>30 days</option>
-                <option value={90}>90 days</option>
-              </select>
+                Alerts
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                onClick={() => setViewMode("new")}
+                className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
+                  viewMode === "new" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
+                }`}
+              >
+                New Tokens
+              </motion.button>
+              <motion.button
+                disabled
+                className="p-2 text-gray-400 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 bg-gray-900 opacity-50 cursor-not-allowed truncate uppercase"
+              >
+                New Pairs v2
+              </motion.button>
             </div>
 
-            {/* Desktop Filters (Inputs) */}
             <div className="hidden sm:flex gap-2">
               <input
                 type="number"
                 placeholder="Min Liq ($)"
                 value={filters.minLiquidity || ""}
                 onChange={(e) => setFilters({ ...filters, minLiquidity: Number(e.target.value) })}
-                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm sm:text-base w-full sm:w-32 font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                className="p-2 bg-gray-800 text-gray-200 border border-blue-500/30 rounded-lg text-sm sm:text-base w-full sm:w-32 font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
                 title="Minimum Liquidity ($)"
               />
               <input
@@ -1636,7 +1742,7 @@ export default function TokenScreener() {
                 placeholder="Min Vol ($)"
                 value={filters.minVolume || ""}
                 onChange={(e) => setFilters({ ...filters, minVolume: Number(e.target.value) })}
-                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm sm:text-base w-full sm:w-32 font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                className="p-2 bg-gray-800 text-gray-200 border border-blue-500/30 rounded-lg text-sm sm:text-base w-full sm:w-32 font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
                 title="Minimum Volume ($)"
               />
               <input
@@ -1644,7 +1750,7 @@ export default function TokenScreener() {
                 placeholder="Min Age (d)"
                 value={filters.minAge || ""}
                 onChange={(e) => setFilters({ ...filters, minAge: Number(e.target.value) })}
-                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm sm:text-base w-full sm:w-32 font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                className="p-2 bg-gray-800 text-gray-200 border border-blue-500/30 rounded-lg text-sm sm:text-base w-full sm:w-32 font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
                 title="Minimum Age (days)"
               />
               <input
@@ -1657,14 +1763,15 @@ export default function TokenScreener() {
                     maxAge: e.target.value ? Number(e.target.value) : Infinity,
                   })
                 }
-                className="p-2 bg-gray-900 text-gray-200 border border-blue-500/30 rounded-lg text-sm sm:text-base w-full sm:w-32 font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                className="p-2 bg-gray-800 text-gray-200 border border-blue-500/30 rounded-lg text-sm sm:text-base w-full sm:w-32 font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
                 title="Maximum Age (days)"
               />
             </div>
           </div>
-        </div>
+        )}
 
-        {viewMode === "baseAI" && (
+        {/* Base AI Index Cards */}
+        {!showFilterMenu && viewMode === "baseAI" && (
           <div className="bg-gray-900 p-4 border-b border-blue-500/30 shadow-inner">
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
               <div className="bg-gray-900 p-3 rounded-lg border border-blue-500/30 shadow-sm">
@@ -1693,10 +1800,11 @@ export default function TokenScreener() {
           </div>
         )}
 
-        <div className="flex-1 flex flex-col overflow-x-auto overflow-y-auto">
+        {/* Main Table or Alerts Feed */}
+        <div className="flex-1 flex flex-col w-full h-full overflow-x-auto overflow-y-auto">
           {loading ? (
-            <div className="p-4">
-              <table className="table-auto w-full whitespace-nowrap text-sm font-sans uppercase">
+            <div className="w-full h-full overflow-auto">
+              <table className="table-auto w-full h-full whitespace-nowrap text-sm font-sans uppercase">
                 <thead className="bg-gray-900 text-gray-400 sticky top-0 z-10 border-b border-blue-500/30">
                   <tr>
                     <th className="p-3 text-left" title="Rank by trending score">
@@ -1751,7 +1859,7 @@ export default function TokenScreener() {
               </table>
             </div>
           ) : filteredTokens.length === 0 && viewMode !== "alerts" ? (
-            <div className="p-4 text-center text-gray-400 font-sans uppercase">
+            <div className="p-4 text-center text-gray-400 font-sans uppercase w-full h-full flex items-center justify-center">
               No tokens match your filters. Try adjusting filters or check Firebase data.
             </div>
           ) : viewMode === "alerts" ? (
@@ -1774,7 +1882,6 @@ export default function TokenScreener() {
                         ? "text-green-500"
                         : "text-red-500";
 
-                    // Extract the numeric part (e.g., % change or $ spike) for coloring
                     const messageParts = alert.message.split(/(\d+\.?\d*)/);
                     const formattedMessage = messageParts.map((part, index) => {
                       if (/^\d+\.?\d*$/.test(part)) {
@@ -1937,7 +2044,7 @@ export default function TokenScreener() {
                         return (
                           <motion.tr
                             key={token.pairAddress}
-                            className="border-b border-blue-500/30 hover:bg-gradient-to-r hover:from-gray-900 hover:to-gray-800 transition-colors duration-200"
+                            className="border-b border-blue-500/30 hover:bg-gray-800 transition-colors duration-200"
                             variants={rowVariants}
                             initial="hidden"
                             animate="visible"
@@ -2162,7 +2269,7 @@ export default function TokenScreener() {
                         return (
                           <motion.tr
                             key={token.pairAddress}
-                            className="border-b border-blue-500/30 hover:bg-gradient-to-r hover:from-gray-900 hover:to-gray-800 transition-colors duration-200"
+                            className="border-b border-blue-500/30 hover:bg-gray-800 transition-colors duration-200"
                             variants={rowVariants}
                             initial="hidden"
                             animate="visible"
@@ -2327,3 +2434,5 @@ export default function TokenScreener() {
     </div>
   );
 }
+
+

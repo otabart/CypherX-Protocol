@@ -1,3 +1,4 @@
+// components/TrendingWidget.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -16,7 +17,7 @@ type TrendingToken = {
   imageUrl: string;
   trendingScore: number;
   pairAddress: string;
-  baseToken?: { address: string }; // Add baseToken for address mapping
+  baseToken?: { address: string };
 };
 
 export default function TrendingWidget() {
@@ -108,10 +109,10 @@ export default function TrendingWidget() {
           animation-play-state: paused;
         }
         .card:not(:last-child) {
-          border-right: 1px solid rgba(59, 130, 246, 0.3); /* Thin separator line */
+          border-right: 1px solid rgba(59, 130, 246, 0.3);
         }
       `}</style>
-      <div className="container mx-auto px-4 h-full">
+      <div className="w-full h-full">
         <div className="scroll-container">
           {duplicatedTokens.map((token, index) => {
             // Compute the rank (1-10) based on the original list index
@@ -119,8 +120,8 @@ export default function TrendingWidget() {
 
             return (
               <Link
-                key={`${token.pairAddress}-${index}`} // Unique key for duplicated items
-                href={`/token-scanner/${token.pairAddress}/chart`} // Temporary href, updated below
+                key={`${token.pairAddress}-${index}`}
+                href={`/token-scanner/${token.pairAddress}/chart`}
                 onClick={async (e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) => {
                   e.preventDefault();
                   const tokenAddress = token.baseToken?.address || token.pairAddress;
