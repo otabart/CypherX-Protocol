@@ -1,149 +1,95 @@
-// Removed unused NextRequest import
-import { NextResponse } from 'next/server';
+import { NextResponse } from "next/server";
 
-// Define the TokenData type (same as in Indexes.tsx)
 type TokenData = {
   pairAddress: string;
-  baseToken: {
-    address: string;
-    name: string;
-    symbol: string;
-  };
+  baseToken: { address: string; name: string; symbol: string };
   priceUsd: string;
-  priceChange?: {
-    h24?: number;
-  };
-  volume?: {
-    h24: number;
-  };
+  priceChange?: { h24: number };
+  volume?: { h24: number };
   marketCap?: number;
-  info?: {
-    imageUrl?: string;
-  };
+  info?: { imageUrl: string };
 };
 
-// Helper function to fetch data from DEX Screener
-async function fetchDexScreenerData(chainId: string, tokenAddresses: string[]): Promise<TokenData[]> {
-  try {
-    const url = `https://api.dexscreener.com/tokens/v1/${chainId}/${tokenAddresses.join(',')}`;
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-    });
+const isValidAddress = (address: string): boolean => {
+  return /^0x[a-fA-F0-9]{40}$/.test(address);
+};
 
-    if (!response.ok) {
-      throw new Error(`DEX Screener API request failed with status ${response.status}`);
+async function fetchDexScreenerData(
+  chainId: string,
+  pairAddresses: string[]
+): Promise<TokenData[]> {
+  try {
+    const validAddresses = pairAddresses.filter(isValidAddress);
+    if (!validAddresses.length) {
+      console.warn("[06/25/2025 08:10 AM PDT] No valid pair addresses provided to DEX Screener.");
+      return [];
     }
 
-    const data: any[] = await response.json();
-    console.log('DEX Screener Response:', data); // Log for debugging
+    const url = `${process.env.NEXT_PUBLIC_DEXSCREENER_API_URL}/latest/pairs/${chainId}/${validAddresses.join(",")}`;
+    console.log("[06/25/2025 08:10 AM PDT] Fetching DEX Screener data from:", url);
 
-    // Map DEX Screener response to TokenData
-    return data
-      .filter((pair) => pair.baseToken && pair.priceUsd) // Ensure required fields exist
-      .map((pair) => ({
-        pairAddress: pair.pairAddress,
-        baseToken: {
-          address: pair.baseToken.address,
-          name: pair.baseToken.name,
-          symbol: pair.baseToken.symbol,
-        },
-        priceUsd: pair.priceUsd.toString(),
-        priceChange: pair.priceChange ? { h24: pair.priceChange.h24 } : undefined,
-        volume: pair.volume ? { h24: pair.volume.h24 } : undefined,
-        marketCap: pair.marketCap,
-        info: pair.info?.imageUrl ? { imageUrl: pair.info.imageUrl } : undefined,
-      }));
-  } catch (error) {
-    console.error('Error fetching from DEX Screener:', error);
-    return [];
-  }
-}
-
-// Helper function to fetch data from CoinGecko as a fallback
-async function fetchCoinGeckoData(chainId: string, tokenAddress: string): Promise<TokenData | null> {
-  try {
-    const url = `https://api.coingecko.com/api/v3/coins/${chainId}/contract/${tokenAddress}`;
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+    const res = await fetch(url, {
+      headers: { "Content-Type": "application/json" },
     });
 
-    if (!response.ok) {
-      throw new Error(`CoinGecko API request failed with status ${response.status}`);
+    if (!res.ok) {
+      console.error("[06/25/2025 08:10 AM PDT] DEX Screener request failed:", res.status, res.statusText);
+      return [];
     }
 
-    const data: any = await response.json();
-    console.log(`CoinGecko Response for ${tokenAddress}:`, data); // Log for debugging
+    const raw = await res.json();
+    console.log("[06/25/2025 08:10 AM PDT] DEX Screener raw response:", JSON.stringify(raw, null, 2));
 
-    return {
-      pairAddress: tokenAddress, // Use token address as pairAddress since CoinGecko doesn't provide it
+    if (!raw.pairs || !Array.isArray(raw.pairs)) {
+      console.warn("[06/25/2025 08:10 AM PDT] DEX Screener response has no pairs or is not an array.");
+      return [];
+    }
+
+    const pairs = raw.pairs as { pairAddress: string; baseToken: { address: string; name: string; symbol: string }; priceUsd: number; priceChange: { h24: number }; volume: { h24: number }; marketCap: number; logoUrl?: string }[];
+    console.log("[06/25/2025 08:10 AM PDT] Processed pairs:", pairs.length);
+
+    return pairs.map((p) => ({
+      pairAddress: p.pairAddress.toLowerCase(),
       baseToken: {
-        address: tokenAddress,
-        name: data.name,
-        symbol: data.symbol,
+        address: p.baseToken.address,
+        name: p.baseToken.name || "Unknown",
+        symbol: p.baseToken.symbol || "UNK",
       },
-      priceUsd: data.market_data.current_price.usd.toString(),
-      priceChange: { h24: data.market_data.price_change_percentage_24h },
-      volume: { h24: data.market_data.total_volume.usd },
-      marketCap: data.market_data.market_cap.usd,
-      info: data.image?.small ? { imageUrl: data.image.small } : undefined,
-    };
-  } catch (error) {
-    console.error(`Error fetching from CoinGecko for ${tokenAddress}:`, error);
-    return null;
+      priceUsd: p.priceUsd ? String(p.priceUsd) : "0",
+      priceChange: p.priceChange ? { h24: p.priceChange.h24 || 0 } : undefined,
+      volume: p.volume ? { h24: p.volume.h24 || 0 } : undefined,
+      marketCap: p.marketCap || 0,
+      info: p.logoUrl ? { imageUrl: p.logoUrl } : undefined,
+    }));
+  } catch (err) {
+    console.error("[06/25/2025 08:10 AM PDT] fetchDexScreenerData error:", err);
+    return [];
   }
 }
 
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
-    const searchParams = url.searchParams;
-    const chainId = searchParams.get('chainId');
-    const tokenAddresses = searchParams.get('tokenAddresses');
+    const chainId = url.searchParams.get("chainId") ?? "";
+    const tokenAddresses = url.searchParams.get("tokenAddresses") ?? "";
 
-    if (!chainId || !tokenAddresses) {
-      return NextResponse.json(
-        { error: 'Missing chainId or tokenAddresses query parameters' },
-        { status: 400 }
-      );
+    if (chainId !== "base" || !tokenAddresses) {
+      console.warn("[06/25/2025 08:10 AM PDT] Invalid query params:", { chainId, tokenAddresses });
+      return NextResponse.json({ error: "Missing or unsupported query params" }, { status: 400 });
     }
 
-    if (chainId !== 'base') {
-      return NextResponse.json(
-        { error: 'Unsupported chainId. Only "base" is supported.' },
-        { status: 400 }
-      );
-    }
+    const addresses = tokenAddresses.split(",").map((a) => a.trim().toLowerCase());
+    console.log("[06/25/2025 08:10 AM PDT] Processing addresses:", addresses);
 
-    const addresses = tokenAddresses.split(',').map((addr) => addr.toLowerCase());
+    const tokenData = await fetchDexScreenerData(chainId, addresses);
+    console.log("[06/25/2025 08:10 AM PDT] Returning token data:", tokenData);
 
-    // Step 1: Fetch data from DEX Screener (supports up to 30 addresses at once)
-    let tokenData: TokenData[] = await fetchDexScreenerData(chainId, addresses);
-
-    // Step 2: Identify tokens that weren't found in DEX Screener
-    const foundAddresses = new Set(tokenData.map((token) => token.baseToken.address.toLowerCase()));
-    const missingAddresses = addresses.filter((addr) => !foundAddresses.has(addr));
-
-    // Step 3: Fetch missing tokens from CoinGecko
-    if (missingAddresses.length > 0) {
-      const coinGeckoPromises = missingAddresses.map((addr) => fetchCoinGeckoData(chainId, addr));
-      const coinGeckoResults = await Promise.all(coinGeckoPromises);
-      const validCoinGeckoData = coinGeckoResults.filter((result): result is TokenData => result !== null);
-      tokenData = [...tokenData, ...validCoinGeckoData];
-    }
-
-    // Step 4: Filter to ensure we only return data for requested addresses
-    tokenData = tokenData.filter((token) =>
-      addresses.includes(token.baseToken.address.toLowerCase())
-    );
-
-    return NextResponse.json(tokenData, { status: 200 });
-  } catch (error) {
-    console.error('Error in /api/indexes:', error);
-    return NextResponse.json(
-      { error: 'Internal Server Error' },
-      { status: 500 }
-    );
+    return NextResponse.json(tokenData);
+  } catch (err) {
+    console.error("[06/25/2025 08:10 AM PDT] Error in /api/indexes:", err);
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
+
+
+

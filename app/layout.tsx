@@ -1,5 +1,5 @@
 import './globals.css';
-import { Providers } from './providers.tsx';
+import { Providers } from './providers';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -17,7 +17,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="geist antialiased">
-        <Providers>{children}</Providers>
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   );

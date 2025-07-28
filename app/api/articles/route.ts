@@ -1,6 +1,6 @@
 // app/api/articles/route.ts
-import { NextResponse, NextRequest } from 'next/server';
-import { db } from '@/firebase';                  // adjust to your import path
+import { NextResponse } from 'next/server'; // Removed NextRequest from import
+import { db } from '@/lib/firebase'; // Updated import path
 import {
   collection,
   addDoc,
@@ -18,7 +18,7 @@ interface ArticleData {
   source: string;
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) { // Changed to Request type
   try {
     const body = (await request.json()) as ArticleData;
     const { title, content, author, source } = body;
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    let baseSlug = slugify(title, { lower: true, strict: true });
+    const baseSlug = slugify(title, { lower: true, strict: true }); // Changed to const
     let slug = baseSlug;
     let counter = 1;
 

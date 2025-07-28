@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { collection, query, orderBy, onSnapshot, Timestamp } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, Timestamp, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import {
   FaShareAlt,
@@ -9,12 +9,12 @@ import {
   FaSort,
   FaCoins,
   FaExchangeAlt,
-  FaStore,
   FaClock,
   FaDollarSign,
   FaPercent,
   FaAngleLeft,
   FaAngleRight,
+  FaSyncAlt,
 } from "react-icons/fa";
 import { GiWhaleTail } from "react-icons/gi";
 import { motion, AnimatePresence } from "framer-motion";
@@ -39,13 +39,22 @@ interface WhaleTx {
   timestamp: number;
   hash: string;
   eventType: "Transfer" | "Swap";
+  swapType?: "Buy" | "Sell" | "Swap";
+  percentSupply: number;
   swapDetails?: {
     amountIn: number;
     amountOut: number;
     tokenIn: string;
     tokenOut: string;
   };
-  percentSupply: number;
+}
+
+// Interface for token from Firestore
+interface Token {
+  address: string;
+  symbol: string;
+  name: string;
+  pool: string;
 }
 
 // Whale Icon with Animation
@@ -128,8 +137,8 @@ const TransactionRow: React.FC<TransactionRowProps> = ({
   const tx = transactions[index];
   return (
     <motion.div
-      style={style}
-      className="grid grid-cols-[1fr_1fr_1fr_0.5fr] sm:grid-cols-[1fr_0.8fr_1fr_1fr_0.8fr_0.8fr_1fr_0.3fr] gap-2 p-3 text-xs border-b border-[#1E2A44] hover:bg-[#2A3655] cursor-pointer transition-all w-full"
+      style={{ ...style, padding: "0 16px" }}
+      className="grid grid-cols-[1fr_1fr_1fr_0.5fr] sm:grid-cols-[1fr_1fr_1fr_1fr_1fr_1fr_1fr_0.5fr] gap-4 py-3 text-sm border-b border-[#1E2A44] hover:bg-[#2A3655] cursor-pointer transition-all w-full items-center"
       initial={{ opacity: 0, y: 15 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: index * 0.05 }}
@@ -141,24 +150,24 @@ const TransactionRow: React.FC<TransactionRowProps> = ({
         </div>
         <span className="font-bold text-[#66B0FF] truncate">{tx.tokenSymbol}</span>
       </div>
-      <span className={`${getTypeColor(getTransactionType(tx))} truncate`}>
+      <span className={`${getTypeColor(getTransactionType(tx))} truncate text-center`}>
         {getTransactionType(tx)}
       </span>
-      <span className="text-white truncate">
+      <span className="text-white truncate text-right">
         {tx.amountToken.toLocaleString(undefined, {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
         })}
       </span>
-      <span className="text-green-400 truncate sm:block hidden">
+      <span className="text-green-400 truncate text-right sm:block hidden">
         ${tx.amountUSD.toLocaleString(undefined, {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
         })}
       </span>
-      <span className="text-white truncate sm:block hidden">{tx.percentSupply.toFixed(2)}%</span>
-      <span className="text-white truncate sm:block hidden">{tx.source}</span>
-      <span className="text-gray-400 truncate sm:block hidden">{new Date(tx.timestamp).toLocaleString()}</span>
+      <span className="text-white truncate text-right sm:block hidden">{tx.percentSupply.toFixed(2)}%</span>
+      <span className="text-white truncate text-center sm:block hidden">{tx.source}</span>
+      <span className="text-gray-400 truncate text-right sm:block hidden">{new Date(tx.timestamp).toLocaleString()}</span>
       <motion.button
         onClick={(e) => {
           e.stopPropagation();
@@ -177,11 +186,13 @@ const TransactionRow: React.FC<TransactionRowProps> = ({
 export default function WhaleWatcherPage() {
   const [transactions, setTransactions] = useState<WhaleTx[]>([]);
   const [filteredTransactions, setFilteredTransactions] = useState<WhaleTx[]>([]);
+  const [tokens, setTokens] = useState<Token[]>([]);
+  const [tokenSuggestions, setTokenSuggestions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [tokenFilter, setTokenFilter] = useState("");
-  const [typeFilter, setTypeFilter] = useState<"all" | "Buy" | "Sell" | "Transfer" | "Swap">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "Buy" | "Sell" | "Transfer">("all");
   const [minUSD, setMinUSD] = useState("");
   const [maxUSD, setMaxUSD] = useState("");
   const [minVolume, setMinVolume] = useState("");
@@ -192,7 +203,6 @@ export default function WhaleWatcherPage() {
   const [isClient, setIsClient] = useState(false);
   const [page, setPage] = useState(1);
   const [minPercentage, setMinPercentage] = useState("");
-  const [exchangeFilter, setExchangeFilter] = useState<"all" | "Uniswap V3" | "Aerodrome" | "Base">("all");
   const [showFilters, setShowFilters] = useState(false);
   const [filterLoading, setFilterLoading] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(0);
@@ -214,7 +224,6 @@ export default function WhaleWatcherPage() {
     minVolume && `Min Volume: ${minVolume}`,
     timeFilter !== "all" && `Time: Last ${timeFilter}`,
     minPercentage && `Min %: ${minPercentage}%`,
-    exchangeFilter !== "all" && `Exchange: ${exchangeFilter}`,
   ].filter(Boolean);
 
   const debouncedSetTokenFilter = useCallback(
@@ -224,6 +233,46 @@ export default function WhaleWatcherPage() {
     }, 300),
     []
   );
+
+  // Fetch tokens for search suggestions
+  useEffect(() => {
+    const fetchTokens = async () => {
+      try {
+        const tokensSnapshot = await getDocs(collection(db, "tokens"));
+        const tokenList = tokensSnapshot.docs
+          .map((doc) => ({
+            address: doc.data().address,
+            symbol: doc.data().symbol,
+            name: doc.data().name || doc.data().symbol,
+            pool: doc.data().pool || "",
+          }))
+          .filter((token) => token.symbol && /^0x[a-fA-F0-9]{40}$/.test(token.address));
+        setTokens(tokenList);
+      } catch (err) {
+        console.error("Failed to fetch tokens for search:", err);
+      }
+    };
+    fetchTokens();
+  }, []);
+
+  // Update token suggestions based on search input
+  useEffect(() => {
+    if (tokenFilter) {
+      const fuse = new Fuse(tokens, {
+        keys: ["symbol", "name"],
+        threshold: 0.2, // Tighter match threshold for better accuracy
+        includeScore: true,
+        minMatchCharLength: 2, // Require at least 2 characters for search
+      });
+      const results = fuse
+        .search(tokenFilter)
+        .filter((result) => result.score! < 0.4) // Filter out low-confidence matches
+        .map((result) => result.item.symbol);
+      setTokenSuggestions(results.slice(0, 5));
+    } else {
+      setTokenSuggestions([]);
+    }
+  }, [tokenFilter, tokens]);
 
   useEffect(() => {
     const updateHeights = () => {
@@ -331,7 +380,7 @@ export default function WhaleWatcherPage() {
                 : new Date().getTime();
             return {
               id: doc.id,
-              tokenSymbol: data.tokenSymbol || "Unknown",
+              tokenSymbol: data.tokenSymbol || "UNKNOWN",
               tokenName: data.tokenName || "Unknown",
               tokenAddress: data.tokenAddress || "",
               amountToken: Number(data.amountToken) || 0,
@@ -343,12 +392,12 @@ export default function WhaleWatcherPage() {
               timestamp,
               hash: data.hash || "",
               eventType: data.eventType || "Transfer",
+              swapType: data.swapType,
               swapDetails: data.swapDetails,
               percentSupply: Number(data.percentSupply) || 0,
             };
           })
-          .filter((tx) => tx.tokenSymbol !== "TEST"); // Exclude test transactions
-        console.log("Fetched transactions:", txs); // Debug log
+          .filter((tx) => tx.tokenSymbol !== "TEST");
         setTransactions(txs);
         setLoading(false);
         setLastUpdated(new Date());
@@ -364,66 +413,67 @@ export default function WhaleWatcherPage() {
     return () => unsubscribe();
   }, [isClient]);
 
+  const applyFilters = useCallback(
+    debounce((txs: WhaleTx[]) => {
+      let filtered = [...txs];
+
+      if (tokenFilter) {
+        const fuse = new Fuse(txs, {
+          keys: ["tokenSymbol", "tokenName"],
+          threshold: 0.2,
+          includeScore: true,
+          minMatchCharLength: 2,
+        });
+        filtered = fuse
+          .search(tokenFilter)
+          .filter((result) => result.score! < 0.4)
+          .map((result) => result.item);
+      }
+      if (typeFilter !== "all") {
+        filtered = filtered.filter((tx) => getTransactionType(tx) === typeFilter);
+      }
+      if (minUSD) {
+        const min = parseFloat(minUSD);
+        if (!isNaN(min)) filtered = filtered.filter((tx) => tx.amountUSD >= min);
+      }
+      if (maxUSD) {
+        const max = parseFloat(maxUSD);
+        if (!isNaN(max)) filtered = filtered.filter((tx) => tx.amountUSD <= max);
+      }
+      if (minVolume) {
+        const min = parseFloat(minVolume);
+        if (!isNaN(min)) filtered = filtered.filter((tx) => tx.amountToken >= min);
+      }
+      const now = Date.now();
+      if (timeFilter === "hour") {
+        filtered = filtered.filter((tx) => now - tx.timestamp <= 60 * 60 * 1000);
+      } else if (timeFilter === "day") {
+        filtered = filtered.filter((tx) => now - tx.timestamp <= 24 * 60 * 60 * 1000);
+      } else if (timeFilter === "week") {
+        filtered = filtered.filter((tx) => now - tx.timestamp <= 7 * 24 * 60 * 60 * 1000);
+      }
+      if (minPercentage) {
+        const min = parseFloat(minPercentage);
+        if (!isNaN(min)) filtered = filtered.filter((tx) => tx.percentSupply >= min);
+      }
+
+      filtered.sort((a, b) => {
+        const aValue = a[sortBy] ?? 0;
+        const bValue = b[sortBy] ?? 0;
+        return sortOrder === "asc" ? (aValue > bValue ? 1 : -1) : aValue < bValue ? 1 : -1;
+      });
+
+      setFilteredTransactions(filtered);
+      setPage(1);
+      setFilterLoading(false);
+    }, 300),
+    [tokenFilter, typeFilter, minUSD, maxUSD, minVolume, timeFilter, minPercentage, sortBy, sortOrder]
+  );
+
   useEffect(() => {
     if (!isClient) return;
     setFilterLoading(true);
-    let filtered = [...transactions];
-
-    if (tokenFilter) {
-      const fuse = new Fuse(transactions, {
-        keys: ["tokenSymbol", "tokenName"],
-        threshold: 0.3,
-      });
-      filtered = fuse.search(tokenFilter).map((result) => result.item);
-    }
-    if (typeFilter !== "all") {
-      filtered = filtered.filter((tx) => getTransactionType(tx) === typeFilter);
-    }
-    if (minUSD) {
-      const min = parseFloat(minUSD);
-      if (!isNaN(min)) {
-        filtered = filtered.filter((tx) => tx.amountUSD >= min);
-      }
-    }
-    if (maxUSD) {
-      const max = parseFloat(maxUSD);
-      if (!isNaN(max)) {
-        filtered = filtered.filter((tx) => tx.amountUSD <= max);
-      }
-    }
-    if (minVolume) {
-      const min = parseFloat(minVolume);
-      if (!isNaN(min)) {
-        filtered = filtered.filter((tx) => tx.amountToken >= min);
-      }
-    }
-    const now = Date.now();
-    if (timeFilter === "hour") {
-      filtered = filtered.filter((tx) => now - tx.timestamp <= 60 * 60 * 1000);
-    } else if (timeFilter === "day") {
-      filtered = filtered.filter((tx) => now - tx.timestamp <= 24 * 60 * 60 * 1000);
-    } else if (timeFilter === "week") {
-      filtered = filtered.filter((tx) => now - tx.timestamp <= 7 * 24 * 60 * 60 * 1000);
-    }
-    if (minPercentage) {
-      const min = parseFloat(minPercentage);
-      if (!isNaN(min)) {
-        filtered = filtered.filter((tx) => tx.percentSupply >= min);
-      }
-    }
-    if (exchangeFilter !== "all") {
-      filtered = filtered.filter((tx) => tx.source === exchangeFilter);
-    }
-
-    filtered.sort((a, b) => {
-      const aValue = a[sortBy] ?? 0;
-      const bValue = b[sortBy] ?? 0;
-      return sortOrder === "asc" ? (aValue > bValue ? 1 : -1) : aValue < bValue ? 1 : -1;
-    });
-
-    setFilteredTransactions(filtered);
-    setPage(1);
-    setTimeout(() => setFilterLoading(false), 300);
+    applyFilters(transactions);
   }, [
     transactions,
     tokenFilter,
@@ -432,11 +482,11 @@ export default function WhaleWatcherPage() {
     maxUSD,
     minVolume,
     timeFilter,
+    minPercentage,
     sortBy,
     sortOrder,
-    minPercentage,
-    exchangeFilter,
     isClient,
+    applyFilters,
   ]);
 
   const handleSort = (key: keyof WhaleTx) => {
@@ -449,15 +499,13 @@ export default function WhaleWatcherPage() {
   };
 
   const handleShare = (tx: WhaleTx) => {
-    const shareText = `🐳 Whale Transaction Alert: ${tx.tokenSymbol} - $${tx.amountUSD.toLocaleString()} (${
-      tx.eventType
-    }) at ${new Date(tx.timestamp).toLocaleString()} on ${tx.source}`;
+    const shareText = `🐳 Whale Alert: ${tx.tokenSymbol} - $${tx.amountUSD.toLocaleString()} (${getTransactionType(tx)}) at ${new Date(tx.timestamp).toLocaleString()} on ${tx.source} #WhaleAlert #Crypto`;
     if (navigator.share) {
       navigator
         .share({
           title: "Whale Transaction Alert",
           text: shareText,
-          url: `https://basescan.org/tx/${tx.hash}`,
+          url: `/explorer/tx/${tx.hash}`,
         })
         .catch((err) => console.error("Share failed:", err));
     } else if (navigator.clipboard) {
@@ -468,16 +516,59 @@ export default function WhaleWatcherPage() {
     }
   };
 
-  const handleResetFilters = () => {
-    setTokenFilter("");
-    setTypeFilter("all");
-    setMinUSD("");
-    setMaxUSD("");
-    setMinVolume("");
-    setTimeFilter("all");
-    setMinPercentage("");
-    setExchangeFilter("all");
-    debouncedSetTokenFilter("");
+  const handleRefreshData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/whale-watchers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startMonitoring: true }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const q = query(collection(db, "whaleTransactions"), orderBy("createdAt", "desc"));
+        const snapshot = await getDocs(q);
+        const txs: WhaleTx[] = snapshot.docs
+          .map((doc) => {
+            const data = doc.data();
+            const timestamp =
+              data.timestamp instanceof Timestamp
+                ? data.timestamp.toDate().getTime()
+                : typeof data.timestamp === "number"
+                ? data.timestamp
+                : new Date().getTime();
+            return {
+              id: doc.id,
+              tokenSymbol: data.tokenSymbol || "UNKNOWN",
+              tokenName: data.tokenName || "Unknown",
+              tokenAddress: data.tokenAddress || "",
+              amountToken: Number(data.amountToken) || 0,
+              amountUSD: Number(data.amountUSD) || 0,
+              blockNumber: Number(data.blockNumber) || 0,
+              fromAddress: data.fromAddress || "",
+              toAddress: data.toAddress || "",
+              source: data.source || "Unknown",
+              timestamp,
+              hash: data.hash || "",
+              eventType: data.eventType || "Transfer",
+              swapType: data.swapType,
+              swapDetails: data.swapDetails,
+              percentSupply: Number(data.percentSupply) || 0,
+            };
+          })
+          .filter((tx) => tx.tokenSymbol !== "TEST");
+        setTransactions(txs);
+        setLastUpdated(new Date());
+      } else {
+        throw new Error(data.error || "Refresh failed");
+      }
+    } catch (err) {
+      console.error("Refresh error:", err);
+      setError("Failed to refresh data. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const applyQuickFilter = (filter: {
@@ -492,13 +583,9 @@ export default function WhaleWatcherPage() {
     setTimeout(() => setFilterLoading(false), 300);
   };
 
-  const getTransactionType = (tx: WhaleTx): "Buy" | "Sell" | "Transfer" | "Swap" => {
-    if (tx.eventType === "Swap" && tx.swapDetails) {
-      const { tokenIn, tokenOut } = tx.swapDetails;
-      const stablecoinSymbols = ["USDC", "USDbC"];
-      if (stablecoinSymbols.includes(tokenIn)) return "Buy";
-      if (stablecoinSymbols.includes(tokenOut)) return "Sell";
-      return "Swap";
+  const getTransactionType = (tx: WhaleTx): "Buy" | "Sell" | "Transfer" => {
+    if (tx.eventType === "Swap" && tx.swapType) {
+      return tx.swapType;
     }
     return tx.eventType;
   };
@@ -510,7 +597,6 @@ export default function WhaleWatcherPage() {
       case "Buy":
         return "text-green-400";
       case "Transfer":
-      case "Swap":
         return "text-[#66B0FF]";
       default:
         return "text-gray-400";
@@ -535,7 +621,7 @@ export default function WhaleWatcherPage() {
   }
 
   return (
-    <div className="min-h-screen w-full bg-[#0A0F1C] text-white font-sans flex flex-col">
+    <div className="min-h-screen w-full bg-[#0A0F1C] text-white font-sans flex flex-col overflow-x-hidden">
       <style jsx global>{`
         html,
         body {
@@ -546,21 +632,21 @@ export default function WhaleWatcherPage() {
           overflow-x: hidden;
         }
         ::-webkit-scrollbar {
-          width: 6px;
+          width: 8px;
         }
         ::-webkit-scrollbar-track {
-          background: #0a0f1c;
+          background: #f1f1f1;
         }
         ::-webkit-scrollbar-thumb {
-          background: #66b0ff;
-          border-radius: 3px;
+          background: #888;
+          border-radius: 4px;
         }
         ::-webkit-scrollbar-thumb:hover {
-          background: #88cfff;
+          background: #555;
         }
         html {
           scrollbar-width: thin;
-          scrollbar-color: #66b0ff #0a0f1c;
+          scrollbar-color: #888 #f1f1f1;
         }
         @keyframes bounce {
           0%,
@@ -616,7 +702,7 @@ export default function WhaleWatcherPage() {
                   <FaTimes size={16} />
                 </motion.button>
               </div>
-              <div className="p-4 text-xs space-y-3">
+              <div className="p-4 text-sm space-y-3">
                 <div className="flex justify-between">
                   <span className="text-gray-400">Token:</span>
                   <span className="text-[#66B0FF] font-medium">{selectedTx.tokenSymbol}</span>
@@ -696,13 +782,13 @@ export default function WhaleWatcherPage() {
                     rel="noopener noreferrer"
                     className="text-[#66B0FF] hover:text-[#88CFFF] focus:ring-2 focus:ring-[#66B0FF] rounded"
                   >
-                    {selectedTx.fromAddress.slice(0, 6)}...{selectedTx.fromAddress.slice(-4)}
+                    {selectedTx.toAddress.slice(0, 6)}...{selectedTx.toAddress.slice(-4)}
                   </a>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Hash:</span>
                   <a
-                    href={`https://basescan.org/tx/${selectedTx.hash}`}
+                    href={`/explorer/tx/${selectedTx.hash}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-[#66B0FF] hover:text-[#88CFFF] focus:ring-2 focus:ring-[#66B0FF] rounded"
@@ -721,18 +807,18 @@ export default function WhaleWatcherPage() {
               </div>
               <div className="flex flex-col sm:flex-row gap-2 p-4 pt-0">
                 <motion.a
-                  href={`https://basescan.org/tx/${selectedTx.hash}`}
+                  href={`/explorer/tx/${selectedTx.hash}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex-1 px-4 py-2 bg-[#1652F0] hover:bg-[#66B0FF] text-white rounded-lg text-xs flex items-center justify-center gap-2 border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
+                  className="flex-1 px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm flex items-center justify-center gap-2 border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
-                  <FaShareAlt size={14} /> View on Basescan
+                  <FaShareAlt size={14} /> View on Explorer
                 </motion.a>
                 <motion.button
                   onClick={() => handleShare(selectedTx)}
-                  className="flex-1 px-4 py-2 bg-[#1652F0] hover:bg-[#66B0FF] text-white rounded-lg text-xs flex items-center justify-center gap-2 border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
+                  className="flex-1 px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm flex items-center justify-center gap-2 border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
@@ -740,7 +826,7 @@ export default function WhaleWatcherPage() {
                 </motion.button>
                 <motion.button
                   onClick={() => setSelectedTx(null)}
-                  className="flex-1 px-4 py-2 bg-[#1E2A44] hover:bg-[#2A3655] text-white rounded-lg text-xs border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
+                  className="flex-1 px-4 py-2 bg-[#1E2A44] hover:bg-[#2A3655] text-white rounded-lg text-sm border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
@@ -765,7 +851,7 @@ export default function WhaleWatcherPage() {
           <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight uppercase">Whale Watcher</h1>
         </div>
         <motion.button
-          className="sm:hidden px-4 py-2 bg-[#1652F0] hover:bg-[#66B0FF] text-white rounded-lg text-xs"
+          className="sm:hidden px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm"
           onClick={() => setShowFilters(true)}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
@@ -786,51 +872,42 @@ export default function WhaleWatcherPage() {
           <div className="relative group">
             <input
               type="text"
-              placeholder="Search Token"
+              placeholder="Search Token (e.g., WETH)"
               value={tokenFilter}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                 setFilterLoading(true);
                 debouncedSetTokenFilter(e.target.value);
               }}
-              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400 w-28"
+              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400 w-40"
+              list="token-suggestions"
               aria-label="Search by token symbol or name"
             />
             <FaCoins className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
+            <datalist id="token-suggestions">
+              {tokenSuggestions.map((suggestion) => (
+                <option key={suggestion} value={suggestion} />
+              ))}
+            </datalist>
           </div>
           <div className="relative group">
             <select
               value={typeFilter}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTypeFilter(e.target.value as "all" | "Buy" | "Sell" | "Transfer" | "Swap")}
-              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm"
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTypeFilter(e.target.value as "all" | "Buy" | "Sell" | "Transfer")}
+              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm w-32"
               aria-label="Filter by transaction type"
             >
               <option value="all">All Types</option>
               <option value="Buy">Buy</option>
               <option value="Sell">Sell</option>
               <option value="Transfer">Transfer</option>
-              <option value="Swap">Swap</option>
             </select>
             <FaExchangeAlt className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
           </div>
           <div className="relative group">
             <select
-              value={exchangeFilter}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setExchangeFilter(e.target.value as "all" | "Uniswap V3" | "Aerodrome" | "Base")}
-              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm"
-              aria-label="Filter by exchange"
-            >
-              <option value="all">All Exchanges</option>
-              <option value="Uniswap V3">Uniswap V3</option>
-              <option value="Aerodrome">Aerodrome</option>
-              <option value="Base">Base</option>
-            </select>
-            <FaStore className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
-          </div>
-          <div className="relative group">
-            <select
               value={timeFilter}
               onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTimeFilter(e.target.value as "all" | "hour" | "day" | "week")}
-              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm"
+              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm w-32"
               aria-label="Filter by time range"
             >
               <option value="all">All Time</option>
@@ -843,11 +920,22 @@ export default function WhaleWatcherPage() {
           <div className="relative group">
             <input
               type="number"
-              placeholder="Min USD"
+              placeholder="Min USD (4000)"
               value={minUSD}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMinUSD(e.target.value)}
-              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400 w-28"
+              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400 w-32"
               aria-label="Minimum USD value"
+            />
+            <FaDollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
+          </div>
+          <div className="relative group">
+            <input
+              type="number"
+              placeholder="Max USD"
+              value={maxUSD}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxUSD(e.target.value)}
+              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400 w-32"
+              aria-label="Maximum USD value"
             />
             <FaDollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
           </div>
@@ -857,7 +945,7 @@ export default function WhaleWatcherPage() {
               placeholder="Min Volume"
               value={minVolume}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMinVolume(e.target.value)}
-              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400 w-28"
+              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400 w-32"
               aria-label="Minimum token volume"
             />
             <FaCoins className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
@@ -865,22 +953,22 @@ export default function WhaleWatcherPage() {
           <div className="relative group">
             <input
               type="number"
-              placeholder="Min % Supply"
+              placeholder="Min % (0.05)"
               value={minPercentage}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMinPercentage(e.target.value)}
-              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400 w-28"
+              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400 w-32"
               aria-label="Minimum percentage of token supply"
             />
             <FaPercent className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
           </div>
         </div>
         <motion.button
-          onClick={handleResetFilters}
-          className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm flex items-center gap-2 border border-[#1E2A44] focus:ring-2 focus:ring-red-500 shadow-md"
+          onClick={handleRefreshData}
+          className="px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm flex items-center gap-2 border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
-          <FaTimes size={14} /> Reset
+          <FaSyncAlt size={14} /> Refresh
         </motion.button>
       </motion.div>
 
@@ -916,31 +1004,37 @@ export default function WhaleWatcherPage() {
               </div>
               <div className="space-y-4">
                 <div className="relative group">
-                  <label htmlFor="token-filter-mobile" className="text-xs text-gray-400 mb-1 block">
+                  <label htmlFor="token-filter-mobile" className="text-sm text-gray-400 mb-1 block">
                     Token
                   </label>
                   <input
                     id="token-filter-mobile"
                     type="text"
-                    placeholder="Search Token"
+                    placeholder="Search Token (e.g., WETH)"
                     value={tokenFilter}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                       setFilterLoading(true);
                       debouncedSetTokenFilter(e.target.value);
                     }}
                     className="w-full pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm"
+                    list="token-suggestions-mobile"
                     aria-label="Search by token symbol or name"
                   />
                   <FaCoins className="absolute left-3 top-9 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
+                  <datalist id="token-suggestions-mobile">
+                    {tokenSuggestions.map((suggestion) => (
+                      <option key={suggestion} value={suggestion} />
+                    ))}
+                  </datalist>
                 </div>
                 <div className="relative group">
-                  <label htmlFor="type-filter-mobile" className="text-xs text-gray-400 mb-1 block">
+                  <label htmlFor="type-filter-mobile" className="text-sm text-gray-400 mb-1 block">
                     Type
                   </label>
                   <select
                     id="type-filter-mobile"
                     value={typeFilter}
-                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTypeFilter(e.target.value as "all" | "Buy" | "Sell" | "Transfer" | "Swap")}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTypeFilter(e.target.value as "all" | "Buy" | "Sell" | "Transfer")}
                     className="w-full pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm"
                     aria-label="Filter by transaction type"
                   >
@@ -948,30 +1042,11 @@ export default function WhaleWatcherPage() {
                     <option value="Buy">Buy</option>
                     <option value="Sell">Sell</option>
                     <option value="Transfer">Transfer</option>
-                    <option value="Swap">Swap</option>
                   </select>
                   <FaExchangeAlt className="absolute left-3 top-9 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
                 </div>
                 <div className="relative group">
-                  <label htmlFor="exchange-filter-mobile" className="text-xs text-gray-400 mb-1 block">
-                    Exchange
-                  </label>
-                  <select
-                    id="exchange-filter-mobile"
-                    value={exchangeFilter}
-                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setExchangeFilter(e.target.value as "all" | "Uniswap V3" | "Aerodrome" | "Base")}
-                    className="w-full pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm"
-                    aria-label="Filter by exchange"
-                  >
-                    <option value="all">All Exchanges</option>
-                    <option value="Uniswap V3">Uniswap V3</option>
-                    <option value="Aerodrome">Aerodrome</option>
-                    <option value="Base">Base</option>
-                  </select>
-                  <FaStore className="absolute left-3 top-9 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
-                </div>
-                <div className="relative group">
-                  <label htmlFor="time-filter-mobile" className="text-xs text-gray-400 mb-1 block">
+                  <label htmlFor="time-filter-mobile" className="text-sm text-gray-400 mb-1 block">
                     Time Range
                   </label>
                   <select
@@ -989,13 +1064,13 @@ export default function WhaleWatcherPage() {
                   <FaClock className="absolute left-3 top-9 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
                 </div>
                 <div className="relative group">
-                  <label htmlFor="min-usd-mobile" className="text-xs text-gray-400 mb-1 block">
+                  <label htmlFor="min-usd-mobile" className="text-sm text-gray-400 mb-1 block">
                     Min USD
                   </label>
                   <input
                     id="min-usd-mobile"
                     type="number"
-                    placeholder="e.g., 1000"
+                    placeholder="e.g., 4000"
                     value={minUSD}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMinUSD(e.target.value)}
                     className="w-full pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400"
@@ -1004,7 +1079,22 @@ export default function WhaleWatcherPage() {
                   <FaDollarSign className="absolute left-3 top-9 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
                 </div>
                 <div className="relative group">
-                  <label htmlFor="min-volume-mobile" className="text-xs text-gray-400 mb-1 block">
+                  <label htmlFor="max-usd-mobile" className="text-sm text-gray-400 mb-1 block">
+                    Max USD
+                  </label>
+                  <input
+                    id="max-usd-mobile"
+                    type="number"
+                    placeholder="e.g., 100000"
+                    value={maxUSD}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxUSD(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400"
+                    aria-label="Maximum USD value"
+                  />
+                  <FaDollarSign className="absolute left-3 top-9 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
+                </div>
+                <div className="relative group">
+                  <label htmlFor="min-volume-mobile" className="text-sm text-gray-400 mb-1 block">
                     Min Volume
                   </label>
                   <input
@@ -1019,13 +1109,13 @@ export default function WhaleWatcherPage() {
                   <FaCoins className="absolute left-3 top-9 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
                 </div>
                 <div className="relative group">
-                  <label htmlFor="min-percentage-mobile" className="text-xs text-gray-400 mb-1 block">
+                  <label htmlFor="min-percentage-mobile" className="text-sm text-gray-400 mb-1 block">
                     Min % Supply
                   </label>
                   <input
                     id="min-percentage-mobile"
                     type="number"
-                    placeholder="e.g., 1"
+                    placeholder="e.g., 0.05"
                     value={minPercentage}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMinPercentage(e.target.value)}
                     className="w-full pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400"
@@ -1036,32 +1126,32 @@ export default function WhaleWatcherPage() {
               </div>
               <div className="flex flex-wrap gap-3 mt-4">
                 <motion.button
-                  onClick={() => applyQuickFilter({ minUSD: "1000", minVolume: "100" })}
-                  className="px-4 py-2 bg-[#1652F0] hover:bg-[#66B0FF] text-white rounded-lg text-xs border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
+                  onClick={() => applyQuickFilter({ minUSD: "4000", minVolume: "100" })}
+                  className="px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
-                  Low Value ($1K)
+                  Low Value ($4K)
                 </motion.button>
                 <motion.button
                   onClick={() => applyQuickFilter({ timeFilter: "hour" })}
-                  className="px-4 py-2 bg-[#1652F0] hover:bg-[#66B0FF] text-white rounded-lg text-xs border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
+                  className="px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
                   Last Hour
                 </motion.button>
                 <motion.button
-                  onClick={handleResetFilters}
-                  className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-xs flex items-center gap-2 border border-[#1E2A44] focus:ring-2 focus:ring-red-500 shadow-md"
+                  onClick={handleRefreshData}
+                  className="px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm flex items-center gap-2 border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
-                  <FaTimes size={14} /> Reset Filters
+                  <FaSyncAlt size={14} /> Refresh
                 </motion.button>
                 <motion.button
                   onClick={() => setShowFilters(false)}
-                  className="px-4 py-2 bg-[#1652F0] hover:bg-[#66B0FF] text-white rounded-lg text-xs border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
+                  className="px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
@@ -1087,11 +1177,11 @@ export default function WhaleWatcherPage() {
           animate={{ opacity: 1 }}
           transition={{ duration: 0.3 }}
         >
-          <span className="text-xs text-gray-400">Active Filters:</span>
+          <span className="text-sm text-gray-400">Active Filters:</span>
           {activeFilters.map((filter, index) => (
             <motion.span
               key={index}
-              className="px-2 py-1 bg-[#1652F0] text-white rounded-full text-xs"
+              className="px-2 py-1 bg-[#2A3655] text-white rounded-full text-xs"
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               transition={{ duration: 0.2, delay: index * 0.1 }}
@@ -1100,8 +1190,8 @@ export default function WhaleWatcherPage() {
             </motion.span>
           ))}
           <motion.button
-            onClick={handleResetFilters}
-            className="px-2 py-1 bg-red-500 text-white rounded-full text-xs flex items-center gap-1 focus:ring-2 focus:ring-red-500"
+            onClick={handleRefreshData}
+            className="px-2 py-1 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-full text-xs flex items-center gap-1 focus:ring-2 focus:ring-[#66B0FF]"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
           >
@@ -1160,10 +1250,10 @@ export default function WhaleWatcherPage() {
           transition={{ duration: 0.5 }}
         >
           <div
-            className="bg-[#1E2A44] text-gray-400 text-xs font-semibold uppercase border-b border-[#1E2A44] sticky z-10 shadow-md"
+            className="bg-[#1E2A44] text-gray-400 text-sm font-semibold uppercase border-b border-[#1E2A44] sticky z-10 shadow-md"
             style={{ top: `${calculateTableHeaderTop()}px` }}
           >
-            <div className="grid grid-cols-[1fr_1fr_1fr_0.5fr] sm:grid-cols-[1fr_0.8fr_1fr_1fr_0.8fr_0.8fr_1fr_0.3fr] gap-2 p-3 items-center w-full">
+            <div className="grid grid-cols-[1fr_1fr_1fr_0.5fr] sm:grid-cols-[1fr_1fr_1fr_1fr_1fr_1fr_1fr_0.5fr] gap-4 px-4 py-3 items-center w-full">
               <button
                 onClick={() => handleSort("tokenSymbol")}
                 className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-left"
@@ -1175,7 +1265,7 @@ export default function WhaleWatcherPage() {
               </button>
               <button
                 onClick={() => handleSort("eventType")}
-                className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-left"
+                className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-center"
               >
                 Type
                 {sortBy === "eventType" && (
@@ -1184,7 +1274,7 @@ export default function WhaleWatcherPage() {
               </button>
               <button
                 onClick={() => handleSort("amountToken")}
-                className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-left"
+                className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-right"
               >
                 Amount
                 {sortBy === "amountToken" && (
@@ -1193,7 +1283,7 @@ export default function WhaleWatcherPage() {
               </button>
               <button
                 onClick={() => handleSort("amountUSD")}
-                className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-left sm:block hidden"
+                className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-right sm:block hidden"
               >
                 USD Value
                 {sortBy === "amountUSD" && (
@@ -1202,7 +1292,7 @@ export default function WhaleWatcherPage() {
               </button>
               <button
                 onClick={() => handleSort("percentSupply")}
-                className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-left sm:block hidden"
+                className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-right sm:block hidden"
               >
                 % Supply
                 {sortBy === "percentSupply" && (
@@ -1211,7 +1301,7 @@ export default function WhaleWatcherPage() {
               </button>
               <button
                 onClick={() => handleSort("source")}
-                className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-left sm:block hidden"
+                className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-center sm:block hidden"
               >
                 Source
                 {sortBy === "source" && (
@@ -1220,7 +1310,7 @@ export default function WhaleWatcherPage() {
               </button>
               <button
                 onClick={() => handleSort("timestamp")}
-                className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-left sm:block hidden"
+                className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-right sm:block hidden"
               >
                 Timestamp
                 {sortBy === "timestamp" && (
@@ -1265,13 +1355,13 @@ export default function WhaleWatcherPage() {
           <motion.button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="px-4 py-2 bg-[#1652F0] hover:bg-[#66B0FF] text-white rounded-lg text-xs flex items-center gap-2 border border-[#1E2A44] disabled:opacity-50 disabled:cursor-not-allowed focus:ring-2 focus:ring-[#66B0FF] shadow-md"
+            className="px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm flex items-center gap-2 border border-[#1E2A44] disabled:opacity-50 disabled:cursor-not-allowed focus:ring-2 focus:ring-[#66B0FF] shadow-md"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
           >
             <FaAngleLeft size={14} /> Prev
           </motion.button>
-          <div className="flex items-center space-x-1 text-xs text-gray-400">
+          <div className="flex items-center space-x-1 text-sm text-gray-400">
             <span>Page</span>
             <input
               type="number"
@@ -1285,7 +1375,7 @@ export default function WhaleWatcherPage() {
           <motion.button
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
-            className="px-4 py-2 bg-[#1652F0] hover:bg-[#66B0FF] text-white rounded-lg text-xs flex items-center gap-2 border border-[#1E2A44] disabled:opacity-50 disabled:cursor-not-allowed focus:ring-2 focus:ring-[#66B0FF] shadow-md"
+            className="px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm flex items-center gap-2 border border-[#1E2A44] disabled:opacity-50 disabled:cursor-not-allowed focus:ring-2 focus:ring-[#66B0FF] shadow-md"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
           >

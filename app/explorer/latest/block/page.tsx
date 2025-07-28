@@ -219,7 +219,7 @@ export default function CypherScanPage() {
     <div className={`min-h-screen w-full font-mono ${themeClasses.background} ${themeClasses.text}`}>
       <div className={`border ${themeClasses.border} ${themeClasses.shadow} w-full min-h-screen`}>
         <div className={`flex items-center justify-between px-4 py-3 sm:px-3 sm:py-2 ${themeClasses.headerBg}`}>
-          <h1 className={`${themeClasses.text} text-lg sm:text-base font-semibold uppercase`}>[ CYPHERSCAN - LATEST BLOCKS ]</h1>
+          <h1 className={`${themeClasses.text} text-lg sm:text-base font-semibold uppercase`}> LATEST BLOCKS </h1>
           <button
             onClick={toggleTheme}
             className={`p-2 sm:p-1 ${themeClasses.buttonBg} ${themeClasses.buttonHover} border border-blue-500/30 transition-colors ${themeClasses.shadow}`}

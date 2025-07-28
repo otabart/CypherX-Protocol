@@ -1,53 +1,86 @@
-// app/components/Header.tsx
-'use client';
+"use client";
 
 import React, { useState, useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import {
-  ShoppingBagIcon,
-  MagnifyingGlassIcon,
-  CubeIcon,
-  EyeIcon,
-  CalendarIcon,
-  CommandLineIcon,
-  TrophyIcon,
-  DocumentTextIcon,
-  UserIcon,
-  UsersIcon,
-  CodeBracketSquareIcon,
-  ChevronDownIcon,
-  ClipboardIcon,
-} from "@heroicons/react/24/solid";
-
-// Firebase
+import { ChevronDownIcon, UserCircleIcon } from "@heroicons/react/24/solid";
 import { signOut, type Auth } from "firebase/auth";
-import { auth as firebaseAuth } from "@/lib/firebase";
+import { doc, getDoc, query, collection, where, getDocs } from "firebase/firestore";
+import { auth as firebaseAuth, db } from "@/lib/firebase";
 import { useAuth } from "@/app/providers";
-
-// RainbowKit / Wagmi for wallet connection
-import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { useAccount } from "wagmi";
+import CustomConnectWallet from "./CustomConnectWallet";
+import toast from "react-hot-toast"; // Added for copy and logout feedback
 
 const auth: Auth = firebaseAuth as Auth;
 
 const Header: React.FC = () => {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, loading } = useAuth();
+  const { user } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
-  const { address, isConnected } = useAccount();
+  const [showToolsDropdown, setShowToolsDropdown] = useState(false);
+  const [showExplorerDropdown, setShowExplorerDropdown] = useState(false);
+  const [points, setPoints] = useState<number | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
+  const toolsDropdownRef = useRef<HTMLDivElement>(null);
+  const explorerDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close menus on navigation
+  // Fetch user points from Firestore
+  useEffect(() => {
+    const fetchPoints = async () => {
+      if (!user) {
+        setPoints(null);
+        return;
+      }
+
+      try {
+        // Primary: Fetch by UID
+        const userDocRef = doc(db, "users", user.uid);
+        const userDoc = await getDoc(userDocRef);
+
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          console.log("Points fetched by UID:", userData.points);
+          setPoints(userData.points ?? 0);
+          return;
+        }
+
+        // Fallback: Fetch by email if UID-based document doesn't exist
+        if (user.email) {
+          const q = query(collection(db, "users"), where("email", "==", user.email));
+          const querySnapshot = await getDocs(q);
+          if (!querySnapshot.empty) {
+            const userData = querySnapshot.docs[0].data();
+            console.log("Points fetched by email:", userData.points);
+            setPoints(userData.points ?? 0);
+          } else {
+            console.log("No user document found for UID or email, setting points to 0");
+            setPoints(0);
+          }
+        } else {
+          console.log("No email available for fallback, setting points to 0");
+          setPoints(0);
+        }
+      } catch (error) {
+        console.error("Error fetching user points:", error);
+        setPoints(0);
+      }
+    };
+
+    fetchPoints();
+  }, [user]);
+
+  // Reset modals and menus on route change
   useEffect(() => {
     setIsMenuOpen(false);
     setShowAccountModal(false);
+    setShowToolsDropdown(false);
+    setShowExplorerDropdown(false);
   }, [pathname]);
 
-  // Prevent body scroll when mobile menu or account modal is open
+  // Handle body overflow for mobile menu and account modal
   useEffect(() => {
     if (isMenuOpen || showAccountModal) {
       document.body.style.overflow = "hidden";
@@ -60,15 +93,9 @@ const Header: React.FC = () => {
       document.body.style.position = "";
       document.body.style.width = "";
     }
-    return () => {
-      document.body.style.overflow = "";
-      document.body.style.height = "";
-      document.body.style.position = "";
-      document.body.style.width = "";
-    };
   }, [isMenuOpen, showAccountModal]);
 
-  // Close account modal when clicking outside
+  // Handle click outside to close modals and dropdowns
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (
@@ -78,238 +105,419 @@ const Header: React.FC = () => {
       ) {
         setShowAccountModal(false);
       }
+      if (
+        showToolsDropdown &&
+        toolsDropdownRef.current &&
+        !toolsDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowToolsDropdown(false);
+      }
+      if (
+        showExplorerDropdown &&
+        explorerDropdownRef.current &&
+        !explorerDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowExplorerDropdown(false);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [showAccountModal]);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showAccountModal, showToolsDropdown, showExplorerDropdown]);
 
   async function handleSignOut() {
-    await signOut(auth);
-    router.push("/login");
+    try {
+      await signOut(auth);
+      toast.success("Signed out successfully");
+      router.push("/login");
+    } catch (error) {
+      console.error("Error signing out:", error);
+      toast.error("Failed to sign out");
+    }
   }
 
-  // Truncate Ethereum address (e.g. 0x1234…abcd)
-  function truncateAddress(addr: string | undefined) {
-    if (!addr) return "";
-    return addr.slice(0, 6) + "..." + addr.slice(-4);
-  }
-
-  // Referral code: first 6 chars of the UID
   const referralCode = user?.uid ? user.uid.slice(0, 6) : "";
+
+  const handleCopyReferral = () => {
+    if (referralCode) {
+      navigator.clipboard.writeText(referralCode);
+      toast.success("Referral code copied!");
+    }
+  };
 
   return (
     <>
       {/* Desktop Header */}
-      <header
-        className={`sticky top-0 z-40 bg-gray-950 ${
-          isMenuOpen ? "hidden" : ""
-        }`}
-      >
-        <div className="container mx-auto flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4">
+      <header className="sticky top-0 z-50 bg-gradient-to-br from-gray-950 to-gray-900 text-gray-200 border-b border-blue-500/20">
+        <div className="container mx-auto flex items-center justify-between px-4 py-4 sm:px-6 sm:py-5">
           {/* Logo / Brand */}
-          <Link href="/" className="flex items-center">
+          <Link href="/" className="flex items-center group">
             <Image
               src="https://i.imgur.com/mlPQazY.png"
               alt="Cypher Logo"
               width={48}
               height={48}
-              className="w-12 h-12 object-contain"
+              className="w-12 h-12 object-contain transition-transform duration-300 group-hover:scale-105 group-hover:rotate-3"
             />
-            <span className="ml-2 text-xs font-bold text-blue-400 bg-blue-500/20 border border-blue-500/30 rounded-full px-3 py-0.5 flex items-center relative top-[1px]">
+            <span className="ml-2 text-xs font-medium text-blue-300 bg-blue-500/20 border border-blue-500/30 rounded-full px-3 py-0.5 flex items-center relative top-[1px]">
               v1 BETA
             </span>
           </Link>
 
-          {/* Navigation Links */}
-          <nav className="hidden md:flex items-center space-x-4 lg:space-x-6">
-            <IconLink
-              href="/whale-watcher"
-              label="Whale Watchers"
-              IconComponent={UsersIcon}
-            />
-            <IconLink
+          {/* Desktop Navigation */}
+          <nav className="hidden md:flex items-center space-x-8">
+            <Link
               href="/token-scanner"
-              label="Screener"
-              IconComponent={EyeIcon}
-            />
-            <IconLink
-              href="/honeypot-scanner"
-              label="Audit"
-              IconComponent={MagnifyingGlassIcon}
-            />
-            <IconLink
-              href="/calendar"
-              label="Calendar"
-              IconComponent={CalendarIcon}
-            />
-            <IconLink
-              href="/explorer"
-              label="Explorer"
-              IconComponent={CubeIcon}
-            />
-            <IconLink
-              href="/smart-money"
-              label="Smart Money"
-              IconComponent={TrophyIcon}
-            />
-            <IconLink
-              href="/marketplace"
-              label="Marketplace"
-              IconComponent={ShoppingBagIcon}
-            />
-            <IconLink
-              href="/explorer/latest/block"
-              label="Cypher Scan"
-              IconComponent={CommandLineIcon}
-            />
-            <IconLink
-              href="/base-chain-news"
-              label="News"
-              IconComponent={DocumentTextIcon}
-            />
-            <IconLink
-              href="/terminal"
-              label="Terminal"
-              IconComponent={CodeBracketSquareIcon}
-            />
-
-            {/* Account / User Icon */}
-            {!loading && (
-              <div className="relative">
-                <button
-                  onClick={() => setShowAccountModal((prev) => !prev)}
-                  className="flex items-center focus:outline-none"
-                  aria-label={user ? "Account" : "Sign In"}
+              className={`text-gray-100 text-sm font-sans font-normal hover:text-blue-300 transition-colors duration-200 hover:scale-105 transform ${
+                pathname === "/token-scanner" ? "text-blue-300" : ""
+              }`}
+            >
+              Trade
+            </Link>
+            <div className="relative" ref={explorerDropdownRef}>
+              <button
+                onClick={(e: React.MouseEvent) => {
+                  e.preventDefault();
+                  setShowExplorerDropdown(!showExplorerDropdown);
+                  setShowToolsDropdown(false);
+                }}
+                className={`text-gray-100 text-sm font-sans font-normal hover:text-blue-300 transition-colors duration-200 flex items-center focus:outline-none focus:ring-2 focus:ring-blue-500/50 rounded-md hover:scale-105 transform ${
+                  pathname === "/explorer" || pathname === "/explorer/latest/block"
+                    ? "text-blue-300"
+                    : ""
+                }`}
+              >
+                Explorer
+                <ChevronDownIcon
+                  className={`w-4 h-4 ml-1 transition-transform duration-300 ease-out ${
+                    showExplorerDropdown ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+              {showExplorerDropdown && (
+                <div
+                  ref={explorerDropdownRef}
+                  className="absolute left-0 mt-3 w-64 bg-gradient-to-br from-gray-900 to-gray-800 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-blue-500/30 transition-all duration-300 ease-out"
+                  style={{
+                    opacity: showExplorerDropdown ? 1 : 0,
+                    transform: showExplorerDropdown
+                      ? "translateY(0)"
+                      : "translateY(-10px)",
+                  }}
                 >
-                  <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
-                    <UserIcon className="w-4 h-4 text-gray-200 hover:text-blue-400 transition-colors" />
+                  <div className="text-sm text-gray-100 font-sans font-medium mb-2">
+                    Explorer
                   </div>
-                </button>
-
-                {/* Account Modal */}
-                {showAccountModal && (
-                  <div
-                    ref={modalRef}
-                    className="absolute right-0 mt-2 w-64 bg-gray-900 border border-gray-700 rounded-lg shadow-lg z-50"
+                  <hr className="border-blue-500/30 mb-3" />
+                  <Link
+                    href="/explorer"
+                    className="flex items-center px-3 py-2 text-sm text-gray-100 font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    onClick={() => setShowExplorerDropdown(false)}
                   >
-                    <div className="p-4">
-                      {/* Wallet Address / Connect */}
-                      <div className="flex items-center justify-between mb-3">
-                        {isConnected && address ? (
-                          <>
-                            <span className="text-gray-200 font-mono text-sm">
-                              {truncateAddress(address)}
-                            </span>
-                            <button
-                              onClick={() =>
-                                navigator.clipboard.writeText(address)
-                              }
-                              className="p-1 rounded hover:bg-gray-700"
-                              aria-label="Copy Address"
-                            >
-                              <ClipboardIcon className="w-4 h-4 text-gray-400 hover:text-gray-200" />
-                            </button>
-                          </>
-                        ) : (
-                          <ConnectButton
-                            showBalance={false}
-                            accountStatus="address"
-                            chainStatus="icon"
-                            label="Connect"
-                          />
-                        )}
+                    <svg
+                      className="w-4 h-4 mr-2 text-blue-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                      />
+                    </svg>
+                    <div>
+                      Search
+                      <div className="text-xs text-gray-400">
+                        Find transactions and addresses
                       </div>
-
-                      {/* Referral Section */}
-                      <div className="bg-gray-800 p-2 rounded-lg mb-3">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs uppercase font-bold text-blue-400">
-                            Referral{" "}
-                            <span className="text-green-400 text-xs">NEW</span>
-                          </span>
-                          <ChevronDownIcon className="w-4 h-4 text-gray-400" />
+                    </div>
+                  </Link>
+                  <Link
+                    href="/explorer/latest/block"
+                    className="flex items-center px-3 py-2 text-sm text-gray-100 font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    onClick={() => setShowExplorerDropdown(false)}
+                  >
+                    <svg
+                      className="w-4 h-4 mr-2 text-blue-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                      />
+                    </svg>
+                    <div>
+                      Block Scan
+                      <div className="text-xs text-gray-400">
+                        View latest blockchain blocks
+                      </div>
+                    </div>
+                  </Link>
+                </div>
+              )}
+            </div>
+            <div className="relative" ref={toolsDropdownRef}>
+              <button
+                onClick={(e: React.MouseEvent) => {
+                  e.preventDefault();
+                  setShowToolsDropdown(!showToolsDropdown);
+                  setShowExplorerDropdown(false);
+                }}
+                className={`text-gray-100 text-sm font-sans font-normal hover:text-blue-300 transition-colors duration-200 flex items-center focus:outline-none focus:ring-2 focus:ring-blue-500/50 rounded-md hover:scale-105 transform ${
+                  pathname.startsWith("/whale-watcher") ||
+                  pathname.startsWith("/honeypot-scanner")
+                    ? "text-blue-300"
+                    : ""
+                }`}
+              >
+                Tools
+                <ChevronDownIcon
+                  className={`w-4 h-4 ml-1 transition-transform duration-300 ease-out ${
+                    showToolsDropdown ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+              {showToolsDropdown && (
+                <div
+                  ref={toolsDropdownRef}
+                  className="absolute left-0 mt-3 w-64 bg-gradient-to-br from-gray-900 to-gray-800 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-blue-500/30 transition-all duration-300 ease-out"
+                  style={{
+                    opacity: showToolsDropdown ? 1 : 0,
+                    transform: showToolsDropdown
+                      ? "translateY(0)"
+                      : "translateY(-10px)",
+                  }}
+                >
+                  <div className="text-sm text-gray-100 font-sans font-medium mb-2">
+                    Tools
+                  </div>
+                  <hr className="border-blue-500/30 mb-3" />
+                  <Link
+                    href="/whale-watcher"
+                    className="flex items-center px-3 py-2 text-sm text-gray-100 font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    onClick={() => setShowToolsDropdown(false)}
+                  >
+                    <svg
+                      className="w-4 h-4 mr-2 text-blue-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    <div>
+                      Whales
+                      <div className="text-xs text-gray-400">
+                        Track large transactions
+                      </div>
+                    </div>
+                  </Link>
+                  <div className="relative group">
+                    <span className="flex items-center px-3 py-2 text-sm text-gray-400 font-sans font-normal cursor-not-allowed">
+                      <svg
+                        className="w-4 h-4 mr-2 text-yellow-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M3 3h18v6H3V3zm0 8h18v10H3V11zm2 2h14v6H5v-6z"
+                        />
+                      </svg>
+                      <div>
+                        Smart Money
+                        <span className="ml-2 text-xs font-medium text-yellow-400 bg-yellow-500/20 border border-yellow-500/30 rounded-full px-2 py-0.5">
+                          Soon
+                        </span>
+                        <div className="text-xs text-gray-400">
+                          Monitor strategic trades
                         </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-200 font-mono">
+                      </div>
+                    </span>
+                    <div className="absolute left-0 top-full mt-1 w-48 bg-gray-900 text-gray-100 text-xs font-sans font-normal p-2 rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+                      Coming in v2
+                    </div>
+                  </div>
+                  <Link
+                    href="/honeypot-scanner"
+                    className="flex items-center px-3 py-2 text-sm text-gray-100 font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    onClick={() => setShowToolsDropdown(false)}
+                  >
+                    <svg
+                      className="w-4 h-4 mr-2 text-green-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+                      />
+                    </svg>
+                    <div>
+                      Contract Audit
+                      <div className="text-xs text-gray-400">
+                        Detect scam contracts
+                      </div>
+                    </div>
+                  </Link>
+                </div>
+              )}
+            </div>
+            <Link
+              href="/marketplace"
+              className={`text-gray-100 text-sm font-sans font-normal hover:text-blue-300 transition-colors duration-200 hover:scale-105 transform ${
+                pathname === "/marketplace" ? "text-blue-300" : ""
+              }`}
+            >
+              Marketplace
+            </Link>
+            <Link
+              href="/calendar"
+              className={`text-gray-100 text-sm font-sans font-normal hover:text-blue-300 transition-colors duration-200 hover:scale-105 transform ${
+                pathname === "/calendar" ? "text-blue-300" : ""
+              }`}
+            >
+              Calendar
+            </Link>
+            <Link
+              href="/base-chain-news"
+              className={`text-gray-100 text-sm font-sans font-normal hover:text-blue-300 transition-colors duration-200 hover:scale-105 transform ${
+                pathname === "/base-chain-news" ? "text-blue-300" : ""
+              }`}
+            >
+              News
+            </Link>
+            <CustomConnectWallet />
+            <div className="relative">
+              <button
+                onClick={() => setShowAccountModal((prev) => !prev)}
+                className="flex items-center focus:outline-none focus:ring-2 focus:ring-blue-500/50 rounded-md hover:scale-105 transform"
+                aria-label={user ? "Account" : "Sign In"}
+              >
+                <div className="w-8 h-8 rounded-full bg-blue-500/20 border border-blue-500/30 flex items-center justify-center transition-transform duration-300">
+                  <UserCircleIcon className="w-5 h-5 text-gray-100 hover:text-blue-300 transition-colors" />
+                </div>
+              </button>
+              {showAccountModal && (
+                <div
+                  ref={modalRef}
+                  className="absolute right-0 mt-3 w-64 bg-gradient-to-br from-gray-900 to-gray-800 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-blue-500/30 transition-all duration-300 ease-out"
+                  style={{
+                    opacity: showAccountModal ? 1 : 0,
+                    transform: showAccountModal
+                      ? "translateY(0)"
+                      : "translateY(-10px)",
+                  }}
+                >
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <CustomConnectWallet />
+                    </div>
+                    <div className="bg-gradient-to-br from-gray-800 to-gray-700 p-3 rounded-lg border border-blue-500/50">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs uppercase font-medium text-blue-300">
+                          Profile
+                        </span>
+                        <ChevronDownIcon className="w-4 h-4 text-gray-400" />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-semibold text-gray-100">Points</span>
+                        <span className="text-sm font-semibold text-blue-300">
+                          {points !== null ? `${points} pts` : "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="text-sm font-semibold text-gray-100">
+                          Referral Code
+                        </span>
+                        <div className="flex items-center">
+                          <span className="text-sm font-semibold text-gray-100 mr-2">
                             {referralCode || "—"}
                           </span>
-                          <button
-                            onClick={() =>
-                              referralCode &&
-                              navigator.clipboard.writeText(referralCode)
-                            }
-                            className="px-2 py-0.5 bg-blue-500/30 text-blue-400 text-xs rounded hover:bg-blue-500/50 transition-colors"
-                          >
-                            Copy Link
-                          </button>
-                        </div>
-                        <div className="mt-1 flex items-center justify-between text-gray-400 text-xs">
-                          <span>Rewards</span>
-                          <span>0 ⬢</span>
-                        </div>
-                      </div>
-
-                      <hr className="border-gray-700 mb-3" />
-
-                      {/* Vote Link */}
-                      <ul className="space-y-2 mb-3 px-2">
-                        <li>
-                          <Link
-                            href="/vote"
-                            onClick={() => setShowAccountModal(false)}
-                            className="block px-2 py-1 text-sm text-gray-200 hover:text-blue-400 transition-colors rounded"
-                          >
-                            Vote
-                          </Link>
-                        </li>
-                        <li>
-                          <Link
-                            href="/account"
-                            onClick={() => setShowAccountModal(false)}
-                            className="block px-2 py-1 text-sm text-gray-200 hover:text-blue-400 transition-colors rounded"
-                          >
-                            Account Settings
-                          </Link>
-                        </li>
-                      </ul>
-
-                      <hr className="border-gray-700 mb-3" />
-
-                      {/* Powered by Base */}
-                      <div className="text-center text-xs text-gray-500 mb-3">
-                        Powered by Base
-                      </div>
-
-                      <hr className="border-gray-700 mb-3" />
-
-                      {/* Logout / Sign In */}
-                      {!loading && (
-                        <div className="px-2">
-                          {user ? (
+                          {referralCode && (
                             <button
-                              onClick={handleSignOut}
-                              className="w-full text-left px-2 py-2 text-sm text-gray-200 hover:text-red-500 transition-colors rounded"
+                              onClick={handleCopyReferral}
+                              className="px-2 py-0.5 bg-blue-500/20 text-blue-300 text-xs rounded hover:bg-blue-500/40 transition-colors duration-150"
                             >
-                              Logout
+                              Copy
                             </button>
-                          ) : (
-                            <Link
-                              href="/login"
-                              onClick={() => setShowAccountModal(false)}
-                              className="block px-2 py-2 text-sm text-gray-200 hover:text-blue-400 transition-colors rounded"
-                            >
-                              Login / Sign Up
-                            </Link>
                           )}
                         </div>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-gray-400 text-xs">
+                        <span>Rewards</span>
+                        <span>0 ⬢</span>
+                      </div>
+                    </div>
+                    <hr className="border-blue-500/30" />
+                    <ul className="space-y-2">
+                      <li>
+                        <Link
+                          href="/vote"
+                          className="block px-2 py-1 text-sm text-gray-100 font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                          onClick={() => setShowAccountModal(false)}
+                        >
+                          Vote
+                        </Link>
+                      </li>
+                      <li>
+                        <Link
+                          href="/account"
+                          className="block px-2 py-1 text-sm text-gray-100 font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                          onClick={() => setShowAccountModal(false)}
+                        >
+                          Account Settings
+                        </Link>
+                      </li>
+                    </ul>
+                    <hr className="border-blue-500/30" />
+                    <div className="text-center text-xs text-gray-400">
+                      Powered by Base
+                    </div>
+                    <hr className="border-blue-500/30" />
+                    <div>
+                      {user ? (
+                        <button
+                          onClick={handleSignOut}
+                          className="w-full text-left px-2 py-2 text-sm text-gray-100 font-sans font-normal hover:text-red-400 hover:bg-red-500/20 rounded-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                        >
+                          Logout
+                        </button>
+                      ) : (
+                        <Link
+                          href="/login"
+                          className="block px-2 py-2 text-sm text-gray-100 font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                          onClick={() => setShowAccountModal(false)}
+                        >
+                          Login / Sign Up
+                        </Link>
                       )}
                     </div>
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </nav>
 
           {/* Mobile Menu Toggle */}
@@ -318,277 +526,379 @@ const Header: React.FC = () => {
             className="md:hidden text-gray-200 p-2"
             aria-label="Toggle Menu"
           >
-            {isMenuOpen ? (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-6 w-6"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <line
-                  x1="6"
-                  y1="6"
-                  x2="18"
-                  y2="18"
-                  strokeLinecap="round"
-                  strokeWidth={2}
-                />
-                <line
-                  x1="6"
-                  y1="18"
-                  x2="18"
-                  y2="6"
-                  strokeLinecap="round"
-                  strokeWidth={2}
-                />
-              </svg>
-            ) : (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-6 w-6"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <line
-                  x1="4"
-                  y1="8"
-                  x2="20"
-                  y2="8"
-                  strokeLinecap="round"
-                  strokeWidth={2}
-                />
-                <line
-                  x1="4"
-                  y1="14"
-                  x2="16"
-                  y2="14"
-                  strokeLinecap="round"
-                  strokeWidth={2}
-                />
-              </svg>
-            )}
+            <div className="w-8 h-8 rounded-full bg-blue-500/20 border border-blue-500/30 flex items-center justify-center transition-transform duration-300 hover:scale-105">
+              {isMenuOpen ? (
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-6 w-6"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              ) : (
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-6 w-6"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeWidth={2}
+                    d="M4 6h16M4 12h16m-7 6h7"
+                  />
+                </svg>
+              )}
+            </div>
           </button>
         </div>
+        <hr className="border-blue-500/20" />
       </header>
 
       {/* Mobile Menu */}
-      <div
-        className={`fixed inset-0 z-50 bg-gray-950 overflow-x-hidden md:hidden transform ${
-          isMenuOpen ? "translate-y-0" : "-translate-y-full"
-        } transition-transform duration-300 ease-out`}
-      >
-        <nav className="pt-10 pb-10 px-6 h-full overflow-y-auto flex flex-col relative">
-          <button
+      {isMenuOpen && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/50 z-40 md:hidden"
             onClick={() => setIsMenuOpen(false)}
-            className="absolute top-4 right-4 text-gray-200 p-2"
-            aria-label="Close Menu"
+          ></div>
+          <div
+            className={`fixed top-0 left-0 z-50 h-full w-64 bg-gradient-to-br from-gray-900 to-gray-800 p-6 flex flex-col transform transition-transform duration-300 ease-in-out md:hidden overflow-y-auto shadow-lg border-r border-blue-500/30 ${
+              isMenuOpen ? "translate-x-0" : "-translate-x-full"
+            }`}
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-6 w-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
+            <button
+              onClick={() => setIsMenuOpen(false)}
+              className="text-gray-100 p-2 self-end"
+              aria-label="Close Menu"
             >
-              <line
-                x1="6"
-                y1="6"
-                x2="18"
-                y2="18"
-                strokeLinecap="round"
-                strokeWidth={2}
-              />
-              <line
-                x1="6"
-                y1="18"
-                x2="18"
-                y2="6"
-                strokeLinecap="round"
-                strokeWidth={2}
-              />
-            </svg>
-          </button>
-
-          <ul className="space-y-3">
-            <li>
-              <Link
-                href="/whale-watcher"
-                onClick={() => setIsMenuOpen(false)}
-                className="flex items-center gap-2 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-6 w-6"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
               >
-                <UsersIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
-                <span className="text-base leading-none">Whale Watchers</span>
-              </Link>
-            </li>
-            <li className="border-t border-blue-500/20 mx-[-1.5rem]"></li>
-
-            <li>
-              <Link
-                href="/token-scanner"
-                onClick={() => setIsMenuOpen(false)}
-                className="flex items-center gap-2 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
-              >
-                <EyeIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
-                <span className="text-base leading-none">Screener</span>
-              </Link>
-            </li>
-            <li className="border-t border-blue-500/20 mx-[-1.5rem]"></li>
-
-            <li>
-              <Link
-                href="/honeypot-scanner"
-                onClick={() => setIsMenuOpen(false)}
-                className="flex items-center gap-2 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
-              >
-                <MagnifyingGlassIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
-                <span className="text-base leading-none">Audit</span>
-              </Link>
-            </li>
-            <li className="border-t border-blue-500/20 mx-[-1.5rem]"></li>
-
-            <li>
-              <Link
-                href="/calendar"
-                onClick={() => setIsMenuOpen(false)}
-                className="flex items-center gap-2 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
-              >
-                <CalendarIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
-                <span className="text-base leading-none">Calendar</span>
-              </Link>
-            </li>
-            <li className="border-t border-blue-500/20 mx-[-1.5rem]"></li>
-
-            <li>
-              <Link
-                href="/explorer"
-                onClick={() => setIsMenuOpen(false)}
-                className="flex items-center gap-2 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
-              >
-                <CubeIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
-                <span className="text-base leading-none">Explorer</span>
-              </Link>
-            </li>
-            <li className="border-t border-blue-500/20 mx-[-1.5rem]"></li>
-
-            <li>
-              <Link
-                href="/smart-money"
-                onClick={() => setIsMenuOpen(false)}
-                className="flex items-center gap-2 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
-              >
-                <TrophyIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
-                <span className="text-base leading-none">Smart Money</span>
-              </Link>
-            </li>
-            <li className="border-t border-blue-500/20 mx-[-1.5rem]"></li>
-
-            <li>
+                <path
+                  strokeLinecap="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+            <nav className="mt-6 flex-1 space-y-3">
+              <div>
+                <Link
+                  href="/token-scanner"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="flex items-center py-2 px-4 text-gray-100 text-base font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 hover:scale-105 transform"
+                >
+                  Trade
+                </Link>
+              </div>
+              <div>
+                <button
+                  onClick={(e: React.MouseEvent) => {
+                    e.preventDefault();
+                    setShowExplorerDropdown(!showExplorerDropdown);
+                  }}
+                  className="w-full text-left flex items-center py-2 px-4 text-gray-100 text-base font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500/50 hover:scale-105 transform"
+                >
+                  Explorer
+                  <ChevronDownIcon
+                    className={`w-4 h-4 ml-auto transition-transform duration-300 ease-out ${
+                      showExplorerDropdown ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+                {showExplorerDropdown && (
+                  <div className="mt-2 space-y-2 pl-4 transition-all duration-300 ease-out">
+                    <div className="text-sm text-gray-100 font-sans font-medium mb-2">
+                      Explorer
+                    </div>
+                    <hr className="border-blue-500/30 mb-3" />
+                    <Link
+                      href="/explorer"
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        setShowExplorerDropdown(false);
+                      }}
+                      className="flex items-center px-3 py-2 text-gray-100 text-sm font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    >
+                      <svg
+                        className="w-4 h-4 mr-2 text-blue-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                        />
+                      </svg>
+                      <div>
+                        Search
+                        <div className="text-xs text-gray-400">
+                          Find transactions and addresses
+                        </div>
+                      </div>
+                    </Link>
+                    <Link
+                      href="/explorer/latest/block"
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        setShowExplorerDropdown(false);
+                      }}
+                      className="flex items-center px-3 py-2 text-gray-100 text-sm font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    >
+                      <svg
+                        className="w-4 h-4 mr-2 text-blue-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                        />
+                      </svg>
+                      <div>
+                        Block Scan
+                        <div className="text-xs text-gray-400">
+                          View latest blockchain blocks
+                        </div>
+                      </div>
+                    </Link>
+                  </div>
+                )}
+              </div>
+              <div>
+                <button
+                  onClick={(e: React.MouseEvent) => {
+                    e.preventDefault();
+                    setShowToolsDropdown(!showToolsDropdown);
+                  }}
+                  className="w-full text-left flex items-center py-2 px-4 text-gray-100 text-base font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500/50 hover:scale-105 transform"
+                >
+                  Tools
+                  <ChevronDownIcon
+                    className={`w-4 h-4 ml-auto transition-transform duration-300 ease-out ${
+                      showToolsDropdown ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+                {showToolsDropdown && (
+                  <div className="mt-2 space-y-2 pl-4 transition-all duration-300 ease-out">
+                    <div className="text-sm text-gray-100 font-sans font-medium mb-2">
+                      Tools
+                    </div>
+                    <hr className="border-blue-500/30 mb-3" />
+                    <Link
+                      href="/whale-watcher"
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        setShowToolsDropdown(false);
+                      }}
+                      className="flex items-center px-3 py-2 text-gray-100 text-sm font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    >
+                      <svg
+                        className="w-4 h-4 mr-2 text-blue-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                      <div>
+                        Whales
+                        <div className="text-xs text-gray-400">
+                          Track large transactions
+                        </div>
+                      </div>
+                    </Link>
+                    <div className="relative group">
+                      <span className="flex items-center px-3 py-2 text-sm text-gray-400 font-sans font-normal cursor-not-allowed">
+                        <svg
+                          className="w-4 h-4 mr-2 text-yellow-400"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M3 3h18v6H3V3zm0 8h18v10H3V11zm2 2h14v6H5v-6z"
+                          />
+                        </svg>
+                        <div>
+                          Smart Money
+                          <span className="ml-2 text-xs font-medium text-yellow-400 bg-yellow-500/20 border border-yellow-500/30 rounded-full px-2 py-0.5">
+                            Soon
+                          </span>
+                          <div className="text-xs text-gray-400">
+                            Monitor strategic trades
+                          </div>
+                        </div>
+                      </span>
+                      <div className="absolute left-0 top-full mt-1 w-48 bg-gray-900 text-gray-100 text-xs font-sans font-normal p-2 rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+                        Coming in v2
+                      </div>
+                    </div>
+                    <Link
+                      href="/honeypot-scanner"
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        setShowToolsDropdown(false);
+                      }}
+                      className="flex items-center px-3 py-2 text-gray-100 text-sm font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    >
+                      <svg
+                        className="w-4 h-4 mr-2 text-green-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+                        />
+                      </svg>
+                      <div>
+                        Contract Audit
+                        <div className="text-xs text-gray-400">
+                          Detect scam contracts
+                        </div>
+                      </div>
+                    </Link>
+                  </div>
+                )}
+              </div>
               <Link
                 href="/marketplace"
                 onClick={() => setIsMenuOpen(false)}
-                className="flex items-center gap-2 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
+                className="flex items-center py-2 px-4 text-gray-100 text-base font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 hover:scale-105 transform"
               >
-                <ShoppingBagIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
-                <span className="text-base leading-none">Marketplace</span>
+                Marketplace
               </Link>
-            </li>
-            <li className="border-t border-blue-500/20 mx-[-1.5rem]"></li>
-
-            <li>
               <Link
-                href="/explorer/latest/block"
+                href="/calendar"
                 onClick={() => setIsMenuOpen(false)}
-                className="flex items-center gap-2 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
+                className="flex items-center py-2 px-4 text-gray-100 text-base font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 hover:scale-105 transform"
               >
-                <CommandLineIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
-                <span className="text-base leading-none">Cypher Scan</span>
+                Calendar
               </Link>
-            </li>
-            <li className="border-t border-blue-500/20 mx-[-1.5rem]"></li>
-
-            <li>
               <Link
                 href="/base-chain-news"
                 onClick={() => setIsMenuOpen(false)}
-                className="flex items-center gap-2 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
+                className="flex items-center py-2 px-4 text-gray-100 text-base font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 hover:scale-105 transform"
               >
-                <DocumentTextIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
-                <span className="text-base leading-none">News</span>
+                News
               </Link>
-            </li>
-            <li className="border-t border-blue-500/20 mx-[-1.5rem]"></li>
-
-            <li>
-              <Link
-                href="/terminal"
-                onClick={() => setIsMenuOpen(false)}
-                className="flex items-center gap-2 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
-              >
-                <CodeBracketSquareIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
-                <span className="text-base leading-none">Terminal</span>
-              </Link>
-            </li>
-          </ul>
-
-          <div className="border-t border-blue-500/20 my-4 mx-[-1.5rem]" />
-
-          <ul className="space-y-3 px-2">
-            <li>
-              {!loading ? (
-                user ? (
+              <div>
+                <CustomConnectWallet />
+              </div>
+              <div className="bg-gradient-to-br from-gray-800 to-gray-700 p-3 rounded-lg border border-blue-500/50">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs uppercase font-medium text-blue-300">
+                    Profile
+                  </span>
+                  <ChevronDownIcon className="w-4 h-4 text-gray-400" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-gray-100">Points</span>
+                  <span className="text-sm font-semibold text-blue-300">
+                    {points !== null ? `${points} pts` : "—"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between mt-2">
+                  <span className="text-sm font-semibold text-gray-100">
+                    Referral Code
+                  </span>
+                  <div className="flex items-center">
+                    <span className="text-sm font-semibold text-gray-100 mr-2">
+                      {referralCode || "—"}
+                    </span>
+                    {referralCode && (
+                      <button
+                        onClick={handleCopyReferral}
+                        className="px-2 py-0.5 bg-blue-500/20 text-blue-300 text-xs rounded hover:bg-blue-500/40 transition-colors duration-150"
+                      >
+                        Copy
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center justify-between text-gray-400 text-xs">
+                  <span>Rewards</span>
+                  <span>0 ⬢</span>
+                </div>
+              </div>
+              <div>
+                <Link
+                  href="/vote"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="flex items-center py-2 px-4 text-gray-100 text-base font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 hover:scale-105 transform"
+                >
+                  Vote
+                </Link>
+              </div>
+              <div>
+                <Link
+                  href="/account"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="flex items-center py-2 px-4 text-gray-100 text-base font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 hover:scale-105 transform"
+                >
+                  Account Settings
+                </Link>
+              </div>
+              <div>
+                {user ? (
                   <button
                     onClick={handleSignOut}
-                    className="flex items-center gap-2 py-3 px-4 text-gray-200 hover:text-red-500 transition-colors rounded-md w-full text-left"
+                    className="flex items-center py-2 px-4 text-gray-100 text-base font-sans font-normal hover:bg-red-500/20 hover:text-red-400 rounded-md transition-colors duration-150 w-full text-left focus:outline-none focus:ring-2 focus:ring-red-500/50 hover:scale-105 transform"
                   >
-                    <UserIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
-                    <span className="text-base leading-none">Sign Out</span>
+                    Sign Out
                   </button>
                 ) : (
                   <Link
                     href="/login"
                     onClick={() => setIsMenuOpen(false)}
-                    className="flex items-center gap-2 py-3 px-4 text-gray-200 hover:text-blue-400 transition-colors rounded-md"
+                    className="flex items-center py-2 px-4 text-gray-100 text-base font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 hover:scale-105 transform"
                   >
-                    <UserIcon className="w-5 h-5 text-gray-200 flex-shrink-0" />
-                    <span className="text-base leading-none">Sign In</span>
+                    Sign In
                   </Link>
-                )
-              ) : null}
-            </li>
-          </ul>
-        </nav>
-      </div>
+                )}
+              </div>
+            </nav>
+          </div>
+        </>
+      )}
     </>
   );
 };
 
 export default Header;
-
-// ----------------------------------------------------------------------------
-// Reusable IconLink Component
-// ----------------------------------------------------------------------------
-
-interface IconLinkProps {
-  href: string;
-  label: string;
-  IconComponent: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-}
-
-function IconLink({ href, label, IconComponent }: IconLinkProps) {
-  return (
-    <div className="relative group">
-      <Link href={href} className="flex items-center">
-        <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
-          <IconComponent className="w-4 h-4 text-gray-200 group-hover:text-blue-400 transition-colors" />
-        </div>
-        <span className="sr-only">{label}</span>
-      </Link>
-      <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-gray-200 bg-gray-900 rounded pointer-events-none whitespace-nowrap hidden group-hover:block">
-        {label}
-      </span>
-    </div>
-  );
-}
-

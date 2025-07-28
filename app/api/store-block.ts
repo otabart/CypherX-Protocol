@@ -43,8 +43,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     await adminDb.collection("blocks").doc(block.number.toString()).set(block);
     res.status(200).json({ message: `Block ${block.number} stored` });
-  } catch (error: any) {
-    console.error("Store block error:", error);
-    res.status(500).json({ error: error.message });
+  } catch (error: unknown) { // Changed from any to unknown
+    console.error("Store block error:", error instanceof Error ? error.message : "Unknown error");
+    res.status(500).json({ error: error instanceof Error ? error.message : "Unknown error" });
   }
 }

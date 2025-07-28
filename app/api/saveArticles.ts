@@ -20,7 +20,7 @@ export default async function handler(
       return res.status(400).json({ error: "Missing required fields" });
     }
     try {
-      let baseSlug = slugify(title, { lower: true, strict: true });
+      const baseSlug = slugify(title, { lower: true, strict: true }); // Changed to const
       let slug = baseSlug;
       let slugExists = true;
       let counter = 1;

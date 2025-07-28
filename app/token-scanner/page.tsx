@@ -1,7 +1,6 @@
-// app/token-scanner/page.tsx
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
@@ -14,9 +13,19 @@ import {
   FaUser,
   FaSearch,
   FaFilter,
+  FaList,
+  FaTrash,
+  FaCheck,
+  FaArrowUp,
+  FaArrowDown,
+  FaVolumeUp,
+  FaDollarSign,
+  FaEdit,
+  FaRedo,
 } from "react-icons/fa";
 import debounce from "lodash/debounce";
 import { onAuthStateChanged } from "firebase/auth";
+import type { User } from "firebase/auth";
 import {
   collection,
   query,
@@ -25,44 +34,68 @@ import {
   deleteDoc,
   doc,
   serverTimestamp,
-  getDocs,
   setDoc,
+  getDoc,
+  updateDoc,
+  arrayUnion,
+  arrayRemove,
 } from "firebase/firestore";
 import type { Auth } from "firebase/auth";
 import type { Firestore } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { Line } from "react-chartjs-2";
-import {
-  Chart as ChartJS,
-  LineElement,
-  PointElement,
-  LinearScale,
-  TimeScale,
-  Title,
-  Tooltip,
-  Legend,
-} from "chart.js";
-
-ChartJS.register(LineElement, PointElement, LinearScale, TimeScale, Title, Tooltip, Legend);
+import PortfolioTable from "./PortfolioTable";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import { ToastContainer, toast as reactToast } from "react-toastify";
+import 'react-toastify/dist/ReactToastify.css';
+import Image from 'next/image';
 
 // Explicitly type auth and db
 const firebaseAuth: Auth = auth;
 const firestoreDb: Firestore = db;
 
-// ====== TYPES ======
-export type TokenData = {
+// DexScreenerPair type
+type DexScreenerPair = {
   pairAddress: string;
-  baseToken: {
+  baseToken?: {
     address: string;
-    name: string;
     symbol: string;
-  };
-  quoteToken: {
-    address: string;
     name: string;
-    symbol: string;
+    decimals: number;
   };
   priceUsd: string;
+  priceChange: {
+    m5: number;
+    h1: number;
+    h6: number;
+    h24: number;
+  };
+  volume: {
+    h1: number;
+    h24: number;
+  };
+  liquidity: {
+    usd: number;
+  };
+  marketCap: number;
+  info?: {
+    imageUrl: string;
+  };
+  txns: {
+    h1: { buys: number; sells: number };
+    h6: { buys: number; sells: number };
+    h24: { buys: number; sells: number };
+  };
+  pairCreatedAt: number;
+};
+
+// ====== TYPES ======
+export type TokenData = {
+  poolAddress: string;
+  tokenAddress: string;
+  symbol: string;
+  name: string;
+  decimals?: number;
+  priceUsd?: string;
   priceChange?: {
     m5?: number;
     h1?: number;
@@ -73,15 +106,15 @@ export type TokenData = {
     h1: number;
     h24: number;
   };
-  marketCap?: number;
-  liquidity: {
+  liquidity?: {
     usd: number;
   };
-  pairCreatedAt?: number;
+  marketCap?: number;
   info?: {
     imageUrl?: string;
   };
-  txns: {
+  pairCreatedAt?: number;
+  txns?: {
     h1: { buys: number; sells: number };
     h6: { buys: number; sells: number };
     h24: { buys: number; sells: number };
@@ -90,28 +123,29 @@ export type TokenData = {
   boosted?: boolean;
   boostValue?: number;
   weight?: number;
+  docId?: string;
 };
 
-export type BaseAiToken = {
-  symbol: string;
-  address: string;
-  weight: string;
-  pairAddress?: string;
+export type PortfolioItem = {
+  poolAddress: string;
+  amount: number;
+  purchasePrice: number;
+  history?: { date: string; price: number; pnl: number }[];
 };
 
-// ====== STATIC BASE AI TOKENS LIST ======
-const baseAiTokens: BaseAiToken[] = [
-  { symbol: "GAME", address: "0x1C4CcA7C5DB003824208aDDA61Bd749e55F463a3", weight: "4.86%" },
-  { symbol: "BANKR", address: "0x22aF33FE49fD1Fa80c7149773dDe5890D3c76F3b", weight: "5.24%" },
-  { symbol: "FAI", address: "0xb33Ff54b9F7242EF1593d2C9Bcd8f9df46c77935", weight: "12.57%" },
-  { symbol: "VIRTUAL", address: "0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b", weight: "26.8%" },
-  { symbol: "CLANKER", address: "0x1bc0c42215582d5A085795f4baDbaC3ff36d1Bcb", weight: "15.89%" },
-  { symbol: "KAITO", address: "0x98d0baa52b2D063E780DE12F615f963Fe8537553", weight: "16.22%" },
-  { symbol: "COOKIE", address: "0xC0041EF357B183448B235a8Ea73Ce4E4eC8c265F", weight: "5.12%" },
-  { symbol: "VVV", address: "0xacfE6019Ed1A7Dc6f7B508C02d1b04ec88cC21bf", weight: "5.08%" },
-  { symbol: "DRB", address: "0x3ec2156D4c0A9CBdAB4a016633b7BcF6a8d68Ea2", weight: "3.8%" },
-  { symbol: "AIXBT", address: "0x4F9Fd6Be4a90f2620860d680c0d4d5Fb53d1A825", weight: "10.5%" },
-];
+export type Watchlist = {
+  id: string;
+  name: string;
+  tokens: string[]; // poolAddresses
+};
+
+export type CustomAlert = {
+  id?: string;
+  poolAddress: string;
+  type: "price_above" | "price_below" | "volume_above" | "mc_above";
+  threshold: number;
+  notified?: boolean;
+};
 
 // ====== CONSTANTS ======
 const DECAY_CONSTANT = 7;
@@ -122,7 +156,8 @@ const TOP_MOVERS_LOSERS_INTERVAL = 3_600_000; // 1 hour
 const NOTIFICATION_EXPIRY = 3 * 60 * 60 * 1000; // 3 hours
 const MAX_NOTIFICATIONS_PER_HOUR = 18;
 const MAX_NOTIFICATIONS_PER_TOKEN = 5;
-const BASE_AI_TOKEN_SYMBOLS = baseAiTokens.map((token) => token.symbol.toUpperCase());
+const PORTFOLIO_UPDATE_INTERVAL = 86_400_000; // 24 hours
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#A28FEF', '#FF6384', '#36A2EB', '#FFCE56'];
 
 // ====== UTILITY FUNCTIONS ======
 function getColorClass(value: number): string {
@@ -143,7 +178,7 @@ function getTxns24h(token: TokenData): number {
   return buys + sells;
 }
 
-function formatPrice(price: string): string {
+function formatPrice(price: string | number): string {
   const numPrice = Number(price);
   if (numPrice < 0.001) return `$${numPrice.toFixed(5)}`;
   if (numPrice < 1) return `$${numPrice.toFixed(4)}`;
@@ -196,14 +231,6 @@ function MarketingIcon(): JSX.Element {
   return (
     <span className="cursor-help" title="Boosted Token">
       <FaBolt className="text-blue-400 w-4 h-4 md:w-5 md:h-5" />
-    </span>
-  );
-}
-
-function AdIcon(): JSX.Element {
-  return (
-    <span className="cursor-help" title="Sponsored Token">
-      <FaBolt className="text-[#FFD700] w-4 h-4 md:w-5 md:h-5" />
     </span>
   );
 }
@@ -269,18 +296,65 @@ function getBellColor(alerts: Alert[]): string {
     case "price_spike":
     case "price_spike_long":
     case "mover":
+    case "price_above":
       return latestAlert.priceChangePercent && latestAlert.priceChangePercent >= 0
         ? "text-green-500"
         : "text-red-500";
     case "loser":
+    case "price_below":
       return "text-red-500";
     case "volume_spike":
     case "boost":
+    case "volume_above":
       return "text-blue-400";
-    case "new_token":
-      return "text-purple-500";
     default:
       return "text-gray-400";
+  }
+}
+
+function getAlertToastOptions(alert: Alert) {
+  let type: 'success' | 'error' | 'info' | 'default' = 'default';
+  const customStyle = {};
+  switch (alert.type) {
+    case "price_spike":
+    case "price_spike_long":
+    case "mover":
+    case "price_above":
+      type = alert.priceChangePercent && alert.priceChangePercent >= 0 ? 'success' : 'error';
+      break;
+    case "loser":
+    case "price_below":
+      type = 'error';
+      break;
+    case "volume_spike":
+    case "boost":
+    case "volume_above":
+      type = 'info';
+      break;
+    default:
+      type = 'default';
+  }
+  return { type, style: customStyle, position: "bottom-left" as const };
+}
+
+function getProgressColor(type: string, isPositive: boolean = true) {
+  switch (type) {
+    case "price_above":
+    case "price_spike":
+    case "price_spike_long":
+    case "mover":
+      return isPositive ? "bg-green-500" : "bg-red-500";
+    case "price_below":
+    case "loser":
+      return "bg-red-500";
+    case "volume_above":
+    case "volume_spike":
+    case "boost":
+      return "bg-blue-500";
+    case "mc_above":
+      return "bg-purple-500";
+    default:
+      return "bg-gray-500";
   }
 }
 
@@ -293,25 +367,40 @@ type Alert = {
     | "mover"
     | "loser"
     | "boost"
-    | "new_token";
+    | "price_above"
+    | "price_below"
+    | "volume_above"
+    | "mc_above";
   message: string;
   timestamp: string;
-  pairAddress?: string;
+  poolAddress?: string;
   priceChangePercent?: number;
 };
 
+export interface PortfolioTableProps {
+  portfolio: PortfolioItem[];
+  tokens: TokenData[];
+  handleTokenClick: (pool: string) => void;
+  handleRemoveFromPortfolio: (poolAddress: string) => Promise<void>;
+  handleEditPortfolioEntry: (poolAddress: string, amount: number, purchasePrice: number) => Promise<void>;
+  formatPrice: (price: string | number) => string;
+  getColorClass: (value: number) => string;
+  setEditingPortfolio: (item: PortfolioItem | null) => void;
+  setPortfolioForm: (form: { poolAddress: string; amount: string; purchasePrice: string }) => void;
+}
+
 export default function TokenScreener() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [tokens, setTokens] = useState<TokenData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [toast, setToast] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [viewMode, setViewMode] = useState<"all" | "favorites" | "baseAI" | "alerts" | "new">(
+  const [viewMode, setViewMode] = useState<"all" | "favorites" | "alerts" | "new" | "portfolio" | "watchlist">(
     "all"
   );
+  const [alertTab, setAlertTab] = useState<"feed" | "triggers" | "history">("feed");
   const [sortFilter, setSortFilter] = useState("trending");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [searchQuery, setSearchQuery] = useState("");
@@ -324,7 +413,7 @@ export default function TokenScreener() {
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [previousPrices, setPreviousPrices] = useState<{ [symbol: string]: number }>({});
   const [lastAlertTimes, setLastAlertTimes] = useState<{
-    [symbol: string]: { volume: number; price: number; priceLong: number; boost: number; new: number };
+    [symbol: string]: { volume: number; price: number; priceLong: number; boost: number };
   }>({});
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [selectedAlerts, setSelectedAlerts] = useState<Alert[] | null>(null);
@@ -336,15 +425,40 @@ export default function TokenScreener() {
   const [submissionSuccess, setSubmissionSuccess] = useState(false);
   const [showBoostModal, setShowBoostModal] = useState(false);
   const [showFavoritePopup, setShowFavoritePopup] = useState(false);
-  const [indexHistory, setIndexHistory] = useState<{ timestamp: Date; value: number }[]>([]);
   const [isMounted, setIsMounted] = useState(false);
-  const [initialTokenSnapshot, setInitialTokenSnapshot] = useState<string[]>([]);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
+  const [portfolioForm, setPortfolioForm] = useState({
+    poolAddress: "",
+    amount: "",
+    purchasePrice: "",
+  });
+  const [editingPortfolio, setEditingPortfolio] = useState<PortfolioItem | null>(null);
+  const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
+  const [selectedWatchlist, setSelectedWatchlist] = useState<string | null>(null);
+  const [showCreateWatchlistModal, setShowCreateWatchlistModal] = useState(false);
+  const [newWatchlistName, setNewWatchlistName] = useState("");
+  const [customAlerts, setCustomAlerts] = useState<CustomAlert[]>([]);
+  const [showCustomAlertModal, setShowCustomAlertModal] = useState(false);
+  const [editingCustomAlert, setEditingCustomAlert] = useState<CustomAlert | null>(null);
+  const [customAlertForm, setCustomAlertForm] = useState({
+    poolAddress: "",
+    type: "price_above" as "price_above" | "price_below" | "volume_above" | "mc_above",
+    threshold: "",
+  });
+  const [showAddToWatchlistModal, setShowAddToWatchlistModal] = useState(false);
+  const [selectedTokenForWatchlist, setSelectedTokenForWatchlist] = useState<string | null>(null);
+  const [watchlistSelections, setWatchlistSelections] = useState<string[]>([]);
+  const [lastPortfolioUpdate, setLastPortfolioUpdate] = useState<number>(0);
+  const [pageLoadTime, setPageLoadTime] = useState<number>(Date.now());
+  const [snoozedAlerts, setSnoozedAlerts] = useState<string[]>([]);
+  const [triggerFilter, setTriggerFilter] = useState<"all" | "price_above" | "price_below" | "volume_above" | "mc_above">("all");
   const pageSize = 25;
 
   // Ensure component is mounted on client
   useEffect(() => {
     setIsMounted(true);
+    setPageLoadTime(Date.now());
   }, []);
 
   // Prevent scrolling when filter menu is open
@@ -368,43 +482,120 @@ export default function TokenScreener() {
     };
   }, [showFilterMenu]);
 
-  // Check Authentication & fetch favorites
+  // Check Authentication & fetch favorites, watchlists, portfolio, custom alerts, lastPortfolioUpdate
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(firebaseAuth, (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        const favoritesQuery = query(collection(firestoreDb, `users/${currentUser.uid}/favorites`));
-        onSnapshot(favoritesQuery, (snapshot) => {
+        // Combine snapshots for optimization
+        const favoritesRef = collection(firestoreDb, `users/${currentUser.uid}/favorites`);
+        const watchlistsRef = collection(firestoreDb, `users/${currentUser.uid}/watchlists`);
+        const portfolioRef = collection(firestoreDb, `users/${currentUser.uid}/portfolio`);
+        const customAlertsRef = collection(firestoreDb, `users/${currentUser.uid}/customAlerts`);
+        const userDocRef = doc(firestoreDb, `users/${currentUser.uid}`);
+
+        const unsubFavs = onSnapshot(favoritesRef, (snapshot) => {
           const favs = snapshot.docs.map((doc) => doc.id);
           setFavorites(favs);
+          setWatchlists((prev) => {
+            const updated = prev.filter((wl) => wl.id !== "favorites");
+            return [{ id: "favorites", name: "Favorites", tokens: favs }, ...updated];
+          });
         });
+
+        const unsubWatchlists = onSnapshot(watchlistsRef, (snapshot) => {
+          const wls = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          })) as Watchlist[];
+          setWatchlists((prev) => {
+            const favorites = prev.find((wl) => wl.id === "favorites") || { id: "favorites", name: "Favorites", tokens: [] };
+            return [favorites, ...wls];
+          });
+        });
+
+        const unsubPortfolio = onSnapshot(portfolioRef, (snapshot) => {
+          const portfolioItems = snapshot.docs.map((doc) => ({
+            poolAddress: doc.id,
+            ...doc.data(),
+          })) as PortfolioItem[];
+          setPortfolio(portfolioItems);
+        });
+
+        const unsubCustomAlerts = onSnapshot(customAlertsRef, (snapshot) => {
+          const cas = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          })) as CustomAlert[];
+          setCustomAlerts(cas);
+        });
+
+        getDoc(userDocRef).then((docSnap) => {
+          if (docSnap.exists()) {
+            setLastPortfolioUpdate(docSnap.data().lastPortfolioUpdate || 0);
+          }
+        });
+
+        return () => {
+          unsubFavs();
+          unsubWatchlists();
+          unsubPortfolio();
+          unsubCustomAlerts();
+        };
+      } else {
+        setFavorites([]);
+        setWatchlists([]);
+        setPortfolio([]);
+        setCustomAlerts([]);
       }
     });
     return () => unsubscribe();
   }, []);
 
-  // Fetch Tokens from Firebase and DexScreener
+  // Auto-subscribe to alerts for portfolio tokens
   useEffect(() => {
-    const tokensQuery = query(collection(firestoreDb, "tokens"));
-    const unsubscribe = onSnapshot(tokensQuery, async (snapshot) => {
-      try {
-        setLoading(true);
-        setError("");
+    if (!user) return;
+    portfolio.forEach(async (item) => {
+      if (!customAlerts.some(ca => ca.poolAddress === item.poolAddress && ca.type === "price_below")) {
+        const threshold = item.purchasePrice * 0.9;
+        const docRef = await addDoc(collection(firestoreDb, `users/${user.uid}/customAlerts`), {
+          poolAddress: item.poolAddress,
+          type: "price_below",
+          threshold,
+          notified: false,
+          createdAt: serverTimestamp(),
+        });
+        setCustomAlerts(prev => [...prev, {id: docRef.id, poolAddress: item.poolAddress, type: "price_below", threshold, notified: false}]);
+      }
+    });
+  }, [portfolio, customAlerts, user]);
 
+  // Fetch Tokens from Firebase and DexScreener - Ensure unique by tokenAddress, optimize with caching
+  useEffect(() => {
+    setLoading(true);
+    setError("");
+    const unsubscribe = onSnapshot(collection(firestoreDb, "tokens"), async (snapshot) => {
+      try {
         const tokenList = snapshot.docs.map((doc) => ({
-          pool: doc.data().pool as string,
-          symbol: doc.data().symbol as string,
-          address: doc.data().address as string,
-          name: doc.data().name as string | undefined,
-          createdAt: doc.data().createdAt?.toDate().getTime() || 0,
+          poolAddress: doc.data().pool as string || "",
+          tokenAddress: doc.data().address as string || "",
+          symbol: doc.data().symbol as string || "",
+          name: doc.data().name as string || doc.data().symbol || "Unknown",
+          decimals: doc.data().decimals as number || 18,
+          pairCreatedAt: doc.data().createdAt?.toDate().getTime() || 0,
           docId: doc.id,
         }));
 
-        if (initialTokenSnapshot.length === 0) {
-          setInitialTokenSnapshot(tokenList.map((token) => token.docId));
-        }
+        const uniqueTokenMap = new Map<string, typeof tokenList[0]>();
+        tokenList.forEach((token) => {
+          if (!uniqueTokenMap.has(token.tokenAddress)) {
+            uniqueTokenMap.set(token.tokenAddress, token);
+          }
+        });
 
-        const validTokens = tokenList.filter((token) => /^0x[a-fA-F0-9]{40}$/.test(token.address));
+        const uniqueTokens = Array.from(uniqueTokenMap.values());
+        const validTokens = uniqueTokens.filter((token) => /^0x[a-fA-F0-9]{40}$/.test(token.tokenAddress));
+
         if (validTokens.length === 0) {
           setError("No valid token addresses found in Firebase.");
           setTokens([]);
@@ -412,9 +603,10 @@ export default function TokenScreener() {
           return;
         }
 
+        // Chunk and fetch from DexScreener, cache results if possible
         const tokenChunks: string[][] = [];
         for (let i = 0; i < validTokens.length; i += 10) {
-          tokenChunks.push(validTokens.slice(i, i + 10).map((t) => t.address));
+          tokenChunks.push(validTokens.slice(i, i + 10).map((t) => t.tokenAddress));
         }
 
         const allResults: TokenData[] = [];
@@ -426,67 +618,37 @@ export default function TokenScreener() {
               headers: { Accept: "application/json" },
             }
           );
+
           if (!res.ok) {
             console.error(`API fetch failed for chunk: ${joinedChunk}, status: ${res.status}`);
             continue;
           }
-          const data = await res.json();
-          if (Array.isArray(data)) {
-            allResults.push(
-              ...data.map((pair: any) => {
-                const firestoreToken = validTokens.find(
-                  (t) => t.address.toLowerCase() === pair.baseToken.address.toLowerCase()
-                );
-                return {
-                  pairAddress: firestoreToken?.pool || "",
-                  baseToken: {
-                    address: pair.baseToken.address || "",
-                    name: firestoreToken?.name || pair.baseToken.name || "Unknown",
-                    symbol: firestoreToken?.symbol || pair.baseToken.symbol || "UNK",
-                  },
-                  quoteToken: {
-                    address: pair.quoteToken.address || "",
-                    name: pair.quoteToken.name || "WETH",
-                    symbol: pair.quoteToken.symbol || "WETH",
-                  },
+
+          const data: DexScreenerPair[] = await res.json();
+          data.forEach((pair) => {
+            if (pair && pair.baseToken && pair.baseToken.address) {
+              const firestoreToken = validTokens.find(
+                (t) => t.tokenAddress.toLowerCase() === pair.baseToken.address.toLowerCase()
+              );
+              if (firestoreToken && !allResults.some((r) => r.tokenAddress === firestoreToken.tokenAddress)) {
+                allResults.push({
+                  ...firestoreToken,
+                  poolAddress: pair.pairAddress,
                   priceUsd: pair.priceUsd || "0",
-                  txns: pair.txns || {
-                    h1: { buys: 0, sells: 0 },
-                    h6: { buys: 0, sells: 0 },
-                    h24: { buys: 0, sells: 0 },
-                  },
                   priceChange: pair.priceChange || { m5: 0, h1: 0, h6: 0, h24: 0 },
                   volume: pair.volume || { h1: 0, h24: 0 },
                   liquidity: pair.liquidity || { usd: 0 },
                   marketCap: pair.marketCap || 0,
-                  pairCreatedAt: firestoreToken?.createdAt || pair.pairCreatedAt || 0,
                   info: pair.info ? { imageUrl: pair.info.imageUrl } : undefined,
-                };
-              })
-            );
-          }
+                  txns: pair.txns || { h1: { buys: 0, sells: 0 }, h6: { buys: 0, sells: 0 }, h24: { buys: 0, sells: 0 } },
+                });
+              }
+            }
+          });
         }
 
         if (allResults.length === 0) {
-          setTokens(
-            validTokens.map((token) => ({
-              pairAddress: token.pool || "",
-              baseToken: {
-                address: token.address,
-                name: token.name || "Unknown",
-                symbol: token.symbol || "UNK",
-              },
-              quoteToken: { address: "", name: "WETH", symbol: "WETH" },
-              priceUsd: "0",
-              txns: { h1: { buys: 0, sells: 0 }, h6: { buys: 0, sells: 0 }, h24: { buys: 0, sells: 0 } },
-              priceChange: { m5: 0, h1: 0, h6: 0, h24: 0 },
-              volume: { h1: 0, h24: 0 },
-              liquidity: { usd: 0 },
-              marketCap: 0,
-              pairCreatedAt: token.createdAt || 0,
-              info: { imageUrl: undefined },
-            }))
-          );
+          setTokens([]);
         } else {
           setTokens(allResults);
         }
@@ -498,54 +660,8 @@ export default function TokenScreener() {
         setLoading(false);
       }
     });
-
     return () => unsubscribe();
-  }, [initialTokenSnapshot]);
-
-  // Detect New Tokens and Generate Alerts
-  useEffect(() => {
-    const tokensQuery = query(collection(firestoreDb, "tokens"));
-    const unsubscribe = onSnapshot(tokensQuery, (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === "added" && !initialTokenSnapshot.includes(change.doc.id)) {
-          const token = change.doc.data();
-          const now = Date.now();
-          const symbol = token.symbol;
-          const pairAddress = token.pool;
-
-          if (!lastAlertTimes[symbol]?.new || now - lastAlertTimes[symbol].new >= COOLDOWN_PERIOD) {
-            const alert: Alert = {
-              type: "new_token",
-              message: `${symbol} is a new token added to the platform!`,
-              timestamp: new Date().toISOString(),
-              pairAddress,
-            };
-
-            addDoc(collection(firestoreDb, "notifications"), {
-              ...alert,
-              createdAt: serverTimestamp(),
-            }).catch((err) => console.error(`Failed to save new token alert for ${symbol}:`, err));
-
-            setAlerts((prev) => [...prev, alert]);
-            setLastAlertTimes((prev) => ({
-              ...prev,
-              [symbol]: {
-                ...prev[symbol],
-                new: now,
-                volume: prev[symbol]?.volume || 0,
-                price: prev[symbol]?.price || 0,
-                priceLong: prev[symbol]?.priceLong || 0,
-                boost: prev[symbol]?.boost || 0,
-              },
-            }));
-            setNotificationCount((prev) => prev + 1);
-          }
-        }
-      });
-    });
-
-    return () => unsubscribe();
-  }, [initialTokenSnapshot, lastAlertTimes]);
+  }, []);
 
   // Fetch Alerts from Firestore and Clean Up
   useEffect(() => {
@@ -555,74 +671,79 @@ export default function TokenScreener() {
       (snapshot) => {
         const now = Date.now();
         const newAlerts: Alert[] = [];
-        const alertsPerToken: { [pairAddress: string]: Alert[] } = {};
-
+        const alertsPerToken: { [poolAddress: string]: Alert[] } = {};
         snapshot.forEach((doc) => {
           const alert = { id: doc.id, ...doc.data() } as Alert;
           const alertTime = new Date(alert.timestamp).getTime();
-
           if (now - alertTime <= NOTIFICATION_EXPIRY) {
-            const pairAddress = alert.pairAddress || "unknown";
-            if (!alertsPerToken[pairAddress]) {
-              alertsPerToken[pairAddress] = [];
+            const poolAddress = alert.poolAddress || "unknown";
+            if (!alertsPerToken[poolAddress]) {
+              alertsPerToken[poolAddress] = [];
             }
-            alertsPerToken[pairAddress].push(alert);
+            alertsPerToken[poolAddress].push(alert);
           } else {
             deleteDoc(doc.ref).catch((err) => console.error(`Failed to delete alert: ${err}`));
           }
         });
-
-        Object.keys(alertsPerToken).forEach((pairAddress) => {
-          const tokenAlerts = alertsPerToken[pairAddress];
+        Object.keys(alertsPerToken).forEach((poolAddress) => {
+          const tokenAlerts = alertsPerToken[poolAddress];
           tokenAlerts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
           const limitedAlerts = tokenAlerts.slice(0, MAX_NOTIFICATIONS_PER_TOKEN);
           newAlerts.push(...limitedAlerts);
         });
-
         setAlerts(newAlerts);
         setNotificationCount(newAlerts.length);
       },
       (err) => {
         console.error("Error fetching alerts:", err);
-        setToast("Loading Alerts...");
-        setTimeout(() => setToast(""), 2000);
+        reactToast.info("Loading Alerts...", { position: "bottom-left" });
       }
     );
     return () => unsubscribe();
   }, []);
 
-  // Price Spike and Volume Spike Alerts
+  // Price Spike and Volume Spike Alerts + Custom Alerts Check + Portfolio Daily Update
   useEffect(() => {
-    async function checkPriceAndVolume() {
+    async function checkPriceAndVolumeAndPortfolio() {
       const now = Date.now();
       const newPrices: { [symbol: string]: number } = {};
       const newAlerts: Alert[] = [];
-
       if (notificationCount >= MAX_NOTIFICATIONS_PER_HOUR) return;
-
+      if (user && now - lastPortfolioUpdate >= PORTFOLIO_UPDATE_INTERVAL) {
+        for (const item of portfolio) {
+          const token = tokens.find((t) => t.poolAddress === item.poolAddress);
+          if (token) {
+            const currentPrice = parseFloat(token.priceUsd || "0");
+            const pnl = item.amount * (currentPrice - item.purchasePrice);
+            const history = item.history || [];
+            history.push({ date: new Date().toISOString(), price: currentPrice, pnl });
+            const portfolioDocRef = doc(firestoreDb, `users/${user.uid}/portfolio`, item.poolAddress);
+            await updateDoc(portfolioDocRef, { history });
+          }
+        }
+        const userDocRef = doc(firestoreDb, `users/${user.uid}`);
+        await updateDoc(userDocRef, { lastPortfolioUpdate: now });
+        setLastPortfolioUpdate(now);
+        reactToast.success("Portfolio data updated", { position: "bottom-left" });
+      }
       tokens.forEach((token) => {
-        const symbol = token.baseToken.symbol;
-        const pairAddress = token.pairAddress;
+        const symbol = token.symbol;
+        const poolAddress = token.poolAddress;
         const marketCap = token.marketCap || 0;
-        const liquidity = token.liquidity.usd;
+        const liquidity = token.liquidity?.usd || 0;
         const volumeH1 = token.volume?.h1 || 0;
         const currentPrice = parseFloat(token.priceUsd || "0");
         const previousPrice = previousPrices[symbol] || currentPrice;
         const priceChange6h = token.priceChange?.h6 ?? 0;
-        const tokenAlerts = alerts.filter((a) => a.pairAddress === pairAddress).length;
-
+        const tokenAlerts = alerts.filter((a) => a.poolAddress === token.poolAddress).length;
         if (tokenAlerts >= MAX_NOTIFICATIONS_PER_TOKEN) return;
-
         newPrices[symbol] = currentPrice;
-
         const lastTimes = lastAlertTimes[symbol] || {
           volume: 0,
           price: 0,
           priceLong: 0,
           boost: 0,
-          new: 0,
         };
-
         const volumeSpikeThresholdMarketCap = marketCap * 0.1;
         const volumeSpikeThresholdLiquidity = liquidity * 0.5;
         if (
@@ -635,27 +756,25 @@ export default function TokenScreener() {
             type: "volume_spike",
             message: `${symbol} volume spiked to $${volumeH1.toLocaleString()} in the last hour.`,
             timestamp: new Date().toISOString(),
-            pairAddress,
+            poolAddress,
           };
-          newAlerts.push(alert);
-          addDoc(collection(firestoreDb, "notifications"), {
-            ...alert,
-            createdAt: serverTimestamp(),
-          }).catch((err) => console.error(`Failed to save volume alert for ${symbol}:`, err));
-          setLastAlertTimes((prev) => ({
-            ...prev,
-            [symbol]: {
-              ...prev[symbol],
-              volume: now,
-              price: prev[symbol]?.price || 0,
-              priceLong: prev[symbol]?.priceLong || 0,
-              boost: prev[symbol]?.boost || 0,
-              new: prev[symbol]?.new || 0,
-            },
-          }));
-          setNotificationCount((prev) => prev + 1);
+          if (now >= pageLoadTime) {
+            newAlerts.push(alert);
+            addDoc(collection(firestoreDb, "notifications"), {
+              ...alert,
+              createdAt: serverTimestamp(),
+            }).catch((err) => console.error(`Failed to save volume alert for ${symbol}:`, err));
+            setLastAlertTimes((prev) => ({
+              ...prev,
+              [symbol]: {
+                ...prev[symbol],
+                volume: now,
+              },
+            }));
+            setNotificationCount((prev) => prev + 1);
+            reactToast(alert.message, getAlertToastOptions(alert));
+          }
         }
-
         const priceChangePercent =
           previousPrice !== 0 ? ((currentPrice - previousPrice) / previousPrice) * 100 : 0;
         if (
@@ -672,27 +791,25 @@ export default function TokenScreener() {
             ).toFixed(2)}% in the last 5 minutes.`,
             timestamp: new Date().toISOString(),
             priceChangePercent,
-            pairAddress,
+            poolAddress,
           };
-          newAlerts.push(alert);
-          addDoc(collection(firestoreDb, "notifications"), {
-            ...alert,
-            createdAt: serverTimestamp(),
-          }).catch((err) => console.error(`Failed to save price alert for ${symbol}:`, err));
-          setLastAlertTimes((prev) => ({
-            ...prev,
-            [symbol]: {
-              ...prev[symbol],
-              price: now,
-              volume: prev[symbol]?.volume || 0,
-              priceLong: prev[symbol]?.priceLong || 0,
-              boost: prev[symbol]?.boost || 0,
-              new: prev[symbol]?.new || 0,
-            },
-          }));
-          setNotificationCount((prev) => prev + 1);
+          if (now >= pageLoadTime) {
+            newAlerts.push(alert);
+            addDoc(collection(firestoreDb, "notifications"), {
+              ...alert,
+              createdAt: serverTimestamp(),
+            }).catch((err) => console.error(`Failed to save price alert for ${symbol}:`, err));
+            setLastAlertTimes((prev) => ({
+              ...prev,
+              [symbol]: {
+                ...prev[symbol],
+                price: now,
+              },
+            }));
+            setNotificationCount((prev) => prev + 1);
+            reactToast(alert.message, getAlertToastOptions(alert));
+          }
         }
-
         if (
           liquidity >= 50000 &&
           Math.abs(priceChange6h) >= 10 &&
@@ -707,95 +824,142 @@ export default function TokenScreener() {
             )}% in the last 6 hours.`,
             timestamp: new Date().toISOString(),
             priceChangePercent: priceChange6h,
-            pairAddress,
+            poolAddress,
           };
-          newAlerts.push(alert);
-          addDoc(collection(firestoreDb, "notifications"), {
-            ...alert,
-            createdAt: serverTimestamp(),
-          }).catch((err) => console.error(`Failed to save long-term price alert for ${symbol}:`, err));
-          setLastAlertTimes((prev) => ({
-            ...prev,
-            [symbol]: {
-              ...prev[symbol],
-              priceLong: now,
-              volume: prev[symbol]?.volume || 0,
-              price: prev[symbol]?.price || 0,
-              boost: prev[symbol]?.boost || 0,
-              new: prev[symbol]?.new || 0,
-            },
-          }));
-          setNotificationCount((prev) => prev + 1);
+          if (now >= pageLoadTime) {
+            newAlerts.push(alert);
+            addDoc(collection(firestoreDb, "notifications"), {
+              ...alert,
+              createdAt: serverTimestamp(),
+            }).catch((err) => console.error(`Failed to save long-term price alert for ${symbol}:`, err));
+            setLastAlertTimes((prev) => ({
+              ...prev,
+              [symbol]: {
+                ...prev[symbol],
+                priceLong: now,
+              },
+            }));
+            setNotificationCount((prev) => prev + 1);
+            reactToast(alert.message, getAlertToastOptions(alert));
+          }
+        }
+        // Custom alerts check
+        if (user) {
+          customAlerts.forEach((ca) => {
+            if (ca.poolAddress === poolAddress && !ca.notified) {
+              let triggered = false;
+              let message = "";
+              let changePercent;
+              if (ca.type === "price_above" && currentPrice > ca.threshold) {
+                triggered = true;
+                message = `${symbol} price exceeded $${ca.threshold}`;
+                changePercent = ((currentPrice - ca.threshold) / ca.threshold) * 100;
+              } else if (ca.type === "price_below" && currentPrice < ca.threshold) {
+                triggered = true;
+                message = `${symbol} price dropped below $${ca.threshold}`;
+                changePercent = ((currentPrice - ca.threshold) / ca.threshold) * 100;
+              } else if (ca.type === "volume_above" && volumeH1 > ca.threshold) {
+                triggered = true;
+                message = `${symbol} volume exceeded $${ca.threshold} in the last hour`;
+              } else if (ca.type === "mc_above" && marketCap > ca.threshold) {
+                triggered = true;
+                message = `${symbol} market cap exceeded $${ca.threshold}`;
+              }
+              if (triggered && now >= pageLoadTime) {
+                const alert: Alert = {
+                  type: ca.type,
+                  message,
+                  timestamp: new Date().toISOString(),
+                  poolAddress,
+                  priceChangePercent: changePercent,
+                };
+                newAlerts.push(alert);
+                addDoc(collection(firestoreDb, "notifications"), {
+                  ...alert,
+                  createdAt: serverTimestamp(),
+                }).catch((err) => console.error(`Failed to save custom alert for ${symbol}:`, err));
+                updateDoc(doc(firestoreDb, `users/${user.uid}/customAlerts`, ca.id!), { notified: true });
+                setNotificationCount((prev) => prev + 1);
+                reactToast(message, getAlertToastOptions(alert));
+              }
+            }
+          });
         }
       });
-
       setPreviousPrices(newPrices);
       setAlerts((prev) => [...prev, ...newAlerts]);
     }
-
-    checkPriceAndVolume();
-    const interval = setInterval(checkPriceAndVolume, PRICE_CHECK_INTERVAL);
+    checkPriceAndVolumeAndPortfolio();
+    const interval = setInterval(checkPriceAndVolumeAndPortfolio, PRICE_CHECK_INTERVAL);
     return () => clearInterval(interval);
-  }, [tokens, previousPrices, lastAlertTimes, notificationCount, alerts]);
+  }, [tokens, previousPrices, lastAlertTimes, notificationCount, alerts, customAlerts, user, portfolio, lastPortfolioUpdate, pageLoadTime]);
 
-  // Boost Alerts
+  // Boost Alerts - Real-time with onSnapshot and expiration check
   useEffect(() => {
-    async function checkBoostAlerts() {
-      const now = Date.now();
-      if (notificationCount >= MAX_NOTIFICATIONS_PER_HOUR) return;
-
-      try {
-        const boostedTokens = await getDocs(collection(firestoreDb, "boosts"));
-        const boostMap: { [pairAddress: string]: number } = {};
-        boostedTokens.forEach((doc) => {
-          const data = doc.data();
-          boostMap[data.pairAddress.toLowerCase()] = data.boostValue;
-        });
-
-        const boostAlerts = tokens
-          .filter((token) => boostMap[token.pairAddress.toLowerCase()] > 0 && !token.boosted)
-          .map((token) => ({
-            type: "boost" as const,
-            message: `${token.baseToken.symbol} received a boost of ${boostMap[token.pairAddress.toLowerCase()]}`,
+    const boostsQuery = query(collection(firestoreDb, "boosts"));
+    const unsubscribe = onSnapshot(boostsQuery, (snapshot) => {
+      const now = new Date();
+      const boostMap: { [poolAddress: string]: number } = {};
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        const expiresAt = data.expiresAt?.toDate();
+        if (!expiresAt || expiresAt > now) {
+          if (data.poolAddress) {
+            boostMap[data.poolAddress.toLowerCase()] = data.boostValue || 0;
+          }
+        } else {
+          deleteDoc(doc.ref).catch((err) => console.error("Failed to delete expired boost:", err));
+        }
+      });
+      setTokens((prev) =>
+        prev.map((token) => ({
+          ...token,
+          boosted: !!boostMap[token.poolAddress.toLowerCase()],
+          boostValue: boostMap[token.poolAddress.toLowerCase()] || 0,
+        }))
+      );
+      const newBoostAlerts: Alert[] = [];
+      tokens.forEach((token) => {
+        const symbol = token.symbol;
+        const poolAddress = token.poolAddress;
+        const boostValue = boostMap[poolAddress.toLowerCase()];
+        const lastBoostTime = lastAlertTimes[symbol]?.boost || 0;
+        if (
+          boostValue > 0 &&
+          !token.boosted &&
+          Date.now() - lastBoostTime >= COOLDOWN_PERIOD &&
+          notificationCount < MAX_NOTIFICATIONS_PER_HOUR
+        ) {
+          const alert: Alert = {
+            type: "boost",
+            message: `${symbol} received a boost of ${boostValue}`,
             timestamp: new Date().toISOString(),
-            pairAddress: token.pairAddress,
-          }))
-          .slice(0, 1);
-
-        if (boostAlerts.length > 0) {
-          setAlerts((prev) => [...prev, ...boostAlerts]);
-          for (const alert of boostAlerts) {
-            await addDoc(collection(firestoreDb, "notifications"), {
+            poolAddress,
+          };
+          if (Date.now() >= pageLoadTime) {
+            newBoostAlerts.push(alert);
+            addDoc(collection(firestoreDb, "notifications"), {
               ...alert,
               createdAt: serverTimestamp(),
-            }).catch((err) => console.error("Failed to save boost alert:", err));
+            }).catch((err) => console.error(`Failed to save boost alert for ${symbol}:`, err));
+            setLastAlertTimes((prev) => ({
+              ...prev,
+              [symbol]: {
+                ...prev[symbol],
+                boost: Date.now(),
+              },
+            }));
+            setNotificationCount((prev) => prev + 1);
+            reactToast(alert.message, getAlertToastOptions(alert));
           }
-          setLastAlertTimes((prev) => ({
-            ...prev,
-            [boostAlerts[0].pairAddress || "unknown"]: {
-              ...prev[boostAlerts[0].pairAddress || "unknown"],
-              boost: now,
-            },
-          }));
-          setNotificationCount((prev) => prev + boostAlerts.length);
-
-          setTokens((prev) =>
-            prev.map((token) => ({
-              ...token,
-              boosted: !!boostMap[token.pairAddress.toLowerCase()],
-              boostValue: boostMap[token.pairAddress.toLowerCase()] || 0,
-            }))
-          );
         }
-      } catch (err: any) {
-        console.error("Error checking boost alerts:", err);
+      });
+      if (newBoostAlerts.length > 0) {
+        setAlerts((prev) => [...prev, ...newBoostAlerts]);
       }
-    }
-
-    checkBoostAlerts();
-    const interval = setInterval(checkBoostAlerts, COOLDOWN_PERIOD);
-    return () => clearInterval(interval);
-  }, [tokens, notificationCount]);
+    });
+    return () => unsubscribe();
+  }, [tokens, notificationCount, lastAlertTimes, alerts, pageLoadTime]);
 
   // Top Movers and Losers Alerts
   useEffect(() => {
@@ -803,14 +967,11 @@ export default function TokenScreener() {
       const sortedBy1h = [...tokens].sort((a, b) => (b.priceChange?.h1 ?? 0) - (a.priceChange?.h1 ?? 0));
       const topMovers = sortedBy1h.slice(0, 5);
       const topLosers = sortedBy1h.slice(-5).reverse();
-
       const newAlerts: Alert[] = [];
-
       if (notificationCount >= MAX_NOTIFICATIONS_PER_HOUR) return;
-
       topMovers.forEach((token) => {
         const priceChange = token.priceChange?.h1 ?? 0;
-        const tokenAlerts = alerts.filter((a) => a.pairAddress === token.pairAddress).length;
+        const tokenAlerts = alerts.filter((a) => a.poolAddress === token.poolAddress).length;
         if (
           priceChange > 0 &&
           notificationCount < MAX_NOTIFICATIONS_PER_HOUR &&
@@ -818,25 +979,27 @@ export default function TokenScreener() {
         ) {
           const alert: Alert = {
             type: "mover",
-            message: `${token.baseToken.symbol} is up ${priceChange.toFixed(2)}% in the last hour.`,
+            message: `${token.symbol} is up ${priceChange.toFixed(2)}% in the last hour.`,
             timestamp: new Date().toISOString(),
-            pairAddress: token.pairAddress,
+            poolAddress: token.poolAddress,
             priceChangePercent: priceChange,
           };
-          newAlerts.push(alert);
-          addDoc(collection(firestoreDb, "notifications"), {
-            ...alert,
-            createdAt: serverTimestamp(),
-          }).catch((err) =>
-            console.error(`Failed to save mover alert for ${token.baseToken.symbol}:`, err)
-          );
-          setNotificationCount((prev) => prev + 1);
+          if (Date.now() >= pageLoadTime) {
+            newAlerts.push(alert);
+            addDoc(collection(firestoreDb, "notifications"), {
+              ...alert,
+              createdAt: serverTimestamp(),
+            }).catch((err) =>
+              console.error(`Failed to save mover alert for ${token.symbol}:`, err)
+            );
+            setNotificationCount((prev) => prev + 1);
+            reactToast(alert.message, getAlertToastOptions(alert));
+          }
         }
       });
-
       topLosers.forEach((token) => {
         const priceChange = token.priceChange?.h1 ?? 0;
-        const tokenAlerts = alerts.filter((a) => a.pairAddress === token.pairAddress).length;
+        const tokenAlerts = alerts.filter((a) => a.poolAddress === token.poolAddress).length;
         if (
           priceChange < 0 &&
           notificationCount < MAX_NOTIFICATIONS_PER_HOUR &&
@@ -844,25 +1007,26 @@ export default function TokenScreener() {
         ) {
           const alert: Alert = {
             type: "loser",
-            message: `${token.baseToken.symbol} is down ${Math.abs(priceChange).toFixed(2)}% in the last hour.`,
+            message: `${token.symbol} is down ${Math.abs(priceChange).toFixed(2)}% in the last hour.`,
             timestamp: new Date().toISOString(),
-            pairAddress: token.pairAddress,
+            poolAddress: token.poolAddress,
             priceChangePercent: priceChange,
           };
-          newAlerts.push(alert);
-          addDoc(collection(firestoreDb, "notifications"), {
-            ...alert,
-            createdAt: serverTimestamp(),
-          }).catch((err) =>
-            console.error(`Failed to save loser alert for ${token.baseToken.symbol}:`, err)
-          );
-          setNotificationCount((prev) => prev + 1);
+          if (Date.now() >= pageLoadTime) {
+            newAlerts.push(alert);
+            addDoc(collection(firestoreDb, "notifications"), {
+              ...alert,
+              createdAt: serverTimestamp(),
+            }).catch((err) =>
+              console.error(`Failed to save loser alert for ${token.symbol}:`, err)
+            );
+            setNotificationCount((prev) => prev + 1);
+            reactToast(alert.message, getAlertToastOptions(alert));
+          }
         }
       });
-
       setAlerts((prev) => [...prev, ...newAlerts]);
     }
-
     const interval = setInterval(() => {
       const currentTime = new Date();
       if (currentTime.getMinutes() % 5 === 0) {
@@ -870,24 +1034,7 @@ export default function TokenScreener() {
       }
     }, TOP_MOVERS_LOSERS_INTERVAL);
     return () => clearInterval(interval);
-  }, [tokens, notificationCount, alerts]);
-
-  // Update Base AI Index History
-  useEffect(() => {
-    if (!isMounted) return;
-    const updateIndexHistory = () => {
-      const indexValue = tokens.reduce((sum, token) => {
-        return sum + (parseFloat(token.priceUsd || "0") * (token.weight || 0));
-      }, 0);
-      setIndexHistory((prev) => [
-        ...prev.slice(-59),
-        { timestamp: new Date(), value: indexValue },
-      ]);
-    };
-    updateIndexHistory();
-    const interval = setInterval(updateIndexHistory, 300_000);
-    return () => clearInterval(interval);
-  }, [tokens, isMounted]);
+  }, [tokens, notificationCount, alerts, pageLoadTime]);
 
   // Apply Trending Scores
   const tokensWithTrending = useMemo(() => {
@@ -901,20 +1048,10 @@ export default function TokenScreener() {
   const filteredTokens = useMemo(() => {
     let tokenList = tokensWithTrending;
     if (viewMode === "favorites") {
-      tokenList = tokenList.filter((token) => favorites.includes(token.pairAddress));
-    } else if (viewMode === "baseAI") {
-      tokenList = tokenList.filter((token) =>
-        BASE_AI_TOKEN_SYMBOLS.includes(token.baseToken.symbol.toUpperCase())
-      );
-      tokenList = tokenList.map((token) => {
-        const baseAiToken = baseAiTokens.find(
-          (t) => t.symbol.toUpperCase() === token.baseToken.symbol.toUpperCase()
-        );
-        return {
-          ...token,
-          weight: baseAiToken ? parseFloat(baseAiToken.weight.replace("%", "")) : 0,
-        };
-      });
+      tokenList = tokenList.filter((token) => favorites.includes(token.poolAddress));
+    } else if (viewMode === "watchlist" && selectedWatchlist) {
+      const wl = watchlists.find((wl) => wl.id === selectedWatchlist);
+      tokenList = tokenList.filter((token) => wl?.tokens.includes(token.poolAddress));
     } else if (viewMode === "new") {
       tokenList = tokenList.filter(
         (token) =>
@@ -922,7 +1059,11 @@ export default function TokenScreener() {
       );
     } else if (viewMode === "alerts") {
       tokenList = tokenList.filter((token) =>
-        alerts.some((alert) => alert.pairAddress === token.pairAddress)
+        alerts.some((alert) => alert.poolAddress === token.poolAddress)
+      );
+    } else if (viewMode === "portfolio") {
+      tokenList = tokenList.filter((token) =>
+        portfolio.some((item) => item.poolAddress === token.poolAddress)
       );
     }
     return tokenList.filter((token) => {
@@ -935,18 +1076,15 @@ export default function TokenScreener() {
         ageDays >= (filters.minAge || 0) &&
         (filters.maxAge === Infinity || ageDays <= filters.maxAge) &&
         (searchQuery === "" ||
-          token.baseToken.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          token.baseToken.symbol.toLowerCase().includes(searchQuery.toLowerCase()))
+          token.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          token.symbol.toLowerCase().includes(searchQuery.toLowerCase()))
       );
     });
-  }, [tokensWithTrending, filters, viewMode, favorites, searchQuery, alerts]);
+  }, [tokensWithTrending, filters, viewMode, favorites, searchQuery, alerts, portfolio, watchlists, selectedWatchlist]);
 
   const sortedTokens = useMemo(() => {
     const copy = [...filteredTokens];
-    if (viewMode === "baseAI") {
-      copy.sort((a, b) => (b.weight || 0) - (a.weight || 0));
-      return copy.slice(0, 10);
-    } else if (sortFilter === "trending") {
+    if (sortFilter === "trending") {
       copy.sort((a, b) => (b.trendingScore || 0) - (a.trendingScore || 0));
       return sortDirection === "asc" ? copy.reverse() : copy;
     } else if (sortFilter === "volume") {
@@ -985,115 +1123,170 @@ export default function TokenScreener() {
       });
     }
     return copy;
-  }, [filteredTokens, sortFilter, sortDirection, viewMode]);
+  }, [filteredTokens, sortFilter, sortDirection]);
 
   const searchSuggestions = useMemo(() => {
     if (!searchQuery) return [];
     return tokens
       .filter(
         (token) =>
-          token.baseToken.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          token.baseToken.symbol.toLowerCase().includes(searchQuery.toLowerCase())
+          token.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          token.symbol.toLowerCase().includes(searchQuery.toLowerCase())
       )
       .slice(0, 5);
   }, [tokens, searchQuery]);
 
-  // Base AI Index Metrics
-  const indexMetrics = useMemo(() => {
-    const baseAiTokensList = tokens.filter((token) =>
-      BASE_AI_TOKEN_SYMBOLS.includes(token.baseToken.symbol.toUpperCase())
-    );
-    const totalVolume = baseAiTokensList.reduce((sum, token) => sum + (token.volume?.h24 || 0), 0);
-    const avgPriceChange =
-      baseAiTokensList.reduce((sum, token) => sum + (token.priceChange?.h24 || 0), 0) /
-      (baseAiTokensList.length || 1);
-    const totalMarketCap = baseAiTokensList.reduce((sum, token) => sum + (token.marketCap || 0), 0);
-    const tokenCount = baseAiTokensList.length;
-    return { totalVolume, avgPriceChange, totalMarketCap, tokenCount };
-  }, [tokens]);
+  // Portfolio Metrics
+  const portfolioMetrics = useMemo(() => {
+    const totalValue = portfolio.reduce((sum, item) => {
+      const token = tokens.find((t) => t.poolAddress === item.poolAddress);
+      const currentPrice = token ? parseFloat(token.priceUsd || "0") : 0;
+      return sum + item.amount * currentPrice;
+    }, 0);
+    const totalPnL = portfolio.reduce((sum, item) => {
+      const token = tokens.find((t) => t.poolAddress === item.poolAddress);
+      const currentPrice = token ? parseFloat(token.priceUsd || "0") : 0;
+      return sum + item.amount * (currentPrice - item.purchasePrice);
+    }, 0);
+    const topPerformer = portfolio.reduce((max, item) => {
+      const token = tokens.find((t) => t.poolAddress === item.poolAddress);
+      const pnl = item.amount * (parseFloat(token?.priceUsd || "0") - item.purchasePrice);
+      return pnl > max.pnl ? { symbol: token?.symbol || 'UNK', pnl } : max;
+    }, { symbol: '', pnl: -Infinity });
+    const biggestLoser = portfolio.reduce((min, item) => {
+      const token = tokens.find((t) => t.poolAddress === item.poolAddress);
+      const pnl = item.amount * (parseFloat(token?.priceUsd || "0") - item.purchasePrice);
+      return pnl < min.pnl ? { symbol: token?.symbol || 'UNK', pnl } : min;
+    }, { symbol: '', pnl: Infinity });
+    const allocations = portfolio.map(item => {
+      const token = tokens.find((t) => t.poolAddress === item.poolAddress);
+      const value = item.amount * parseFloat(token?.priceUsd || "0");
+      return value / totalValue * 100;
+    });
+    const maxAlloc = Math.max(...allocations);
+    const health = maxAlloc > 50 ? "Concentrated" : "Balanced";
+    const allocData = portfolio.map(item => {
+      const token = tokens.find((t) => t.poolAddress === item.poolAddress);
+      return { name: token?.symbol || 'UNK', value: item.amount * parseFloat(token?.priceUsd || "0") };
+    });
+    return { totalValue, totalPnL, topPerformer, biggestLoser, health, allocData };
+  }, [portfolio, tokens]);
 
-  // Chart Data for Base AI Index
-  const chartData = {
-    datasets: [
-      {
-        label: "Base AI Index Value",
-        data: indexHistory.map((point) => ({ x: point.timestamp.getTime(), y: point.value })),
-        borderColor: "rgba(59, 130, 246, 1)",
-        backgroundColor: "rgba(59, 130, 246, 0.2)",
-        fill: true,
-      },
-    ],
-  };
-
-  const chartOptions = {
-    scales: {
-      x: {
-        type: "time" as const,
-        time: {
-          unit: "minute" as const,
-          displayFormats: { minute: "HH:mm" },
-        },
-        title: { display: true, text: "TIME" },
-      },
-      y: {
-        title: { display: true, text: "INDEX VALUE (USD)" },
-      },
-    },
-    plugins: {
-      legend: { display: true },
-      tooltip: {
-        callbacks: {
-          label: (context: any) => `Value: $${context.parsed.y.toFixed(2)}`,
-        },
-      },
-    },
-  };
+  // P&L data for chart
+  const pnlData = useMemo(() => {
+    return portfolio.map((item) => {
+      const token = tokens.find((t) => t.poolAddress === item.poolAddress);
+      const currentPrice = token ? parseFloat(token.priceUsd || "0") : 0;
+      const pnl = item.amount * (currentPrice - item.purchasePrice);
+      return { name: token?.symbol || "UNK", pnl };
+    });
+  }, [portfolio, tokens]);
 
   // Handlers
-  const handleCopy = useCallback((address: string) => {
-    navigator.clipboard.writeText(address).then(() => {
-      setToast("Copied to clipboard");
-      setTimeout(() => setToast(""), 2000);
-    });
+  const handleCopy = useCallback(async (token: TokenData) => {
+    let address = token.tokenAddress;
+    if (!address) {
+      try {
+        const tokenDoc = await getDoc(doc(firestoreDb, "tokens", token.docId!));
+        if (tokenDoc.exists()) {
+          address = tokenDoc.data().address || "";
+        }
+      } catch (err) {
+        console.error("Failed to fallback query token address:", err);
+        reactToast.error("Error fetching address", { position: "bottom-left" });
+        return;
+      }
+    }
+    if (address) {
+      navigator.clipboard.writeText(address).then(() => {
+        reactToast.success("Token address copied!", { position: "bottom-left" });
+      }).catch(() => reactToast.error("Copy failed", { position: "bottom-left" }));
+    } else {
+      reactToast.error("No address available", { position: "bottom-left" });
+    }
   }, []);
 
   const toggleFavorite = useCallback(
-    async (pairAddress: string) => {
+    async (poolAddress: string) => {
       if (!user) {
         setShowFavoritePopup(true);
         return;
       }
-      const isFavorited = favorites.includes(pairAddress);
+      const isFavorited = favorites.includes(poolAddress);
       try {
-        const favoriteDocRef = doc(firestoreDb, `users/${user.uid}/favorites`, pairAddress);
+        const favoriteDocRef = doc(firestoreDb, `users/${user.uid}/favorites`, poolAddress);
         if (isFavorited) {
-          setFavorites((prev) => prev.filter((fav) => fav !== pairAddress));
+          setFavorites((prev) => prev.filter((fav) => fav !== poolAddress));
           await deleteDoc(favoriteDocRef);
+          reactToast.success("Removed from favorites", { position: "bottom-left" });
         } else {
-          setFavorites((prev) => [...prev, pairAddress]);
+          setFavorites((prev) => [...prev, poolAddress]);
           await setDoc(favoriteDocRef, {
-            pairAddress,
+            poolAddress,
             createdAt: serverTimestamp(),
           });
+          reactToast.success("Added to favorites", { position: "bottom-left" });
         }
       } catch (err) {
         console.error("Error toggling favorite:", err);
         setFavorites((prev) =>
-          isFavorited ? [...prev, pairAddress] : prev.filter((fav) => fav !== pairAddress)
+          isFavorited ? [...prev, poolAddress] : prev.filter((fav) => fav !== poolAddress)
         );
-        setToast("Error updating favorites");
-        setTimeout(() => setToast(""), 2000);
+        reactToast.error("Error updating favorites", { position: "bottom-left" });
       }
     },
     [user, favorites]
   );
 
+  const handleOpenAddToWatchlist = useCallback((poolAddress: string) => {
+    setSelectedTokenForWatchlist(poolAddress);
+    const currentSelections = watchlists
+      .filter((wl) => wl.tokens.includes(poolAddress))
+      .map((wl) => wl.id);
+    setWatchlistSelections(currentSelections);
+    setShowAddToWatchlistModal(true);
+  }, [watchlists]);
+
+  const handleUpdateWatchlistSelections = useCallback(async () => {
+    if (!user || !selectedTokenForWatchlist) return;
+    try {
+      for (const wl of watchlists) {
+        const isSelected = watchlistSelections.includes(wl.id);
+        const isCurrentlyIn = wl.tokens.includes(selectedTokenForWatchlist);
+        if (isSelected !== isCurrentlyIn) {
+          if (wl.id === "favorites") {
+            const favoriteDocRef = doc(firestoreDb, `users/${user.uid}/favorites`, selectedTokenForWatchlist);
+            if (isSelected) {
+              await setDoc(favoriteDocRef, {
+                poolAddress: selectedTokenForWatchlist,
+                createdAt: serverTimestamp(),
+              });
+            } else {
+              await deleteDoc(favoriteDocRef);
+            }
+          } else {
+            const watchlistDocRef = doc(firestoreDb, `users/${user.uid}/watchlists`, wl.id);
+            await updateDoc(watchlistDocRef, {
+              tokens: isSelected ? arrayUnion(selectedTokenForWatchlist) : arrayRemove(selectedTokenForWatchlist),
+            });
+          }
+        }
+      }
+      setShowAddToWatchlistModal(false);
+      setSelectedTokenForWatchlist(null);
+      setWatchlistSelections([]);
+      reactToast.success("Watchlists updated", { position: "bottom-left" });
+    } catch (err) {
+      console.error("Error updating watchlists:", err);
+      reactToast.error("Error updating watchlists", { position: "bottom-left" });
+    }
+  }, [user, selectedTokenForWatchlist, watchlistSelections, watchlists]);
+
   const handleTokenClick = useCallback(
     (pool: string) => {
       if (!pool || !/^0x[a-fA-F0-9]{40}$/.test(pool)) {
         console.error("Invalid pool address for navigation:", pool);
-        setToast("Invalid token address. Please try again.");
-        setTimeout(() => setToast(""), 2000);
+        reactToast.error("Invalid token address. Please try again.", { position: "bottom-left" });
         return;
       }
       const targetUrl = `/token-scanner/${pool}/chart`;
@@ -1105,6 +1298,131 @@ export default function TokenScreener() {
       }, 500);
     },
     [router]
+  );
+
+  const handleAddToPortfolio = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!user) {
+        setShowFavoritePopup(true);
+        return;
+      }
+      const { poolAddress, amount, purchasePrice } = portfolioForm;
+      if (!/^0x[a-fA-F0-9]{40}$/.test(poolAddress)) {
+        reactToast.error("Invalid pool address", { position: "bottom-left" });
+        return;
+      }
+      try {
+        // Check if token exists in current tokens list
+        let token = tokens.find((t) => t.poolAddress === poolAddress);
+        if (!token) {
+          // Fetch token data from DexScreener API
+          const res = await fetch(
+            `https://api.dexscreener.com/tokens/v1/base/${encodeURIComponent(poolAddress)}`,
+            {
+              headers: { Accept: "application/json" },
+            }
+          );
+          if (!res.ok) {
+            throw new Error("Failed to fetch token data from DexScreener");
+          }
+          const data: DexScreenerPair[] = await res.json();
+          if (data.length > 0) {
+            const pair = data[0];
+            if (pair && pair.baseToken && pair.baseToken.address) {
+              token = {
+                poolAddress: pair.pairAddress,
+                tokenAddress: pair.baseToken.address,
+                symbol: pair.baseToken.symbol,
+                name: pair.baseToken.name,
+                decimals: pair.baseToken.decimals || 18,
+                priceUsd: pair.priceUsd || "0",
+                priceChange: pair.priceChange || { m5: 0, h1: 0, h6: 0, h24: 0 },
+                volume: pair.volume || { h1: 0, h24: 0 },
+                liquidity: pair.liquidity || { usd: 0 },
+                marketCap: pair.marketCap || 0,
+                info: pair.info ? { imageUrl: pair.info.imageUrl } : undefined,
+                txns: pair.txns || { h1: { buys: 0, sells: 0 }, h6: { buys: 0, sells: 0 }, h24: { buys: 0, sells: 0 } },
+                pairCreatedAt: pair.pairCreatedAt ? new Date(pair.pairCreatedAt).getTime() : 0,
+              };
+              setTokens((prev) => [...prev, token!]);
+            }
+          } else {
+            reactToast.error("Token not found on DexScreener", { position: "bottom-left" });
+            return;
+          }
+        }
+        const portfolioDocRef = doc(
+          firestoreDb,
+          `users/${user.uid}/portfolio`,
+          poolAddress
+        );
+        await setDoc(portfolioDocRef, {
+          poolAddress,
+          amount: Number(amount),
+          purchasePrice: Number(purchasePrice),
+          history: [],
+          createdAt: serverTimestamp(),
+        });
+        setPortfolio((prev) => [
+          ...prev,
+          {
+            poolAddress,
+            amount: Number(amount),
+            purchasePrice: Number(purchasePrice),
+            history: [],
+          },
+        ]);
+        setPortfolioForm({ poolAddress: "", amount: "", purchasePrice: "" });
+        reactToast.success("Token added to portfolio", { position: "bottom-left" });
+      } catch (err) {
+        console.error("Error adding to portfolio:", err);
+        reactToast.error("Error adding to portfolio", { position: "bottom-left" });
+      }
+    },
+    [user, portfolioForm, tokens, setTokens, setPortfolio, reactToast]
+  );
+
+  const handleRemoveFromPortfolio = useCallback(
+    async (poolAddress: string) => {
+      if (!user) {
+        setShowFavoritePopup(true);
+        return;
+      }
+      try {
+        const portfolioDocRef = doc(firestoreDb, `users/${user.uid}/portfolio`, poolAddress);
+        await deleteDoc(portfolioDocRef);
+        setPortfolio((prev) => prev.filter((item) => item.poolAddress !== poolAddress));
+        reactToast.success("Token removed from portfolio", { position: "bottom-left" });
+      } catch (err) {
+        console.error("Error removing from portfolio:", err);
+        reactToast.error("Error removing from portfolio", { position: "bottom-left" });
+      }
+    },
+    [user, reactToast]
+  );
+
+  const handleEditPortfolioEntry = useCallback(
+    async (poolAddress: string, amount: number, purchasePrice: number) => {
+      if (!user) return;
+      try {
+        const portfolioDocRef = doc(firestoreDb, `users/${user.uid}/portfolio`, poolAddress);
+        await updateDoc(portfolioDocRef, {
+          amount,
+          purchasePrice,
+        });
+        setPortfolio((prev) =>
+          prev.map((item) =>
+            item.poolAddress === poolAddress ? { ...item, amount, purchasePrice } : item
+          )
+        );
+        reactToast.success("Portfolio entry updated", { position: "bottom-left" });
+      } catch (err) {
+        console.error("Error editing portfolio entry:", err);
+        reactToast.error("Error editing portfolio entry", { position: "bottom-left" });
+      }
+    },
+    [user, reactToast]
   );
 
   const handleBoostNow = () => {
@@ -1126,13 +1444,13 @@ export default function TokenScreener() {
       });
       if (response.ok) {
         setSubmissionSuccess(true);
+        reactToast.success("Token listing submitted", { position: "bottom-left" });
       } else {
         throw new Error("Submission failed");
       }
     } catch (err) {
       console.error(err);
-      setToast("Submission error. Please try again.");
-      setTimeout(() => setToast(""), 2000);
+      reactToast.error("Submission error. Please try again.", { position: "bottom-left" });
     }
   }
 
@@ -1143,6 +1461,104 @@ export default function TokenScreener() {
     setTokenAddress("");
     setTokenLogo("");
   }
+
+  const handleCreateWatchlist = useCallback(async () => {
+    if (!user || !newWatchlistName) return;
+    try {
+      const docRef = await addDoc(collection(firestoreDb, `users/${user.uid}/watchlists`), {
+        name: newWatchlistName,
+        tokens: [],
+        createdAt: serverTimestamp(),
+      });
+      setShowCreateWatchlistModal(false);
+      setNewWatchlistName("");
+      setSelectedWatchlist(docRef.id);
+      reactToast.success("Watchlist created", { position: "bottom-left" });
+    } catch (err) {
+      console.error("Error creating watchlist:", err);
+      reactToast.error("Error creating watchlist", { position: "bottom-left" });
+    }
+  }, [user, newWatchlistName, reactToast]);
+
+  const handleSaveCustomAlert = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) {
+      setShowFavoritePopup(true);
+      return;
+    }
+    const { poolAddress, type, threshold } = customAlertForm;
+    if (!/^0x[a-fA-F0-9]{40}$/.test(poolAddress)) {
+      reactToast.error("Invalid pool address", { position: "bottom-left" });
+      return;
+    }
+    try {
+      if (editingCustomAlert && editingCustomAlert.id) {
+        const docRef = doc(firestoreDb, `users/${user.uid}/customAlerts`, editingCustomAlert.id);
+        await updateDoc(docRef, {
+          poolAddress,
+          type,
+          threshold: Number(threshold),
+          notified: false,
+        });
+        setCustomAlerts((prev) =>
+          prev.map((ca) =>
+            ca.id === editingCustomAlert.id ? { ...ca, poolAddress, type, threshold: Number(threshold), notified: false } : ca
+          )
+        );
+        reactToast.success("Custom alert updated", { position: "bottom-left" });
+      } else {
+        const docRef = await addDoc(collection(firestoreDb, `users/${user.uid}/customAlerts`), {
+          poolAddress,
+          type,
+          threshold: Number(threshold),
+          notified: false,
+          createdAt: serverTimestamp(),
+        });
+        setCustomAlerts((prev) => [
+          ...prev,
+          {
+            id: docRef.id,
+            poolAddress,
+            type,
+            threshold: Number(threshold),
+          },
+        ]);
+        reactToast.success("Custom alert added", { position: "bottom-left" });
+      }
+      setCustomAlertForm({ poolAddress: "", type: "price_above", threshold: "" });
+      setShowCustomAlertModal(false);
+      setEditingCustomAlert(null);
+    } catch (err) {
+      console.error("Error saving custom alert:", err);
+      reactToast.error("Error saving custom alert", { position: "bottom-left" });
+    }
+  }, [user, customAlertForm, editingCustomAlert, reactToast]);
+
+  useEffect(() => {
+    if (editingCustomAlert) {
+      setCustomAlertForm({
+        poolAddress: editingCustomAlert.poolAddress,
+        type: editingCustomAlert.type,
+        threshold: editingCustomAlert.threshold.toString(),
+      });
+      setShowCustomAlertModal(true);
+    }
+  }, [editingCustomAlert]);
+
+  const handleResetNotified = async (id: string) => {
+    if (!user || !id) return;
+    try {
+      const docRef = doc(firestoreDb, `users/${user.uid}/customAlerts`, id);
+      await updateDoc(docRef, { notified: false });
+      setCustomAlerts((prev) =>
+        prev.map((ca) => (ca.id === id ? { ...ca, notified: false } : ca))
+      );
+      reactToast.success("Alert reset", { position: "bottom-left" });
+    } catch (err) {
+      console.error("Error resetting alert:", err);
+      reactToast.error("Error resetting alert", { position: "bottom-left" });
+    }
+  };
 
   const debouncedSetSearchQuery = useCallback(
     debounce((value: string) => setSearchQuery(value), 300),
@@ -1177,6 +1593,10 @@ export default function TokenScreener() {
     visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: "easeOut" } },
   };
 
+  const filteredCustomAlerts = useMemo(() => {
+    return triggerFilter === "all" ? customAlerts : customAlerts.filter(ca => ca.type === triggerFilter);
+  }, [customAlerts, triggerFilter]);
+
   if (!isMounted) {
     return (
       <div className="w-screen h-screen bg-gray-950 text-gray-200 font-sans m-0 p-0 overflow-hidden">
@@ -1195,6 +1615,33 @@ export default function TokenScreener() {
 
   return (
     <div className="w-screen h-screen bg-gray-950 text-gray-200 font-sans m-0 p-0 overflow-hidden">
+      <style jsx global>{`
+        @keyframes fillLeftToRight {
+          0% {
+            transform: scaleX(0);
+          }
+          100% {
+            transform: scaleX(1);
+          }
+        }
+        .Toastify__progress-bar {
+          transform-origin: left;
+          animation: fillLeftToRight linear forwards;
+        }
+        .Toastify__progress-bar--animated {
+          background: linear-gradient(to right, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.9) 100%);
+        }
+        .Toastify__toast-theme--dark .Toastify__progress-bar--success {
+          background: linear-gradient(to right, rgba(0, 255, 0, 0.5) 0%, rgba(0, 255, 0, 0.9) 100%);
+        }
+        .Toastify__toast-theme--dark .Toastify__progress-bar--error {
+          background: linear-gradient(to right, rgba(255, 0, 0, 0.5) 0%, rgba(255, 0, 0, 0.9) 100%);
+        }
+        .Toastify__toast-theme--dark .Toastify__progress-bar--info {
+          background: linear-gradient(to right, rgba(0, 0, 255, 0.5) 0%, rgba(0, 0, 255, 0.9) 100%);
+        }
+      `}</style>
+      <ToastContainer position="bottom-left" autoClose={2000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="dark" />
       {/* Error Toast */}
       {error && (
         <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-900 text-gray-200 font-sans py-2 px-4 rounded-lg shadow-xl z-50 border border-blue-500/30 uppercase">
@@ -1204,18 +1651,10 @@ export default function TokenScreener() {
           </button>
         </div>
       )}
-
-      {/* Copy / General Toast */}
-      {toast && (
-        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-900 text-gray-200 py-2 px-4 rounded-lg shadow-xl z-50 border border-blue-500/30 font-sans uppercase">
-          {toast}
-        </div>
-      )}
-
       {/* Submit Listing Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30">
+          <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30 md:w-96">
             <button onClick={closeModal} className="absolute top-2 right-2 text-xl font-bold">
               ×
             </button>
@@ -1278,7 +1717,7 @@ export default function TokenScreener() {
               <div className="text-center">
                 <h2 className="text-xl font-bold mb-4 font-sans uppercase">Token Listing Submitted!</h2>
                 <p className="mb-4 text-sm font-sans uppercase">
-                  Your token has been submitted for review. We’ll notify you once it’s listed!
+                  Your token has been submitted for review. We&rsquo;ll notify you once it&rsquo;s listed!
                 </p>
                 <motion.button
                   whileHover={{ scale: 1.05 }}
@@ -1292,11 +1731,10 @@ export default function TokenScreener() {
           </div>
         </div>
       )}
-
       {/* Boost Info Modal */}
       {showBoostModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30">
+          <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30 md:w-96">
             <button onClick={() => setShowBoostModal(false)} className="absolute top-2 right-2 text-xl font-bold">
               ×
             </button>
@@ -1306,18 +1744,18 @@ export default function TokenScreener() {
               token's trending rank:
             </p>
             <ul className="text-sm mb-4 list-disc list-inside font-sans uppercase">
-              <li className="font-sans uppercase">Boost (10) - 10 USDC (12HR)</li>
-              <li className="font-sans uppercase">Boost (20) - 15 USDC (12HR)</li>
-              <li className="font-sans uppercase">Boost (30) - 20 USDC (12HR)</li>
-              <li className="font-sans uppercase">Boost (40) - 25 USDC (12HR)</li>
-              <li className="font-sans uppercase">Boost (50) - 35 USDC (24HR)</li>
-              <li className="font-sans uppercase">Boost (100) - 50 USDC (24HR)</li>
-              <li className="font-sans uppercase">Boost (150) - 75 USDC (36HR)</li>
-              <li className="font-sans uppercase">Boost (200) - 90 USDC (36HR)</li>
-              <li className="font-sans uppercase">Boost (250) - 100 USDC (36HR)</li>
-              <li className="font-sans uppercase">Boost (500) - 175 USDC (48HR)</li>
-              <li className="font-sans uppercase">Boost (1000) - 300 USDC (48HR)</li>
-              <li className="font-sans uppercase">Ad (Banner Ad) - 50 USDC</li>
+              <li>Boost (10) - 10 USDC (12HR)</li>
+              <li>Boost (20) - 15 USDC (12HR)</li>
+              <li>Boost (30) - 20 USDC (12HR)</li>
+              <li>Boost (40) - 25 USDC (12HR)</li>
+              <li>Boost (50) - 35 USDC (24HR)</li>
+              <li>Boost (100) - 50 USDC (24HR)</li>
+              <li>Boost (150) - 75 USDC (36HR)</li>
+              <li>Boost (200) - 90 USDC (36HR)</li>
+              <li>Boost (250) - 100 USDC (36HR)</li>
+              <li>Boost (500) - 175 USDC (48HR)</li>
+              <li>Boost (1000) - 300 USDC (48HR)</li>
+              <li>Ad (Banner Ad) - 50 USDC</li>
             </ul>
             <p className="text-sm mb-4 font-sans uppercase">
               Once the transaction is confirmed, your token will appear boosted in the screener!
@@ -1335,11 +1773,10 @@ export default function TokenScreener() {
           </div>
         </div>
       )}
-
       {/* Favorite Popup Modal */}
       {showFavoritePopup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30">
+          <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30 md:w-96">
             <button
               onClick={() => setShowFavoritePopup(false)}
               className="absolute top-2 right-2 text-xl font-bold"
@@ -1372,35 +1809,44 @@ export default function TokenScreener() {
           </div>
         </div>
       )}
-
       {/* Selected Alerts Modal */}
       {selectedAlerts && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-900 text-gray-200 p-8 rounded-lg shadow-xl w-[90%] max-w-xl border border-blue-500/30">
+          <div className="bg-gray-900 text-gray-200 p-4 md:p-8 rounded-lg shadow-xl w-[90%] max-w-xl border border-blue-500/30">
             <h2 className="text-xl font-bold mb-4 font-sans uppercase">Alerts ({selectedAlerts.length})</h2>
             <ul className="space-y-3 max-h-96 overflow-y-auto">
               {selectedAlerts.map((alert, idx) => {
-                const token = tokens.find((t) => t.pairAddress === alert.pairAddress);
+                const token = tokens.find((t) => t.poolAddress === alert.poolAddress);
                 const colorClass =
-                  alert.type === "new_token"
-                    ? "text-purple-500"
-                    : alert.type === "volume_spike" || alert.type === "boost"
+                  alert.type === "volume_spike" || alert.type === "boost" || alert.type === "volume_above"
                     ? "text-blue-400"
-                    : alert.type === "mover" || (alert.priceChangePercent && alert.priceChangePercent >= 0)
+                    : alert.type === "mover" || alert.type === "price_above" || alert.type === "price_spike" || alert.type === "price_spike_long"
                     ? "text-green-500"
                     : "text-red-500";
+                const messageParts = alert.message.split(/(\d+\.?\d*)/);
+                const formattedMessage = messageParts.map((part, index) => (
+                  /^\d+\.?\d*$/.test(part) ? (
+                    <span key={index} className={colorClass}>
+                      {part}
+                    </span>
+                  ) : (
+                    <span key={index}>{part}</span>
+                  )
+                ));
                 return (
                   <li key={idx} className="text-sm font-sans flex items-center space-x-3 uppercase">
-                    {token && token.info && (
-                      <img
+                    {token?.info && (
+                      <Image
                         src={token.info.imageUrl || "/fallback.png"}
-                        alt={token.baseToken.symbol}
-                        className="w-6 h-6 rounded-full border border-blue-500/30"
+                        alt={token.symbol}
+                        width={24}
+                        height={24}
+                        className="rounded-full border border-blue-500/30"
                       />
                     )}
                     <div>
                       <span className="font-bold">{alert.type.replace("_", " ").toUpperCase()}:</span>{" "}
-                      <span className={colorClass}>{alert.message}</span>
+                      <span className={colorClass}>{formattedMessage}</span>
                       <br />
                       <span className="text-xs text-gray-400 font-sans uppercase">
                         {new Date(alert.timestamp).toLocaleString()}
@@ -1423,7 +1869,184 @@ export default function TokenScreener() {
           </div>
         </div>
       )}
-
+      {/* Create Watchlist Modal */}
+      {showCreateWatchlistModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30 md:w-96">
+            <button onClick={() => setShowCreateWatchlistModal(false)} className="absolute top-2 right-2 text-xl font-bold">
+              ×
+            </button>
+            <h2 className="text-xl font-bold mb-4 font-sans uppercase">Create Watchlist</h2>
+            <input
+              type="text"
+              value={newWatchlistName}
+              onChange={(e) => setNewWatchlistName(e.target.value)}
+              className="w-full border border-blue-500/30 p-2 rounded font-sans bg-gray-900 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase mb-4"
+              placeholder="Watchlist Name"
+              required
+            />
+            <div className="flex justify-end">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={handleCreateWatchlist}
+                className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded font-sans uppercase border border-blue-500/30"
+              >
+                Create
+              </motion.button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Add to Watchlist Modal */}
+      {showAddToWatchlistModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30 md:w-96">
+            <button onClick={() => setShowAddToWatchlistModal(false)} className="absolute top-2 right-2 text-xl font-bold">
+              ×
+            </button>
+            <h2 className="text-xl font-bold mb-4 font-sans uppercase">Add to Watchlists</h2>
+            <div className="space-y-2">
+              {watchlists.map((wl) => (
+                <div key={wl.id} className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={watchlistSelections.includes(wl.id)}
+                    onChange={(e) => {
+                      setWatchlistSelections((prev) =>
+                        e.target.checked ? [...prev, wl.id] : prev.filter((id) => id !== wl.id)
+                      );
+                    }}
+                    className="mr-2"
+                  />
+                  <label className="font-sans uppercase">{wl.name}</label>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end mt-4">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={handleUpdateWatchlistSelections}
+                className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded font-sans uppercase border border-blue-500/30"
+              >
+                Update
+              </motion.button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Custom Alert Modal */}
+      {showCustomAlertModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30 md:w-96">
+            <button onClick={() => { setShowCustomAlertModal(false); setEditingCustomAlert(null); }} className="absolute top-2 right-2 text-xl font-bold">
+              ×
+            </button>
+            <h2 className="text-xl font-bold mb-4 font-sans uppercase">{editingCustomAlert ? "Edit" : "Set"} Custom Alert</h2>
+            <form onSubmit={handleSaveCustomAlert}>
+              <div className="mb-4">
+                <label className="block mb-1 font-sans uppercase">Pool Address</label>
+                <input
+                  type="text"
+                  value={customAlertForm.poolAddress}
+                  onChange={(e) => setCustomAlertForm({ ...customAlertForm, poolAddress: e.target.value })}
+                  className="w-full border border-blue-500/30 p-2 rounded font-sans bg-gray-900 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                  required
+                  placeholder="0x..."
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block mb-1 font-sans uppercase">Type</label>
+                <select
+                  value={customAlertForm.type}
+                  onChange={(e) => setCustomAlertForm({ ...customAlertForm, type: e.target.value as "price_above" | "price_below" | "volume_above" | "mc_above" })}
+                  className="w-full border border-blue-500/30 p-2 rounded font-sans bg-gray-900 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                >
+                  <option value="price_above">Price Above</option>
+                  <option value="price_below">Price Below</option>
+                  <option value="volume_above">Volume Above</option>
+                  <option value="mc_above">Market Cap Above</option>
+                </select>
+              </div>
+              <div className="mb-4">
+                <label className="block mb-1 font-sans uppercase">Threshold</label>
+                <input
+                  type="number"
+                  value={customAlertForm.threshold}
+                  onChange={(e) => setCustomAlertForm({ ...customAlertForm, threshold: e.target.value })}
+                  className="w-full border border-blue-500/30 p-2 rounded font-sans bg-gray-900 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                  required
+                  placeholder="e.g. 1.5"
+                  step="any"
+                />
+              </div>
+              <div className="flex justify-end">
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  type="submit"
+                  className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded font-sans uppercase border border-blue-500/30"
+                >
+                  {editingCustomAlert ? "Update" : "Add"} Alert
+                </motion.button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Edit Portfolio Modal */}
+      {editingPortfolio && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30 md:w-96">
+            <button onClick={() => setEditingPortfolio(null)} className="absolute top-2 right-2 text-xl font-bold">
+              ×
+            </button>
+            <h2 className="text-xl font-bold mb-4 font-sans uppercase">Edit Portfolio Entry</h2>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              handleEditPortfolioEntry(editingPortfolio.poolAddress, Number(portfolioForm.amount), Number(portfolioForm.purchasePrice));
+              setEditingPortfolio(null);
+              setPortfolioForm({ poolAddress: "", amount: "", purchasePrice: "" });
+            }}>
+              <div className="mb-4">
+                <label className="block mb-1 font-sans uppercase">Amount</label>
+                <input
+                  type="number"
+                  value={portfolioForm.amount}
+                  onChange={(e) => setPortfolioForm({ ...portfolioForm, amount: e.target.value })}
+                  className="w-full border border-blue-500/30 p-2 rounded font-sans bg-gray-900 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                  required
+                  min="0"
+                  step="any"
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block mb-1 font-sans uppercase">Purchase Price ($)</label>
+                <input
+                  type="number"
+                  value={portfolioForm.purchasePrice}
+                  onChange={(e) => setPortfolioForm({ ...portfolioForm, purchasePrice: e.target.value })}
+                  className="w-full border border-blue-500/30 p-2 rounded font-sans bg-gray-900 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                  required
+                  min="0"
+                  step="any"
+                />
+              </div>
+              <div className="flex justify-end">
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  type="submit"
+                  className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded font-sans uppercase border border-blue-500/30"
+                >
+                  Save
+                </motion.button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       {/* Main Container */}
       <div className="flex flex-col w-full h-full">
         {/* Header Bar */}
@@ -1434,7 +2057,7 @@ export default function TokenScreener() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setShowFilterMenu(true)}
-                className="flex items-center space-x-1 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
+                className="sm:hidden flex items-center space-x-1 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
               >
                 <FaFilter className="text-blue-400" />
                 <span>Menu</span>
@@ -1455,26 +2078,28 @@ export default function TokenScreener() {
                   <div className="absolute top-full left-0 mt-2 w-full bg-gray-900 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto border border-blue-500/30">
                     {searchSuggestions.map((token) => (
                       <div
-                        key={token.pairAddress}
+                        key={token.poolAddress}
                         onClick={() => {
                           setSearchQuery("");
                           setShowSearchDropdown(false);
-                          handleTokenClick(token.pairAddress);
+                          handleTokenClick(token.poolAddress);
                         }}
                         className="flex items-center space-x-3 p-3 hover:bg-gray-800 cursor-pointer transition-colors duration-150"
                       >
                         {token.info && (
-                          <img
+                          <Image
                             src={token.info.imageUrl || "/fallback.png"}
-                            alt={token.baseToken.symbol}
-                            className="w-6 h-6 rounded-full border border-blue-500/30"
+                            alt={token.symbol}
+                            width={24}
+                            height={24}
+                            className="rounded-full border border-blue-500/30"
                           />
                         )}
                         <span className="text-sm font-sans truncate text-gray-200 uppercase">
-                          {token.baseToken.name} / {token.quoteToken.symbol} ({token.baseToken.symbol})
+                          {token.name} ({token.symbol})
                         </span>
                         <span className="text-sm text-gray-400 ml-auto font-sans uppercase">
-                          {formatPrice(token.priceUsd)}
+                          {formatPrice(token.priceUsd || 0)}
                         </span>
                       </div>
                     ))}
@@ -1504,7 +2129,7 @@ export default function TokenScreener() {
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => router.push("/account")}
+                onClick={() => router.push("/login")}
                 className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
               >
                 <FaUser className="text-gray-200" />
@@ -1521,7 +2146,6 @@ export default function TokenScreener() {
             </div>
           </div>
         </div>
-
         {/* Filter & ViewMode Overlay (Mobile full-page) */}
         {showFilterMenu && (
           <div className="fixed inset-0 bg-gray-900 z-50 overflow-y-auto">
@@ -1554,9 +2178,7 @@ export default function TokenScreener() {
                     setShowFilterMenu(false);
                   }}
                   className={`p-3 text-gray-200 rounded-lg text-base font-sans transition-colors border border-blue-500/30 uppercase ${
-                    viewMode === "favorites"
-                      ? "bg-blue-500/20 text-blue-400"
-                      : "bg-gray-800 hover:bg-gray-700"
+                    viewMode === "favorites" ? "bg-blue-500/20 text-blue-400" : "bg-gray-800 hover:bg-gray-700"
                   }`}
                 >
                   Favorites
@@ -1564,16 +2186,14 @@ export default function TokenScreener() {
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   onClick={() => {
-                    setViewMode("baseAI");
+                    setViewMode("watchlist");
                     setShowFilterMenu(false);
                   }}
                   className={`p-3 text-gray-200 rounded-lg text-base font-sans transition-colors border border-blue-500/30 uppercase ${
-                    viewMode === "baseAI"
-                      ? "bg-blue-500/20 text-blue-400"
-                      : "bg-gray-800 hover:bg-gray-700"
+                    viewMode === "watchlist" ? "bg-blue-500/20 text-blue-400" : "bg-gray-800 hover:bg-gray-700"
                   }`}
                 >
-                  Base AI Index
+                  Watchlists
                 </motion.button>
                 <motion.button
                   whileHover={{ scale: 1.05 }}
@@ -1600,13 +2220,24 @@ export default function TokenScreener() {
                   New Tokens
                 </motion.button>
                 <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  onClick={() => {
+                    setViewMode("portfolio");
+                    setShowFilterMenu(false);
+                  }}
+                  className={`p-3 text-gray-200 rounded-lg text-base font-sans transition-colors border border-blue-500/30 uppercase ${
+                    viewMode === "portfolio" ? "bg-blue-500/20 text-blue-400" : "bg-gray-800 hover:bg-gray-700"
+                  }`}
+                >
+                  Portfolio
+                </motion.button>
+                <motion.button
                   disabled
                   className="p-3 text-gray-400 rounded-lg text-base font-sans transition-colors border border-blue-500/30 bg-gray-800 opacity-50 cursor-not-allowed truncate uppercase"
                 >
                   New Pairs v2
                 </motion.button>
               </div>
-
               {/* Filter Inputs */}
               <div className="grid grid-cols-1 gap-4 mb-6">
                 <div>
@@ -1659,9 +2290,7 @@ export default function TokenScreener() {
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  onClick={() => {
-                    setShowFilterMenu(false);
-                  }}
+                  onClick={() => setShowFilterMenu(false)}
                   className="bg-gray-800 hover:bg-gray-700 text-gray-200 py-3 px-6 rounded-lg font-sans uppercase border border-blue-500/30"
                 >
                   Apply
@@ -1670,7 +2299,6 @@ export default function TokenScreener() {
             </div>
           </div>
         )}
-
         {/* Desktop Filter Bar & ViewMode Tabs */}
         {!showFilterMenu && (
           <div className="hidden sm:flex bg-gray-900 p-3 sm:p-4 flex-col sm:flex-row gap-3 sm:gap-4 border-b border-blue-500/30 shadow-inner">
@@ -1695,12 +2323,12 @@ export default function TokenScreener() {
               </motion.button>
               <motion.button
                 whileHover={{ scale: 1.05 }}
-                onClick={() => setViewMode("baseAI")}
+                onClick={() => setViewMode("watchlist")}
                 className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
-                  viewMode === "baseAI" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
+                  viewMode === "watchlist" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
                 }`}
               >
-                Base AI Index
+                Watchlists
               </motion.button>
               <motion.button
                 whileHover={{ scale: 1.05 }}
@@ -1721,13 +2349,21 @@ export default function TokenScreener() {
                 New Tokens
               </motion.button>
               <motion.button
+                whileHover={{ scale: 1.05 }}
+                onClick={() => setViewMode("portfolio")}
+                className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
+                  viewMode === "portfolio" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
+                }`}
+              >
+                Portfolio
+              </motion.button>
+              <motion.button
                 disabled
                 className="p-2 text-gray-400 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 bg-gray-900 opacity-50 cursor-not-allowed truncate uppercase"
               >
                 New Pairs v2
               </motion.button>
             </div>
-
             <div className="hidden sm:flex gap-2">
               <input
                 type="number"
@@ -1769,42 +2405,154 @@ export default function TokenScreener() {
             </div>
           </div>
         )}
-
-        {/* Base AI Index Cards */}
-        {!showFilterMenu && viewMode === "baseAI" && (
+        {/* Watchlist Selector */}
+        {viewMode === "watchlist" && (
           <div className="bg-gray-900 p-4 border-b border-blue-500/30 shadow-inner">
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <div className="bg-gray-900 p-3 rounded-lg border border-blue-500/30 shadow-sm">
-                <p className="text-sm font-sans text-gray-400 uppercase">Total Volume (24h)</p>
-                <p className="text-lg font-sans text-gray-200 uppercase">${indexMetrics.totalVolume.toLocaleString()}</p>
-              </div>
-              <div className="bg-gray-900 p-3 rounded-lg border border-blue-500/30 shadow-sm">
-                <p className="text-sm font-sans text-gray-400 uppercase">Total Market Cap</p>
-                <p className="text-lg font-sans text-gray-200 uppercase">${indexMetrics.totalMarketCap.toLocaleString()}</p>
-              </div>
-              <div className="bg-gray-900 p-3 rounded-lg border border-blue-500/30 shadow-sm">
-                <p className="text-sm font-sans text-gray-400 uppercase">Avg. Price Change (24h)</p>
-                <p className={`text-lg font-sans ${getColorClass(indexMetrics.avgPriceChange)} uppercase`}>
-                  {indexMetrics.avgPriceChange.toFixed(2)}%
-                </p>
-              </div>
-              <div className="bg-gray-900 p-3 rounded-lg border border-blue-500/30 shadow-sm">
-                <p className="text-sm font-sans text-gray-400 uppercase">Token Count</p>
-                <p className="text-lg font-sans text-gray-200 uppercase">{indexMetrics.tokenCount}</p>
-              </div>
-            </div>
-            <div className="mt-4">
-              <h3 className="text-lg font-semibold font-sans text-gray-200 uppercase">Index Growth</h3>
-              <Line data={chartData} options={chartOptions} />
+            <div className="flex items-center space-x-4">
+              <select
+                value={selectedWatchlist || ""}
+                onChange={(e) => setSelectedWatchlist(e.target.value)}
+                className="bg-gray-800 text-gray-200 border border-blue-500/30 p-2 rounded font-sans uppercase"
+              >
+                <option value="">Select Watchlist</option>
+                {watchlists.map((wl) => (
+                  <option key={wl.id} value={wl.id}>
+                    {wl.name}
+                  </option>
+                ))}
+              </select>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                onClick={() => setShowCreateWatchlistModal(true)}
+                className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded font-sans uppercase border border-blue-500/30"
+              >
+                New Watchlist
+              </motion.button>
             </div>
           </div>
         )}
-
+        {/* Portfolio Dashboard, Form, and Chart */}
+        {!showFilterMenu && viewMode === "portfolio" && (
+          <div className="bg-gray-900 p-4 border-b border-blue-500/30 shadow-inner">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
+              <div className="bg-gray-900 p-3 rounded-lg border border-blue-500/30 shadow-sm">
+                <p className="text-sm font-sans text-gray-400 uppercase">Total Portfolio Value</p>
+                <p className="text-lg font-sans text-gray-200 uppercase">${portfolioMetrics.totalValue.toLocaleString()}</p>
+              </div>
+              <div className="bg-gray-900 p-3 rounded-lg border border-blue-500/30 shadow-sm">
+                <p className="text-sm font-sans text-gray-400 uppercase">Total P&L</p>
+                <p className={`text-lg font-sans ${getColorClass(portfolioMetrics.totalPnL)} uppercase`}>
+                  ${portfolioMetrics.totalPnL.toFixed(2)}
+                </p>
+              </div>
+              <div className="bg-gray-900 p-3 rounded-lg border border-blue-500/30 shadow-sm">
+                <p className="text-sm font-sans text-gray-400 uppercase">Top Performer</p>
+                <p className="text-lg font-sans text-gray-200 uppercase">
+                  {portfolioMetrics.topPerformer.symbol} <span className={getColorClass(portfolioMetrics.topPerformer.pnl)}>${portfolioMetrics.topPerformer.pnl.toFixed(2)}</span>
+                </p>
+              </div>
+              <div className="bg-gray-900 p-3 rounded-lg border border-blue-500/30 shadow-sm">
+                <p className="text-sm font-sans text-gray-400 uppercase">Biggest Loser</p>
+                <p className="text-lg font-sans text-gray-200 uppercase">
+                  {portfolioMetrics.biggestLoser.symbol} <span className={getColorClass(portfolioMetrics.biggestLoser.pnl)}>${portfolioMetrics.biggestLoser.pnl.toFixed(2)}</span>
+                </p>
+              </div>
+              <div className="bg-gray-900 p-3 rounded-lg border border-blue-500/30 shadow-sm">
+                <p className="text-sm font-sans text-gray-400 uppercase">Portfolio Health</p>
+                <p className={`text-lg font-sans ${portfolioMetrics.health === "Concentrated" ? "text-red-500" : "text-green-500"} uppercase`}>
+                  {portfolioMetrics.health}
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div className="h-64">
+                <h3 className="text-lg font-semibold font-sans text-gray-200 uppercase mb-2">P&L Chart</h3>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={pnlData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Line type="monotone" dataKey="pnl" stroke="#8884d8" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="h-64">
+                <h3 className="text-lg font-semibold font-sans text-gray-200 uppercase mb-2">Allocation Pie</h3>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie dataKey="value" data={portfolioMetrics.allocData} cx="50%" cy="50%" outerRadius={80} fill="#8884d8" label>
+                      {portfolioMetrics.allocData.map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold font-sans text-gray-200 uppercase">Add to Portfolio</h3>
+              <form onSubmit={handleAddToPortfolio} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block mb-1 text-gray-400 uppercase text-sm font-sans">Pool Address</label>
+                  <input
+                    type="text"
+                    value={portfolioForm.poolAddress}
+                    onChange={(e) => setPortfolioForm({ ...portfolioForm, poolAddress: e.target.value })}
+                    className="w-full p-2 bg-gray-800 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                    placeholder="0x..."
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block mb-1 text-gray-400 uppercase text-sm font-sans">Amount</label>
+                  <input
+                    type="number"
+                    value={portfolioForm.amount}
+                    onChange={(e) => setPortfolioForm({ ...portfolioForm, amount: e.target.value })}
+                    className="w-full p-2 bg-gray-800 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                    placeholder="Amount"
+                    required
+                    min="0"
+                    step="any"
+                  />
+                </div>
+                <div>
+                  <label className="block mb-1 text-gray-400 uppercase text-sm font-sans">Purchase Price ($)</label>
+                  <input
+                    type="number"
+                    value={portfolioForm.purchasePrice}
+                    onChange={(e) => setPortfolioForm({ ...portfolioForm, purchasePrice: e.target.value })}
+                    className="w-full p-2 bg-gray-800 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+                    placeholder="Price"
+                    required
+                    min="0"
+                    step="any"
+                  />
+                </div>
+                <div className="flex justify-end sm:col-span-3">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    type="submit"
+                    className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded font-sans uppercase border border-blue-500/30"
+                    title="Add this token to your portfolio for tracking"
+                  >
+                    Add
+                  </motion.button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
         {/* Main Table or Alerts Feed */}
-        <div className="flex-1 flex flex-col w-full h-full overflow-x-auto overflow-y-auto">
+        <div className="flex-1 flex flex-col w-full h-full overflow-x-hidden overflow-y-auto">
           {loading ? (
             <div className="w-full h-full overflow-auto">
-              <table className="table-auto w-full h-full whitespace-nowrap text-sm font-sans uppercase">
+              <table className="table-auto w-full whitespace-nowrap text-sm font-sans uppercase">
                 <thead className="bg-gray-900 text-gray-400 sticky top-0 z-10 border-b border-blue-500/30">
                   <tr>
                     <th className="p-3 text-left" title="Rank by trending score">
@@ -1858,95 +2606,312 @@ export default function TokenScreener() {
                 </tbody>
               </table>
             </div>
-          ) : filteredTokens.length === 0 && viewMode !== "alerts" ? (
+          ) : filteredTokens.length === 0 && viewMode !== "alerts" && viewMode !== "portfolio" ? (
             <div className="p-4 text-center text-gray-400 font-sans uppercase w-full h-full flex items-center justify-center">
               No tokens match your filters. Try adjusting filters or check Firebase data.
             </div>
           ) : viewMode === "alerts" ? (
             <div className="w-full h-full bg-gray-900 overflow-y-auto">
-              <div className="p-4 border-b border-blue-500/30">
-                <h2 className="text-xl font-bold font-sans text-gray-200 uppercase">Alerts Feed</h2>
+              <div className="p-4 border-b border-blue-500/30 flex justify-between items-center">
+                <h2 className="text-xl font-bold font-sans text-gray-200 uppercase">Alerts</h2>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  onClick={() => { setEditingCustomAlert(null); setShowCustomAlertModal(true); }}
+                  className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded font-sans uppercase border border-blue-500/30"
+                >
+                  Set Custom Alert
+                </motion.button>
               </div>
-              {alerts.length === 0 ? (
-                <p className="p-4 text-gray-400 font-sans uppercase">No recent alerts.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {alerts.map((alert, idx) => {
-                    const token = tokens.find((t) => t.pairAddress === alert.pairAddress);
-                    const colorClass =
-                      alert.type === "new_token"
-                        ? "text-purple-500"
-                        : alert.type === "volume_spike" || alert.type === "boost"
-                        ? "text-blue-400"
-                        : alert.type === "mover" || (alert.priceChangePercent && alert.priceChangePercent >= 0)
-                        ? "text-green-500"
-                        : "text-red-500";
-
-                    const messageParts = alert.message.split(/(\d+\.?\d*)/);
-                    const formattedMessage = messageParts.map((part, index) => {
-                      if (/^\d+\.?\d*$/.test(part)) {
-                        if (alert.type === "volume_spike") {
-                          return <span key={index} className="text-blue-400">{part}</span>;
-                        }
-                        if (alert.priceChangePercent !== undefined) {
-                          return (
-                            <span key={index} className={getColorClass(alert.priceChangePercent)}>
+              <div className="flex space-x-4 p-4">
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  onClick={() => setAlertTab("feed")}
+                  className={`p-2 text-gray-200 rounded-lg text-sm font-sans transition-colors border border-blue-500/30 uppercase ${
+                    alertTab === "feed" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
+                  }`}
+                >
+                  Feed
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  onClick={() => setAlertTab("triggers")}
+                  className={`p-2 text-gray-200 rounded-lg text-sm font-sans transition-colors border border-blue-500/30 uppercase ${
+                    alertTab === "triggers" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
+                  }`}
+                >
+                  Triggers
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  onClick={() => setAlertTab("history")}
+                  className={`p-2 text-gray-200 rounded-lg text-sm font-sans transition-colors border border-blue-500/30 uppercase ${
+                    alertTab === "history" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
+                  }`}
+                >
+                  History
+                </motion.button>
+              </div>
+              {alertTab === "feed" ? (
+                !alerts || alerts.length === 0 ? (
+                  <p className="p-4 text-gray-400 font-sans uppercase">No recent alerts.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {alerts
+                      .filter((alert) => !snoozedAlerts.includes(alert.id || ''))
+                      .map((alert, idx) => {
+                        const token = tokens.find((t) => t.poolAddress === alert.poolAddress);
+                        const colorClass =
+                          alert.type === "volume_spike" || alert.type === "boost" || alert.type === "volume_above"
+                            ? "text-blue-400"
+                            : alert.type === "mover" || alert.type === "price_above" || alert.type === "price_spike" || alert.type === "price_spike_long"
+                            ? "text-green-500"
+                            : "text-red-500";
+                        const messageParts = alert.message.split(/(\d+\.?\d*)/);
+                        const formattedMessage = messageParts.map((part, index) => (
+                          /^\d+\.?\d*$/.test(part) ? (
+                            <span key={index} className={colorClass}>
                               {part}
                             </span>
-                          );
-                        }
-                      }
-                      return <span key={index}>{part}</span>;
-                    });
-
-                    return (
-                      <li
-                        key={idx}
-                        className="flex items-center justify-between p-3 hover:bg-gray-800 transition-colors duration-150 border-b border-blue-500/30"
-                      >
-                        <div className="flex items-center space-x-3">
-                          {token && token.info && (
-                            <img
-                              src={token.info.imageUrl || "/fallback.png"}
-                              alt={token.baseToken.symbol}
-                              className="w-6 h-6 rounded-full border border-blue-500/30"
-                            />
-                          )}
-                          <div>
-                            <p className="text-sm font-sans uppercase">
-                              <span className="font-bold">{alert.type.replace("_", " ").toUpperCase()}:</span>{" "}
-                              {formattedMessage}
-                            </p>
-                            <p className="text-xs text-gray-400 font-sans uppercase">
-                              {new Date(alert.timestamp).toLocaleString()}
-                            </p>
-                          </div>
-                        </div>
-                        {token && (
-                          <motion.button
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={() => handleTokenClick(token.pairAddress)}
-                            className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 px-3 py-1 rounded font-sans text-sm uppercase border border-blue-500/30"
+                          ) : (
+                            <span key={index}>{part}</span>
+                          )
+                        ));
+                        return (
+                          <li
+                            key={idx}
+                            className="flex items-center justify-between p-3 hover:bg-gray-800 transition-colors duration-150 border-b border-blue-500/30"
                           >
-                            View
-                          </motion.button>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
+                            <div className="flex items-center space-x-3">
+                              {token?.info && (
+                                <Image
+                                  src={token.info.imageUrl || "/fallback.png"}
+                                  alt={token.symbol}
+                                  width={24}
+                                  height={24}
+                                  className="rounded-full border border-blue-500/30"
+                                />
+                              )}
+                              <div>
+                                <p className="text-sm font-sans uppercase">
+                                  <span className="font-bold">{alert.type.replace("_", " ").toUpperCase()}:</span>{" "}
+                                  <span className={colorClass}>{formattedMessage}</span>
+                                </p>
+                                <p className="text-xs text-gray-400 font-sans uppercase">
+                                  {new Date(alert.timestamp).toLocaleString()}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex space-x-2 items-center">
+                              {token && (
+                                <motion.button
+                                  whileHover={{ scale: 1.05 }}
+                                  whileTap={{ scale: 0.95 }}
+                                  onClick={() => handleTokenClick(token.poolAddress)}
+                                  className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 px-2 py-1 rounded font-sans text-xs uppercase border border-blue-500/30"
+                                >
+                                  Trade
+                                </motion.button>
+                              )}
+                              <motion.button
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => setSnoozedAlerts(prev => [...prev, alert.id!])}
+                                className="text-yellow-400 px-2 py-1 rounded font-sans text-xs uppercase border border-yellow-500/30"
+                              >
+                                Snooze
+                              </motion.button>
+                              <motion.button
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={async () => {
+                                  if (alert.id) {
+                                    await deleteDoc(doc(firestoreDb, "notifications", alert.id));
+                                    setAlerts(prev => prev.filter(a => a.id !== alert.id));
+                                  }
+                                }}
+                                className="text-red-400 px-2 py-1 rounded font-sans text-xs uppercase border border-red-500/30"
+                              >
+                                Delete
+                              </motion.button>
+                            </div>
+                          </li>
+                        );
+                      })}
+                  </ul>
+                )
+              ) : alertTab === "triggers" ? (
+                <>
+                  {filteredCustomAlerts.length === 0 ? (
+                    <p className="p-4 text-gray-400 font-sans uppercase">No triggers set.</p>
+                  ) : (
+                    <>
+                      <div className="p-4 flex items-center space-x-4">
+                        <label className="text-gray-400 uppercase text-sm font-sans">Filter by Type</label>
+                        <select
+                          value={triggerFilter}
+                          onChange={(e) => setTriggerFilter(e.target.value as typeof triggerFilter)}
+                          className="bg-gray-800 text-gray-200 border border-blue-500/30 p-2 rounded font-sans uppercase"
+                        >
+                          <option value="all">All</option>
+                          <option value="price_above">Price Above</option>
+                          <option value="price_below">Price Below</option>
+                          <option value="volume_above">Volume Above</option>
+                          <option value="mc_above">Market Cap Above</option>
+                        </select>
+                      </div>
+                      <ul className="space-y-2">
+                        {filteredCustomAlerts.map((ca) => {
+                          const token = tokens.find((t) => t.poolAddress === ca.poolAddress);
+                          const currentPrice = token ? parseFloat(token.priceUsd || "0") : 0;
+                          const volumeH1 = token ? token.volume?.h1 || 0 : 0;
+                          const marketCap = token ? token.marketCap || 0 : 0;
+                          let status = "";
+                          let color = "text-gray-400";
+                          let progress = 0;
+                          let icon = null;
+                          let isPositive = true;
+                          if (ca.notified) {
+                            status = "Triggered";
+                            color = "text-red-500";
+                          } else {
+                            if (ca.type === "price_above") {
+                              status = `Pending - Current: $${currentPrice.toFixed(2)} / Threshold: $${ca.threshold.toFixed(2)}`;
+                              progress = Math.min(100, (currentPrice / ca.threshold) * 100);
+                              color = "text-green-500";
+                              icon = <FaArrowUp className="text-green-500 w-3 h-3" />;
+                              isPositive = true;
+                            } else if (ca.type === "price_below") {
+                              status = `Pending - Current: $${currentPrice.toFixed(2)} / Threshold: $${ca.threshold.toFixed(2)}`;
+                              progress = currentPrice > ca.threshold ? (ca.threshold / currentPrice * 100) : 100;
+                              color = "text-red-500";
+                              icon = <FaArrowDown className="text-red-500 w-3 h-3" />;
+                              isPositive = false;
+                            } else if (ca.type === "volume_above") {
+                              status = `Pending - Current: $${volumeH1.toLocaleString()} / Threshold: $${ca.threshold.toLocaleString()}`;
+                              progress = Math.min(100, (volumeH1 / ca.threshold) * 100);
+                              color = "text-blue-400";
+                              icon = <FaVolumeUp className="text-blue-400 w-3 h-3" />;
+                              isPositive = true;
+                            } else if (ca.type === "mc_above") {
+                              status = `Pending - Current: $${marketCap.toLocaleString()} / Threshold: $${ca.threshold.toLocaleString()}`;
+                              progress = Math.min(100, (marketCap / ca.threshold) * 100);
+                              color = "text-purple-500";
+                              icon = <FaDollarSign className="text-purple-500 w-3 h-3" />;
+                              isPositive = true;
+                            }
+                          }
+                          return (
+                            <li
+                              key={ca.id}
+                              className="flex items-center justify-between p-3 hover:bg-gray-800 transition-colors duration-150 border-b border-blue-500/30 rounded-md"
+                            >
+                              <div className="flex items-center space-x-3 w-full">
+                                {token?.info && (
+                                  <Image
+                                    src={token.info.imageUrl || "/fallback.png"}
+                                    alt={token.symbol}
+                                    width={24}
+                                    height={24}
+                                    className="rounded-full border border-blue-500/30"
+                                  />
+                                )}
+                                <div className="flex-1">
+                                  <p className="text-sm font-sans uppercase flex items-center space-x-1">
+                                    {icon}
+                                    <span>{token ? token.symbol : "Unknown"} - {ca.type.replace("_", " ").toUpperCase()} ${ca.threshold.toFixed(2)}</span>
+                                  </p>
+                                  <span className={`px-2 py-1 rounded text-xs ${color} bg-gray-800 border border-${color.split('-')[1]}-500/30`}>{status}</span>
+                                  {!ca.notified && (
+                                    <div className="w-full bg-gray-700 rounded-full h-1 mt-2">
+                                      <div className={`${getProgressColor(ca.type, isPositive)} h-1 rounded-full`} style={{ width: `${progress}%` }}></div>
+                                    </div>
+                                  )}
+                                  {ca.notified && <FaCheck className="text-green-500 w-3 h-3" />}
+                                </div>
+                              </div>
+                              <div className="flex space-x-1 items-center">
+                                <motion.button
+                                  whileHover={{ scale: 1.05 }}
+                                  whileTap={{ scale: 0.95 }}
+                                  onClick={() => setEditingCustomAlert(ca)}
+                                  className="text-blue-400 p-1"
+                                  title="Edit Alert"
+                                >
+                                  <FaEdit className="w-4 h-4" />
+                                </motion.button>
+                                <motion.button
+                                  whileHover={{ scale: 1.05 }}
+                                  whileTap={{ scale: 0.95 }}
+                                  onClick={() => handleResetNotified(ca.id!)}
+                                  className="text-green-400 p-1"
+                                  title="Reset Alert"
+                                >
+                                  <FaRedo className="w-4 h-4" />
+                                </motion.button>
+                                <motion.button
+                                  whileHover={{ scale: 1.05 }}
+                                  whileTap={{ scale: 0.95 }}
+                                  onClick={() => {
+                                    if (ca.id) {
+                                      deleteDoc(doc(firestoreDb, `users/${user?.uid ?? ''}/customAlerts`, ca.id));
+                                      reactToast.success("Alert removed", { position: "bottom-left" });
+                                    }
+                                  }}
+                                  className="text-red-400 p-1"
+                                  title="Remove Alert"
+                                >
+                                  <FaTrash className="w-4 h-4" />
+                                </motion.button>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </>
+                  )}
+                </>
+              ) : (
+                <p className="p-4 text-gray-400 font-sans uppercase">Coming soon: Alert history and analytics</p>
               )}
             </div>
+          ) : viewMode === "portfolio" ? (
+            portfolio.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-gray-400 font-sans uppercase p-4">
+                <p className="text-lg mb-4">Your portfolio is empty.</p>
+                <p className="text-sm mb-4">Start by adding a token using the form above or browse tokens.</p>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setViewMode("all")}
+                  className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded font-sans uppercase border border-blue-500/30"
+                >
+                  Browse Tokens
+                </motion.button>
+              </div>
+            ) : (
+              <Suspense fallback={<div className="p-4 text-center text-gray-400 font-sans uppercase">Loading portfolio...</div>}>
+                <PortfolioTable
+                  portfolio={portfolio}
+                  tokens={tokens}
+                  handleTokenClick={handleTokenClick}
+                  handleRemoveFromPortfolio={handleRemoveFromPortfolio}
+                  handleEditPortfolioEntry={handleEditPortfolioEntry}
+                  formatPrice={formatPrice}
+                  getColorClass={getColorClass}
+                  setEditingPortfolio={setEditingPortfolio}
+                  setPortfolioForm={setPortfolioForm}
+                />
+              </Suspense>
+            )
           ) : (
             <>
               {/* Desktop Table View */}
-              <div className="hidden md:block">
-                <table className="table-auto w-full whitespace-nowrap text-sm font-sans uppercase">
+              <div className="hidden md:block overflow-x-auto">
+                <table className="table-auto w-full whitespace-nowrap text-sm font-sans uppercase min-w-[1200px]">
                   <thead className="bg-gray-900 text-gray-400 sticky top-0 z-10 border-b border-blue-500/30">
                     <tr>
                       <th
-                        className="p-3 text-left cursor-pointer w-[140px] hover:text-blue-400 transition-colors"
+                        className="p-3 text-left cursor-pointer hover:text-blue-400 transition-colors"
                         onClick={() => handleFilterChange("trending")}
                         title="Rank by trending score"
                       >
@@ -2035,15 +3000,14 @@ export default function TokenScreener() {
                     ) : (
                       currentTokens.map((token, index) => {
                         const rank = indexOfFirstToken + index + 1;
-                        const tokenAlerts = alerts.filter((alert) => alert.pairAddress === token.pairAddress);
-                        if (!/^0x[a-fA-F0-9]{40}$/.test(token.pairAddress)) {
-                          console.warn(`Invalid pair address: ${token.pairAddress}`);
+                        const tokenAlerts = alerts.filter((alert) => alert.poolAddress === token.poolAddress);
+                        if (!/^0x[a-fA-F0-9]{40}$/.test(token.poolAddress)) {
+                          console.warn(`Invalid pool address: ${token.poolAddress}`);
                           return null;
                         }
-                        const isAd = false;
                         return (
                           <motion.tr
-                            key={token.pairAddress}
+                            key={token.poolAddress}
                             className="border-b border-blue-500/30 hover:bg-gray-800 transition-colors duration-200"
                             variants={rowVariants}
                             initial="hidden"
@@ -2051,7 +3015,7 @@ export default function TokenScreener() {
                           >
                             <td className="p-3">
                               <div className="flex items-center space-x-2">
-                                <div className="bg-gray-900 rounded-full px-2 py-1 flex items-center justify-center w-12 font-sans text-gray-200 shadow-sm border border-blue-500/30 uppercase">
+                                <div className="flex items-center justify-center w-12 font-sans text-gray-200 shadow-sm border border-blue-500/30 uppercase bg-gray-900 rounded-full px-2 py-1">
                                   {getTrophy(rank) || rank}
                                 </div>
                                 <div className="flex items-center space-x-1">
@@ -2061,31 +3025,32 @@ export default function TokenScreener() {
                                       <span className="text-blue-400 text-xs uppercase">+{token.boostValue}</span>
                                     </>
                                   )}
-                                  {isAd && <AdIcon />}
                                 </div>
                               </div>
                             </td>
                             <td className="p-3 font-sans uppercase">
                               <div
-                                onClick={() => handleTokenClick(token.pairAddress)}
+                                onClick={() => handleTokenClick(token.poolAddress)}
                                 className="flex items-center space-x-2 hover:text-blue-400 cursor-pointer transition-colors duration-150"
                               >
                                 {token.info && (
-                                  <img
+                                  <Image
                                     src={token.info.imageUrl || "/fallback.png"}
-                                    alt={token.baseToken.symbol}
-                                    className="w-6 h-6 rounded-full border border-blue-500/30"
+                                    alt={token.symbol}
+                                    width={24}
+                                    height={24}
+                                    className="rounded-full border border-blue-500/30"
                                   />
                                 )}
                                 <div>
-                                  <span className="font-bold text-gray-200">{token.baseToken.symbol}</span> /{" "}
-                                  <span className="text-gray-400">{token.quoteToken.symbol}</span>
+                                  <span className="font-bold text-gray-200">{token.symbol}</span> /{" "}
+                                  <span className="text-gray-400">WETH</span>
                                   <br />
-                                  <span className="text-xs text-gray-400">{token.baseToken.name}</span>
+                                  <span className="text-xs text-gray-400">{token.name}</span>
                                 </div>
                               </div>
                             </td>
-                            <td className="p-3 text-right text-gray-200">{formatPrice(token.priceUsd)}</td>
+                            <td className="p-3 text-right text-gray-200">{formatPrice(token.priceUsd || 0)}</td>
                             <td className="p-3 text-right text-gray-200">{getAge(token.pairCreatedAt)}</td>
                             <td className="p-3 text-right text-gray-200">{getTxns24h(token)}</td>
                             <td className={`p-3 text-right ${getColorClass(token.priceChange?.m5 || 0)}`}>
@@ -2131,17 +3096,17 @@ export default function TokenScreener() {
                               <div className="flex items-center justify-center space-x-2">
                                 <motion.button
                                   whileHover={{ scale: 1.1 }}
-                                  onClick={() => toggleFavorite(token.pairAddress)}
+                                  onClick={() => toggleFavorite(token.poolAddress)}
                                   className="text-yellow-400"
                                   title={
-                                    favorites.includes(token.pairAddress)
-                                      ? "Remove from Favorites"
-                                      : "Add to Favorites"
+                                    favorites.includes(token.poolAddress)
+                                      ? "Remove from favorites"
+                                      : "Add to favorites"
                                   }
                                 >
                                   <FaStar
                                     className={`w-5 h-5 ${
-                                      favorites.includes(token.pairAddress)
+                                      favorites.includes(token.poolAddress)
                                         ? "text-yellow-400"
                                         : "text-gray-400"
                                     }`}
@@ -2149,9 +3114,17 @@ export default function TokenScreener() {
                                 </motion.button>
                                 <motion.button
                                   whileHover={{ scale: 1.1 }}
-                                  onClick={() => handleCopy(token.pairAddress)}
+                                  onClick={() => handleOpenAddToWatchlist(token.poolAddress)}
                                   className="text-gray-400"
-                                  title="Copy Pair Address"
+                                  title="Add to watchlists"
+                                >
+                                  <FaList className="w-5 h-5" />
+                                </motion.button>
+                                <motion.button
+                                  whileHover={{ scale: 1.1 }}
+                                  onClick={() => handleCopy(token)}
+                                  className="text-gray-400"
+                                  title="Copy token address"
                                 >
                                   <FaClipboard className="w-5 h-5" />
                                 </motion.button>
@@ -2164,232 +3137,72 @@ export default function TokenScreener() {
                   </tbody>
                 </table>
               </div>
-
-              {/* Mobile Table View */}
-              <div className="md:hidden">
-                <table className="table-auto w-full whitespace-nowrap text-xs font-sans uppercase">
-                  <thead className="bg-gray-900 text-gray-400 sticky top-0 z-10 border-b border-blue-500/30">
-                    <tr>
-                      <th
-                        className="p-2 text-left cursor-pointer w-[100px] hover:text-blue-400 transition-colors"
-                        onClick={() => handleFilterChange("trending")}
-                        title="Rank by trending score"
+              {/* Mobile Card View */}
+              <div className="md:hidden flex flex-col p-0 gap-0">
+                {currentTokens.length === 0 ? (
+                  <div className="p-4 text-center text-gray-400 font-sans uppercase">
+                    No tokens available for this page. Try adjusting filters or check Firebase/DexScreener data.
+                  </div>
+                ) : (
+                  currentTokens.map((token, index) => {
+                    const rank = indexOfFirstToken + index + 1;
+                    const tokenAlerts = alerts.filter((alert) => alert.poolAddress === token.poolAddress);
+                    if (!/^0x[a-fA-F0-9]{40}$/.test(token.poolAddress)) {
+                      console.warn(`Invalid pool address: ${token.poolAddress}`);
+                      return null;
+                    }
+                    return (
+                      <motion.div
+                        key={token.poolAddress}
+                        className="bg-gray-900 p-3 border-b border-blue-500/30 shadow-sm hover:shadow-md transition-shadow duration-200 w-full last:border-b-0"
+                        variants={rowVariants}
+                        initial="hidden"
+                        animate="visible"
                       >
-                        #{sortFilter === "trending" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                      </th>
-                      <th className="p-2 text-left" title="Token Pair">
-                        POOL
-                      </th>
-                      <th className="p-2 text-right" title="Price in USD">
-                        PRICE
-                      </th>
-                      <th
-                        className="p-2 text-right cursor-pointer hover:text-blue-400 transition-colors"
-                        onClick={() => handleFilterChange("age")}
-                        title="Age of the token pair"
-                      >
-                        AGE{sortFilter === "age" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                      </th>
-                      <th className="p-2 text-right" title="Total transactions in 24 hours">
-                        TXN
-                      </th>
-                      <th
-                        className="p-2 text-right cursor-pointer hover:text-blue-400 transition-colors"
-                        onClick={() => handleFilterChange("5m")}
-                        title="Price change in last 5 minutes"
-                      >
-                        5M{sortFilter === "5m" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                      </th>
-                      <th
-                        className="p-2 text-right cursor-pointer hover:text-blue-400 transition-colors"
-                        onClick={() => handleFilterChange("1h")}
-                        title="Price change in last 1 hour"
-                      >
-                        1H{sortFilter === "1h" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                      </th>
-                      <th
-                        className="p-2 text-right cursor-pointer hover:text-blue-400 transition-colors"
-                        onClick={() => handleFilterChange("6h")}
-                        title="Price change in last 6 hours"
-                      >
-                        6H{sortFilter === "6h" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                      </th>
-                      <th
-                        className="p-2 text-right cursor-pointer hover:text-blue-400 transition-colors"
-                        onClick={() => handleFilterChange("24h")}
-                        title="Price change in last 24 hours"
-                      >
-                        24H{sortFilter === "24h" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                      </th>
-                      <th
-                        className="p-2 text-right cursor-pointer hover:text-blue-400 transition-colors"
-                        onClick={() => handleFilterChange("volume")}
-                        title="Trading volume in last 24 hours"
-                      >
-                        VOL{sortFilter === "volume" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                      </th>
-                      <th
-                        className="p-2 text-right cursor-pointer hover:text-blue-400 transition-colors"
-                        onClick={() => handleFilterChange("liquidity")}
-                        title="Liquidity in USD"
-                      >
-                        LIQ{sortFilter === "liquidity" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                      </th>
-                      <th
-                        className="p-2 text-right cursor-pointer hover:text-blue-400 transition-colors"
-                        onClick={() => handleFilterChange("marketCap")}
-                        title="Market capitalization"
-                      >
-                        MC{sortFilter === "marketCap" && (sortDirection === "desc" ? " ↓" : " ↑")}
-                      </th>
-                      <th className="p-2 text-center" title="Alerts">
-                        ALT
-                      </th>
-                      <th className="p-2 text-center" title="Actions">
-                        ACT
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {currentTokens.length === 0 ? (
-                      <tr>
-                        <td colSpan={14} className="p-4 text-center text-gray-400 font-sans uppercase">
-                          No tokens available for this page. Try adjusting filters or check Firebase/DexScreener data.
-                        </td>
-                      </tr>
-                    ) : (
-                      currentTokens.map((token, index) => {
-                        const rank = indexOfFirstToken + index + 1;
-                        const tokenAlerts = alerts.filter((alert) => alert.pairAddress === token.pairAddress);
-                        if (!/^0x[a-fA-F0-9]{40}$/.test(token.pairAddress)) {
-                          console.warn(`Invalid pair address: ${token.pairAddress}`);
-                          return null;
-                        }
-                        const isAd = false;
-                        return (
-                          <motion.tr
-                            key={token.pairAddress}
-                            className="border-b border-blue-500/30 hover:bg-gray-800 transition-colors duration-200"
-                            variants={rowVariants}
-                            initial="hidden"
-                            animate="visible"
-                          >
-                            <td className="p-2">
-                              <div className="flex items-center space-x-1">
-                                <div className="bg-gray-900 rounded-full px-2 py-1 flex items-center justify-center w-10 font-sans text-gray-200 shadow-sm border border-blue-500/30 uppercase">
-                                  {getTrophy(rank) || rank}
-                                </div>
-                                <div className="flex items-center space-x-1">
-                                  {token.boosted && (
-                                    <>
-                                      <MarketingIcon />
-                                      <span className="text-blue-400 text-[10px] uppercase">+{token.boostValue}</span>
-                                    </>
-                                  )}
-                                  {isAd && <AdIcon />}
-                                </div>
-                              </div>
-                            </td>
-                            <td className="p-2 font-sans uppercase">
-                              <div
-                                onClick={() => handleTokenClick(token.pairAddress)}
-                                className="flex items-center space-x-1 hover:text-blue-400 cursor-pointer transition-colors duration-150"
-                              >
-                                {token.info && (
-                                  <img
-                                    src={token.info.imageUrl || "/fallback.png"}
-                                    alt={token.baseToken.symbol}
-                                    className="w-5 h-5 rounded-full border border-blue-500/30"
-                                  />
-                                )}
-                                <div>
-                                  <span className="font-bold text-gray-200">{token.baseToken.symbol}</span> /{" "}
-                                  <span className="text-gray-400">{token.quoteToken.symbol}</span>
-                                  <br />
-                                  <span className="text-[10px] text-gray-400 truncate">{token.baseToken.name}</span>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="p-2 text-right text-gray-200">{formatPrice(token.priceUsd)}</td>
-                            <td className="p-2 text-right text-gray-200">{getAge(token.pairCreatedAt)}</td>
-                            <td className="p-2 text-right text-gray-200">{getTxns24h(token)}</td>
-                            <td className={`p-2 text-right ${getColorClass(token.priceChange?.m5 || 0)}`}>
-                              {(token.priceChange?.m5 || 0).toFixed(2)}%
-                            </td>
-                            <td className={`p-2 text-right ${getColorClass(token.priceChange?.h1 || 0)}`}>
-                              {(token.priceChange?.h1 || 0).toFixed(2)}%
-                            </td>
-                            <td className={`p-2 text-right ${getColorClass(token.priceChange?.h6 || 0)}`}>
-                              {(token.priceChange?.h6 || 0).toFixed(2)}%
-                            </td>
-                            <td className={`p-2 text-right ${getColorClass(token.priceChange?.h24 || 0)}`}>
-                              {(token.priceChange?.h24 || 0).toFixed(2)}%
-                            </td>
-                            <td className="p-2 text-right text-gray-200">
-                              ${(token.volume?.h24 || 0).toLocaleString()}
-                            </td>
-                            <td className="p-2 text-right text-gray-200">
-                              ${(token.liquidity?.usd || 0).toLocaleString()}
-                            </td>
-                            <td className="p-2 text-right text-gray-200">
-                              ${(token.marketCap || 0).toLocaleString()}
-                            </td>
-                            <td className="p-2 text-center">
-                              <motion.button
-                                whileHover={{ scale: 1.1 }}
-                                whileTap={{ scale: 0.9 }}
-                                onClick={() => setSelectedAlerts(tokenAlerts)}
-                                className="px-2 py-1 rounded"
-                                title="View Alerts"
-                              >
-                                <div
-                                  className={`bg-gray-800 border border-blue-500/30 rounded-full px-2 py-1 flex items-center justify-center space-x-1 ${getBellColor(
-                                    tokenAlerts
-                                  )}`}
-                                >
-                                  <FaBell className="w-4 h-4" />
-                                  <span className="text-[10px]">{tokenAlerts.length}</span>
-                                </div>
-                              </motion.button>
-                            </td>
-                            <td className="p-2 text-center">
-                              <div className="flex items-center justify-center space-x-1">
-                                <motion.button
-                                  whileHover={{ scale: 1.1 }}
-                                  onClick={() => toggleFavorite(token.pairAddress)}
-                                  className="text-yellow-400"
-                                  title={
-                                    favorites.includes(token.pairAddress)
-                                      ? "Remove from Favorites"
-                                      : "Add to Favorites"
-                                  }
-                                >
-                                  <FaStar
-                                    className={`w-4 h-4 ${
-                                      favorites.includes(token.pairAddress)
-                                        ? "text-yellow-400"
-                                        : "text-gray-400"
-                                    }`}
-                                  />
-                                </motion.button>
-                                <motion.button
-                                  whileHover={{ scale: 1.1 }}
-                                  onClick={() => handleCopy(token.pairAddress)}
-                                  className="text-gray-400"
-                                  title="Copy Pair Address"
-                                >
-                                  <FaClipboard className="w-4 h-4" />
-                                </motion.button>
-                              </div>
-                            </td>
-                          </motion.tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                        <div className="flex justify-between items-center mb-2">
+                          <div className="flex items-center space-x-2">
+                            <span className="bg-gray-800 rounded-full px-2 py-1 text-xs">#{rank}</span>
+                            {token.info && (
+                              <Image
+                                src={token.info.imageUrl || "/fallback.png"}
+                                alt={token.symbol}
+                                width={24}
+                                height={24}
+                                className="rounded-full"
+                              />
+                            )}
+                            <span className="font-bold">{token.symbol} / WETH</span>
+                          </div>
+                          <span className={getColorClass(token.priceChange?.h24 || 0)}>
+                            {(token.priceChange?.h24 || 0).toFixed(2)}%
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>Price: {formatPrice(token.priceUsd || 0)}</div>
+                          <div>Age: {getAge(token.pairCreatedAt)}</div>
+                          <div>TXN: {getTxns24h(token)}</div>
+                          <div>5M: {(token.priceChange?.m5 || 0).toFixed(2)}%</div>
+                          <div>1H: {(token.priceChange?.h1 || 0).toFixed(2)}%</div>
+                          <div>6H: {(token.priceChange?.h6 || 0).toFixed(2)}%</div>
+                          <div>Vol: ${(token.volume?.h24 || 0).toLocaleString()}</div>
+                          <div>Liq: ${(token.liquidity?.usd || 0).toLocaleString()}</div>
+                          <div>MC: ${(token.marketCap || 0).toLocaleString()}</div>
+                        </div>
+                        <div className="flex justify-between mt-2">
+                          <motion.button onClick={() => handleTokenClick(token.poolAddress)} className="text-blue-400 text-xs">
+                            View Chart
+                          </motion.button>
+                          <div className="flex space-x-2">
+                            <FaStar className={favorites.includes(token.poolAddress) ? "text-yellow-400" : "text-gray-400"} onClick={() => toggleFavorite(token.poolAddress)} />
+                            <FaBell className={getBellColor(tokenAlerts)} onClick={() => setSelectedAlerts(tokenAlerts)} />
+                            <FaClipboard onClick={() => handleCopy(token)} className="text-gray-400" />
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })
+                )}
               </div>
-
               {/* Pagination */}
               {totalPages > 1 && (
                 <div className="p-4 flex justify-center items-center space-x-2">
@@ -2434,5 +3247,3 @@ export default function TokenScreener() {
     </div>
   );
 }
-
-

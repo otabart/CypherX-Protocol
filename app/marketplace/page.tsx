@@ -110,12 +110,12 @@ export default function MarketplacePage() {
     {
       id: 1,
       name: 'Banner Ad Slot',
-      price: '0 USDC',
+      price: '50 USDC',
       category: 'Advertisement',
       description:
         'Claim a prime banner ad slot on Cypher Systems, powered by Base chain. Once the transaction is confirmed, your ad will be live!',
       available: true,
-      duration: 'Immediate',
+      duration: '48HR',
     },
     {
       id: 2,
