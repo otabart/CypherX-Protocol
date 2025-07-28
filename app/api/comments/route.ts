@@ -1,6 +1,7 @@
 // app/api/comments/route.ts
+
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/firebase';
+import type { DocumentData } from 'firebase/firestore';
 import {
   collection,
   addDoc,
@@ -10,20 +11,24 @@ import {
   orderBy,
   serverTimestamp,
 } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 interface CommentPayload {
   articleSlug: string;
   userId: string;
   content: string;
-  parentId: string | null;
+  parentId?: string | null;
 }
 
-interface ReactionPayload {
+interface CommentResponse {
+  id: string;
   userId: string;
-  walletAddress: string;
-  action: 'like' | 'dislike';
-  articleSlug: string;
-  commentId: string;
+  username: string;
+  content: string;
+  createdAt: string;
+  likes: string[];
+  dislikes: string[];
+  replies: CommentResponse[];
 }
 
 export async function GET(req: Request) {
@@ -33,6 +38,7 @@ export async function GET(req: Request) {
     if (!articleSlug) {
       return NextResponse.json({ error: 'Missing articleSlug' }, { status: 400 });
     }
+
     const commentsCol = collection(db, 'comments');
     const q = query(
       commentsCol,
@@ -42,39 +48,48 @@ export async function GET(req: Request) {
     );
     const snapshot = await getDocs(q);
 
-    const out: any[] = [];
+    const out: CommentResponse[] = [];
+
     for (const docSnap of snapshot.docs) {
-      const data = docSnap.data() as any;
+      const data = docSnap.data() as DocumentData;
       const commentId = docSnap.id;
-      // fetch replies
+
+      // Fetch replies
       const repliesQ = query(
         commentsCol,
         where('parentId', '==', commentId),
         orderBy('createdAt', 'asc')
       );
       const repliesSnap = await getDocs(repliesQ);
-      const replies: any[] = repliesSnap.docs.map((r) => {
-        const rd = r.data() as any;
+
+      const replies: CommentResponse[] = repliesSnap.docs.map((r) => {
+        const rd = r.data() as DocumentData;
         return {
           id: r.id,
-          userId: rd.userId,
-          username: rd.username || 'Anonymous',
-          content: rd.content,
-          createdAt: rd.createdAt?.toDate().toLocaleString() || new Date().toLocaleString(),
-          likes: rd.likes || [],
-          dislikes: rd.dislikes || [],
+          userId: String(rd.userId),
+          username: (rd.username as string) || 'Anonymous',
+          content: String(rd.content),
+          createdAt:
+            typeof rd.createdAt?.toDate === 'function'
+              ? rd.createdAt.toDate().toLocaleString()
+              : new Date().toLocaleString(),
+          likes: Array.isArray(rd.likes) ? (rd.likes as string[]) : [],
+          dislikes: Array.isArray(rd.dislikes) ? (rd.dislikes as string[]) : [],
           replies: [],
         };
       });
 
       out.push({
         id: commentId,
-        userId: data.userId,
-        username: data.username || 'Anonymous',
-        content: data.content,
-        createdAt: data.createdAt?.toDate().toLocaleString() || new Date().toLocaleString(),
-        likes: data.likes || [],
-        dislikes: data.dislikes || [],
+        userId: String(data.userId),
+        username: (data.username as string) || 'Anonymous',
+        content: String(data.content),
+        createdAt:
+          typeof data.createdAt?.toDate === 'function'
+            ? data.createdAt.toDate().toLocaleString()
+            : new Date().toLocaleString(),
+        likes: Array.isArray(data.likes) ? (data.likes as string[]) : [],
+        dislikes: Array.isArray(data.dislikes) ? (data.dislikes as string[]) : [],
         replies,
       });
     }
@@ -94,7 +109,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Create username stub (you can look up real username from “users” collection if you want)
     const username = `User ${userId.substring(0, 6)}`;
 
     const docRef = await addDoc(collection(db, 'comments'), {
@@ -115,3 +129,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Error posting comment' }, { status: 500 });
   }
 }
+

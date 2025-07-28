@@ -1,31 +1,22 @@
-// lib/wagmi.ts
 import { createConfig, http } from "wagmi";
 import { base } from "wagmi/chains";
 import { metaMask, coinbaseWallet, injected, walletConnect } from "@wagmi/connectors";
 
-// Configure the Base chain
-const chains = [base];
+// Configure the Base chain as the first element in the array
+const chains = [base] as const;
 
 // Configure connectors
 const connectors = [
-  metaMask({
-    dappMetadata: {
-      name: "Token Scanner",
-    },
-  }),
-  coinbaseWallet({
-    appName: "Token Scanner",
-  }),
-  injected({
-    target: "phantom", // Specifically target Phantom wallet
-  }),
+  metaMask({ dappMetadata: { name: "CypherX" } }),
+  coinbaseWallet({ appName: "CypherX" }),
+  injected(),
   walletConnect({
-    projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "your_project_id", // Replace with your WalletConnect project ID
+    projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "your_project_id",
     metadata: {
-      name: "Token Scanner",
-      description: "Token Scanner App",
-      url: "https://your-app-url.com",
-      icons: ["https://your-app-url.com/icon.png"],
+      name: "CypherX",
+      description: "CypherX Trading Platform on Base",
+      url: "https://cypherx.com",
+      icons: ["https://cypherx.com/icon.png"],
     },
   }),
 ];
@@ -35,6 +26,6 @@ export const config = createConfig({
   chains,
   connectors,
   transports: {
-    [base.id]: http("https://base-mainnet.g.alchemy.com/v2/8KR6qwxbLlIISgrMCZfsrYeMmn6-S-bN"), // Replace with your Alchemy API key
+    [base.id]: http(`https://base-mainnet.g.alchemy.com/v2/your_alchemy_api_key`),
   },
 });

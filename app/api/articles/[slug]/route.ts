@@ -1,6 +1,6 @@
 // app/api/articles/[slug]/route.ts
-import { NextResponse, NextRequest } from 'next/server';
-import { db } from '@/firebase';                  // adjust to your import path
+import { NextResponse } from 'next/server';
+import { db } from '@/lib/firebase';
 import {
   collection,
   query,
@@ -8,7 +8,10 @@ import {
   getDocs,
 } from 'firebase/firestore';
 
-export async function GET(request: NextRequest, { params }: { params: { slug: string } }) {
+export async function GET(
+  _request: Request,
+  { params }: { params: { slug: string } }
+) {
   const { slug } = params;
   try {
     console.log('API requested slug:', slug);

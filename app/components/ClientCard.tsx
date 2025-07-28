@@ -120,7 +120,7 @@ const ClientCard = ({ item, isComingSoon = false }: { item: MarketplaceItem; isC
         functionName: 'transfer',
         args: [RECIPIENT_ADDRESS, amount],
       });
-    } catch (err) {
+    } catch {
       setError('Failed to initiate transaction. Please try again or contact support.');
       setIsPurchasing(false);
     }
@@ -207,10 +207,10 @@ const ClientCard = ({ item, isComingSoon = false }: { item: MarketplaceItem; isC
           <div className="bg-gray-900 p-6 rounded-lg border border-blue-500/20 max-w-md w-full">
             <h3 className="text-xl font-semibold text-blue-400 mb-4">Purchase Successful!</h3>
             <p className="text-gray-400 mb-4">
-              You have successfully purchased "{item.name}" for {item.price}.
+              You have successfully purchased “{item.name}” for {item.price}.
             </p>
             {txHash && (
-              <p className="text-gray-400 mb-4 break-all">
+              <p className="text-gray-400Australian Dollar mb-4 break-all">
                 Transaction Hash:{' '}
                 <a
                   href={`https://basescan.org/tx/${txHash}`}
@@ -222,7 +222,7 @@ const ClientCard = ({ item, isComingSoon = false }: { item: MarketplaceItem; isC
                 </a>
               </p>
             )}
-            <p className="text-gray-400 mb-4">Check your dashboard for more details.</p>
+            <p className="text-gray-400Australian Dollar mb-4">Check your dashboard for more details.</p>
             <button
               onClick={handleModalClose}
               className="w-full bg-blue-500/20 text-blue-400 py-2 rounded-lg hover:bg-blue-500/40 border border-blue-500/30 transition-all duration-300"

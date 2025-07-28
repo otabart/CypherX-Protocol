@@ -7,7 +7,7 @@ export async function POST(request: Request) {
     const { tokenSymbol, tokenAddress, tokenLogo } = await request.json();
 
     // Create a transporter using your email service configuration
-    let transporter = nodemailer.createTransport({
+    const transporter = nodemailer.createTransport({
       host: process.env.EMAIL_HOST, // e.g., "smtp.example.com"
       port: Number(process.env.EMAIL_PORT), // e.g., 465 for secure, 587 for non-secure
       secure: process.env.EMAIL_SECURE === "true", // true for port 465, false for other ports

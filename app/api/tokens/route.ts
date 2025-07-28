@@ -1,7 +1,7 @@
-// /app/api/tokens/route.ts
-import { NextRequest, NextResponse } from "next/server";
+// app/api/tokens/route.ts
+import { NextResponse } from "next/server";
 
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const chainId = searchParams.get("chainId") || "base";
   const tokenAddresses = searchParams.get("tokenAddresses")?.split(",");
@@ -121,10 +121,10 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({ error: "No valid parameters provided" }, { status: 400 });
-  } catch (error: any) {
-    console.error("Error in tokens API route:", error.message);
+  } catch (error: unknown) {
+    console.error("Error in tokens API route:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(
-      { error: "Server error", details: error.message },
+      { error: "Server error", details: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
     );
   }

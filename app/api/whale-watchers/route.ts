@@ -6,6 +6,7 @@ import admin from "firebase-admin";
 // Environment variables
 const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY;
 const ALCHEMY_HTTP_URL = `https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`;
+const DEXSCREENER_API = "https://api.dexscreener.com/latest/dex/tokens/v1/base";
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
 
 if (!ALCHEMY_API_KEY) {
@@ -18,16 +19,13 @@ const provider = new ethers.JsonRpcProvider(ALCHEMY_HTTP_URL);
 
 // Thresholds for whale transactions
 const MIN_TRANSFER_USD_VALUE = 50000; // $50,000 for Transfers
-const MIN_SWAP_USD_VALUE = 10000; // $10,000 for Swaps
-const MIN_PERCENT_SUPPLY = 0.1; // Minimum 0.1% of token supply
+const MIN_SWAP_USD_VALUE = 4000; // $4,000 minimum for Swaps
+const MIN_PERCENT_SUPPLY = 0.05; // Minimum 0.05% of token supply
 const MAX_BLOCKS_PER_CYCLE = 5;
 const POLLING_INTERVAL = 30000; // 30 seconds
 const MAX_FIRESTORE_RETRIES = 3;
-
-// Token addresses to exclude
-const EXCLUDED_TOKENS = {
-  cbBTC: "0xcbB7C0000aB88B473b1f5aFd9ef808440eed7Bf".toLowerCase(),
-};
+const MAX_API_RETRIES = 5;
+const RATE_LIMIT_BACKOFF_BASE = 2000; // 2 seconds base backoff
 
 // Cache for token prices and metadata
 const priceCache: Record<string, { price: number; timestamp: number }> = {};
@@ -57,23 +55,58 @@ const poolAbi = [
   "function token1() view returns (address)",
 ];
 
-// Pool and stablecoin addresses
+// Pool addresses (Uniswap V3 and Aerodrome on Base chain)
 const POOLS = [
-  { address: "0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad", name: "Uniswap V3" },
-  { address: "0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae", name: "Aerodrome" },
-  { address: "0xYOUR_ALIENBASE_POOL_ADDRESS", name: "Alienbase" }, // Replace with actual Alienbase pool address
-  { address: "0xYOUR_PANCAKESWAP_POOL_ADDRESS", name: "PancakeSwap" }, // Replace with actual PancakeSwap pool address
-  { address: "0xBASE_POOL_ADDRESS", name: "Base" }, // Replace with actual Base pool address if needed
-];
-const STABLECOINS = [
-  { address: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", symbol: "USDC" },
-  { address: "0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca", symbol: "USDbC" },
+  { address: "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640", name: "Uniswap V3" }, // USDC/WETH pool
+  { address: "0xc31a845d486d949d3ad7476ad3a76197988f2e88", name: "Aerodrome" }, // WETH/AERO pool
 ];
 
-// Interface for token pair data from API
-interface TokenPair {
-  baseToken: { address: string };
+// Well-known tokens (WETH and stablecoins)
+const WELL_KNOWN_TOKENS = [
+  { address: "0x4200000000000000000000000000000000000006", symbol: "WETH", name: "Wrapped Ether", decimals: 18 },
+  { address: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  { address: "0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca", symbol: "USDbC", name: "USD Base Coin", decimals: 6 },
+];
+
+// Interface for DexScreener API response
+interface DexScreenerPair {
+  pairAddress: string;
+  baseToken: { address: string; symbol: string };
+  quoteToken: { address: string; symbol: string };
   priceUsd: string;
+}
+
+// Interface for whale transaction
+interface WhaleTransaction {
+  tokenSymbol: string;
+  tokenName: string;
+  tokenAddress: string;
+  amountToken: number;
+  amountUSD: number;
+  blockNumber: number;
+  fromAddress: string;
+  toAddress: string;
+  source: string;
+  timestamp: number;
+  hash: string;
+  eventType: "Transfer" | "Swap";
+  swapType?: "Buy" | "Sell" | "Swap";
+  percentSupply: number;
+  swapDetails?: {
+    amountIn: number;
+    amountOut: number;
+    tokenIn: string;
+    tokenOut: string;
+  };
+}
+
+// Dynamic threshold for percent supply based on USD value
+function getDynamicPercentSupplyThreshold(amountUSD: number): number {
+  if (amountUSD >= 500000) return 0.01;
+  if (amountUSD >= 100000) return 0.02;
+  if (amountUSD >= 50000) return 0.03;
+  if (amountUSD >= 10000) return 0.04;
+  return MIN_PERCENT_SUPPLY; // 0.05% for $4,000+
 }
 
 // Fetch tokens from Firestore
@@ -101,14 +134,25 @@ async function getTokensFromFirestore(): Promise<
         /^0x[a-fA-F0-9]{40}$/.test(data.address)
       ) {
         tokens[data.address.toLowerCase()] = {
-          symbol: data.symbol || "UNKNOWN",
-          address: data.address,
+          symbol: data.symbol,
+          address: data.address.toLowerCase(),
           name: data.name || data.symbol,
           pool: data.pool || "",
         };
       }
     });
-    console.log(`Fetched ${Object.keys(tokens).length} tokens from Firestore`);
+    // Add well-known tokens to ensure they’re recognized
+    WELL_KNOWN_TOKENS.forEach((token) => {
+      if (!tokens[token.address.toLowerCase()]) {
+        tokens[token.address.toLowerCase()] = {
+          symbol: token.symbol,
+          address: token.address.toLowerCase(),
+          name: token.name,
+          pool: "",
+        };
+      }
+    });
+    console.log(`Fetched ${Object.keys(tokens).length} tokens from Firestore (including well-known tokens)`);
     return tokens;
   } catch (err) {
     console.error("Failed to fetch tokens from Firestore:", err);
@@ -116,7 +160,7 @@ async function getTokensFromFirestore(): Promise<
   }
 }
 
-// Fetch token price with CoinGecko fallback
+// Fetch token price with DexScreener as primary, CoinGecko as fallback
 async function getTokenPrice(tokenAddress: string): Promise<number> {
   const cached = priceCache[tokenAddress.toLowerCase()];
   if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
@@ -124,28 +168,27 @@ async function getTokenPrice(tokenAddress: string): Promise<number> {
     return cached.price;
   }
 
-  const maxRetries = 3;
   let retries = 0;
-  while (retries < maxRetries) {
+  while (retries < MAX_API_RETRIES) {
     try {
-      // Try local tokens API
-      const endpoint = `http://localhost:3000/api/tokens?chainId=base&tokenAddresses=${tokenAddress}`;
-      const res = await fetch(endpoint, { cache: "no-store" });
-      if (res.ok) {
-        const data = await res.json();
-        const tokenPair = data.find(
-          (pair: TokenPair) =>
-            pair.baseToken.address.toLowerCase() === tokenAddress.toLowerCase()
-        );
-        const price = parseFloat(tokenPair?.priceUsd) || 0;
+      // Try DexScreener API
+      const dexEndpoint = `${DEXSCREENER_API}/${tokenAddress}`;
+      const dexRes = await fetch(dexEndpoint, { cache: "no-store" });
+      if (dexRes.ok) {
+        const dexData = await dexRes.json();
+        const pair = dexData.pairs?.[0] as DexScreenerPair | undefined;
+        const price = pair?.priceUsd ? parseFloat(pair.priceUsd) : 0;
         if (price > 0) {
           priceCache[tokenAddress.toLowerCase()] = {
             price,
             timestamp: Date.now(),
           };
-          console.log(`Fetched price from tokens API for ${tokenAddress}: $${price}`);
+          console.log(`Fetched price from DexScreener for ${tokenAddress}: $${price}`);
           return price;
         }
+        console.warn(`No valid price from DexScreener for ${tokenAddress}`);
+      } else {
+        console.warn(`DexScreener API returned status ${dexRes.status} for ${tokenAddress}`);
       }
 
       // Fallback to CoinGecko
@@ -153,10 +196,19 @@ async function getTokenPrice(tokenAddress: string): Promise<number> {
         `${COINGECKO_API}/simple/token_price/base?contract_addresses=${encodeURIComponent(tokenAddress)}&vs_currencies=usd`,
         { cache: "no-store" }
       );
-      if (!coingeckoRes.ok) throw new Error(`CoinGecko API error: ${coingeckoRes.statusText}`);
+      if (!coingeckoRes.ok) {
+        console.warn(`CoinGecko API returned status ${coingeckoRes.status} for ${tokenAddress}`);
+        if (coingeckoRes.status === 429) {
+          throw new Error("CoinGecko API rate limit exceeded");
+        }
+        throw new Error(`CoinGecko API error: ${coingeckoRes.statusText}`);
+      }
       const coingeckoData = await coingeckoRes.json();
       const price = coingeckoData[tokenAddress.toLowerCase()]?.usd || 0;
-      if (price === 0) throw new Error(`No valid price found for ${tokenAddress}`);
+      if (price === 0) {
+        console.warn(`No valid price found for ${tokenAddress} on CoinGecko`);
+        throw new Error(`No valid price found for ${tokenAddress}`);
+      }
 
       priceCache[tokenAddress.toLowerCase()] = {
         price,
@@ -167,11 +219,13 @@ async function getTokenPrice(tokenAddress: string): Promise<number> {
     } catch (error) {
       console.error(`Price fetch attempt ${retries + 1} failed for ${tokenAddress}:`, error);
       retries++;
-      if (retries === maxRetries) {
+      if (retries === MAX_API_RETRIES) {
         console.error(`Max retries reached for ${tokenAddress}. Returning price 0.`);
         return 0;
       }
-      await delay(1000 * retries);
+      // Exponential backoff with jitter
+      const backoff = RATE_LIMIT_BACKOFF_BASE * Math.pow(2, retries) + Math.random() * 100;
+      await delay(backoff);
     }
   }
   return 0;
@@ -183,6 +237,21 @@ async function getTokenMetadata(tokenAddress: string) {
   if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
     console.log(`Using cached metadata for ${tokenAddress}`);
     return cached;
+  }
+
+  // Check for well-known tokens first
+  const wellKnownToken = WELL_KNOWN_TOKENS.find(
+    (t) => t.address.toLowerCase() === tokenAddress.toLowerCase()
+  );
+  if (wellKnownToken) {
+    const metadata = {
+      decimals: wellKnownToken.decimals,
+      totalSupply: "1000000000000000000000000000", // Default large supply for WETH/stablecoins
+      timestamp: Date.now(),
+    };
+    metadataCache[tokenAddress.toLowerCase()] = metadata;
+    console.log(`Using well-known metadata for ${tokenAddress}:`, metadata);
+    return metadata;
   }
 
   try {
@@ -212,7 +281,7 @@ function getPoolName(poolAddress: string): string {
 }
 
 // Save transaction to Firestore
-async function saveTransaction(tx: any) {
+async function saveTransaction(tx: WhaleTransaction) {
   const { adminDb: getAdminDb } = await import("@/lib/firebase-admin");
   const adminDb = getAdminDb();
   if (!adminDb) {
@@ -248,17 +317,11 @@ async function processTransferEvent(
   blockNumber: number
 ) {
   const tokenAddress = log.address.toLowerCase();
-  if (EXCLUDED_TOKENS.cbBTC === tokenAddress) {
-    console.log(`Skipping excluded token: ${tokenAddress}`);
+  const token = tokens[tokenAddress];
+  if (!token) {
+    console.log(`Skipping transfer for token ${tokenAddress} not in Firestore`);
     return;
   }
-
-  const token = tokens[tokenAddress] || {
-    symbol: "UNKNOWN",
-    address: tokenAddress,
-    name: "Unknown Token",
-    pool: "",
-  };
 
   try {
     const iface = new ethers.Interface(["event Transfer(address indexed from, address indexed to, uint256 value)"]);
@@ -273,21 +336,26 @@ async function processTransferEvent(
     const amount = Number(ethers.formatUnits(value, metadata.decimals));
     const price = await getTokenPrice(tokenAddress);
     const amountUSD = amount * price;
-    const percentSupply = (Number(value) / Number(metadata.totalSupply)) * 100;
+    const percentSupply = Number(metadata.totalSupply) > 0
+      ? (Number(value) / Number(metadata.totalSupply)) * 100
+      : 0;
 
+    const percentSupplyThreshold = getDynamicPercentSupplyThreshold(amountUSD);
     if (
       amountUSD < MIN_TRANSFER_USD_VALUE ||
-      percentSupply < MIN_PERCENT_SUPPLY ||
+      percentSupply < percentSupplyThreshold ||
       Number.isNaN(amountUSD) ||
       Number.isNaN(percentSupply)
     ) {
       console.log(
-        `Transfer of ${amount} ${token.symbol} ($${amountUSD.toFixed(2)}) does not meet thresholds`
+        `Transfer of ${amount} ${token.symbol} ($${amountUSD.toFixed(2)}, ${percentSupply.toFixed(2)}%) does not meet thresholds (${
+          MIN_TRANSFER_USD_VALUE
+        }, ${percentSupplyThreshold}%)`
       );
       return;
     }
 
-    const tx = {
+    const tx: WhaleTransaction = {
       tokenSymbol: token.symbol,
       tokenName: token.name,
       tokenAddress,
@@ -303,7 +371,7 @@ async function processTransferEvent(
       percentSupply,
     };
 
-    console.log(`Processing Transfer: ${amount} ${token.symbol} ($${amountUSD.toFixed(2)})`);
+    console.log(`Processing Transfer: ${amount} ${token.symbol} ($${amountUSD.toFixed(2)}, ${percentSupply.toFixed(2)}%)`);
     await saveTransaction(tx);
   } catch (err) {
     console.error(`Error processing Transfer event for ${tokenAddress}:`, err);
@@ -318,12 +386,24 @@ async function processSwapEvent(
 ) {
   const poolAddress = log.address.toLowerCase();
   const source = getPoolName(poolAddress);
+  if (source === "Unknown") {
+    console.log(`Skipping swap for unknown pool ${poolAddress}`);
+    return;
+  }
 
   try {
     const contract = new ethers.Contract(poolAddress, poolAbi, provider);
     const [token0, token1] = await Promise.all([contract.token0(), contract.token1()]);
     const token0Address = token0.toLowerCase();
     const token1Address = token1.toLowerCase();
+
+    const tokenInAddress = tokens[token0Address] ? token0Address : token1Address;
+    const tokenOutAddress = tokens[token0Address] ? token1Address : token0Address;
+
+    if (!tokens[tokenInAddress] && !tokens[tokenOutAddress]) {
+      console.log(`Skipping swap: neither ${token0Address} nor ${token1Address} in Firestore`);
+      return;
+    }
 
     const iface = new ethers.Interface([
       "event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)",
@@ -335,41 +415,45 @@ async function processSwapEvent(
     }
 
     const { sender, recipient, amount0, amount1 } = parsed.args;
-    let tokenInAddress = amount0 > 0 ? token1Address : token0Address;
-    let tokenOutAddress = amount0 > 0 ? token0Address : token1Address;
-    let amountIn = Number(ethers.formatUnits(amount0 > 0 ? amount1 : amount0, 18));
-    let amountOut = Number(ethers.formatUnits(amount0 > 0 ? amount0 : amount1, 18));
+    const isToken0In = amount0 > 0;
+    const tokenInAddr = isToken0In ? token1Address : token0Address;
+    const tokenOutAddr = isToken0In ? token0Address : token1Address;
 
-    const tokenIn = tokens[tokenInAddress] || {
-      symbol: "UNKNOWN",
-      address: tokenInAddress,
-      name: "Unknown Token",
+    const tokenIn = tokens[tokenInAddr] || {
+      symbol: WELL_KNOWN_TOKENS.find((t) => t.address.toLowerCase() === tokenInAddr)?.symbol || "UNKNOWN",
+      address: tokenInAddr,
+      name: WELL_KNOWN_TOKENS.find((t) => t.address.toLowerCase() === tokenInAddr)?.name || "Unknown Token",
       pool: "",
     };
-    const tokenOut = tokens[tokenOutAddress] || {
-      symbol: "UNKNOWN",
-      address: tokenOutAddress,
-      name: "Unknown Token",
+    const tokenOut = tokens[tokenOutAddr] || {
+      symbol: WELL_KNOWN_TOKENS.find((t) => t.address.toLowerCase() === tokenOutAddr)?.symbol || "UNKNOWN",
+      address: tokenOutAddr,
+      name: WELL_KNOWN_TOKENS.find((t) => t.address.toLowerCase() === tokenOutAddr)?.name || "Unknown Token",
       pool: "",
     };
 
-    const metadataIn = await getTokenMetadata(tokenInAddress);
-    const metadataOut = await getTokenMetadata(tokenOutAddress);
-    amountIn = Number(ethers.formatUnits(amount0 > 0 ? amount1 : amount0, metadataIn.decimals));
-    amountOut = Number(ethers.formatUnits(amount0 > 0 ? amount0 : amount1, metadataOut.decimals));
+    const metadataIn = await getTokenMetadata(tokenInAddr);
+    const metadataOut = await getTokenMetadata(tokenOutAddr);
+    const amountIn = Number(ethers.formatUnits(isToken0In ? amount1 : amount0, metadataIn.decimals));
+    const amountOut = Number(ethers.formatUnits(isToken0In ? amount0 : amount1, metadataOut.decimals));
 
-    const priceIn = await getTokenPrice(tokenInAddress);
-    const priceOut = await getTokenPrice(tokenOutAddress);
+    const priceIn = await getTokenPrice(tokenInAddr);
+    const priceOut = await getTokenPrice(tokenOutAddr);
     const amountInUSD = amountIn * priceIn;
     const amountOutUSD = amountOut * priceOut;
     const amountUSD = Math.max(amountInUSD, amountOutUSD);
 
-    const percentSupplyIn = (amountIn / Number(metadataIn.totalSupply)) * 100;
-    const percentSupplyOut = (amountOut / Number(metadataOut.totalSupply)) * 100;
+    const percentSupplyIn = Number(metadataIn.totalSupply) > 0
+      ? (amountIn / Number(metadataIn.totalSupply)) * 100
+      : 0;
+    const percentSupplyOut = Number(metadataOut.totalSupply) > 0
+      ? (amountOut / Number(metadataOut.totalSupply)) * 100
+      : 0;
 
+    const percentSupplyThreshold = getDynamicPercentSupplyThreshold(amountUSD);
     if (
       amountUSD < MIN_SWAP_USD_VALUE ||
-      (percentSupplyIn < MIN_PERCENT_SUPPLY && percentSupplyOut < MIN_PERCENT_SUPPLY) ||
+      (percentSupplyIn < percentSupplyThreshold && percentSupplyOut < percentSupplyThreshold) ||
       Number.isNaN(amountUSD)
     ) {
       console.log(
@@ -378,11 +462,24 @@ async function processSwapEvent(
       return;
     }
 
-    const tx = {
-      tokenSymbol: tokenOut.symbol,
-      tokenName: tokenOut.name,
-      tokenAddress: tokenOutAddress,
-      amountToken: amountOut,
+    let swapType: "Buy" | "Sell" | "Swap";
+    const stablecoinSymbols = WELL_KNOWN_TOKENS.map((t) => t.symbol);
+    if (stablecoinSymbols.includes(tokenIn.symbol)) {
+      swapType = "Buy";
+    } else if (stablecoinSymbols.includes(tokenOut.symbol)) {
+      swapType = "Sell";
+    } else {
+      swapType = "Swap";
+    }
+
+    const primaryToken = tokens[tokenOutAddr] ? tokenOut : tokenIn;
+    const primaryPercentSupply = tokens[tokenOutAddr] ? percentSupplyOut : percentSupplyIn;
+
+    const tx: WhaleTransaction = {
+      tokenSymbol: primaryToken.symbol,
+      tokenName: primaryToken.name,
+      tokenAddress: primaryToken.address,
+      amountToken: tokens[tokenOutAddr] ? amountOut : amountIn,
       amountUSD,
       blockNumber,
       fromAddress: sender,
@@ -391,17 +488,18 @@ async function processSwapEvent(
       timestamp: Date.now(),
       hash: log.transactionHash,
       eventType: "Swap",
+      swapType,
       swapDetails: {
         amountIn,
         amountOut,
         tokenIn: tokenIn.symbol,
         tokenOut: tokenOut.symbol,
       },
-      percentSupply: percentSupplyOut,
+      percentSupply: primaryPercentSupply,
     };
 
     console.log(
-      `Processing Swap: ${amountIn} ${tokenIn.symbol} -> ${amountOut} ${tokenOut.symbol} ($${amountUSD.toFixed(2)}) on ${source}`
+      `Processing ${swapType}: ${amountIn} ${tokenIn.symbol} -> ${amountOut} ${tokenOut.symbol} ($${amountUSD.toFixed(2)}, ${primaryPercentSupply.toFixed(2)}%) on ${source}`
     );
     await saveTransaction(tx);
   } catch (err) {
@@ -453,19 +551,14 @@ async function monitorWhaleTransactions() {
     }
   };
 
-  // Initial poll
   await poll();
-
-  // Set up polling interval
   const intervalId = setInterval(poll, POLLING_INTERVAL);
   console.log(`Started polling every ${POLLING_INTERVAL / 1000} seconds`);
 
-  // Handle provider errors
   provider.on("error", (err) => {
     console.error("Provider error:", err);
   });
 
-  // Clean up on process exit
   process.on("SIGINT", () => {
     clearInterval(intervalId);
     console.log("Stopped polling");

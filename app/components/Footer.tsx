@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
@@ -7,7 +7,7 @@ import { ShoppingBagIcon, MagnifyingGlassIcon, CubeIcon, EyeIcon, CommandLineIco
 const Footer = () => {
   const [ethPrice, setEthPrice] = useState<number | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<"Connected" | "Disconnected">("Connected");
-  const [uptime, setUptime] = useState<string>("");
+  const [uptime, setUptime] = useState<string>("0h 0m 0s");
 
   // Fetch ETH price
   useEffect(() => {
@@ -38,30 +38,29 @@ const Footer = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Calculate live uptime (assuming app launched on May 1, 2025)
+  // Calculate real-time uptime starting from page load (h m s)
   useEffect(() => {
-    const launchDate = new Date("2025-05-01T00:00:00Z");
+    const startTime = Date.now();
     const calculateUptime = () => {
-      const now = new Date("2025-05-19T11:22:00-07:00"); // Current date/time: May 19, 2025, 11:22 AM PDT
-      const diff = now.getTime() - launchDate.getTime();
-      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const diff = Date.now() - startTime;
+      const hours = Math.floor(diff / (1000 * 60 * 60));
       const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      setUptime(`${days}d ${hours}h ${minutes}m`);
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+      setUptime(`${hours}h ${minutes}m ${seconds}s`);
     };
     calculateUptime();
-    const interval = setInterval(calculateUptime, 60000); // Update every minute
+    const interval = setInterval(calculateUptime, 1000); // Update every second
     return () => clearInterval(interval);
   }, []);
 
   return (
-    <footer className="bg-gray-950 text-gray-100 py-3 border-t border-[#3B82F6/30] w-full">
+    <footer className="bg-gray-950 text-gray-100 py-3 border-t border-blue-500/30 w-full">
       <div className="container mx-auto flex flex-wrap justify-between items-center px-4 gap-4">
         {/* Status Section */}
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1">
             <span className="text-gray-400 text-xs">Uptime:</span>
-            <span className="text-gray-100 text-xs">{uptime || "Calculating..."}</span>
+            <span className="text-gray-100 text-xs">{uptime}</span>
           </div>
           <div className="flex items-center gap-1">
             <span className="text-gray-400 text-xs">Status:</span>
@@ -84,35 +83,35 @@ const Footer = () => {
             </div>
             <span className="text-sm text-gray-100 group-hover:text-blue-400 transition-colors">Screener</span>
           </Link>
-          <div className="border-r border-blue-400/20 h-4"></div>
+          <div className="border-r border-blue-500/30 h-2"></div> {/* Thinner separator, matching theme */}
           <Link href="/smart-money" className="flex items-center gap-1 group">
             <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center">
               <UsersIcon className="w-4 h-4 text-gray-200 group-hover:text-blue-400 transition-colors" />
             </div>
             <span className="text-sm text-gray-100 group-hover:text-blue-400 transition-colors">Smart Money</span>
           </Link>
-          <div className="border-r border-blue-400/20 h-4"></div>
+          <div className="border-r border-blue-500/30 h-2"></div> {/* Thinner separator, matching theme */}
           <Link href="/honeypot-scanner" className="flex items-center gap-1 group">
             <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center">
               <MagnifyingGlassIcon className="w-4 h-4 text-gray-200 group-hover:text-blue-400 transition-colors" />
             </div>
             <span className="text-sm text-gray-100 group-hover:text-blue-400 transition-colors">Smart Audit</span>
           </Link>
-          <div className="border-r border-blue-400/20 h-4"></div>
+          <div className="border-r border-blue-500/30 h-2"></div> {/* Thinner separator, matching theme */}
           <Link href="/explorer/latest/block" className="flex items-center gap-1 group">
             <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center">
               <CommandLineIcon className="w-4 h-4 text-gray-200 group-hover:text-blue-400 transition-colors" />
             </div>
             <span className="text-sm text-gray-100 group-hover:text-blue-400 transition-colors">Block Scan</span>
           </Link>
-          <div className="border-r border-blue-400/20 h-4"></div>
+          <div className="border-r border-blue-500/30 h-2"></div> {/* Thinner separator, matching theme */}
           <Link href="/marketplace" className="flex items-center gap-1 group">
             <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center">
               <ShoppingBagIcon className="w-4 h-4 text-gray-200 group-hover:text-blue-400 transition-colors" />
             </div>
             <span className="text-sm text-gray-100 group-hover:text-blue-400 transition-colors">Marketplace</span>
           </Link>
-          <div className="border-r border-blue-400/20 h-4"></div>
+          <div className="border-r border-blue-500/30 h-2"></div> {/* Thinner separator, matching theme */}
           <Link href="/explorer" className="flex items-center gap-1 group">
             <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center">
               <CubeIcon className="w-4 h-4 text-gray-200 group-hover:text-blue-400 transition-colors" />

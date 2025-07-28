@@ -1,67 +1,255 @@
-// File: app/token-scanner/[poolAddress]/chart/swap.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
 import { FaWallet } from "react-icons/fa";
-import {
-  useAccount,
-  useConnect,
-  useDisconnect,
-  useBalance,
-  useSignMessage,
-} from "wagmi";
 import { ethers } from "ethers";
 import { toast } from "react-toastify";
+import { useAccount, useConnect, useDisconnect, useSignMessage } from "wagmi";
 
 // ────────────────────────────────────────────────────────────────────────────────
 // 1) CONSTANTS & ABIs
 // ────────────────────────────────────────────────────────────────────────────────
-// SwapRouter02 on Base
-const SWAP_ROUTER_ADDRESS = "0x2626664c2603E5475e998cB8976B0dF48E8b8A9";
-// QuoterV2 on Base
-const QUOTER_ADDRESS = "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76";
-// WETH on Base
-const WETH_ADDRESS = "0x4200000000000000000000000000000000000006";
-// Represent ETH as zero‐address
+const SWAP_ROUTER_ADDRESS = "0x2626664c2603336E57B271c5C0b26F421741e481"; // Correct Uniswap V3 SwapRouter02 on Base
+const QUOTER_ADDRESS = "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a"; // Correct Uniswap V3 QuoterV2 on Base
+const WETH_ADDRESS = "0x4200000000000000000000000000000000000006"; // WETH on Base
+const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; // USDC on Base
+const USDC_WETH_POOL_FEE = 500; // 0.05% fee for USDC/WETH pool on Base
 const ETH_ADDRESS = ethers.ZeroAddress;
-// Platform fee recipient
-const PLATFORM_WALLET = "0x4146E18FeF6883Ee7c2F16feC60109133F1Fc491";
-// 0.02% expressed as decimal (i.e. 2 basis points)
+const PLATFORM_WALLET = "0x4146E18FeF6883Ee7c2F16feC60109133F1Fc491"; // Your platform wallet
 const PLATFORM_FEE_PERCENTAGE = 0.0002;
-const BASE_CHAIN_ID = 8453; // Base mainnet
+const BASE_CHAIN_ID = 8453;
 
-// ABI: QuoterV2 (quoteExactInputSingle)
 const QUOTER_ABI = [
-  "function quoteExactInputSingle((address tokenIn,address tokenOut,uint256 amountIn,uint24 fee,uint160 sqrtPriceLimitX96)) external view returns (uint256 amountOut,uint256 amountOutAfterFees,uint160 sqrtPriceX96After,uint32 initializedTicksCrossed,uint256 gasEstimate)",
+  {
+    inputs: [
+      { name: "tokenIn", type: "address" },
+      { name: "tokenOut", type: "address" },
+      { name: "amountIn", type: "uint256" },
+      { name: "fee", type: "uint24" },
+      { name: "sqrtPriceLimitX96", type: "uint160" },
+    ],
+    name: "quoteExactInputSingle",
+    outputs: [
+      { name: "amountOut", type: "uint256" },
+      { name: "sqrtPriceX96After", type: "uint160" },
+      { name: "initializedTicksCrossed", type: "uint32" },
+      { name: "gasEstimate", type: "uint256" },
+    ],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "path", type: "bytes" },
+      { name: "amountIn", type: "uint256" },
+    ],
+    name: "quoteExactInput",
+    outputs: [
+      { name: "amountOut", type: "uint256" },
+      { name: "sqrtPriceX96AfterList", type: "uint160[]" },
+      { name: "initializedTicksCrossedList", type: "uint32[]" },
+      { name: "gasEstimate", type: "uint256" },
+    ],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
 ];
 
-// ABI: WETH (deposit, withdraw, ERC20 basics)
-const WETH_ABI = [
-  "function deposit() external payable",
-  "function withdraw(uint256 wad) external",
-  "function balanceOf(address owner) view returns (uint256)",
-  "function approve(address spender,uint256 amount) returns (bool)",
-  "function allowance(address owner,address spender) view returns (uint256)",
-  "function transfer(address to,uint256 amount) returns (bool)",
-];
-
-// ERC20 ABI subset
 const ERC20_ABI = [
-  "function approve(address spender,uint256 amount) external returns (bool)",
-  "function allowance(address owner,address spender) view returns (uint256)",
-  "function balanceOf(address owner) view returns (uint256)",
-  "function decimals() view returns (uint8)",
-  "function transfer(address to,uint256 amount) returns (bool)",
+  {
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    name: "approve",
+    outputs: [{ name: "", type: "bool" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    name: "allowance",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "owner", type: "address" }],
+    name: "balanceOf",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "decimals",
+    outputs: [{ name: "", type: "uint8" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    name: "transfer",
+    outputs: [{ name: "", type: "bool" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
 ];
 
-// SwapRouter02 ABI (exactInputSingle + unwrapWETH9)
 const SWAP_ROUTER_ABI = [
-  "function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96)) external payable returns (uint256 amountOut)",
-  "function unwrapWETH9(uint256 amountMinimum,address recipient) external payable",
+  {
+    inputs: [
+      {
+        components: [
+          { name: "tokenIn", type: "address" },
+          { name: "tokenOut", type: "address" },
+          { name: "fee", type: "uint24" },
+          { name: "recipient", type: "address" },
+          { name: "deadline", type: "uint256" },
+          { name: "amountIn", type: "uint256" },
+          { name: "amountOutMinimum", type: "uint256" },
+          { name: "sqrtPriceLimitX96", type: "uint160" },
+        ],
+        name: "params",
+        type: "tuple",
+      },
+    ],
+    name: "exactInputSingle",
+    outputs: [{ name: "amountOut", type: "uint256" }],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        components: [
+          { name: "path", type: "bytes" },
+          { name: "recipient", type: "address" },
+          { name: "deadline", type: "uint256" },
+          { name: "amountIn", type: "uint256" },
+          { name: "amountOutMinimum", type: "uint256" },
+        ],
+        name: "params",
+        type: "tuple",
+      },
+    ],
+    name: "exactInput",
+    outputs: [{ name: "amountOut", type: "uint256" }],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "amountMinimum", type: "uint256" },
+      { name: "recipient", type: "address" },
+    ],
+    name: "unwrapWETH9",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+];
+
+const POOL_ABI = [
+  {
+    inputs: [],
+    name: "fee",
+    outputs: [{ internalType: "uint24", name: "", type: "uint24" }],
+    stateMutability: "view",
+    type: "function",
+  },
 ];
 
 // ────────────────────────────────────────────────────────────────────────────────
-// 2) TYPES
+// 2) CONTRACT INTERFACES
+// ────────────────────────────────────────────────────────────────────────────────
+interface SwapRouterContract {
+  exactInputSingle(
+    params: {
+      tokenIn: string;
+      tokenOut: string;
+      fee: number;
+      recipient: `0x${string}`;
+      deadline: bigint;
+      amountIn: bigint;
+      amountOutMinimum: bigint;
+      sqrtPriceLimitX96: bigint;
+    },
+    options?: { gasLimit?: bigint; value?: bigint }
+  ): Promise<ethers.ContractTransactionResponse>;
+  exactInput(
+    params: {
+      path: string;
+      recipient: `0x${string}`;
+      deadline: bigint;
+      amountIn: bigint;
+      amountOutMinimum: bigint;
+    },
+    options?: { gasLimit?: bigint; value?: bigint }
+  ): Promise<ethers.ContractTransactionResponse>;
+  unwrapWETH9(amountMinimum: bigint, recipient: `0x${string}`, options?: { gasLimit?: bigint }): Promise<ethers.ContractTransactionResponse>;
+  estimateGas: {
+    exactInputSingle(
+      params: {
+        tokenIn: string;
+        tokenOut: string;
+        fee: number;
+        recipient: `0x${string}`;
+        deadline: bigint;
+        amountIn: bigint;
+        amountOutMinimum: bigint;
+        sqrtPriceLimitX96: bigint;
+      },
+      options?: { value?: bigint }
+    ): Promise<bigint>;
+    exactInput(
+      params: {
+        path: string;
+        recipient: `0x${string}`;
+        deadline: bigint;
+        amountIn: bigint;
+        amountOutMinimum: bigint;
+      },
+      options?: { value?: bigint }
+    ): Promise<bigint>;
+    unwrapWETH9(amountMinimum: bigint, recipient: `0x${string}`): Promise<bigint>;
+  };
+}
+
+interface QuoterContract {
+  quoteExactInputSingle(
+    tokenIn: string,
+    tokenOut: string,
+    amountIn: bigint,
+    fee: bigint,
+    sqrtPriceLimitX96: bigint
+  ): Promise<[bigint, bigint, number, bigint]>;
+  quoteExactInput(
+    path: string,
+    amountIn: bigint
+  ): Promise<[bigint, bigint[], number[], bigint]>;
+}
+
+interface ERC20Contract {
+  approve(spender: string, amount: bigint, options?: { gasLimit?: bigint }): Promise<ethers.ContractTransactionResponse>;
+  transfer(to: string, amount: bigint, options?: { gasLimit?: bigint }): Promise<ethers.ContractTransactionResponse>;
+  allowance(owner: string, spender: string): Promise<bigint>;
+  balanceOf(owner: string): Promise<bigint>;
+  decimals(): Promise<number>;
+  estimateGas: {
+    approve(spender: string, amount: bigint): Promise<bigint>;
+    transfer(to: string, amount: bigint): Promise<bigint>;
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// 3) TYPES
 // ────────────────────────────────────────────────────────────────────────────────
 type SwapToken = {
   address: string;
@@ -96,119 +284,135 @@ interface SwapProps {
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
-// 3) COMPONENT
+// 4) COMPONENT
 // ────────────────────────────────────────────────────────────────────────────────
 const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
-  // ────────────────────────────────────────────────────────────────────────────────
-  // 3.1) STATE HOOKS
-  // ────────────────────────────────────────────────────────────────────────────────
-  const [amountIn, setAmountIn] = useState<string>("");   // user enters this
-  const [amountOut, setAmountOut] = useState<string>(""); // quoted result
+  const [amountIn, setAmountIn] = useState<string>("");
+  const [amountOut, setAmountOut] = useState<string>("");
   const [tokenIn, setTokenIn] = useState<SwapToken | null>(null);
   const [tokenOut, setTokenOut] = useState<SwapToken | null>(null);
   const [isSwapLoading, setIsSwapLoading] = useState<boolean>(false);
-  const [transactionStatus, setTransactionStatus] = useState<string>(""); // status text
+  const [transactionStatus, setTransactionStatus] = useState<string>("");
   const [priceImpact, setPriceImpact] = useState<number>(0);
-  const [slippage] = useState<number>(0.5);  // default 0.5%
+  const [slippage] = useState<number>(0.5);
   const [isApproved, setIsApproved] = useState<boolean>(false);
-  const [gasEstimate, setGasEstimate] = useState<string>("0");      // in Gwei
-  const [walletBalance, setWalletBalance] = useState<string>("0.0"); // tokenIn balance
-  const [platformFee, setPlatformFee] = useState<string>("0");      // 0.02% of amountIn
+  const [gasEstimate, setGasEstimate] = useState<string>("0");
+  const [walletBalance, setWalletBalance] = useState<string>("0.0");
+  const [platformFee, setPlatformFee] = useState<string>("0");
   const [activeTab, setActiveTab] = useState<"buy" | "sell">("buy");
-  const [showWalletModal, setShowWalletModal] = useState<boolean>(false);
   const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
   const [boughtAmount, setBoughtAmount] = useState<number>(0);
   const [soldAmount, setSoldAmount] = useState<number>(0);
   const [profitLoss, setProfitLoss] = useState<number>(0);
+  const [signer, setSigner] = useState<ethers.Signer | null>(null);
+  const [poolFee, setPoolFee] = useState<number>(0);
+  const [isWETHPair, setIsWETHPair] = useState<boolean>(false);
+  const [isUSDCPair, setIsUSDCPair] = useState<boolean>(false);
 
-  // wagmi hooks
   const { address, isConnected } = useAccount();
-  const { connect, connectors } = useConnect();
+  const { connectAsync, connectors } = useConnect();
   const { disconnect } = useDisconnect();
   const { signMessageAsync } = useSignMessage();
 
-  // Native ETH balance (if tokenIn is ETH)
-  const { data: nativeBalance } = useBalance({
-    address: address as `0x${string}`,
-  });
+  const provider = new ethers.JsonRpcProvider("https://rpc.base.org");
 
-  // Ethers.js provider for read‐only RPC calls
-  const provider = new ethers.JsonRpcProvider(
-    "https://base-mainnet.g.alchemy.com/v2/8KR6qwxbLlIISgrMCZfsrYeMmn6-S-bN"
-  );
+  useEffect(() => {
+    if (!isConnected || !address) return;
+    const setupSigner = async () => {
+      try {
+        if (!window.ethereum) {
+          console.error("No Ethereum provider detected");
+          toast.error("No wallet detected. Please install MetaMask or a compatible EVM wallet.");
+          return;
+        }
+        const browserProvider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await browserProvider.getSigner();
+        setSigner(signer);
+      } catch (err: unknown) {
+        console.error("Failed to set up signer:", err);
+        toast.error("Failed to initialize wallet signer.");
+      }
+    };
+    setupSigner();
+  }, [isConnected, address]);
 
-  // ────────────────────────────────────────────────────────────────────────────────
-  // 3.2) SET DEFAULT TOKENS: ETH → [chart token] or vice versa
-  // ────────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!token) return;
-    // Build “otherToken” from token.baseToken
-    const otherToken: SwapToken = {
-      address: token.baseToken.address,
-      symbol: token.baseToken.symbol,
-      name: token.baseToken.name,
-      decimals: 18, // assume ERC‐20 tokens are 18 decimals
-    };
-    // Build ETH placeholder
-    const ethToken: SwapToken = {
-      address: ETH_ADDRESS,
-      symbol: "ETH",
-      name: "Ether",
-      decimals: 18,
-    };
+    const fetchTokenData = async () => {
+      try {
+        const contract = new ethers.Contract(token.baseToken.address, ERC20_ABI, provider) as unknown as ERC20Contract;
+        const decimals = await contract.decimals();
+        const otherToken: SwapToken = {
+          address: token.baseToken.address,
+          symbol: token.baseToken.symbol,
+          name: token.baseToken.name,
+          decimals,
+        };
+        const ethToken: SwapToken = {
+          address: ETH_ADDRESS,
+          symbol: "ETH",
+          name: "Ether",
+          decimals: 18,
+        };
+        const poolContract = new ethers.Contract(token.poolAddress, POOL_ABI, provider);
+        const fee = await poolContract.fee();
+        setPoolFee(Number(fee));
 
-    if (activeTab === "buy") {
-      setTokenIn(ethToken);
-      setTokenOut(otherToken);
-    } else {
-      setTokenIn(otherToken);
-      setTokenOut(ethToken);
-    }
-  }, [token, activeTab]);
+        const quoteAddr = token.quoteToken.address.toLowerCase();
+        if (quoteAddr === WETH_ADDRESS.toLowerCase()) {
+          setIsWETHPair(true);
+          setIsUSDCPair(false);
+        } else if (quoteAddr === USDC_ADDRESS.toLowerCase()) {
+          setIsWETHPair(false);
+          setIsUSDCPair(true);
+        } else {
+          toast.error("Unsupported pair for swap.");
+          return;
+        }
 
-  // ────────────────────────────────────────────────────────────────────────────────
-  // 3.3) FETCH WALLET BALANCE FOR tokenIn
-  // ────────────────────────────────────────────────────────────────────────────────
+        if (activeTab === "buy") {
+          setTokenIn(ethToken);
+          setTokenOut(otherToken);
+        } else {
+          setTokenIn(otherToken);
+          setTokenOut(ethToken);
+        }
+      } catch (err: unknown) {
+        console.error("Error fetching token details:", err);
+        toast.error("Failed to load token details.");
+      }
+    };
+    fetchTokenData();
+  }, [token, activeTab, provider]);
+
   useEffect(() => {
     const fetchBalance = async () => {
-      if (!isConnected || !address || !tokenIn) {
+      if (!signer || !address || !tokenIn) {
         setWalletBalance("0.0");
         return;
       }
       try {
         if (tokenIn.address === ETH_ADDRESS) {
-          // Native ETH
-          const bal = nativeBalance
-            ? ethers.formatEther(nativeBalance.value)
-            : "0";
-          setWalletBalance(parseFloat(bal).toFixed(4));
+          const bal = await provider.getBalance(address);
+          setWalletBalance(ethers.formatEther(bal));
         } else {
-          // ERC20 token
-          const contract = new ethers.Contract(
-            tokenIn.address,
-            ERC20_ABI,
-            provider
-          );
-          const rawBal = (await contract.balanceOf(address)) as ethers.BigNumber;
-          const dec = (await contract.decimals()) as number;
-          const formatted = ethers.formatUnits(rawBal, dec);
-          setWalletBalance(parseFloat(formatted).toFixed(4));
+          const contract = new ethers.Contract(tokenIn.address, ERC20_ABI, provider) as unknown as ERC20Contract;
+          const rawBal = await contract.balanceOf(address);
+          const dec = await contract.decimals();
+          setWalletBalance(ethers.formatUnits(rawBal, dec));
         }
-      } catch (err) {
+      } catch (err: unknown) {
         console.error("Error fetching wallet balance:", err);
         setWalletBalance("0.0");
       }
     };
     fetchBalance();
-  }, [isConnected, address, tokenIn, nativeBalance]);
+  }, [signer, address, tokenIn, provider]);
 
-  // ────────────────────────────────────────────────────────────────────────────────
-  // 3.4) CHECK ALLOWANCE (if tokenIn ≠ ETH)
-  // ────────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const checkAllowance = async () => {
       if (
-        !isConnected ||
+        !signer ||
         !address ||
         !tokenIn ||
         tokenIn.address === ETH_ADDRESS ||
@@ -219,42 +423,20 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
         return;
       }
       try {
-        const contract = new ethers.Contract(
-          tokenIn.address,
-          ERC20_ABI,
-          provider
-        );
-        // Convert amountIn to bigint
-        const amtInWei: bigint = ethers.parseUnits(
-          amountIn,
-          tokenIn.decimals
-        );
-        const allowanceBn = (await contract.allowance(
-          address,
-          SWAP_ROUTER_ADDRESS
-        )) as ethers.BigNumber;
-        setIsApproved(allowanceBn.toBigInt() >= amtInWei);
-      } catch (err) {
+        const contract = new ethers.Contract(tokenIn.address, ERC20_ABI, provider) as unknown as ERC20Contract;
+        const amtInWei = ethers.parseUnits(amountIn, tokenIn.decimals);
+        const allowance = await contract.allowance(address, SWAP_ROUTER_ADDRESS);
+        setIsApproved(allowance >= amtInWei);
+      } catch (err: unknown) {
         console.error("Error checking allowance:", err);
         setIsApproved(false);
       }
     };
     checkAllowance();
-  }, [isConnected, address, tokenIn, amountIn]);
+  }, [signer, address, tokenIn, amountIn, provider]);
 
-  // ────────────────────────────────────────────────────────────────────────────────
-  // 3.5) FETCH QUOTE + PRICE IMPACT + GAS + PLATFORM FEE
-  // ────────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    console.log("Quote effect:", {
-      amountIn,
-      tokenIn: tokenIn?.symbol,
-      tokenOut: tokenOut?.symbol,
-      ethPrice,
-    });
-
-    // If invalid inputs, clear everything
-    if (!amountIn || parseFloat(amountIn) <= 0 || !tokenIn || !tokenOut) {
+    if (!amountIn || parseFloat(amountIn) <= 0 || !tokenIn || !tokenOut || !token || poolFee === 0 || (!isWETHPair && !isUSDCPair)) {
       setAmountOut("");
       setPriceImpact(0);
       setGasEstimate("0");
@@ -264,180 +446,154 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
 
     const fetchQuote = async () => {
       try {
-        const quoter = new ethers.Contract(
-          QUOTER_ADDRESS,
-          QUOTER_ABI,
-          provider
-        );
+        const quoter = new ethers.Contract(QUOTER_ADDRESS, QUOTER_ABI, provider) as unknown as QuoterContract;
+        const inAddr = tokenIn.address === ETH_ADDRESS ? WETH_ADDRESS : tokenIn.address;
+        const outAddr = tokenOut.address === ETH_ADDRESS ? WETH_ADDRESS : tokenOut.address;
+        const amtInWeiFull = ethers.parseUnits(amountIn, tokenIn.decimals);
+        const feeWei = (amtInWeiFull * BigInt(Math.round(PLATFORM_FEE_PERCENTAGE * 1e6))) / BigInt(1e6);
+        const amtInWeiAdjusted = amtInWeiFull - feeWei;
+        let amountOut: bigint;
 
-        // Convert ETH→WETH if needed
-        let inAddr = tokenIn.address;
-        let outAddr = tokenOut.address;
-        if (tokenIn.address === ETH_ADDRESS) inAddr = WETH_ADDRESS;
-        if (tokenOut.address === ETH_ADDRESS) outAddr = WETH_ADDRESS;
-
-        const amtInWei: bigint = ethers.parseUnits(
-          amountIn,
-          tokenIn.decimals
-        );
-        const feeTiers = [500, 3000, 10000]; // 0.05%, 0.3%, 1%
-        let quotedOut: bigint | null = null;
-        let chosenFee = 3000;
-
-        for (const fee of feeTiers) {
-          try {
-            const params = {
-              tokenIn: inAddr,
-              tokenOut: outAddr,
-              amountIn: amtInWei,
-              fee: fee,
-              sqrtPriceLimitX96: 0n, // must be bigint
-            };
-            // Use callStatic on quoteExactInputSingle
-            const result = (await (quoter as any).callStatic.quoteExactInputSingle(
-              params
-            )) as [
-              ethers.BigNumber,
-              ethers.BigNumber,
-              ethers.BigNumber,
-              number,
-              ethers.BigNumber
-            ];
-            const amountOutBn = result[0];
-            quotedOut = amountOutBn.toBigInt();
-            chosenFee = fee;
-            console.log(`Quote succeeded at fee ${fee}: ${amountOutBn}`);
-            break;
-          } catch (_err) {
-            console.warn(`No pool at fee ${fee}`);
-            continue;
+        if (isWETHPair) {
+          // Single hop
+          [amountOut] = await quoter.quoteExactInputSingle(inAddr, outAddr, amtInWeiAdjusted, BigInt(poolFee), BigInt(0));
+        } else {
+          // Multi hop via USDC
+          let path: string;
+          if (activeTab === "buy") {
+            // ETH -> USDC -> token
+            path = ethers.solidityPacked(
+              ["address", "uint24", "address", "uint24", "address"],
+              [WETH_ADDRESS, USDC_WETH_POOL_FEE, USDC_ADDRESS, poolFee, token.baseToken.address]
+            );
+          } else {
+            // token -> USDC -> ETH
+            path = ethers.solidityPacked(
+              ["address", "uint24", "address", "uint24", "address"],
+              [token.baseToken.address, poolFee, USDC_ADDRESS, USDC_WETH_POOL_FEE, WETH_ADDRESS]
+            );
           }
+          [amountOut] = await quoter.quoteExactInput(path, amtInWeiAdjusted);
         }
 
-        if (!quotedOut) {
-          throw new Error(
-            `No valid pool found for ${tokenIn.symbol}/${tokenOut.symbol}`
-          );
-        }
-
-        // Format quotedOut into decimal string
-        const outFormatted = ethers.formatUnits(
-          quotedOut,
-          tokenOut.decimals
-        );
+        const outFormatted = ethers.formatUnits(amountOut, tokenOut.decimals);
         setAmountOut(parseFloat(outFormatted).toFixed(6));
 
-        // Price Impact in USD
-        const inUsd =
-          parseFloat(amountIn) *
-          (tokenIn.symbol === "ETH"
-            ? ethPrice
-            : parseFloat(token?.priceUsd || "0"));
-        const outUsd =
-          parseFloat(outFormatted) *
-          (tokenOut.symbol === "ETH"
-            ? ethPrice
-            : parseFloat(token?.priceUsd || "0"));
+        const inUsd = parseFloat(amountIn) * (tokenIn.symbol === "ETH" ? ethPrice : parseFloat(token.priceUsd || "0"));
+        const outUsd = parseFloat(outFormatted) * (tokenOut.symbol === "ETH" ? ethPrice : parseFloat(token.priceUsd || "0"));
         const impact = inUsd > 0 ? ((inUsd - outUsd) / inUsd) * 100 : 0;
         setPriceImpact(Math.abs(impact));
 
-        // Platform fee (0.02% of amountIn)
-        const feeWeiBigint =
-          (amtInWei * BigInt(Math.round(PLATFORM_FEE_PERCENTAGE * 1e6))) /
-          BigInt(1e6);
-        const feeFmt = ethers.formatUnits(
-          feeWeiBigint,
-          tokenIn.decimals
-        );
+        const feeFmt = ethers.formatUnits(feeWei, tokenIn.decimals);
         setPlatformFee(parseFloat(feeFmt).toFixed(6));
 
-        // If wallet is connected, estimate gas
-        if (isConnected && address) {
-          const signer = await new ethers.BrowserProvider(
-            (window as any).ethereum
-          ).getSigner();
-          const swapRouter = new ethers.Contract(
-            SWAP_ROUTER_ADDRESS,
-            SWAP_ROUTER_ABI,
-            signer
-          );
-          const swapParams = {
-            tokenIn: inAddr,
-            tokenOut:
-              tokenOut.address === ETH_ADDRESS
-                ? WETH_ADDRESS
-                : tokenOut.address,
-            fee: chosenFee,
-            recipient:
-              tokenOut.address === ETH_ADDRESS ? SWAP_ROUTER_ADDRESS : address,
-            amountIn: amtInWei,
-            amountOutMinimum:
-              quotedOut *
-              BigInt(Math.floor((100 - slippage) * 100)) /
-              BigInt(10000),
-            sqrtPriceLimitX96: 0n,
-          };
-          // Cast to any so TS doesn’t object
-          const gasUsedBn = await (swapRouter as any).estimateGas.exactInputSingle(
-            swapParams,
-            {
-              value:
-                tokenIn.address === ETH_ADDRESS ? amtInWei : (0n as bigint),
-            }
-          );
-          const gasUsedGwei = ethers.formatUnits(gasUsedBn, "gwei");
-          setGasEstimate(parseFloat(gasUsedGwei).toFixed(2));
+        let quoteData: string;
+        if (isWETHPair) {
+          quoteData = quoter.interface.encodeFunctionData("quoteExactInputSingle", [inAddr, outAddr, amtInWeiAdjusted, BigInt(poolFee), BigInt(0)]);
+        } else {
+          let path: string;
+          if (activeTab === "buy") {
+            path = ethers.solidityPacked(
+              ["address", "uint24", "address", "uint24", "address"],
+              [WETH_ADDRESS, USDC_WETH_POOL_FEE, USDC_ADDRESS, poolFee, token.baseToken.address]
+            );
+          } else {
+            path = ethers.solidityPacked(
+              ["address", "uint24", "address", "uint24", "address"],
+              [token.baseToken.address, poolFee, USDC_ADDRESS, USDC_WETH_POOL_FEE, WETH_ADDRESS]
+            );
+          }
+          quoteData = quoter.interface.encodeFunctionData("quoteExactInput", [path, amtInWeiAdjusted]);
         }
-      } catch (err: any) {
+        const gasEst = await provider.estimateGas({
+          to: QUOTER_ADDRESS,
+          data: quoteData,
+        });
+        setGasEstimate(gasEst.toString());
+      } catch (err: unknown) {
         console.error("Fetch quote error:", err);
         setAmountOut("");
         setPriceImpact(0);
         setGasEstimate("0");
         setPlatformFee("0");
-        toast.error(
-          err.message || "Failed to fetch swap quote. Check token pair."
-        );
+        let errorMessage = "Failed to fetch swap quote. Check token pair or liquidity.";
+        if (err && typeof err === "object" && "reason" in err && typeof err.reason === "string") {
+          errorMessage = err.reason;
+        } else if (err && typeof err === "object" && "message" in err && typeof err.message === "string") {
+          errorMessage = err.message;
+        }
+        toast.error(errorMessage);
       }
     };
 
     fetchQuote();
-  }, [
-    amountIn,
-    tokenIn,
-    tokenOut,
-    ethPrice,
-    token?.priceUsd,
-    isConnected,
-    address,
-    slippage,
-  ]);
+  }, [amountIn, tokenIn, tokenOut, ethPrice, token, poolFee, isWETHPair, isUSDCPair, activeTab, provider]);
 
-  // ────────────────────────────────────────────────────────────────────────────────
-  // 3.6) CONNECT WALLET & SIGN MESSAGE
-  // ────────────────────────────────────────────────────────────────────────────────
-  const handleConnectWallet = async (connector: any) => {
+  const handleConnectWallet = async () => {
+    if (!window.ethereum) {
+      console.error("No Ethereum provider detected");
+      toast.error("No wallet detected. Please install MetaMask or a compatible EVM wallet.");
+      return;
+    }
     try {
-      await connect({ connector });
-      setShowWalletModal(false);
-      toast.success("Wallet connected");
-
-      // Ask user to sign an “authenticate” message
-      const msg = `Authenticate wallet for swap on Base:\nAddress: ${address}\nTimestamp: ${Date.now()}`;
-      await signMessageAsync({ message: msg });
-      toast.success("Wallet authenticated");
-    } catch (err) {
+      console.log("Available connectors:", connectors.map(c => c.id));
+      const injectedConnector = connectors.find((c) => c.id === "injected");
+      if (!injectedConnector) {
+        console.error("Injected connector not found. Available connectors:", connectors.map(c => c.id));
+        throw new Error("Injected connector (e.g., MetaMask) not found in Wagmi config.");
+      }
+      console.log("Attempting to connect with injected connector");
+      await connectAsync({ connector: injectedConnector });
+      if (address) {
+        console.log("Connected address:", address);
+        const msg = `Authenticate wallet for swap on Base:\nAddress: ${address}\nTimestamp: ${Date.now()}`;
+        await signMessageAsync({ message: msg });
+        toast.success("Wallet connected and authenticated");
+      } else {
+        console.error("No address returned after connection");
+        toast.error("Failed to retrieve wallet address.");
+      }
+    } catch (err: unknown) {
       console.error("Connect/sign failed:", err);
-      toast.error("Failed to connect or authenticate wallet.");
+      let errorMessage = "Failed to connect or authenticate wallet. Ensure your wallet is unlocked.";
+      if (err && typeof err === "object" && "message" in err && typeof err.message === "string") {
+        errorMessage = err.message;
+      }
+      toast.error(errorMessage);
     }
   };
 
-  // ────────────────────────────────────────────────────────────────────────────────
-  // 3.7) VALIDATE SWAP INPUT
-  // ────────────────────────────────────────────────────────────────────────────────
-  const validateSwap = (): boolean => {
-    if (!isConnected || !address) {
+  const validateSwap = async (): Promise<boolean> => {
+    if (!signer || !address) {
       toast.error("Please connect your wallet.");
       return false;
+    }
+    const network = await provider.getNetwork();
+    if (Number(network.chainId) !== BASE_CHAIN_ID) {
+      try {
+        await window.ethereum.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: `0x${BASE_CHAIN_ID.toString(16)}` }],
+        });
+      } catch (switchErr: unknown) {
+        if (switchErr && typeof switchErr === "object" && "code" in switchErr && switchErr.code === 4902) {
+          await window.ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [
+              {
+                chainId: `0x${BASE_CHAIN_ID.toString(16)}`,
+                chainName: "Base",
+                rpcUrls: ["https://mainnet.base.org"],
+                nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+                blockExplorerUrls: ["https://basescan.org"],
+              },
+            ],
+          });
+        } else {
+          toast.error("Please switch to the Base network.");
+          return false;
+        }
+      }
     }
     if (!tokenIn || !tokenOut) {
       toast.error("Token not set.");
@@ -448,9 +604,7 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
       return false;
     }
     if (parseFloat(amountIn) > parseFloat(walletBalance)) {
-      toast.error(
-        `Insufficient ${tokenIn.symbol} balance (${walletBalance}).`
-      );
+      toast.error(`Insufficient ${tokenIn.symbol} balance (${walletBalance}).`);
       return false;
     }
     if (!amountOut || parseFloat(amountOut) <= 0) {
@@ -460,11 +614,9 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
     return true;
   };
 
-  // Trigger confirm modal (with an extra “sign message”)
   const openConfirmModal = async () => {
-    if (!validateSwap()) return;
+    if (!(await validateSwap())) return;
     try {
-      // Ask user to sign a “confirm swap” message
       const confirmMsg = `Confirm ${
         activeTab === "buy" ? "Buy" : "Sell"
       } ${amountIn} ${tokenIn?.symbol} → ${amountOut} ${
@@ -472,287 +624,160 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
       } on Base\nTimestamp: ${Date.now()}`;
       await signMessageAsync({ message: confirmMsg });
       setShowConfirmModal(true);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Confirm signature failed:", err);
-      toast.error("Swap confirmation cancelled.");
-    }
-  };
-
-  // ────────────────────────────────────────────────────────────────────────────────
-  // 3.8) SWITCH WALLET TO BASE (if needed)
-  // ────────────────────────────────────────────────────────────────────────────────
-  const checkNetwork = async (signer: ethers.Signer): Promise<boolean> => {
-    try {
-      if (!signer.provider) throw new Error("No provider on signer.");
-      const net = await signer.provider.getNetwork();
-      if (Number(net.chainId) !== BASE_CHAIN_ID) {
-        // Attempt to switch to Base chain
-        try {
-          await (window as any).ethereum.request({
-            method: "wallet_switchEthereumChain",
-            params: [{ chainId: `0x${BASE_CHAIN_ID.toString(16)}` }],
-          });
-          return true;
-        } catch (switchErr: any) {
-          // If Base isn’t added to wallet, add it
-          if (switchErr.code === 4902) {
-            await (window as any).ethereum.request({
-              method: "wallet_addEthereumChain",
-              params: [
-                {
-                  chainId: `0x${BASE_CHAIN_ID.toString(16)}`,
-                  chainName: "Base",
-                  rpcUrls: ["https://mainnet.base.org"],
-                  nativeCurrency: {
-                    name: "Ether",
-                    symbol: "ETH",
-                    decimals: 18,
-                  },
-                  blockExplorerUrls: ["https://basescan.org"],
-                },
-              ],
-            });
-            return true;
-          }
-          toast.error("Please switch to the Base network in your wallet.");
-          return false;
-        }
+      let errorMessage = "Swap confirmation cancelled.";
+      if (err && typeof err === "object" && "message" in err && typeof err.message === "string") {
+        errorMessage = err.message;
       }
-      return true;
-    } catch (err) {
-      console.error("Network check failed:", err);
-      toast.error("Unable to verify network.");
-      return false;
+      toast.error(errorMessage);
     }
   };
 
-  // ────────────────────────────────────────────────────────────────────────────────
-  // 3.9) HANDLE “SWAP WITH APPROVAL”
-  // ────────────────────────────────────────────────────────────────────────────────
   const handleSwapWithApproval = async () => {
+    if (!address) {
+      toast.error("Wallet not connected.");
+      return;
+    }
     setShowConfirmModal(false);
     setIsSwapLoading(true);
     setTransactionStatus("Starting swap...");
 
     try {
-      // Ensure window.ethereum exists
-      if (!(window as any).ethereum) {
-        throw new Error("No wallet detected.");
-      }
-      const signer = await new ethers.BrowserProvider(
-        (window as any).ethereum
-      ).getSigner();
-      const onBase = await checkNetwork(signer);
-      if (!onBase) throw new Error("Switch to Base network first.");
+      if (!signer || !tokenIn || !tokenOut || !token) throw new Error("Tokens or signer not set.");
+      const amtInWeiFull = ethers.parseUnits(amountIn, tokenIn.decimals);
+      const feeWeiBigint = (amtInWeiFull * BigInt(Math.round(PLATFORM_FEE_PERCENTAGE * 1e6))) / BigInt(1e6);
+      const amtAfterFee = amtInWeiFull - feeWeiBigint;
+      const amtOutMin = (ethers.parseUnits(amountOut, tokenOut.decimals) * BigInt(Math.floor((100 - slippage) * 100))) / BigInt(10000);
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 1800); // 30-minute deadline
 
-      // Parse amounts
-      const amtInWei: bigint = ethers.parseUnits(
-        amountIn,
-        tokenIn!.decimals
-      );
-      const amtOutMin: bigint =
-        ethers.parseUnits(amountOut || "0", tokenOut!.decimals) *
-        BigInt(Math.floor((100 - slippage) * 100)) /
-        BigInt(10000);
-
-      // 1) If tokenIn = ETH → wrap to WETH
-      let inAddr = tokenIn!.address;
-      if (tokenIn!.address === ETH_ADDRESS) {
-        setTransactionStatus("Wrapping ETH → WETH...");
-        const wethContract = new ethers.Contract(
-          WETH_ADDRESS,
-          WETH_ABI,
-          signer
-        );
-        // Estimate gas for deposit
-        const depositData = wethContract.interface.encodeFunctionData(
-          "deposit",
-          []
-        );
-        const gasDeposit = await signer.estimateGas({
-          to: WETH_ADDRESS,
-          data: depositData,
-          value: amtInWei,
-        });
-        const depositTx = await wethContract.deposit({
-          value: amtInWei,
-          gasLimit: gasDeposit,
-        });
-        await depositTx.wait();
-        toast.info("ETH converted to WETH");
-        inAddr = WETH_ADDRESS;
-      }
-
-      // 2) If tokenIn ≠ ETH and not approved → approve
-      if (tokenIn!.address !== ETH_ADDRESS && !isApproved) {
+      // Approve token if needed
+      if (tokenIn.address !== ETH_ADDRESS && !isApproved) {
         setTransactionStatus("Approving token...");
-        const tokenContract = new ethers.Contract(
-          tokenIn!.address,
-          ERC20_ABI,
-          signer
-        );
-        const allowanceBn = (await tokenContract.allowance(
-          address,
-          SWAP_ROUTER_ADDRESS
-        )) as ethers.BigNumber;
-        if (allowanceBn.toBigInt() < amtInWei) {
-          // Estimate gas for approve
-          const approveGas = await (tokenContract as any).estimateGas.approve(
-            SWAP_ROUTER_ADDRESS,
-            amtInWei
-          );
-          const approveTx = await tokenContract.approve(
-            SWAP_ROUTER_ADDRESS,
-            amtInWei,
-            { gasLimit: approveGas }
-          );
-          await approveTx.wait();
-          setIsApproved(true);
-          toast.success(`${tokenIn!.symbol} approved`);
-        }
+        const tokenContract = new ethers.Contract(tokenIn.address, ERC20_ABI, signer) as unknown as ERC20Contract;
+        const gasLimit = await tokenContract.estimateGas.approve(SWAP_ROUTER_ADDRESS, amtInWeiFull);
+        const approveTx = await tokenContract.approve(SWAP_ROUTER_ADDRESS, amtInWeiFull, { gasLimit });
+        await approveTx.wait();
+        setIsApproved(true);
+        toast.success(`${tokenIn.symbol} approved`);
       }
 
-      // 3) Send platform fee (0.02%)
-      const feeWeiBigint =
-        (amtInWei * BigInt(Math.round(PLATFORM_FEE_PERCENTAGE * 1e6))) /
-        BigInt(1e6);
-      const amtAfterFee = amtInWei - feeWeiBigint;
+      // Send platform fee
       if (feeWeiBigint > 0n) {
         setTransactionStatus("Sending platform fee...");
-        if (tokenIn!.address === ETH_ADDRESS) {
-          const feeTx = await signer.sendTransaction({
-            to: PLATFORM_WALLET,
-            value: feeWeiBigint,
-          });
+        if (tokenIn.address === ETH_ADDRESS) {
+          const feeTx = await signer.sendTransaction({ to: PLATFORM_WALLET, value: feeWeiBigint });
           await feeTx.wait();
         } else {
-          const tokenContract = new ethers.Contract(
-            tokenIn!.address,
-            ERC20_ABI,
-            signer
-          );
-          const transferData = tokenContract.interface.encodeFunctionData(
-            "transfer",
-            [PLATFORM_WALLET, feeWeiBigint]
-          );
-          const gasFee = await signer.estimateGas({
-            to: tokenIn!.address,
-            data: transferData,
-          });
-          const feeTx = await tokenContract.transfer(
-            PLATFORM_WALLET,
-            feeWeiBigint,
-            { gasLimit: gasFee }
-          );
+          const tokenContract = new ethers.Contract(tokenIn.address, ERC20_ABI, signer) as unknown as ERC20Contract;
+          const gasLimit = await tokenContract.estimateGas.transfer(PLATFORM_WALLET, feeWeiBigint);
+          const feeTx = await tokenContract.transfer(PLATFORM_WALLET, feeWeiBigint, { gasLimit });
           await feeTx.wait();
         }
         toast.info("Platform fee sent");
       }
 
-      // 4) Execute the swap
+      // Execute swap
       setTransactionStatus("Executing swap...");
-      const swapRouter = new ethers.Contract(
-        SWAP_ROUTER_ADDRESS,
-        SWAP_ROUTER_ABI,
-        signer
-      );
-      const swapParams = {
-        tokenIn: inAddr,
-        tokenOut:
-          tokenOut!.address === ETH_ADDRESS
-            ? WETH_ADDRESS
-            : tokenOut!.address,
-        fee: 3000,
-        recipient:
-          tokenOut!.address === ETH_ADDRESS ? SWAP_ROUTER_ADDRESS : address,
-        amountIn: amtAfterFee,
-        amountOutMinimum: amtOutMin,
-        sqrtPriceLimitX96: 0n, // must be bigint
-      };
-      // Estimate gas for exactInputSingle
-      const gasSwap = await (swapRouter as any).estimateGas.exactInputSingle(
-        swapParams,
-        {
-          value:
-            tokenIn!.address === ETH_ADDRESS
-              ? amtAfterFee
-              : (0n as bigint),
+      const swapRouter = new ethers.Contract(SWAP_ROUTER_ADDRESS, SWAP_ROUTER_ABI, signer) as unknown as SwapRouterContract;
+      const value = tokenIn.address === ETH_ADDRESS ? amtAfterFee : BigInt(0);
+      const recipient = tokenOut.address === ETH_ADDRESS ? SWAP_ROUTER_ADDRESS : address;
+      let swapTx: ethers.ContractTransactionResponse;
+      if (isWETHPair) {
+        const swapParams = {
+          tokenIn: tokenIn.address === ETH_ADDRESS ? WETH_ADDRESS : tokenIn.address,
+          tokenOut: tokenOut.address === ETH_ADDRESS ? WETH_ADDRESS : tokenOut.address,
+          fee: poolFee,
+          recipient,
+          deadline,
+          amountIn: amtAfterFee,
+          amountOutMinimum: amtOutMin,
+          sqrtPriceLimitX96: BigInt(0),
+        };
+        const gasLimit = await swapRouter.estimateGas.exactInputSingle(swapParams, { value });
+        swapTx = await swapRouter.exactInputSingle(swapParams, { gasLimit, value });
+      } else {
+        let path: string;
+        if (activeTab === "buy") {
+          path = ethers.solidityPacked(
+            ["address", "uint24", "address", "uint24", "address"],
+            [WETH_ADDRESS, USDC_WETH_POOL_FEE, USDC_ADDRESS, poolFee, token.baseToken.address]
+          );
+        } else {
+          path = ethers.solidityPacked(
+            ["address", "uint24", "address", "uint24", "address"],
+            [token.baseToken.address, poolFee, USDC_ADDRESS, USDC_WETH_POOL_FEE, WETH_ADDRESS]
+          );
         }
-      );
-      const swapTx = await swapRouter.exactInputSingle(swapParams, {
-        value:
-          tokenIn!.address === ETH_ADDRESS
-            ? amtAfterFee
-            : (0n as bigint),
-        gasLimit: gasSwap,
-      });
+        const swapParams = {
+          path,
+          recipient,
+          deadline,
+          amountIn: amtAfterFee,
+          amountOutMinimum: amtOutMin,
+        };
+        const gasLimit = await swapRouter.estimateGas.exactInput(swapParams, { value });
+        swapTx = await swapRouter.exactInput(swapParams, { gasLimit, value });
+      }
       await swapTx.wait();
       toast.info("Swap executed");
 
-      // 5) If tokenOut = ETH → unwrap WETH → ETH
-      if (tokenOut!.address === ETH_ADDRESS) {
+      // Unwrap WETH if receiving ETH
+      if (tokenOut.address === ETH_ADDRESS) {
         setTransactionStatus("Unwrapping WETH → ETH...");
-        const unwrapData = swapRouter.interface.encodeFunctionData(
-          "unwrapWETH9",
-          [amtOutMin, address]
-        );
-        const gasUnwrap = await signer.estimateGas({
-          to: SWAP_ROUTER_ADDRESS,
-          data: unwrapData,
-        });
-        const unwrapTx = await swapRouter.unwrapWETH9(
-          amtOutMin,
-          address,
-          { gasLimit: gasUnwrap }
-        );
+        const gasLimitUnwrap = await swapRouter.estimateGas.unwrapWETH9(amtOutMin, address);
+        const unwrapTx = await swapRouter.unwrapWETH9(amtOutMin, address, { gasLimit: gasLimitUnwrap });
         await unwrapTx.wait();
         toast.info("WETH unwrapped into ETH");
       }
 
-      // 6) Update Bought / Sold / P&L
+      // Update P&L
       const amtInNum = parseFloat(amountIn);
       const amtOutNum = parseFloat(amountOut);
       if (activeTab === "buy") {
         setBoughtAmount((prev) => prev + amtOutNum);
-        setProfitLoss((prev) =>
-          prev -
-          amtInNum * ethPrice +
-          amtOutNum * parseFloat(token?.priceUsd || "0")
-        );
+        setProfitLoss((prev) => prev - amtInNum * ethPrice + amtOutNum * parseFloat(token.priceUsd || "0"));
       } else {
         setSoldAmount((prev) => prev + amtInNum);
-        setProfitLoss((prev) =>
-          prev +
-          amtInNum * parseFloat(token?.priceUsd || "0") -
-          amtOutNum * ethPrice
-        );
+        setProfitLoss((prev) => prev + amtInNum * parseFloat(token.priceUsd || "0") - amtOutNum * ethPrice);
       }
 
       setTransactionStatus("Transaction Complete");
-      toast.success(
-        `Swapped ${amountIn} ${tokenIn!.symbol} → ${amountOut} ${tokenOut!.symbol}`
-      );
+      toast.success(`Swapped ${amountIn} ${tokenIn.symbol} → ${amountOut} ${tokenOut.symbol}`);
       setAmountIn("");
       setAmountOut("");
       setIsApproved(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Swap error:", err);
       setTransactionStatus("");
-      if (err.code === 4001) {
+      let isUserRejected = false;
+      let isInsufficientFunds = false;
+      let errorMessage = "Swap failed. Please try again.";
+      if (err && typeof err === "object") {
+        if ("code" in err && err.code === 4001) {
+          isUserRejected = true;
+        }
+        if ("message" in err && typeof err.message === "string" && err.message.includes("insufficient funds")) {
+          isInsufficientFunds = true;
+        }
+        if ("reason" in err && typeof err.reason === "string") {
+          errorMessage = err.reason;
+        } else if ("message" in err && typeof err.message === "string") {
+          errorMessage = err.message;
+        }
+      }
+      if (isUserRejected) {
         toast.error("User rejected transaction.");
-      } else if (err.message.includes("Switch")) {
-        toast.error("Please switch to the Base network.");
+      } else if (isInsufficientFunds) {
+        toast.error("Insufficient funds for gas or swap amount.");
       } else {
-        toast.error(err.reason || "Swap failed. Please try again.");
+        toast.error(errorMessage);
       }
     } finally {
       setIsSwapLoading(false);
     }
   };
 
-  // ────────────────────────────────────────────────────────────────────────────────
-  // 3.10) SWAP TOKEN-IN ⇆ TOKEN-OUT
-  // ────────────────────────────────────────────────────────────────────────────────
   const handleSwapTokens = () => {
     if (!tokenIn || !tokenOut) return;
     setTokenIn(tokenOut);
@@ -763,14 +788,15 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
     setActiveTab(tokenIn.symbol === "ETH" ? "sell" : "buy");
   };
 
-  // ────────────────────────────────────────────────────────────────────────────────
-  // 4) RENDER
-  // ────────────────────────────────────────────────────────────────────────────────
+  const handleQuickAmount = (percent: number) => {
+    if (!walletBalance || parseFloat(walletBalance) === 0) return;
+    const amount = (parseFloat(walletBalance) * percent / 100).toFixed(6);
+    setAmountIn(amount);
+  };
+
+  // Styling (unchanged from provided code)
   return (
     <div className="w-full font-sans">
-      {/*───────────────────────────────────────────────────────────────────────────────*/}
-      {/* STYLES */}
-      {/*───────────────────────────────────────────────────────────────────────────────*/}
       <style jsx>{`
         @keyframes fadeIn {
           from {
@@ -786,7 +812,6 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
           animation: fadeIn 0.4s ease-out forwards;
         }
 
-        /* MAIN SWAP CONTAINER: fully transparent */
         .swap-container {
           background: transparent;
           border-radius: 8px;
@@ -795,11 +820,14 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
           box-sizing: border-box;
         }
 
-        /* WALLET BUTTON */
+        .wallet-section {
+          margin-bottom: 16px;
+        }
+
         .wallet-button {
           background: rgba(59, 130, 246, 0.3);
           color: #60a5fa;
-          padding: 8px;
+          padding: 12px;
           border-radius: 6px;
           font-size: 16px;
           font-weight: 600;
@@ -821,12 +849,11 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
           cursor: not-allowed;
         }
 
-        /* WALLET ADDRESS BOX (connected) */
         .wallet-address {
           background: transparent;
           border: 1px solid rgba(156, 163, 175, 0.3);
           border-radius: 6px;
-          padding: 6px 8px;
+          padding: 12px;
           color: #d1d5db;
           font-size: 14px;
           display: flex;
@@ -847,7 +874,6 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
           color: #f87171;
         }
 
-        /* BUY/SELL SEGMENTED CONTROL */
         .buy-sell-toggle {
           display: flex;
           background: transparent;
@@ -859,7 +885,7 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
         }
         .buy-sell-button {
           flex: 1;
-          padding: 8px;
+          padding: 12px;
           border-radius: 9999px;
           font-size: 16px;
           font-weight: 600;
@@ -893,7 +919,6 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
           background: rgba(59, 130, 246, 0.1);
         }
 
-        /* STATUS INDICATOR */
         .transaction-status,
         .transaction-complete {
           padding: 8px;
@@ -916,7 +941,6 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
           color: #34d399;
         }
 
-        /* INPUT CONTAINER (transparent) */
         .swap-input-container {
           background: transparent;
           border: 1px solid rgba(156, 163, 175, 0.3);
@@ -961,7 +985,23 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
           cursor: not-allowed;
         }
 
-        /* SWAP ARROW BUTTON */
+        .quick-buttons {
+          display: flex;
+          justify-content: space-between;
+          margin-top: 8px;
+        }
+        .quick-button {
+          background: rgba(59, 130, 246, 0.1);
+          color: #60a5fa;
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 12px;
+          cursor: pointer;
+        }
+        .quick-button:hover {
+          background: rgba(59, 130, 246, 0.2);
+        }
+
         .swap-arrow-container {
           display: flex;
           justify-content: center;
@@ -986,7 +1026,6 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
           cursor: not-allowed;
         }
 
-        /* SWAP INFO (transparent) */
         .swap-info {
           font-size: 14px;
           color: #d1d5db;
@@ -1011,7 +1050,6 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
           font-weight: 600;
         }
 
-        /* SWAP BUTTON */
         .swap-action-button {
           background: linear-gradient(90deg, #6366f1, #4f46e5);
           color: #ffffff;
@@ -1034,7 +1072,6 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
           cursor: not-allowed;
         }
 
-        /* PROFIT/LOSS BOX */
         .profit-loss {
           display: flex;
           flex-direction: column;
@@ -1065,72 +1102,6 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
           margin-right: 4px;
         }
 
-        /* MODAL OVERLAY */
-        .wallet-modal {
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100vw;
-          height: 100vh;
-          background: rgba(0, 0, 0, 0.6);
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          z-index: 50;
-        }
-        .wallet-modal-content {
-          background: transparent;
-          border: 1px solid rgba(156, 163, 175, 0.3);
-          border-radius: 8px;
-          padding: 16px;
-          width: 300px;
-          max-width: 90%;
-          box-sizing: border-box;
-        }
-        .wallet-modal-content h3 {
-          color: #d1d5db;
-          font-size: 18px;
-          margin-bottom: 12px;
-          text-transform: uppercase;
-          text-align: center;
-        }
-        .wallet-option {
-          background: transparent;
-          border: 1px solid rgba(156, 163, 175, 0.3);
-          padding: 10px;
-          border-radius: 6px;
-          margin-bottom: 8px;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          transition: background 0.3s ease;
-          width: 100%;
-          box-sizing: border-box;
-          color: #d1d5db;
-          font-size: 16px;
-          font-weight: 500;
-        }
-        .wallet-option:hover {
-          background: rgba(59, 130, 246, 0.1);
-        }
-        .wallet-modal-content .cancel-btn {
-          margin-top: 12px;
-          background: transparent;
-          border: none;
-          color: #9ca3af;
-          text-transform: uppercase;
-          font-size: 14px;
-          cursor: pointer;
-          width: 100%;
-          box-sizing: border-box;
-        }
-        .wallet-modal-content .cancel-btn:hover {
-          color: #f87171;
-        }
-
-        /* CONFIRMATION MODAL */
         .confirm-modal-content {
           background: transparent;
           border: 1px solid rgba(156, 163, 175, 0.3);
@@ -1139,6 +1110,11 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
           width: 300px;
           max-width: 90%;
           box-sizing: border-box;
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          z-index: 50;
         }
         .confirm-modal-content h3 {
           color: #d1d5db;
@@ -1197,6 +1173,16 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
           background: rgba(59, 130, 246, 0.1);
         }
 
+        .modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100vw;
+          height: 100vh;
+          background: rgba(0, 0, 0, 0.6);
+          z-index: 40;
+        }
+
         @media (max-width: 768px) {
           .wallet-button,
           .swap-action-button {
@@ -1215,111 +1201,26 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
             font-size: 14px;
             padding: 6px;
           }
-          .wallet-modal-content,
           .confirm-modal-content {
             width: 90%;
           }
         }
       `}</style>
 
-      {/*───────────────────────────────────────────────────────────────────────────────*/}
-      {/* 1) WALLET CONNECTION MODAL */}
-      {/*───────────────────────────────────────────────────────────────────────────────*/}
-      {showWalletModal && (
-        <div className="wallet-modal">
-          <div className="wallet-modal-content fade-in">
-            <h3>Connect Wallet</h3>
-            {connectors.map((connector) => (
-              <button
-                key={connector.id}
-                className="wallet-option"
-                onClick={() => handleConnectWallet(connector)}
-              >
-                <FaWallet className="w-5 h-5 text-blue-400" />
-                <span>{connector.name}</span>
-              </button>
-            ))}
-            <button
-              onClick={() => setShowWalletModal(false)}
-              className="cancel-btn"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/*───────────────────────────────────────────────────────────────────────────────*/}
-      {/* 2) CONFIRMATION MODAL */}
-      {/*───────────────────────────────────────────────────────────────────────────────*/}
-      {showConfirmModal && (
-        <div className="wallet-modal">
-          <div className="confirm-modal-content fade-in">
-            <h3>Confirm {activeTab === "buy" ? "Buy" : "Sell"}</h3>
-            <div className="detail-row">
-              <span>You Pay:</span>
-              <span>
-                {amountIn} {tokenIn?.symbol}
-              </span>
-            </div>
-            <div className="detail-row">
-              <span>You Receive:</span>
-              <span>
-                {amountOut} {tokenOut?.symbol}
-              </span>
-            </div>
-            <div className="detail-row">
-              <span>Platform Fee (0.02%):</span>
-              <span>
-                {platformFee} {tokenIn?.symbol}
-              </span>
-            </div>
-            <div className="detail-row">
-              <span>Price Impact:</span>
-              <span
-                className={priceImpact > 5 ? "high-impact" : "value"}
-              >
-                {priceImpact.toFixed(2)}%
-              </span>
-            </div>
-            <div className="detail-row">
-              <span>Gas Estimate:</span>
-              <span>{gasEstimate} Gwei</span>
-            </div>
-            <div className="button-row">
-              <button
-                onClick={handleSwapWithApproval}
-                className={`confirm-btn ${activeTab === "buy" ? "buy" : "sell"}`}
-              >
-                {activeTab === "buy" ? "Confirm Buy" : "Confirm Sell"}
-              </button>
-              <button
-                onClick={() => setShowConfirmModal(false)}
-                className="cancel-btn"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/*───────────────────────────────────────────────────────────────────────────────*/}
-      {/* 3) MAIN SWAP UI */}
-      {/*───────────────────────────────────────────────────────────────────────────────*/}
       <div className="swap-container fade-in">
-        {/* A) WALLET CONNECTION OR DISPLAY ADDRESS */}
-        <div className="mb-6">
-          {isConnected ? (
+        <div className="wallet-section">
+          {address && isConnected ? (
             <div className="wallet-address">
               <div className="flex items-center gap-2">
                 <FaWallet className="text-blue-400 w-5 h-5" />
-                <span>
-                  {address?.slice(0, 6)}...{address?.slice(-4)}
-                </span>
+                <span>{address.slice(0, 6)}...{address.slice(-4)}</span>
               </div>
               <button
-                onClick={() => disconnect()}
+                onClick={() => {
+                  disconnect();
+                  setSigner(null);
+                  setWalletBalance("0.0");
+                }}
                 className="disconnect-btn"
               >
                 Disconnect
@@ -1327,7 +1228,7 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
             </div>
           ) : (
             <button
-              onClick={() => setShowWalletModal(true)}
+              onClick={handleConnectWallet}
               className="wallet-button"
               disabled={isSwapLoading}
             >
@@ -1337,27 +1238,21 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
           )}
         </div>
 
-        {/* B) BUY / SELL TOGGLE */}
         <div className="buy-sell-toggle">
           <div
             onClick={() => setActiveTab("buy")}
-            className={`buy-sell-button buy ${
-              activeTab === "buy" ? "active" : ""
-            }`}
+            className={`buy-sell-button buy ${activeTab === "buy" ? "active" : ""}`}
           >
             Buy
           </div>
           <div
             onClick={() => setActiveTab("sell")}
-            className={`buy-sell-button sell ${
-              activeTab === "sell" ? "active" : ""
-            }`}
+            className={`buy-sell-button sell ${activeTab === "sell" ? "active" : ""}`}
           >
             Sell
           </div>
         </div>
 
-        {/* C) TRANSACTION STATUS */}
         {transactionStatus && (
           <div
             className={
@@ -1392,27 +1287,29 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
           </div>
         )}
 
-        {/* D) “You Pay” INPUT */}
         <div className="swap-input-container">
           <div className="token-label">
             You Pay (Balance: {walletBalance} {tokenIn?.symbol})
           </div>
           <div className="swap-input-wrapper">
-            <span className="token-select">
-              {tokenIn?.symbol ?? ""}
-            </span>
+            <span className="token-select">{tokenIn?.symbol ?? ""}</span>
             <input
               type="number"
               placeholder="0.0"
               value={amountIn}
               onChange={(e) => setAmountIn(e.target.value)}
               className="swap-input"
-              disabled={!tokenIn || !isConnected || isSwapLoading}
+              disabled={!tokenIn || !address || isSwapLoading}
             />
+          </div>
+          <div className="quick-buttons">
+            <button className="quick-button" onClick={() => handleQuickAmount(25)}>25%</button>
+            <button className="quick-button" onClick={() => handleQuickAmount(50)}>50%</button>
+            <button className="quick-button" onClick={() => handleQuickAmount(75)}>75%</button>
+            <button className="quick-button" onClick={() => handleQuickAmount(100)}>Max</button>
           </div>
         </div>
 
-        {/* E) SWAP ARROW BUTTON */}
         <div className="swap-arrow-container">
           <button
             onClick={handleSwapTokens}
@@ -1442,15 +1339,12 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
           </button>
         </div>
 
-        {/* F) “You Receive (Est)” */}
         <div className="swap-input-container">
           <div className="token-label">
             You Receive (Est. {amountOut || "0.0"} {tokenOut?.symbol})
           </div>
           <div className="swap-input-wrapper">
-            <span className="token-select">
-              {tokenOut?.symbol ?? ""}
-            </span>
+            <span className="token-select">{tokenOut?.symbol ?? ""}</span>
             <input
               type="number"
               placeholder="0.0"
@@ -1461,7 +1355,6 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
           </div>
         </div>
 
-        {/* G) SWAP INFO */}
         <div className="swap-info">
           <div>
             <span className="label">Price Impact:</span>
@@ -1481,52 +1374,34 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
           </div>
           <div>
             <span className="label">Gas Estimate:</span>
-            <span className="value">{gasEstimate} Gwei</span>
+            <span className="value">{gasEstimate} gas</span>
           </div>
         </div>
 
-        {/* H) SWAP BUTTON */}
         <button
           onClick={openConfirmModal}
           className="swap-action-button"
-          disabled={
-            isSwapLoading ||
-            !isConnected ||
-            !amountIn ||
-            !tokenIn ||
-            !tokenOut
-          }
+          disabled={isSwapLoading || !address || !amountIn || !tokenIn || !tokenOut}
         >
-          {isSwapLoading
-            ? "Processing..."
-            : activeTab === "buy"
-            ? "Buy"
-            : "Sell"}
+          {isSwapLoading ? "Processing..." : activeTab === "buy" ? "Buy" : "Sell"}
         </button>
 
-        {/* I) PROFIT / LOSS */}
         <div className="profit-loss">
           <div>
             <span className="label">Bought:</span>
             <span className="value">
-              {boughtAmount.toFixed(2)}{" "}
-              {tokenOut?.symbol === "ETH" ? "" : tokenOut?.symbol}
+              {boughtAmount.toFixed(2)} {tokenOut?.symbol === "ETH" ? "" : tokenOut?.symbol}
             </span>
           </div>
           <div>
             <span className="label">Sold:</span>
             <span className="value">
-              {soldAmount.toFixed(2)}{" "}
-              {tokenIn?.symbol === "ETH" ? "" : tokenIn?.symbol}
+              {soldAmount.toFixed(2)} {tokenIn?.symbol === "ETH" ? "" : tokenIn?.symbol}
             </span>
           </div>
           <div>
             <span className="label">P&L:</span>
-            <span
-              className={
-                profitLoss >= 0 ? "profit-positive" : "profit-negative"
-              }
-            >
+            <span className={profitLoss >= 0 ? "profit-positive" : "profit-negative"}>
               <span className="eth-icon">Ξ</span>
               {profitLoss >= 0 ? "+" : ""}
               {profitLoss.toFixed(2)} (
@@ -1534,13 +1409,60 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
             </span>
           </div>
         </div>
+
+        {showConfirmModal && (
+          <>
+            <div className="modal-overlay" />
+            <div className="confirm-modal-content fade-in">
+              <h3>Confirm {activeTab === "buy" ? "Buy" : "Sell"}</h3>
+              <div className="detail-row">
+                <span>You Pay:</span>
+                <span>
+                  {amountIn} {tokenIn?.symbol}
+                </span>
+              </div>
+              <div className="detail-row">
+                <span>You Receive:</span>
+                <span>
+                  {amountOut} {tokenOut?.symbol}
+                </span>
+              </div>
+              <div className="detail-row">
+                <span>Platform Fee (0.02%):</span>
+                <span>
+                  {platformFee} {tokenIn?.symbol}
+                </span>
+              </div>
+              <div className="detail-row">
+                <span>Price Impact:</span>
+                <span className={priceImpact > 5 ? "high-impact" : "value"}>
+                  {priceImpact.toFixed(2)}%
+                </span>
+              </div>
+              <div className="detail-row">
+                <span>Gas Estimate:</span>
+                <span>{gasEstimate} gas</span>
+              </div>
+              <div className="button-row">
+                <button
+                  onClick={handleSwapWithApproval}
+                  className={`confirm-btn ${activeTab === "buy" ? "buy" : "sell"}`}
+                >
+                  {activeTab === "buy" ? "Confirm Buy" : "Confirm Sell"}
+                </button>
+                <button
+                  onClick={() => setShowConfirmModal(false)}
+                  className="cancel-btn"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
 };
 
 export default Swap;
-
-
-
-

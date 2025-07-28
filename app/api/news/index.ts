@@ -1,6 +1,6 @@
 // pages/api/news/index.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { db } from '../../../lib/firebase';  // adjust if your lib path is different
+import { db } from '../../../lib/firebase';
 import {
   collection,
   addDoc,
@@ -9,6 +9,7 @@ import {
   orderBy,
   serverTimestamp,
   where,
+  type DocumentData,
 } from 'firebase/firestore';
 import slugify from 'slugify';
 
@@ -17,7 +18,7 @@ interface NewsArticle {
   content: string;
   author: string;
   source: string;
-  publishedAt: string;   // returned as ISO string
+  publishedAt: string;
   slug: string;
   thumbnailUrl?: string;
 }
@@ -34,7 +35,6 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  // ‣ POST /api/news  → create new article
   if (req.method === 'POST') {
     const { title, content, author, source, thumbnailUrl }: ArticleData = req.body;
     if (!title || !content || !author || !source) {
@@ -42,13 +42,13 @@ export default async function handler(
     }
 
     try {
-      // 1) generate a base slug
-      let baseSlug = slugify(title, { lower: true, strict: true });
+      // generate a base slug
+      const baseSlug = slugify(title, { lower: true, strict: true });
       let slug = baseSlug;
       let slugExists = true;
       let counter = 1;
 
-      // 2) loop until we find a slug that doesn’t exist
+      // loop until slug is unique
       while (slugExists) {
         const slugQuery = query(
           collection(db, 'articles'),
@@ -63,7 +63,7 @@ export default async function handler(
         }
       }
 
-      // 3) now actually write the document
+      // write the document
       const docRef = await addDoc(collection(db, 'articles'), {
         title,
         content,
@@ -80,29 +80,27 @@ export default async function handler(
       console.error('Error saving article:', error);
       return res.status(500).json({ error: 'Error saving article' });
     }
-  }
+  } 
 
-  // ‣ GET /api/news  → return all articles in descending order
   else if (req.method === 'GET') {
     try {
       const articlesCol = collection(db, 'articles');
-      // orderBy publishedAt (most recent first)
       const q = query(articlesCol, orderBy('publishedAt', 'desc'));
       const querySnapshot = await getDocs(q);
 
       const articles: NewsArticle[] = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data() as any;
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data() as DocumentData;
         articles.push({
-          title: data.title || 'Untitled',
-          content: data.content || '',
-          author: data.author || 'Unknown',
-          source: data.source || 'Unknown',
+          title: String(data.title ?? 'Untitled'),
+          content: String(data.content ?? ''),
+          author: String(data.author ?? 'Unknown'),
+          source: String(data.source ?? 'Unknown'),
           publishedAt: data.publishedAt?.toDate
             ? data.publishedAt.toDate().toISOString()
             : new Date().toISOString(),
-          slug: data.slug || doc.id,
-          thumbnailUrl: data.thumbnailUrl || undefined,
+          slug: String(data.slug ?? docSnap.id),
+          thumbnailUrl: data.thumbnailUrl ?? undefined,
         });
       });
 
@@ -114,9 +112,9 @@ export default async function handler(
     }
   }
 
-  // anything else: 405
   else {
     res.setHeader('Allow', ['GET', 'POST']);
     return res.status(405).end(`Method ${req.method} Not Allowed`);
   }
 }
+
