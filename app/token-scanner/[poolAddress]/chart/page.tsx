@@ -145,7 +145,6 @@ export default function ChartPage() {
 
   // Calculate appropriate zoom level based on timeframe
   const getDefaultZoomLevel = useCallback((tf: string) => {
-    const now = Date.now();
     const timeframeMap: { [key: string]: number } = {
       "1m": 5 * 60 * 1000, // 5 minutes
       "5m": 30 * 60 * 1000, // 30 minutes

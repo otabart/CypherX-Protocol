@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   GoogleAuthProvider,
@@ -15,7 +15,7 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 import { EyeIcon, EyeSlashIcon, ExclamationCircleIcon, CheckCircleIcon, EnvelopeIcon, UserCircleIcon, KeyIcon, ArrowPathIcon } from "@heroicons/react/24/outline";
 import Image from "next/image";
 
-export default function AccountPage() {
+function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const defaultRedirect = "/"; // Home page as fallback
@@ -450,5 +450,13 @@ export default function AccountPage() {
         </footer>
       </div>
     </div>
+  );
+}
+
+export default function AccountPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LoginContent />
+    </Suspense>
   );
 }

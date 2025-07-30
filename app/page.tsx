@@ -50,110 +50,144 @@ type NewsArticle = {
   slug: string;
 };
 
-type Block = {
-  number: number;
-  status: string;
-  timestamp: string;
-  hash: string;
-  transactions: number;
+type TrendingToken = {
+  id: string;
+  name: string;
+  symbol: string;
+  address: string;
+  marketCap?: string;
+  volume24h?: string;
+  uniqueHolders?: string;
+  liquidity?: { usd?: string };
+  createdAt?: string;
+  tags: string[];
+  mediaContent?: { previewImage?: { small?: string } };
+  tokenPrice?: { priceInUsdc: string };
+  marketCapDelta24h?: string;
+  totalVolume?: string;
+  totalSupply?: string;
+  creatorAddress?: string;
+  poolCurrencyToken?: { name: string; decimals: number };
+};
+
+// Utility functions for token display
+function formatNumber(num: string | number | undefined) {
+  if (!num) return "-";
+  const n = typeof num === "string" ? parseFloat(num) : num;
+  if (isNaN(n)) return "-";
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `$${(n / 1e3).toFixed(1)}K`;
+  return `$${n.toLocaleString()}`;
+}
+
+function getTokenTags(token: TrendingToken) {
+  const tags: string[] = [];
+  
+  const marketCap = parseFloat(token.marketCap || "0");
+  const volume = parseFloat(token.volume24h || "0");
+  const holders = parseInt(token.uniqueHolders || "0");
+  const liquidity = parseFloat(token.liquidity?.usd || "0");
+  const totalVolume = parseFloat(token.totalVolume || "0");
+  const marketCapDelta = parseFloat(token.marketCapDelta24h || "0");
+  
+  // Enhanced tagging system
+  if (marketCap > 100000) tags.push("DEXPAID");
+  if (volume > 50000) tags.push("RUNNER");
+  if (marketCap > 1000000) tags.push("HIGH_CAP");
+  if (holders > 1000) tags.push("TRENDING");
+  if (liquidity > 100000) tags.push("LIQUIDITY");
+  if (marketCap < 100000 && volume > 10000) tags.push("MOONSHOT");
+  if (marketCap > 10000000) tags.push("ESTABLISHED");
+  if (volume > 100000) tags.push("VOLUME_SPIKE");
+  if (totalVolume > 1000000) tags.push("HIGH_VOLUME");
+  if (marketCapDelta > 20) tags.push("PUMPING");
+  if (marketCapDelta < -20) tags.push("DUMPING");
+  if (holders > 5000) tags.push("COMMUNITY");
+  if (marketCap < 50000) tags.push("MICRO_CAP");
+  if (volume > 200000) tags.push("HOT");
+  
+  return tags;
+}
+
+const TagBadge = ({ tag }: { tag: string }) => {
+  const getTagColor = (tag: string) => {
+    switch (tag) {
+      case "DEXPAID": return "bg-blue-500/20 text-blue-400 border-blue-500/30";
+      case "RUNNER": return "bg-green-500/20 text-green-400 border-green-500/30";
+      case "HIGH_CAP": return "bg-purple-500/20 text-purple-400 border-purple-500/30";
+      case "TRENDING": return "bg-orange-500/20 text-orange-400 border-orange-500/30";
+      case "LIQUIDITY": return "bg-teal-500/20 text-teal-400 border-teal-500/30";
+      case "MOONSHOT": return "bg-red-500/20 text-red-400 border-red-500/30";
+      case "ESTABLISHED": return "bg-indigo-500/20 text-indigo-400 border-indigo-500/30";
+      case "VOLUME_SPIKE": return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
+      case "HIGH_VOLUME": return "bg-pink-500/20 text-pink-400 border-pink-500/30";
+      case "PUMPING": return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+      case "DUMPING": return "bg-rose-500/20 text-rose-400 border-rose-500/30";
+      case "COMMUNITY": return "bg-cyan-500/20 text-cyan-400 border-cyan-500/30";
+      case "MICRO_CAP": return "bg-amber-500/20 text-amber-400 border-amber-500/30";
+      case "HOT": return "bg-red-500/20 text-red-400 border-red-500/30";
+      default: return "bg-gray-500/20 text-gray-400 border-gray-500/30";
+    }
+  };
+
+  return (
+    <span className={`px-1.5 py-0.5 text-xs rounded-full border ${getTagColor(tag)}`}>
+      {tag}
+    </span>
+  );
 };
 
 export default function Page() {
-  const [stats, setStats] = useState<{ price: number; volume: number; latestBlock: number } | null>(null);
-  const [blocks, setBlocks] = useState<Block[]>([]);
+  const [trendingTokens, setTrendingTokens] = useState<TrendingToken[]>([]);
   const [latestArticles, setLatestArticles] = useState<NewsArticle[]>([]);
-  const [loadingBlocks, setLoadingBlocks] = useState(true);
+  const [loadingTokens, setLoadingTokens] = useState(true);
   const [loadingNews, setLoadingNews] = useState(true);
-  const [errorBlocks, setErrorBlocks] = useState("");
+  const [errorTokens, setErrorTokens] = useState("");
   const [errorNews, setErrorNews] = useState("");
   const isMobile = useIsMobile();
 
   useEffect(() => {
-    async function fetchBlockData() {
+    async function fetchTrendingTokens() {
       try {
-        const coingeckoUrl = process.env.NEXT_PUBLIC_COINGECKO_API_URL;
-        const alchemyUrl = process.env.NEXT_PUBLIC_ALCHEMY_API_URL;
-
-        if (!coingeckoUrl || !alchemyUrl) {
-          throw new Error("API configuration missing.");
-        }
-
-        const alchemyBlockRes = await fetch(alchemyUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jsonrpc: "2.0", method: "eth_blockNumber", params: [], id: 1 }),
-        });
-        const alchemyBlockData = await alchemyBlockRes.json();
-        const latestBlock = parseInt(alchemyBlockData.result, 16) || 0;
-
-        const fetchedBlocks: Block[] = [];
-        for (let i = 0; i < 10; i++) {
-          const blockNumber = latestBlock - i;
-          const blockRes = await fetch(alchemyUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              jsonrpc: "2.0",
-              method: "eth_getBlockByNumber",
-              params: [`0x${blockNumber.toString(16)}`, false],
-              id: 1,
-            }),
-          });
-          const blockData = await blockRes.json();
-          const block = blockData?.result;
-          if (block) {
-            const timestamp = new Date(parseInt(block.timestamp, 16) * 1000);
-            const timeAgo = Math.floor((Date.now() - timestamp.getTime()) / 1000);
-            fetchedBlocks.push({
-              number: blockNumber,
-              status: "Finalized",
-              timestamp: `${timeAgo} SEC${timeAgo === 1 ? "" : "S"} AGO`,
-              hash: block.hash,
-              transactions: block.transactions?.length || 0,
-            });
-          }
-        }
-
-        const coingeckoRes = await fetch(`${coingeckoUrl}/coins/ethereum`);
-        const coingeckoData = await coingeckoRes.json();
-        const price = coingeckoData?.market_data?.current_price?.usd || 0;
-        const volume = coingeckoData?.market_data?.total_volume?.usd || 0;
-
-        setStats({ price, volume, latestBlock });
-        setBlocks(fetchedBlocks);
-        setErrorBlocks("");
-      } catch {
-        const errMsg = "Failed to fetch block data.";
-        setErrorBlocks(errMsg);
-        toast.error(errMsg);
+        setLoadingTokens(true);
+        const response = await fetch('/api/cypherscope-tokens');
+        if (!response.ok) throw new Error('Failed to fetch trending tokens');
+        const data = await response.json();
+        
+        // Process tokens and add tags
+        const processedTokens = data.tokens.map((token: TrendingToken) => ({
+          ...token,
+          tags: getTokenTags(token)
+        }));
+        
+        setTrendingTokens(processedTokens.slice(0, 5)); // Show top 5
+        setErrorTokens("");
+      } catch (err) {
+        console.error('Error fetching trending tokens:', err);
+        setErrorTokens("Failed to load trending tokens");
       } finally {
-        setLoadingBlocks(false);
+        setLoadingTokens(false);
       }
     }
 
-    fetchBlockData();
-    const interval = setInterval(fetchBlockData, 10000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
     async function fetchArticles() {
       try {
-        const res = await fetch("/api/news");
-        const articles: NewsArticle[] = await res.json();
-        const sortedArticles = articles.sort(
-          (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
-        );
-        setLatestArticles(sortedArticles.slice(0, 3));
+        setLoadingNews(true);
+        const response = await fetch("/api/articles");
+        if (!response.ok) throw new Error("Failed to fetch articles");
+        const data = await response.json();
+        setLatestArticles(data.articles || []);
         setErrorNews("");
-      } catch {
-        const errMsg = "Error fetching articles";
-        setErrorNews(errMsg);
-        toast.error(errMsg);
+      } catch (err) {
+        console.error("Error fetching articles:", err);
+        setErrorNews("Failed to load latest news");
       } finally {
         setLoadingNews(false);
       }
     }
+
+    fetchTrendingTokens();
     fetchArticles();
   }, []);
 
@@ -208,7 +242,11 @@ export default function Page() {
 
           <motion.div className="flex flex-col h-full" {...fadeInUp(0.1)}>
             <div className="flex-1">
-              <LatestBlocks blocks={blocks} stats={stats} isMobile={isMobile} loading={loadingBlocks} error={errorBlocks} />
+              <CypherscopeTrendingTokens
+                tokens={trendingTokens}
+                loading={loadingTokens}
+                error={errorTokens}
+              />
             </div>
           </motion.div>
         </div>
@@ -229,8 +267,188 @@ export default function Page() {
   );
 }
 
+function CypherscopeTrendingTokens({
+  tokens,
+  loading,
+  error,
+}: {
+  tokens: TrendingToken[];
+  loading: boolean;
+  error: string;
+}) {
+  if (loading) {
+    return (
+      <motion.div
+        className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 sm:p-6 shadow-lg border border-blue-500/30 flex flex-col h-full min-h-[400px]"
+        {...fadeInUp(0.1)}
+      >
+        <div className="flex justify-between items-center mb-4 sm:mb-6">
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-200">[ MEMESCOPE SCOPE ]</h2>
+          <div className="flex space-x-2">
+            <div className="h-6 w-16 bg-gray-800 rounded animate-pulse" />
+            <div className="h-6 w-16 bg-gray-800 rounded animate-pulse" />
+          </div>
+        </div>
+        <div className="space-y-3 flex-grow">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-16 bg-gray-800 rounded-lg animate-pulse" />
+          ))}
+        </div>
+      </motion.div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 sm:p-6 shadow-lg border border-blue-500/30 flex flex-col h-full min-h-[400px]">
+        <h2 className="text-xl sm:text-2xl font-bold text-gray-200 mb-4 sm:mb-6">[ MEMESCOPE SCOPE ]</h2>
+        <p className="text-center text-red-400 flex-grow flex items-center justify-center">{error}</p>
+      </div>
+    );
+  }
+
+  return (
+    <motion.div
+      className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 sm:p-6 shadow-lg border border-blue-500/30 flex flex-col h-full min-h-[400px]"
+      {...fadeInUp(0.1)}
+    >
+      <div className="flex justify-between items-center mb-4 sm:mb-6">
+        <h2 className="text-xl sm:text-2xl font-bold text-gray-200">[ MEMESCOPE SCOPE ]</h2>
+        <div className="flex space-x-2">
+          <span className="bg-blue-500/20 px-2 py-1 rounded-md border border-blue-500/30 text-sm">
+            {tokens.length} Tokens
+          </span>
+          <span className="bg-green-500/20 px-2 py-1 rounded-md border border-green-500/30 text-sm">
+            Live Data
+          </span>
+        </div>
+      </div>
+      <div className="space-y-3 flex-grow">
+        {tokens.length ? (
+          tokens.map((token) => (
+            <motion.div
+              key={token.id}
+              className="bg-gradient-to-br from-gray-800 to-gray-700 rounded-lg p-3 border border-blue-500/20 hover:shadow-xl transition-all duration-300"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center space-x-2">
+                  <img 
+                    src={token.mediaContent?.previewImage?.small || "https://i.imgur.com/mlPQazY.png"}
+                    alt={token.name || "Token"}
+                    className="w-6 h-6 rounded-full object-cover"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.src = "https://i.imgur.com/mlPQazY.png";
+                    }}
+                  />
+                  <div>
+                    <span className="text-sm font-bold text-gray-200">{token.name}</span>
+                    <span className="text-xs text-gray-400 ml-1">({token.symbol})</span>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {token.tags.slice(0, 2).map((tag) => (
+                    <TagBadge key={tag} tag={tag} />
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-4 gap-2 text-xs mb-2">
+                <div>
+                  <span className="text-gray-400">MC:</span>
+                  <div className="text-gray-200 font-semibold">{formatNumber(token.marketCap)}</div>
+                </div>
+                <div>
+                  <span className="text-gray-400">Vol:</span>
+                  <div className="text-gray-200 font-semibold">{formatNumber(token.volume24h)}</div>
+                </div>
+                <div>
+                  <span className="text-gray-400">Holders:</span>
+                  <div className="text-gray-200 font-semibold">{token.uniqueHolders || "N/A"}</div>
+                </div>
+                <div>
+                  <span className="text-gray-400">Price:</span>
+                  <div className="text-gray-200 font-semibold">
+                    {token.tokenPrice?.priceInUsdc ? `$${parseFloat(token.tokenPrice.priceInUsdc).toFixed(6)}` : "N/A"}
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-between items-center">
+                <div className="flex space-x-1">
+                  <Link
+                    href={`/token-scanner/${token.address}`}
+                    className="text-blue-400 hover:text-blue-300 text-xs transition-colors inline-flex items-center gap-1 bg-blue-500/10 px-2 py-1 rounded"
+                  >
+                    Chart
+                    <svg className="w-2 h-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </Link>
+                  <Link
+                    href={`https://baseswap.fi/swap?inputCurrency=0x4200000000000000000000000000000000000006&outputCurrency=${token.address}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-green-400 hover:text-green-300 text-xs transition-colors inline-flex items-center gap-1 bg-green-500/10 px-2 py-1 rounded"
+                  >
+                    Quick Buy
+                    <svg className="w-2 h-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                  </Link>
+                </div>
+                {token.marketCapDelta24h && parseFloat(token.marketCapDelta24h) !== 0 && (
+                  <div className={`text-xs font-semibold ${
+                    parseFloat(token.marketCapDelta24h) > 0 ? 'text-green-400' : 'text-red-400'
+                  }`}>
+                    {parseFloat(token.marketCapDelta24h) > 0 ? '+' : ''}{parseFloat(token.marketCapDelta24h).toFixed(1)}%
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          ))
+        ) : (
+          [1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-16 bg-gray-800 rounded-lg animate-pulse" />
+          ))
+        )}
+      </div>
+      <div className="text-center mt-4">
+        <Link
+          href="/cypherscope"
+          className="inline-flex items-center gap-2 text-blue-400 font-semibold text-sm px-4 py-2 rounded-full hover:bg-blue-500/20 transition-all duration-200 hover:scale-105"
+        >
+          Explore Cypherscope
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+          </svg>
+        </Link>
+      </div>
+    </motion.div>
+  );
+}
+
 // Updated LatestNews Component with enhancements
 function LatestNews({ articles, isMobile, loading, error }: { articles: NewsArticle[]; isMobile: boolean; loading: boolean; error: string }) {
+  const shareToX = (article: NewsArticle) => {
+    const url = encodeURIComponent(`${window.location.origin}/base-chain-news/${article.slug}`);
+    const text = encodeURIComponent(`Check out this article on CypherX: ${article.title}`);
+    window.open(`https://x.com/intent/tweet?text=${text}&url=${url}`, "_blank");
+  };
+
+  const shareToTelegram = (article: NewsArticle) => {
+    const url = encodeURIComponent(`${window.location.origin}/base-chain-news/${article.slug}`);
+    const text = encodeURIComponent(`Check out this article on CypherX: ${article.title}`);
+    window.open(`https://t.me/share/url?url=${url}&text=${text}`, "_blank");
+  };
+
+  const copyLink = (article: NewsArticle) => {
+    const url = `${window.location.origin}/base-chain-news/${article.slug}`;
+    navigator.clipboard.writeText(url);
+    toast.success("Link copied to clipboard!");
+  };
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -255,24 +473,6 @@ function LatestNews({ articles, isMobile, loading, error }: { articles: NewsArti
     );
   }
 
-  const shareToX = (article: NewsArticle) => {
-    const url = encodeURIComponent(`${window.location.origin}/base-chain-news/${article.slug}`);
-    const text = encodeURIComponent(`Check out this article on CypherX: ${article.title}`);
-    window.open(`https://x.com/intent/tweet?text=${text}&url=${url}`, "_blank");
-  };
-
-  const shareToTelegram = (article: NewsArticle) => {
-    const url = encodeURIComponent(`${window.location.origin}/base-chain-news/${article.slug}`);
-    const text = encodeURIComponent(`Check out this article on CypherX: ${article.title}`);
-    window.open(`https://t.me/share/url?url=${url}&text=${text}`, "_blank");
-  };
-
-  const copyLink = (article: NewsArticle) => {
-    const url = `${window.location.origin}/base-chain-news/${article.slug}`;
-    navigator.clipboard.writeText(url);
-    toast.success("Link copied to clipboard!");
-  };
-
   return (
     <motion.div
       className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl shadow-lg p-4 sm:p-6 border border-blue-500/30 flex flex-col"
@@ -281,7 +481,7 @@ function LatestNews({ articles, isMobile, loading, error }: { articles: NewsArti
       <div className="flex justify-between items-center mb-4 sm:mb-6">
         <h2 className="text-xl sm:text-2xl font-bold text-gray-200">[ LATEST NEWS ]</h2>
       </div>
-      <div className="space-y-4 flex-grow">
+      <div className="space-y-4">
         {articles.slice(0, 3).map((article) => (
           <motion.div
             key={article.slug}
@@ -346,149 +546,6 @@ function LatestNews({ articles, isMobile, loading, error }: { articles: NewsArti
             </div>
           </motion.div>
         ))}
-      </div>
-      <div className="text-center mt-6">
-        <Link
-          href="/base-chain-news"
-          className="inline-flex items-center gap-2 text-blue-400 font-semibold text-sm px-4 py-2 rounded-full hover:bg-blue-500/20 transition-all duration-200 hover:scale-105"
-        >
-          View All Articles
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-          </svg>
-        </Link>
-      </div>
-    </motion.div>
-  );
-}
-
-// Updated LatestBlocks Component with consistent height and enhanced styling
-function LatestBlocks({
-  blocks,
-  stats,
-  isMobile,
-  loading,
-  error,
-}: {
-  blocks: Block[];
-  stats: { price: number; volume: number; latestBlock: number } | null;
-  isMobile: boolean;
-  loading: boolean;
-  error: string;
-}) {
-  const abbreviateNumber = (num: number) => {
-    if (num >= 1e9) return (num / 1e9).toFixed(2) + 'B';
-    if (num >= 1e6) return (num / 1e6).toFixed(2) + 'M';
-    if (num >= 1e3) return (num / 1e3).toFixed(2) + 'K';
-    return num.toLocaleString();
-  };
-
-  if (loading) {
-    return (
-      <motion.div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 sm:p-6 shadow-lg border border-blue-500/30 flex flex-col h-full min-h-[400px]">
-        <div className="flex justify-between items-center mb-4 sm:mb-6">
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-200">[ LATEST BLOCKS ]</h2>
-          <div className={`${isMobile ? "flex flex-col items-start space-y-1 ml-auto text-right" : "flex flex-wrap items-center space-x-3"} text-sm sm:text-base`}>
-            <div className="h-5 w-24 bg-gray-800 rounded animate-pulse" />
-            <div className="h-5 w-24 bg-gray-800 rounded animate-pulse" />
-            <div className="h-5 w-24 bg-gray-800 rounded animate-pulse" />
-          </div>
-        </div>
-        <div className="space-y-4 flex-grow">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-24 bg-gray-800 rounded-lg animate-pulse" />
-          ))}
-        </div>
-      </motion.div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 sm:p-6 shadow-lg border border-blue-500/30 flex flex-col h-full min-h-[400px]">
-        <h2 className="text-xl sm:text-2xl font-bold text-gray-200 mb-4 sm:mb-6">[ LATEST BLOCKS ]</h2>
-        <p className="text-center text-red-400 flex-grow flex items-center justify-center">{error}</p>
-      </div>
-    );
-  }
-
-  return (
-          <motion.div
-        className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 sm:p-6 shadow-lg border border-blue-500/30 flex flex-col h-full min-h-[400px]"
-        {...fadeInUp(0.1)}
-      >
-      <div className="flex justify-between items-center mb-4 sm:mb-6">
-        <h2 className="text-xl sm:text-2xl font-bold text-gray-200">[ LATEST BLOCKS ]</h2>
-        {stats ? (
-          <div className={`${isMobile ? "flex flex-col items-start space-y-1 ml-auto text-right" : "flex flex-wrap items-center space-x-3"} text-sm sm:text-base`}>
-            <span className="bg-blue-500/20 px-2 py-1 rounded-md border border-blue-500/30">Price: <span className="text-blue-400">${stats.price.toFixed(2)}</span></span>
-            <span className="bg-teal-500/20 px-2 py-1 rounded-md border border-teal-500/30">Volume: <span className="text-teal-400">${abbreviateNumber(stats.volume)}</span></span>
-            <span className="bg-purple-500/20 px-2 py-1 rounded-md border border-purple-500/30">Block: <span className="text-purple-400">{abbreviateNumber(stats.latestBlock)}</span></span>
-          </div>
-        ) : (
-          <div className={`${isMobile ? "flex flex-col items-start space-y-1 ml-auto text-right" : "flex flex-wrap items-center space-x-3"} text-sm sm:text-base`}>
-            <div className="h-5 w-24 bg-gray-800 rounded animate-pulse" />
-            <div className="h-5 w-24 bg-gray-800 rounded animate-pulse" />
-            <div className="h-5 w-24 bg-gray-800 rounded animate-pulse" />
-          </div>
-        )}
-      </div>
-      <div className="space-y-4 flex-grow">
-        {blocks.length ? (
-          blocks.slice(0, 3).map((block) => (
-            <motion.div
-              key={block.number}
-              className="bg-gradient-to-br from-gray-800 to-gray-700 rounded-lg p-4 border border-blue-500/20 hover:shadow-xl transition-all duration-300"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4 }}
-            >
-              <div className={`flex ${isMobile ? "flex-col gap-2" : "gap-3 items-center"} mb-3`}>
-                <div className="flex items-center space-x-2 sm:space-x-3">
-                  <span className="text-base sm:text-lg font-bold text-gray-200">#{block.number}</span>
-                  <span className="px-2 py-1 bg-blue-500/20 text-blue-400 text-sm rounded-full">
-                    [ {block.status} ]
-                  </span>
-                </div>
-                <span className="text-sm sm:text-base text-gray-500">{block.timestamp}</span>
-              </div>
-              <div className="space-y-2">
-                <p className="text-sm sm:text-base text-gray-600">
-                  <span className="font-semibold text-gray-200">HASH:</span> {block.hash.slice(0, 10)}...
-                </p>
-                <p className="text-sm sm:text-base text-gray-600">
-                  <span className="font-semibold text-gray-200">TXNS:</span> {block.transactions}
-                </p>
-                <div className="flex justify-end">
-                  <Link
-                    href={`/explorer/latest/block/${block.number}`}
-                    className="text-blue-400 hover:text-blue-300 text-sm transition-colors inline-flex items-center gap-1"
-                  >
-                    View Details
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                    </svg>
-                  </Link>
-                </div>
-              </div>
-            </motion.div>
-          ))
-        ) : (
-          [1, 2, 3].map((i) => (
-            <div key={i} className="h-24 bg-gray-800 rounded-lg animate-pulse" />
-          ))
-        )}
-      </div>
-      <div className="text-center mt-6">
-        <Link
-          href="/explorer/latest/block"
-          className="inline-flex items-center gap-2 text-blue-400 font-semibold text-sm px-4 py-2 rounded-full hover:bg-blue-500/20 transition-all duration-200 hover:scale-105"
-        >
-          View All Blocks
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-          </svg>
-        </Link>
       </div>
     </motion.div>
   );
