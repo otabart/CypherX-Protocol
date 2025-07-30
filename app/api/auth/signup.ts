@@ -1,6 +1,6 @@
-import { NextApiRequest, NextApiResponse } from "next";
+import type { NextApiRequest, NextApiResponse } from "next";
 import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth, db } from "../../../config/firebase";
+import { auth, db } from "../../../lib/firebase";
 import { doc, setDoc } from "firebase/firestore";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -22,6 +22,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     return res.status(200).json({ email: user.email, displayName: user.email });
   } catch (error) {
-    return res.status(400).json({ error: error.message || "Signup failed" });
+    const errorMessage = error instanceof Error ? error.message : "Signup failed";
+    return res.status(400).json({ error: errorMessage });
   }
 }

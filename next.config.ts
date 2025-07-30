@@ -22,6 +22,7 @@ const nextConfig = {
       { protocol: "https", hostname: "images.seeklogo.com" },
       { protocol: "https", hostname: "firebasestorage.googleapis.com" },
       { protocol: "https", hostname: "cdn.dexscreener.com" },
+      { protocol: "https", hostname: "scontent-iad4-1.choicecdn.com" },
     ],
   },
   experimental: {},
@@ -46,11 +47,13 @@ const nextConfig = {
       },
     ];
   },
-  webpack: (config, { isServer }) => {
+  webpack: (config: import("webpack").Configuration, { isServer }: { isServer: boolean }) => {
     console.log("Webpack config running, isServer:", isServer);
 
     // Add alias for `~` to resolve to `node_modules` (for @uniswap/widgets fonts)
-    config.resolve.alias['~'] = 'node_modules';
+    if (!config.resolve) config.resolve = {};
+    if (!config.resolve.alias) config.resolve.alias = {};
+    (config.resolve.alias as Record<string, string>)['~'] = 'node_modules';
 
     if (!isServer) {
       console.log("Applying client-side Webpack fallback for Node.js modules");

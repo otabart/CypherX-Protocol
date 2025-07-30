@@ -13,9 +13,9 @@ interface ReactionPayload {
 
 export async function POST(
   _req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const commentId = params.id;
+  const { id: commentId } = await params;
   try {
     const { userId, walletAddress, action }: ReactionPayload = await _req.json();
     if (!userId || !walletAddress || !action) {

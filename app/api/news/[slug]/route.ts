@@ -1,15 +1,15 @@
 // app/api/news/[slug]/route.ts
 
-import { NextResponse, NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../../../../lib/firebase"; // adjust path if needed
 
 export async function GET(
-  request: NextRequest,
-  { params }: { params: { slug: string } }
+  _request: Request,
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   // Now you can safely do:
-  const { slug } = params;
+  const { slug } = await params;
 
   try {
     const articlesCol = collection(db, "articles");

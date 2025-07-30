@@ -1,10 +1,29 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { FiUpload, FiSend, FiCopy, FiTrash2, FiShield, FiCode, FiSearch, FiFileText, FiHelpCircle } from "react-icons/fi";
+import { 
+  FiUpload, 
+  FiSend, 
+  FiCopy, 
+  FiTrash2, 
+  FiShield, 
+  FiCode, 
+  FiSearch, 
+  FiFileText, 
+  FiHelpCircle,
+  FiAlertTriangle,
+  FiCheckCircle,
+  FiXCircle,
+  FiActivity,
+  FiClock,
+  FiTrendingUp,
+  FiTrendingDown,
+  FiRefreshCw,
+} from "react-icons/fi";
 import { motion, AnimatePresence } from "framer-motion";
 import Header from "../components/Header";
-import toast from "react-hot-toast"; // Added for toast notifications
+import Footer from "../components/Footer";
+import toast from "react-hot-toast";
 
 interface AuditResult {
   token?: { name?: string; symbol?: string };
@@ -27,6 +46,7 @@ export default function SmartAuditPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [auditHistory, setAuditHistory] = useState<AuditResult[]>([]);
+
 
   useEffect(() => {
     const history = JSON.parse(localStorage.getItem("auditHistory") || "[]");
@@ -61,8 +81,8 @@ export default function SmartAuditPage() {
       setAuditHistory(newHistory);
       localStorage.setItem("auditHistory", JSON.stringify(newHistory));
       return response;
-    } catch (err: any) {
-      const errMsg = err.message || "Error during audit.";
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "Error during audit.";
       setError(errMsg);
       toast.error(errMsg);
       return null;
@@ -134,224 +154,337 @@ export default function SmartAuditPage() {
     toast.success("Audit history cleared!");
   };
 
-  return (
-    <div className="min-h-screen flex flex-col bg-gray-950 text-gray-100 font-sans">
-      <Header />
-      <div className="flex-grow flex justify-center items-center p-3 sm:p-5">
-        <div className="max-w-2xl w-full">
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-blue-400 mb-4 sm:mb-6 text-center"> CypherX SmartAudit </h1>
+  const getRiskColor = (riskLevel?: string) => {
+    if (!riskLevel || typeof riskLevel !== 'string') {
+      return "text-gray-400 bg-gray-900/30 border-gray-500/30";
+    }
+    
+    switch (riskLevel.toLowerCase()) {
+      case "high":
+        return "text-red-400 bg-red-900/30 border-red-500/30";
+      case "medium":
+        return "text-yellow-400 bg-yellow-900/30 border-yellow-500/30";
+      case "low":
+        return "text-green-400 bg-green-900/30 border-green-500/30";
+      default:
+        return "text-gray-400 bg-gray-900/30 border-gray-500/30";
+    }
+  };
 
-          {/* Input and Buttons */}
-          <div className="flex flex-col space-y-3 sm:space-y-4 mb-4 sm:mb-6">
-            <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-3">
-              <input
-                type="text"
-                value={input}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInput(e.target.value)}
-                onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && handleAudit()}
-                placeholder="Enter contract address (e.g., 0x123...) or 'upload'"
-                className="w-full px-3 py-2 bg-gray-800 text-gray-200 rounded-lg border border-blue-500/30 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm shadow-md placeholder-gray-400"
-              />
-              <div className="flex space-x-2">
-                <label
-                  className="flex items-center justify-center text-yellow-400 hover:text-yellow-300 p-2 rounded-full cursor-pointer transition-colors shadow-md hover:bg-yellow-500/20"
-                  aria-label="Upload .sol file"
-                >
-                  <FiUpload className="w-5 h-5" />
-                  <input
-                    type="file"
-                    accept=".sol"
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                      const file = e.target.files?.[0];
-                      if (file && file.type === "application/octet-stream" && file.name.endsWith(".sol")) {
-                        performAudit("file", file).then(setAuditResult);
-                      } else {
-                        const errMsg = "Please upload a valid .sol file.";
-                        setError(errMsg);
-                        toast.error(errMsg);
-                      }
-                    }}
-                    className="hidden"
-                  />
-                </label>
-                <button
-                  onClick={handleAudit}
-                  disabled={loading}
-                  className="flex items-center justify-center text-blue-400 hover:text-blue-300 p-2 rounded-full transition-colors disabled:opacity-50 shadow-md hover:bg-blue-500/20"
-                  aria-label="Perform audit"
-                >
-                  <FiSend className="w-5 h-5" />
-                </button>
+  const getStatusIcon = (isHoneypot?: boolean) => {
+    if (isHoneypot) {
+      return <FiXCircle className="w-6 h-6 text-red-400" />;
+    }
+    return <FiCheckCircle className="w-6 h-6 text-green-400" />;
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 flex flex-col">
+      <Header />
+      
+      <main className="flex-1 container mx-auto px-4 py-8">
+        {/* Header Section */}
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
+        >
+          <div className="text-center mb-8">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-2 flex items-center justify-center flex-col sm:flex-row">
+              <FiShield className="w-6 h-6 sm:w-8 sm:h-8 mr-0 sm:mr-3 mb-2 sm:mb-0 text-blue-400" />
+              CypherX SmartAudit
+            </h1>
+            <p className="text-gray-400 text-sm sm:text-base px-4">Advanced blockchain security analysis and honeypot detection</p>
+          </div>
+        </motion.div>
+
+        {/* Search Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="bg-gray-800/30 backdrop-blur-sm rounded-lg border border-gray-700 p-6 mb-8"
+        >
+          <div className="flex flex-col lg:flex-row gap-4 items-center">
+            <div className="w-full lg:flex-1">
+              <div className="relative">
+                <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <input
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleAudit()}
+                  placeholder="Enter contract address (e.g., 0x123...) or 'upload'"
+                  className="w-full pl-10 pr-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                />
               </div>
             </div>
-          </div>
 
-          {/* Action Buttons */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3 mb-4 sm:mb-6">
-            {[
-              { icon: FiShield, text: "Secure", color: "text-green-400", hoverColor: "hover:bg-green-500/20" },
-              { icon: FiCode, text: "Analyze Code", color: "text-purple-400", hoverColor: "hover:bg-purple-500/20" },
-              { icon: FiSearch, text: "Analyze Address", color: "text-blue-400", hoverColor: "hover:bg-blue-500/20" },
-              { icon: FiFileText, text: "Audit Report", color: "text-yellow-400", hoverColor: "hover:bg-yellow-500/20" },
-              { icon: FiHelpCircle, text: "Help", color: "text-red-400", hoverColor: "hover:bg-red-500/20" },
-            ].map(({ icon: Icon, text, color, hoverColor }, idx) => (
-              <motion.span
-                key={idx}
-                className={`flex items-center px-2 py-1 bg-gray-800 text-gray-300 text-sm rounded border border-blue-500/30 ${color} ${hoverColor} cursor-pointer shadow-md`}
-                whileHover={{ scale: 1.05 }}
-                transition={{ duration: 0.2 }}
-                role="button"
-                tabIndex={0}
-                onClick={() => toast.info(`${text} feature coming soon!`)} // Placeholder action
+            <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
+              <label className="flex items-center justify-center gap-2 px-4 py-3 bg-yellow-500/20 border border-yellow-500/30 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors cursor-pointer w-full sm:w-auto">
+                <FiUpload className="w-5 h-5" />
+                <span className="text-sm sm:text-base">Upload .sol</span>
+                <input
+                  type="file"
+                  accept=".sol"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file && file.type === "application/octet-stream" && file.name.endsWith(".sol")) {
+                      performAudit("file", file).then(setAuditResult);
+                    } else {
+                      const errMsg = "Please upload a valid .sol file.";
+                      setError(errMsg);
+                      toast.error(errMsg);
+                    }
+                  }}
+                  className="hidden"
+                />
+              </label>
+
+              <button
+                onClick={handleAudit}
+                disabled={loading}
+                className="flex items-center justify-center gap-2 px-6 py-3 bg-blue-500/20 border border-blue-500/30 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
               >
-                <Icon className={`mr-1 w-5 h-5`} /> {text}
-              </motion.span>
-            ))}
-          </div>
-
-          {/* Instructions */}
-          <div className="mb-4 sm:mb-6 text-gray-400 text-sm space-y-1">
-            <p>Enter a valid Ethereum contract address (e.g., 0x123...) to scan for security issues.</p>
-            <p>Or upload a .sol file using the upload button or 'upload' command to analyze the code.</p>
-          </div>
-
-          {/* Output Area */}
-          <div className="bg-gray-800 p-3 sm:p-5 rounded-lg shadow-md border border-blue-500/30">
-            <AnimatePresence>
-              {loading && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="text-center text-blue-400 text-sm flex items-center justify-center space-x-2"
-                >
-                  <div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                  <span>Analyzing contract...</span>
-                </motion.div>
-              )}
-              {error && (
-                <motion.p
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="text-red-400 text-sm text-center"
-                >
-                  {error}
-                </motion.p>
-              )}
-              {auditResult && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="text-gray-200 space-y-2"
-                >
-                  <h2 className="text-lg sm:text-xl font-semibold text-blue-400">[ Contract Security Analysis ]</h2>
-                  {auditResult.token?.name && (
-                    <p className="text-sm">
-                      <strong>Token:</strong> {auditResult.token.name}
-                    </p>
-                  )}
-                  <div
-                    className={`inline-flex items-center px-2 py-1 rounded text-sm ${
-                      auditResult.honeypotResult?.isHoneypot
-                        ? "bg-red-500/20 text-red-400"
-                        : "bg-green-500/20 text-green-400"
-                    }`}
-                  >
-                    {auditResult.honeypotResult?.isHoneypot ? "Possible Scam" : "Contract Secure"}
-                  </div>
-                  <p className="text-sm">
-                    <strong>Status:</strong>{" "}
-                    {auditResult.honeypotResult?.isHoneypot ? "Honeypot Detected" : "No Honeypot Detected"}
-                  </p>
-                  <p className="text-sm">
-                    <strong>Risk Level:</strong> {auditResult.summary?.riskLevel || "Low"}
-                  </p>
-                  <p className="text-sm">
-                    <strong>Buy Tax:</strong>{" "}
-                    {auditResult.simulationResult?.buyTax !== undefined
-                      ? `${auditResult.simulationResult.buyTax}%`
-                      : "0.00%"}
-                  </p>
-                  <p className="text-sm">
-                    <strong>Sell Tax:</strong>{" "}
-                    {auditResult.simulationResult?.sellTax !== undefined
-                      ? `${auditResult.simulationResult.sellTax}%`
-                      : "0.00%"}
-                  </p>
-                  <p className="text-sm">
-                    <strong>Blacklisted:</strong> {auditResult.isBlacklisted ? "Yes" : "No"}
-                  </p>
-                  <p className="text-sm">
-                    <strong>Proxy Contract:</strong> {auditResult.isProxy ? "Yes" : "No"}
-                  </p>
-                  <p className="text-sm">
-                    <strong>Fake Token:</strong> {auditResult.isFakeToken ? "Yes" : "No"}
-                  </p>
-                  <p className="text-sm">
-                    <strong>Detailed Analysis:</strong>{" "}
-                    {auditResult.detailedAnalysis || "No specific issues detected."}
-                  </p>
-                  <motion.button
-                    onClick={handleCopyResults}
-                    className="mt-2 text-yellow-400 hover:text-yellow-300 text-sm flex items-center gap-1 transition-colors shadow-md hover:bg-yellow-500/20 rounded-md px-2 py-1"
-                    whileHover={{ scale: 1.05 }}
-                    transition={{ duration: 0.2 }}
-                    aria-label="Copy audit results"
-                  >
-                    <FiCopy className="w-5 h-5" /> Copy Results
-                  </motion.button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Recent Scans */}
-          <section className="mt-6 sm:mt-8">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 sm:mb-5">
-              <h3 className="text-lg sm:text-xl font-semibold text-blue-400">[ Recent Scans ]</h3>
-              {auditHistory.length > 0 && (
-                <motion.button
-                  onClick={handleClearHistory}
-                  className="text-red-400 hover:text-red-300 text-sm flex items-center gap-1 transition-colors shadow-md hover:bg-red-500/20 rounded-md px-2 py-1 mt-2 sm:mt-0"
-                  whileHover={{ scale: 1.05 }}
-                  transition={{ duration: 0.2 }}
-                  aria-label="Clear audit history"
-                >
-                  <FiTrash2 className="w-5 h-5" /> Clear
-                </motion.button>
-              )}
+                {loading ? (
+                  <FiRefreshCw className="w-5 h-5 animate-spin" />
+                ) : (
+                  <FiSend className="w-5 h-5" />
+                )}
+                <span className="text-sm sm:text-base">{loading ? "Analyzing..." : "Analyze"}</span>
+              </button>
             </div>
-            {auditHistory.length > 0 ? (
-              <ul className="space-y-2 sm:space-y-3">
-                {auditHistory.map((result, index) => (
-                  <li
-                    key={index}
-                    className="p-2 sm:p-3 bg-gray-800 rounded-lg cursor-pointer hover:bg-gray-700 transition-colors shadow-md border border-blue-500/30"
-                    onClick={() => setAuditResult(result)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e: React.KeyboardEvent<HTMLLIElement>) => e.key === "Enter" && setAuditResult(result)}
-                    aria-label={`View audit result for ${result.token?.symbol || "unknown token"}`}
-                  >
-                    <p className="text-sm">
-                      <strong>Token:</strong> {result.token?.symbol || "TKN"} -{" "}
+          </div>
+
+          <div className="mt-4 text-sm text-gray-400">
+            <p>Enter a valid Ethereum contract address to scan for security issues, or upload a .sol file for code analysis.</p>
+          </div>
+        </motion.div>
+
+                 {/* Quick Actions */}
+         <motion.div
+           initial={{ opacity: 0, y: 20 }}
+           animate={{ opacity: 1, y: 0 }}
+           transition={{ delay: 0.2 }}
+           className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-8"
+         >
+           {[
+             { icon: FiShield, text: "Security Scan", color: "bg-green-500/20 border-green-500/30 text-green-400" },
+             { icon: FiCode, text: "Code Analysis", color: "bg-purple-500/20 border-purple-500/30 text-purple-400" },
+             { icon: FiSearch, text: "Address Check", color: "bg-blue-500/20 border-blue-500/30 text-blue-400" },
+             { icon: FiFileText, text: "Audit Report", color: "bg-yellow-500/20 border-yellow-500/30 text-yellow-400" },
+             { icon: FiHelpCircle, text: "Help Guide", color: "bg-red-500/20 border-red-500/30 text-red-400" },
+           ].map(({ icon: Icon, text, color }, idx) => (
+             <motion.button
+               key={idx}
+               className={`flex items-center justify-center gap-2 p-3 sm:p-4 rounded-lg border ${color} hover:scale-105 transition-transform`}
+               whileHover={{ scale: 1.05 }}
+               transition={{ duration: 0.2 }}
+               onClick={() => toast(`${text} feature coming soon!`, { icon: 'ℹ️' })}
+             >
+               <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
+               <span className="text-xs sm:text-sm font-medium">{text}</span>
+             </motion.button>
+           ))}
+         </motion.div>
+
+        {/* Error Display */}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 mb-6 text-red-400"
+            >
+              <div className="flex items-center gap-2">
+                <FiAlertTriangle className="w-5 h-5" />
+                Error: {error}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Results Section */}
+        <AnimatePresence>
+          {auditResult && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="space-y-6"
+            >
+              {/* Main Result Card */}
+              <div className="bg-gray-800/30 backdrop-blur-sm rounded-lg border border-gray-700 p-4 sm:p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+                  <h2 className="text-lg sm:text-xl font-semibold text-white flex items-center gap-2">
+                    <FiShield className="w-5 h-5 text-blue-400" />
+                    Security Analysis Results
+                  </h2>
+                  <div className="flex items-center gap-3">
+                    {getStatusIcon(auditResult.honeypotResult?.isHoneypot)}
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs sm:text-sm font-medium border ${
+                      auditResult.honeypotResult?.isHoneypot 
+                        ? "bg-red-900/30 text-red-400 border-red-500/30" 
+                        : "bg-green-900/30 text-green-400 border-green-500/30"
+                    }`}>
+                      {auditResult.honeypotResult?.isHoneypot ? "Honeypot Detected" : "Contract Secure"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                  <div className="space-y-3 sm:space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <span className="text-gray-400 text-sm">Token Name</span>
+                      <span className="text-white font-medium text-sm sm:text-base">{auditResult.token?.name || "Unnamed"}</span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <span className="text-gray-400 text-sm">Token Symbol</span>
+                      <span className="text-white font-medium text-sm sm:text-base">{auditResult.token?.symbol || "TKN"}</span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <span className="text-gray-400 text-sm">Risk Level</span>
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getRiskColor(auditResult.summary?.riskLevel)}`}>
+                        {auditResult.summary?.riskLevel || "Low"}
+                      </span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <span className="text-gray-400 text-sm">Status</span>
+                      <span className={`text-xs sm:text-sm ${auditResult.honeypotResult?.isHoneypot ? "text-red-400" : "text-green-400"}`}>
+                        {auditResult.honeypotResult?.isHoneypot ? "Honeypot Detected" : "No Honeypot Detected"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 sm:space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <span className="text-gray-400 text-sm">Buy Tax</span>
+                      <div className="flex items-center gap-2">
+                        <FiTrendingUp className="w-4 h-4 text-green-400" />
+                        <span className="text-white font-medium text-sm sm:text-base">
+                          {auditResult.simulationResult?.buyTax !== undefined ? `${auditResult.simulationResult.buyTax}%` : "0.00%"}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <span className="text-gray-400 text-sm">Sell Tax</span>
+                      <div className="flex items-center gap-2">
+                        <FiTrendingDown className="w-4 h-4 text-red-400" />
+                        <span className="text-white font-medium text-sm sm:text-base">
+                          {auditResult.simulationResult?.sellTax !== undefined ? `${auditResult.simulationResult.sellTax}%` : "0.00%"}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <span className="text-gray-400 text-sm">Blacklisted</span>
+                      <span className={`text-xs sm:text-sm ${auditResult.isBlacklisted ? "text-red-400" : "text-green-400"}`}>
+                        {auditResult.isBlacklisted ? "Yes" : "No"}
+                      </span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <span className="text-gray-400 text-sm">Proxy Contract</span>
+                      <span className={`text-xs sm:text-sm ${auditResult.isProxy ? "text-yellow-400" : "text-green-400"}`}>
+                        {auditResult.isProxy ? "Yes" : "No"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 pt-6 border-t border-gray-700">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
+                    <h3 className="text-base sm:text-lg font-semibold text-white">Detailed Analysis</h3>
+                    <button
+                      onClick={handleCopyResults}
+                      className="flex items-center gap-2 px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs sm:text-sm text-gray-300 transition-colors"
+                    >
+                      <FiCopy className="w-4 h-4" />
+                      Copy Results
+                    </button>
+                  </div>
+                  <p className="text-gray-300 text-xs sm:text-sm leading-relaxed">
+                    {auditResult.detailedAnalysis || "No specific issues detected in this contract."}
+                  </p>
+                </div>
+              </div>
+
+              
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Recent Scans */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="mt-8"
+        >
+                     <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+             <h3 className="text-lg sm:text-xl font-semibold text-white flex items-center gap-2">
+               <FiClock className="w-5 h-5 text-blue-400" />
+               Recent Scans
+             </h3>
+             {auditHistory.length > 0 && (
+               <button
+                 onClick={handleClearHistory}
+                 className="flex items-center gap-2 px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-xs sm:text-sm text-white transition-colors"
+               >
+                 <FiTrash2 className="w-4 h-4" />
+                 <span className="hidden sm:inline">Clear History</span>
+                 <span className="sm:hidden">Clear</span>
+               </button>
+             )}
+           </div>
+
+           {auditHistory.length > 0 ? (
+             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+              {auditHistory.map((result, index) => (
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: index * 0.1 }}
+                  className="bg-gray-700/50 rounded-lg p-4 border border-gray-600 hover:border-gray-500 transition-colors cursor-pointer"
+                  onClick={() => setAuditResult(result)}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-white font-medium">{result.token?.symbol || "TKN"}</span>
+                    {getStatusIcon(result.honeypotResult?.isHoneypot)}
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-400">Status</span>
                       <span className={result.honeypotResult?.isHoneypot ? "text-red-400" : "text-green-400"}>
                         {result.honeypotResult?.isHoneypot ? "Honeypot" : "Safe"}
                       </span>
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-gray-500 text-sm">No recent scans.</p>
-            )}
-          </section>
-        </div>
-      </div>
-      <div className="text-center text-gray-500 text-sm py-2 sm:py-3 border-t border-blue-500/20">
-        By using CypherX SmartAudit, you agree to our Terms and Privacy Policy.
-      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-400">Risk</span>
+                      <span className={`text-xs px-2 py-1 rounded-full border ${getRiskColor(result.summary?.riskLevel)}`}>
+                        {result.summary?.riskLevel || "Low"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-400">Buy Tax</span>
+                      <span className="text-white">
+                        {result.simulationResult?.buyTax !== undefined ? `${result.simulationResult.buyTax}%` : "0%"}
+                      </span>
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <FiActivity className="w-16 h-16 text-gray-500 mx-auto mb-4" />
+              <p className="text-gray-400">No recent scans</p>
+              <p className="text-gray-500 text-sm mt-2">Start by analyzing a contract address</p>
+            </div>
+          )}
+        </motion.div>
+      </main>
+
+      <Footer />
     </div>
   );
 }

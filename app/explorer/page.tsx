@@ -4,23 +4,14 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
 import Link from "next/link";
-
-// ▲ Make sure we import ClipboardIcon now
-import { ClipboardIcon } from "@heroicons/react/24/outline";
+import Image from "next/image";
+import { motion, AnimatePresence } from "framer-motion";
 
 // Header/Footer remain unchanged
 import Header from "@/app/components/Header";
 import Footer from "@/app/components/Footer";
 
-/** ──────────── Custom Loader Component ──────────── **/
-// A simple circular spinner using Tailwind classes
-function Loader() {
-  return (
-    <div className="w-6 h-6 border-4 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
-  );
-}
-
-/** ──────────── Search Icon ──────────── **/
+/** ──────────── Enhanced Search Icon ──────────── **/
 function SearchIcon({ className }: { className: string }) {
   return (
     <svg
@@ -35,26 +26,6 @@ function SearchIcon({ className }: { className: string }) {
         strokeLinejoin="round"
         strokeWidth="2"
         d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 1116.65 16.65z"
-      />
-    </svg>
-  );
-}
-
-/** ──────────── External Link Icon (Up‐Right Arrow) ──────────── **/
-function ExternalLinkIcon({ className }: { className: string }) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="2"
-        d="M7 17l10-10M7 7h10v10"
       />
     </svg>
   );
@@ -95,6 +66,9 @@ export default function ExplorerPage() {
 
   // ─── Search + Data States ───
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
 
   const [recentBlocks, setRecentBlocks] = useState<Block[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
@@ -127,7 +101,7 @@ export default function ExplorerPage() {
   const [networkHashRate, setNetworkHashRate] = useState<string>("0 TH/s");
   const [avgGasFee, setAvgGasFee] = useState<string>("0 Gwei");
 
-  /** Toast for “Copied to clipboard” **/
+  /** Toast for "Copied to clipboard" **/
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   /** Refs to compare previous data **/
@@ -137,6 +111,45 @@ export default function ExplorerPage() {
 
   /** Alchemy API URL **/
   const alchemyUrl = process.env.NEXT_PUBLIC_ALCHEMY_API_URL;
+
+  /** Load search history from localStorage **/
+  useEffect(() => {
+    try {
+      const savedHistory = localStorage.getItem('explorer-search-history');
+      if (savedHistory) {
+        const history = JSON.parse(savedHistory);
+        setSearchHistory(Array.isArray(history) ? history : []);
+      }
+    } catch (error) {
+      console.warn('Failed to load search history:', error);
+    }
+  }, []);
+
+  /** Save search history to localStorage **/
+  const saveSearchHistory = useCallback((query: string) => {
+    try {
+      const trimmedQuery = query.trim();
+      if (!trimmedQuery) return;
+
+      setSearchHistory(prev => {
+        const newHistory = [trimmedQuery, ...prev.filter(item => item !== trimmedQuery)].slice(0, 10);
+        localStorage.setItem('explorer-search-history', JSON.stringify(newHistory));
+        return newHistory;
+      });
+    } catch (error) {
+      console.warn('Failed to save search history:', error);
+    }
+  }, []);
+
+  /** Clear search history **/
+  const clearSearchHistory = useCallback(() => {
+    try {
+      localStorage.removeItem('explorer-search-history');
+      setSearchHistory([]);
+    } catch (error) {
+      console.warn('Failed to clear search history:', error);
+    }
+  }, []);
 
   /** Close any mobile menu in Header on route change **/
   useEffect(() => {
@@ -150,15 +163,51 @@ export default function ExplorerPage() {
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
-  /** ──────────── copyToClipboard ──────────── **/
-  const copyToClipboard = useCallback(async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setToastMessage("Copied to clipboard!");
-    } catch {
-      setToastMessage("Failed to copy");
+  /** ──────────── Enhanced Search Suggestions ──────────── **/
+  const generateSearchSuggestions = useCallback((query: string) => {
+    if (!query.trim()) {
+      // Show search history when input is empty
+      setSearchSuggestions(searchHistory.map(item => `History: ${item}`));
+      return;
     }
-  }, []);
+
+    const suggestions = [];
+    
+    // Add search history matches
+    const historyMatches = searchHistory
+      .filter(item => item.toLowerCase().includes(query.toLowerCase()))
+      .map(item => `History: ${item}`);
+    suggestions.push(...historyMatches);
+    
+    // Block number suggestions
+    if (/^\d+$/.test(query)) {
+      suggestions.push(`Block #${query}`);
+    }
+    
+    // Address suggestions
+    if (/^0x[a-fA-F0-9]{0,40}$/.test(query)) {
+      if (query.length === 42) {
+        suggestions.push(`Address: ${query}`);
+      } else {
+        suggestions.push(`Address: ${query}...`);
+      }
+    }
+    
+    // Transaction hash suggestions
+    if (/^0x[a-fA-F0-9]{0,64}$/.test(query)) {
+      if (query.length === 66) {
+        suggestions.push(`Transaction: ${query}`);
+      } else {
+        suggestions.push(`Transaction: ${query}...`);
+      }
+    }
+
+    setSearchSuggestions(suggestions);
+  }, [searchHistory]);
+
+  useEffect(() => {
+    generateSearchSuggestions(searchQuery);
+  }, [searchQuery, generateSearchSuggestions]);
 
   /** ──────────── fetchWhaleTransactions ──────────── **/
   const fetchWhaleTransactions = useCallback(async () => {
@@ -182,14 +231,24 @@ export default function ExplorerPage() {
       const whaleSnapshot = await getDocs(whaleQuery);
 
       const whaleData: WhaleTransaction[] = whaleSnapshot.docs.map((doc) => {
-        const data = doc.data() as any;
+        const data = doc.data() as {
+          hash?: string;
+          fromAddress?: string;
+          toAddress?: string;
+          amountToken?: number;
+          timestamp?: unknown;
+        };
         return {
           hash: data.hash ?? "",
           from: data.fromAddress ?? "",
           to: data.toAddress ?? "",
           value: data.amountToken ? data.amountToken.toFixed(4) : "0",
           timestamp: data.timestamp
-            ? formatDistanceToNow(new Date(data.timestamp.toDate()), { addSuffix: true }).toUpperCase()
+            ? formatDistanceToNow(new Date(
+                data.timestamp && typeof data.timestamp === 'object' && 'toDate' in data.timestamp 
+                  ? (data.timestamp as { toDate(): Date }).toDate() 
+                  : String(data.timestamp)
+              ), { addSuffix: true }).toUpperCase()
             : "",
         };
       });
@@ -201,9 +260,10 @@ export default function ExplorerPage() {
         setWhaleTransactions(whaleData);
         prevWhaleTransactionsRef.current = whaleData;
       }
-    } catch (err: any) {
-      console.error("Error fetching whale transactions:", err.message);
-      setError((prev) => ({ ...prev, whales: `Error: ${err.message}` }));
+    } catch (err: unknown) {
+      console.error("Error fetching whale transactions:", err);
+      const errorMessage = err instanceof Error ? err.message : "Unknown error";
+      setError((prev) => ({ ...prev, whales: `Error: ${errorMessage}` }));
     }
   }, []);
 
@@ -221,8 +281,11 @@ export default function ExplorerPage() {
         return;
       }
 
+      // Only show updating indicator for subsequent fetches, not initial load
       if (!isInitialFetch) {
         setUpdating({ blocks: true, transactions: true, whales: true });
+      } else {
+        setLoading({ blocks: true, transactions: true, whales: true });
       }
 
       try {
@@ -244,8 +307,9 @@ export default function ExplorerPage() {
           if (gasPriceData.error) throw new Error(gasPriceData.error.message);
           const newGasPrice = (parseInt(gasPriceData.result, 16) / 1e9).toFixed(4) + " Gwei";
           setGasPrice(newGasPrice);
-        } catch (err: any) {
-          console.warn("Gas Price fetch failed:", err.message);
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : "Unknown error";
+          console.warn("Gas Price fetch failed:", errorMessage);
         }
 
         /************************
@@ -267,8 +331,9 @@ export default function ExplorerPage() {
           const baseFees: number[] = feeHistoryData.result.baseFeePerGas.map((fee: string) => parseInt(fee, 16));
           const avgFeeInWei = baseFees.reduce((sum, fee) => sum + fee, 0) / baseFees.length;
           setAvgGasFee((avgFeeInWei / 1e9).toFixed(4) + " Gwei");
-        } catch (err: any) {
-          console.warn("Fee History fetch failed:", err.message);
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : "Unknown error";
+          console.warn("Fee History fetch failed:", errorMessage);
         }
 
         /************************
@@ -288,8 +353,9 @@ export default function ExplorerPage() {
           const pendingTxData = await pendingTxResponse.json();
           if (pendingTxData.error) throw new Error(pendingTxData.error.message);
           setPendingTxns(parseInt(pendingTxData.result, 16));
-        } catch (err: any) {
-          console.warn("Pending Txns fetch failed:", err.message);
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : "Unknown error";
+          console.warn("Pending Txns fetch failed:", errorMessage);
         }
 
         /************************
@@ -311,14 +377,31 @@ export default function ExplorerPage() {
           if (blockNumberData.error) throw new Error(blockNumberData.error.message);
           latestBlockNumber = parseInt(blockNumberData.result, 16);
           setLatestBlock(latestBlockNumber);
-        } catch (err: any) {
-          console.warn("Latest Block Number fetch failed:", err.message);
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : "Unknown error";
+          console.warn("Latest Block Number fetch failed:", errorMessage);
         }
 
         /************************
          * 5) Fetch the Last 3 Blocks
          ************************/
-        let blocksJson: any[] = [];
+        let blocksJson: Array<{
+          error?: { message: string };
+          result?: {
+            number: string;
+            hash: string;
+            timestamp: string;
+            transactions: Array<{
+              hash: string;
+              from: string;
+              to?: string;
+              value?: string;
+            }>;
+            miner?: string;
+            gasUsed: string;
+            difficulty: string;
+          };
+        }> = [];
         let blockData: Block[] = [];
         try {
           const blockPromises = [];
@@ -340,8 +423,9 @@ export default function ExplorerPage() {
           const blockResponses = await Promise.all(blockPromises);
           blocksJson = await Promise.all(blockResponses.map((r) => r.json()));
 
-          blockData = blocksJson.map((b: any) => {
+          blockData = blocksJson.map((b) => {
             if (b.error) throw new Error(b.error.message);
+            if (!b.result) throw new Error("No result in block data");
             return {
               number: parseInt(b.result.number, 16),
               hash: b.result.hash,
@@ -364,9 +448,10 @@ export default function ExplorerPage() {
             setRecentBlocks(blockData);
             prevBlocksRef.current = blockData;
           }
-        } catch (err: any) {
-          console.warn("Block fetch failed:", err.message);
-          setError((prev) => ({ ...prev, blocks: `Error: ${err.message}` }));
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : "Unknown error";
+          console.warn("Block fetch failed:", errorMessage);
+          setError((prev) => ({ ...prev, blocks: `Error: ${errorMessage}` }));
         }
 
         /********************************************************
@@ -387,7 +472,7 @@ export default function ExplorerPage() {
         }
 
         /*******************************************
-         * 7) Build “Recent Transactions” from blocksJson
+         * 7) Build "Recent Transactions" from blocksJson
          *******************************************/
         try {
           const txTemp: Transaction[] = [];
@@ -416,9 +501,10 @@ export default function ExplorerPage() {
             setRecentTransactions(txTemp);
             prevTransactionsRef.current = txTemp;
           }
-        } catch (err: any) {
-          console.warn("Recent Tx fetch failed:", err.message);
-          setError((prev) => ({ ...prev, transactions: `Error: ${err.message}` }));
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : "Unknown error";
+          console.warn("Recent Tx fetch failed:", errorMessage);
+          setError((prev) => ({ ...prev, transactions: `Error: ${errorMessage}` }));
         }
 
         /*******************************************
@@ -456,13 +542,14 @@ export default function ExplorerPage() {
           if (transfersData.error) throw new Error(transfersData.error.message);
 
           const addrSet = new Set<string>();
-          transfersData.result.transfers.forEach((t: any) => {
+          transfersData.result.transfers.forEach((t: { from: string; to?: string }) => {
             addrSet.add(t.from);
             if (t.to) addrSet.add(t.to);
           });
           setActiveAddresses(addrSet.size);
-        } catch (err: any) {
-          console.warn("Active Addresses fetch failed:", err.message);
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : "Unknown error";
+          console.warn("Active Addresses fetch failed:", errorMessage);
         }
 
         /*******************************************
@@ -472,28 +559,37 @@ export default function ExplorerPage() {
 
         setLoading({ blocks: false, transactions: false, whales: false });
         setUpdating({ blocks: false, transactions: false, whales: false });
-      } catch (outerErr: any) {
-        console.error("Error fetching explorer data:", outerErr.message);
+      } catch (outerErr: unknown) {
+        const errorMessage = outerErr instanceof Error ? outerErr.message : "Unknown error";
+        console.error("Error fetching explorer data:", errorMessage);
         setError({
-          blocks: `Error: ${outerErr.message}`,
-          transactions: `Error: ${outerErr.message}`,
-          whales: `Error: ${outerErr.message}`,
+          blocks: `Error: ${errorMessage}`,
+          transactions: `Error: ${errorMessage}`,
+          whales: `Error: ${errorMessage}`,
         });
         setLoading({ blocks: false, transactions: false, whales: false });
         setUpdating({ blocks: false, transactions: false, whales: false });
       }
     },
-    [alchemyUrl, latestBlock, fetchWhaleTransactions]
+    [alchemyUrl, fetchWhaleTransactions, latestBlock] // Added back latestBlock dependency
   );
 
   // Initial fetch + poll every 15s
   useEffect(() => {
-    fetchData(true);
+    // Add a small delay to prevent flickering on initial load
+    const initialTimer = setTimeout(() => {
+      fetchData(true);
+    }, 100);
+    
     const interval = setInterval(() => fetchData(false), 15000);
-    return () => clearInterval(interval);
-  }, [alchemyUrl, fetchData]);
+    
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
+  }, [fetchData]); // Removed alchemyUrl dependency since it's already in fetchData
 
-  /** ──────────── handleSearch ──────────── **/
+  /** ──────────── Enhanced handleSearch ──────────── **/
   const handleSearch = useCallback(() => {
     const query = searchQuery.trim();
     if (/^0x[a-fA-F0-9]{40}$/.test(query)) {
@@ -505,7 +601,9 @@ export default function ExplorerPage() {
     } else {
       setToastMessage("Invalid search query. Please enter a valid address, tx hash, or block number.");
     }
-  }, [searchQuery, router]);
+    setShowSuggestions(false);
+    saveSearchHistory(query); // Save search history on successful search
+  }, [searchQuery, router, saveSearchHistory]);
 
   /** ──────────── retryFetch ──────────── **/
   const retryFetch = useCallback(
@@ -519,18 +617,22 @@ export default function ExplorerPage() {
 
   /** ──────────── Error State ──────────── **/
   const ErrorState = ({ message, onRetry }: { message: string; onRetry: () => void }) => (
-    <div className="flex flex-col items-center justify-center py-4">
+    <motion.div 
+      className="flex flex-col items-center justify-center py-4"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+    >
       <p className="text-red-400 text-center uppercase text-xs">{message}</p>
       <button
         onClick={onRetry}
-        className="mt-2 px-3 py-1 bg-blue-500/20 hover:bg-blue-500/40 rounded-lg text-blue-400 border border-blue-500/30 text-xs font-medium uppercase transition"
+        className="mt-2 px-3 py-1 bg-blue-500/20 hover:bg-blue-500/40 rounded-lg text-blue-400 border border-blue-500/30 text-xs font-medium uppercase transition-all duration-200 hover:scale-105"
       >
         Retry
       </button>
-    </div>
+    </motion.div>
   );
 
-  /** ──────────── ExplorerPanel ──────────── **/
+  /** ──────────── Enhanced ExplorerPanel ──────────── **/
   interface ExplorerPanelProps<T> {
     title: string;
     isLoading: boolean;
@@ -555,43 +657,70 @@ export default function ExplorerPage() {
     retry,
   }: ExplorerPanelProps<T>) {
     return (
-      // Make panel flex-1 and flex-col so all three panels are equal height
-      <div className="flex-1 flex flex-col border border-blue-500/30 bg-[#141A2F]">
-        {/* Panel Header */}
-        <div className="px-4 sm:px-6 py-3 flex items-center border-b border-blue-500/30">
-          <h2 className="text-lg font-bold text-gray-200 uppercase flex-1">{title}</h2>
-          {isUpdating && <Loader />}
+      <motion.div
+        className="flex-1 rounded-lg border border-blue-500/30 bg-gray-800 p-4"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+      >
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold text-gray-200 uppercase">{title}</h3>
+          <Link
+            href={viewAllHref}
+            className="flex items-center gap-1 text-blue-400 hover:text-blue-300 text-xs uppercase font-medium transition-all duration-200 hover:scale-105"
+          >
+            View All
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
         </div>
 
-        {/* Panel Body: flex-1, and content arranged in column so “View All” is pushed to bottom */}
-        <div className="p-3 flex-1 flex flex-col">
-          {isLoading ? (
-            <div className="flex justify-center items-center flex-1">
-              <Loader />
-            </div>
-          ) : error ? (
+        <div className="space-y-3">
+          {error ? (
             <ErrorState message={error} onRetry={retry} />
-          ) : items.length > 0 ? (
-            <div className="flex-1 flex flex-col">
-              <div className="space-y-3 overflow-hidden">
-                {items.map((item) => (
-                  <div key={(item as any).hash ?? Math.random()}>{renderItem(item)}</div>
-                ))}
-              </div>
-              {/* “View All” centered at the bottom */}
-              <div className="mt-auto flex justify-center pt-2">
-                <Link href={viewAllHref} className="text-blue-400 hover:underline text-xs uppercase">
-                  View All {title}
-                </Link>
-              </div>
+          ) : isLoading ? (
+            <div className="space-y-3">
+              {[...Array(3)].map((_, i) => (
+                <motion.div
+                  key={i}
+                  className="h-16 bg-gradient-to-r from-gray-700 to-gray-600 animate-pulse rounded-lg"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                />
+              ))}
             </div>
+          ) : items.length > 0 ? (
+            <>
+              {items.map((item, idx) => (
+                <motion.div
+                  key={idx}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: idx * 0.05 }}
+                >
+                  {renderItem(item)}
+                </motion.div>
+              ))}
+              {isUpdating && (
+                <motion.div
+                  className="flex items-center justify-center py-2"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                >
+                  <div className="flex items-center gap-2 text-blue-400 text-xs">
+                    <div className="w-3 h-3 border border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                    <span>Updating...</span>
+                  </div>
+                </motion.div>
+              )}
+            </>
           ) : (
-            <p className="text-gray-400 text-center py-4 uppercase text-xs flex-1 flex items-center justify-center">
-              {emptyMessage}
-            </p>
+            <p className="text-center text-gray-400 py-8 text-sm">{emptyMessage}</p>
           )}
         </div>
-      </div>
+      </motion.div>
     );
   }
 
@@ -618,110 +747,205 @@ export default function ExplorerPage() {
         }
       `}</style>
 
-      {/* ─── Toast Notification ─── */}
-      {toastMessage && (
-        <div
-          role="alert"
-          aria-live="assertive"
-          className={`fixed top-4 right-4 px-4 py-2 rounded-lg ${themeClasses.toastBg} text-white text-sm shadow-lg z-50`}
-        >
-          {toastMessage}
-        </div>
-      )}
+      {/* ─── Enhanced Toast Notification ─── */}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            role="alert"
+            aria-live="assertive"
+            className={`fixed top-4 right-4 px-4 py-2 rounded-lg ${themeClasses.toastBg} text-white text-sm shadow-lg z-50`}
+            initial={{ opacity: 0, y: -20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.9 }}
+            transition={{ duration: 0.2 }}
+          >
+            {toastMessage}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* ─── Header (unchanged) ─── */}
-      <div className="relative z-10">
-        <Header />
-      </div>
+      {/* ─── Header ─── */}
+      <Header />
 
-      {/* ─── Hero / Search with Background Image ─── */}
-      <section className="relative w-full min-h-[300px]">
-        {/* Background <img> sits absolutely under everything */}
-        <img
+      {/* ─── Enhanced Hero / Search with Background Image ─── */}
+      <section className="relative w-full min-h-[300px] sm:min-h-[400px]">
+        {/* Background Image sits absolutely under everything */}
+        <Image
           src="https://i.imgur.com/YVycXUz.jpeg"
           alt="Hero background"
+          fill
           className="absolute inset-0 w-full h-full object-cover"
+          priority
         />
-        {/* Semi‐transparent black overlay (30% opacity now) */}
-        <div className="absolute inset-0 bg-black/30" />
+        {/* Enhanced overlay with gradient */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/30 to-black/50" />
 
         {/* Content sits on top via z‐index */}
-        <div className="relative z-10 flex flex-col justify-center min-h-[300px]">
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-200 uppercase mb-4 text-center">
+        <div className="relative z-10 flex flex-col justify-center min-h-[300px] sm:min-h-[400px]">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+            <motion.h1 
+              className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold text-gray-200 uppercase mb-4 sm:mb-6 text-center leading-tight"
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8 }}
+            >
               Blockchain Explorer
-            </h1>
+            </motion.h1>
 
-            {/* Search Input + Button */}
-            <div className="grid grid-cols-1 md:grid-cols-[3fr,1fr] gap-3 mx-auto max-w-xl">
+            {/* Enhanced Search Input + Button */}
+            <motion.div 
+              className="grid grid-cols-1 md:grid-cols-[3fr,1fr] gap-3 mx-auto max-w-2xl relative"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.2 }}
+            >
               <div className="relative">
                 <input
                   type="text"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setShowSuggestions(true);
+                  }}
                   onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                  onFocus={() => setShowSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                   placeholder="Search address, tx hash, or block number"
                   aria-label="Search blockchain data"
-                  className={`w-full py-3 pl-10 pr-4 text-base rounded-lg ${themeClasses.containerBg} ${themeClasses.text} border ${themeClasses.border} placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400/50 transition duration-300`}
+                  className={`w-full py-3 sm:py-4 pl-10 sm:pl-12 pr-4 text-sm sm:text-base rounded-xl ${themeClasses.containerBg} ${themeClasses.text} border-2 ${themeClasses.border} placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-blue-400 transition-all duration-300 shadow-lg`}
                 />
-                <SearchIcon className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                <SearchIcon className="w-5 h-5 sm:w-6 sm:h-6 absolute left-3 sm:left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                
+                {/* Enhanced Search Suggestions */}
+                <AnimatePresence>
+                  {showSuggestions && searchSuggestions.length > 0 && (
+                    <motion.div
+                      className="absolute top-full left-0 right-0 mt-2 bg-gray-900 border border-blue-500/30 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto"
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      {searchSuggestions.map((suggestion, index) => {
+                        const isHistory = suggestion.startsWith('History: ');
+                        const actualQuery = isHistory ? suggestion.replace('History: ', '') : suggestion.split(': ')[1] || suggestion;
+                        
+                        return (
+                          <button
+                            key={index}
+                            onClick={() => {
+                              if (isHistory) {
+                                setSearchQuery(actualQuery);
+                              } else {
+                                setSearchQuery(actualQuery);
+                              }
+                              setShowSuggestions(false);
+                            }}
+                            className={`w-full px-4 py-3 text-left text-sm hover:bg-blue-500/20 transition-colors duration-200 border-b border-blue-500/20 last:border-b-0 ${
+                              isHistory ? 'text-gray-300' : 'text-gray-200'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span>{suggestion}</span>
+                              {isHistory && (
+                                <span className="text-xs text-gray-500">History</span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                      
+                      {/* Clear History Button */}
+                      {searchHistory.length > 0 && !searchQuery.trim() && (
+                        <button
+                          onClick={() => {
+                            clearSearchHistory();
+                            setShowSuggestions(false);
+                          }}
+                          className="w-full px-4 py-2 text-left text-xs text-red-400 hover:bg-red-500/20 transition-colors duration-200 border-t border-blue-500/20"
+                        >
+                          Clear Search History
+                        </button>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
+              
               <button
                 onClick={handleSearch}
-                disabled={!searchQuery}
-                className={`py-3 rounded-lg text-sm font-medium uppercase text-blue-400 border ${themeClasses.border} ${
-                  searchQuery ? `${themeClasses.buttonBg} ${themeClasses.buttonHover}` : themeClasses.buttonDisabled
-                } transition duration-200 disabled:cursor-not-allowed`}
-                aria-label="Search"
+                disabled={!searchQuery.trim()}
+                className={`py-3 sm:py-4 px-6 text-sm sm:text-base font-semibold rounded-xl border-2 ${themeClasses.border} ${themeClasses.buttonBg} hover:${themeClasses.buttonHover} disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:scale-105 shadow-lg`}
               >
                 Search
               </button>
-            </div>
+            </motion.div>
 
-            {/* Latest Block + Gas Price */}
-            <div className="mt-6 flex flex-col sm:flex-row justify-center gap-4 text-center sm:text-left">
-              <div>
-                <p className="text-xs text-blue-400 uppercase">Latest Block</p>
-                <p className="text-base font-semibold">{latestBlock.toLocaleString()}</p>
+            {/* Enhanced Latest Block and Gas Price Display */}
+            <motion.div 
+              className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6 sm:mt-8 max-w-md mx-auto"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.4 }}
+            >
+              <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 sm:p-4 backdrop-blur-sm">
+                <p className="text-xs sm:text-sm text-blue-400 uppercase font-medium">Latest Block</p>
+                <p className="text-lg sm:text-xl font-bold text-gray-200">{latestBlock.toLocaleString()}</p>
               </div>
-              <div>
-                <p className="text-xs text-blue-400 uppercase">Gas Price</p>
-                <p className="text-base font-semibold">{gasPrice}</p>
+              <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 sm:p-4 backdrop-blur-sm">
+                <p className="text-xs sm:text-sm text-green-400 uppercase font-medium">Gas Price</p>
+                <p className="text-lg sm:text-xl font-bold text-gray-200">{gasPrice}</p>
               </div>
-            </div>
+            </motion.div>
           </div>
         </div>
       </section>
 
-      {/* ─── Network Stats ─── */}
-      <section className="w-full">
-        <div className="mx-auto px-4 sm:px-6 py-6 max-w-5xl">
-          <h2 className="text-lg sm:text-xl font-bold text-gray-200 uppercase mb-3 text-center">
-            Network Stats
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      {/* ─── Enhanced Network Stats ─── */}
+      <section className="w-full bg-gradient-to-b from-gray-900 to-gray-950">
+        <div className="mx-auto px-4 sm:px-6 py-6 sm:py-8 max-w-6xl">
+          <motion.h2 
+            className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-200 uppercase mb-4 sm:mb-6 text-center"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+          >
+            Network Statistics
+          </motion.h2>
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
             {[
-              { title: "Transactions", value: totalTxns.toLocaleString() },
-              { title: "Pending Txns", value: pendingTxns.toLocaleString() },
-              { title: "Active Addresses", value: activeAddresses.toLocaleString() },
-              { title: "Avg Block Time", value: avgBlockTime },
-              { title: "Network Hash Rate", value: networkHashRate },
-              { title: "Avg Gas Fee", value: avgGasFee },
+              { title: "Transactions", value: totalTxns.toLocaleString(), color: "blue" },
+              { title: "Pending Txns", value: pendingTxns.toLocaleString(), color: "yellow" },
+              { title: "Active Addresses", value: activeAddresses.toLocaleString(), color: "green" },
+              { title: "Avg Block Time", value: avgBlockTime, color: "purple" },
+              { title: "Network Hash Rate", value: networkHashRate, color: "red" },
+              { title: "Avg Gas Fee", value: avgGasFee, color: "teal" },
             ].map((metric, idx) => (
-              <div
+              <motion.div
                 key={idx}
-                className={`flex flex-col items-center p-3 border ${themeClasses.border} rounded-md ${themeClasses.containerBg}`}
+                className={`flex flex-col items-center p-3 sm:p-4 border border-blue-500/30 rounded-xl bg-gradient-to-br from-gray-800 to-gray-700 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 ${
+                  loading.blocks && loading.transactions ? 'animate-pulse' : ''
+                }`}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: idx * 0.1 }}
               >
-                <p className="text-xs text-blue-400 uppercase text-center">{metric.title}</p>
-                <p className="text-base font-semibold mt-1">{metric.value}</p>
-              </div>
+                <p className="text-xs text-blue-400 uppercase text-center font-medium leading-tight">{metric.title}</p>
+                <p className="text-sm sm:text-lg font-bold mt-1 sm:mt-2 text-center">
+                  {loading.blocks && loading.transactions ? (
+                    <div className="w-16 h-6 bg-gray-600 rounded animate-pulse"></div>
+                  ) : (
+                    metric.value
+                  )}
+                </p>
+              </motion.div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ─── Three Data Panels ─── */}
-      <section className="w-full max-w-6xl mx-auto px-4 sm:px-6 py-6 flex flex-col lg:flex-row lg:space-x-4 space-y-4 lg:space-y-0">
+      {/* ─── Enhanced Three Data Panels ─── */}
+      <section className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 flex flex-col lg:flex-row lg:space-x-6 space-y-6 lg:space-y-0">
         {/* Latest Blocks Panel */}
         <ExplorerPanel
           title="Latest Blocks"
@@ -730,19 +954,19 @@ export default function ExplorerPage() {
           error={error.blocks}
           items={recentBlocks}
           renderItem={(block: Block) => (
-            <div className="py-2">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                <div>
+            <div className="bg-gradient-to-br from-gray-800 to-gray-700 p-3 sm:p-4 rounded-lg border border-blue-500/20 hover:border-blue-400/40 transition-all duration-300 hover:shadow-lg">
+              <div className="flex flex-col justify-between items-start gap-2 sm:gap-3">
+                <div className="w-full">
                   <Link
                     href={`/explorer/latest/block/${block.number}`}
-                    className="text-blue-400 font-semibold hover:underline text-sm"
+                    className="text-blue-400 font-semibold hover:text-blue-300 text-sm transition-colors"
                   >
                     Block #{block.number.toLocaleString()}
                   </Link>
                   <p className="text-gray-400 text-xs mt-1">{block.timestamp}</p>
                 </div>
-                <div className="text-left sm:text-right space-y-1">
-                  <p className="text-gray-200 text-xs">{block.transactionCount} txns</p>
+                <div className="w-full space-y-1">
+                  <p className="text-gray-200 text-xs font-medium">{block.transactionCount} txns</p>
                   <p className="text-gray-400 text-xs">Gas Used: {block.gasUsed}</p>
                   <p className="text-gray-400 text-xs">Difficulty: {block.difficulty}</p>
                   <p className="text-gray-400 text-xs truncate">
@@ -765,39 +989,26 @@ export default function ExplorerPage() {
           error={error.transactions}
           items={recentTransactions}
           renderItem={(tx: Transaction) => (
-            <div className="py-2">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                <div>
+            <div className="bg-gradient-to-br from-gray-800 to-gray-700 p-3 sm:p-4 rounded-lg border border-blue-500/20 hover:border-blue-400/40 transition-all duration-300 hover:shadow-lg">
+              <div className="flex flex-col justify-between items-start gap-2 sm:gap-3">
+                <div className="w-full">
                   <Link
-                    href={`/explorer/latest/tx/${tx.hash}`}
-                    className="text-blue-400 font-semibold hover:underline text-sm truncate block max-w-[120px] sm:max-w-none"
+                    href={`/explorer/tx/${tx.hash}`}
+                    className="text-blue-400 font-semibold hover:text-blue-300 text-sm transition-colors break-all"
                   >
-                    {tx.hash.slice(0, 6)}…{tx.hash.slice(-4)}
+                    {tx.hash.slice(0, 8)}…{tx.hash.slice(-6)}
                   </Link>
                   <p className="text-gray-400 text-xs mt-1">{tx.timestamp}</p>
                 </div>
-                <div className="text-left sm:text-right space-y-1">
-                  <p className="text-gray-200 text-xs truncate">
-                    From: {tx.from.slice(0, 6)}…{tx.from.slice(-4)}
+                <div className="w-full space-y-1">
+                  <p className="text-gray-200 text-xs">
+                    From: <span className="text-gray-400 break-all">{tx.from.slice(0, 8)}…{tx.from.slice(-6)}</span>
                   </p>
-                  <p className="text-gray-200 text-xs mt-1 truncate">
-                    To: {tx.to === "N/A" ? "N/A" : `${tx.to.slice(0, 6)}…${tx.to.slice(-4)}`}
+                  <p className="text-gray-200 text-xs">
+                    To: <span className="text-gray-400 break-all">{tx.to.slice(0, 8)}…{tx.to.slice(-6)}</span>
                   </p>
-                  <p className="text-gray-400 text-xs mt-1">{tx.value} ETH</p>
+                  <p className="text-gray-200 text-xs font-medium">Value: {tx.value}</p>
                 </div>
-              </div>
-              <div className="flex justify-end gap-2 mt-1">
-                {/* Link into your own route */}
-                <Link href={`/explorer/latest/tx/${tx.hash}`}>
-                  <ExternalLinkIcon className="w-4 h-4 text-blue-400 hover:text-blue-500 transition" />
-                </Link>
-                <button
-                  onClick={() => copyToClipboard(tx.hash)}
-                  className={`p-1 ${themeClasses.containerBg} border ${themeClasses.border} rounded-full transition hover:bg-blue-500/20`}
-                  aria-label="Copy transaction hash"
-                >
-                  <ClipboardIcon className="w-4 h-4 text-blue-400" />
-                </button>
               </div>
             </div>
           )}
@@ -814,43 +1025,30 @@ export default function ExplorerPage() {
           error={error.whales}
           items={whaleTransactions}
           renderItem={(tx: WhaleTransaction) => (
-            <div className="py-2">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                <div>
+            <div className="bg-gradient-to-br from-gray-800 to-gray-700 p-3 sm:p-4 rounded-lg border border-blue-500/20 hover:border-blue-400/40 transition-all duration-300 hover:shadow-lg">
+              <div className="flex flex-col justify-between items-start gap-2 sm:gap-3">
+                <div className="w-full">
                   <Link
-                    href={`/explorer/latest/tx/${tx.hash}`}
-                    className="text-blue-400 font-semibold hover:underline text-sm truncate block max-w-[120px] sm:max-w-none"
+                    href={`/explorer/tx/${tx.hash}`}
+                    className="text-blue-400 font-semibold hover:text-blue-300 text-sm transition-colors break-all"
                   >
-                    {tx.hash.slice(0, 6)}…{tx.hash.slice(-4)}
+                    {tx.hash.slice(0, 8)}…{tx.hash.slice(-6)}
                   </Link>
                   <p className="text-gray-400 text-xs mt-1">{tx.timestamp}</p>
                 </div>
-                <div className="text-left sm:text-right space-y-1">
-                  <p className="text-gray-200 text-xs truncate">
-                    From: {tx.from.slice(0, 6)}…{tx.from.slice(-4)}
+                <div className="w-full space-y-1">
+                  <p className="text-gray-200 text-xs">
+                    From: <span className="text-gray-400 break-all">{tx.from.slice(0, 8)}…{tx.from.slice(-6)}</span>
                   </p>
-                  <p className="text-gray-200 text-xs mt-1 truncate">
-                    To: {tx.to.slice(0, 6)}…{tx.to.slice(-4)}
+                  <p className="text-gray-200 text-xs">
+                    To: <span className="text-gray-400 break-all">{tx.to.slice(0, 8)}…{tx.to.slice(-6)}</span>
                   </p>
-                  <p className="text-gray-400 text-xs mt-1">{tx.value} ETH</p>
+                  <p className="text-gray-200 text-xs font-medium text-green-400">Value: {tx.value}</p>
                 </div>
-              </div>
-              <div className="flex justify-end gap-2 mt-1">
-                {/* Link into your own route */}
-                <Link href={`/explorer/latest/tx/${tx.hash}`}>
-                  <ExternalLinkIcon className="w-4 h-4 text-blue-400 hover:text-blue-500 transition" />
-                </Link>
-                <button
-                  onClick={() => copyToClipboard(tx.hash)}
-                  className={`p-1 ${themeClasses.containerBg} border ${themeClasses.border} rounded-full transition hover:bg-blue-500/20`}
-                  aria-label="Copy transaction hash"
-                >
-                  <ClipboardIcon className="w-4 h-4 text-blue-400" />
-                </button>
               </div>
             </div>
           )}
-          viewAllHref="/whale-watchers"
+          viewAllHref="/whale-watcher"
           emptyMessage="No whale transactions found"
           retry={() => retryFetch("whales")}
         />

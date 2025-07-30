@@ -7,16 +7,16 @@ import {
   query,
   where,
   getDocs,
-  DocumentData,
 } from 'firebase/firestore';
+import type { DocumentData } from 'firebase/firestore';
 import ArticleDetail from './ArticleDetail';
 
 interface ServerProps {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }
 
 export default async function ArticleDetailPage({ params }: ServerProps) {
-  const { slug } = params;
+  const { slug } = await params;
 
   // ─── Fetch the single article from Firestore on the server ───
   const articlesCol = collection(db, 'articles');

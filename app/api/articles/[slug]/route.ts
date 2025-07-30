@@ -10,9 +10,9 @@ import {
 
 export async function GET(
   _request: Request,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
-  const { slug } = params;
+  const { slug } = await params;
   try {
     console.log('API requested slug:', slug);
     const articlesCol = collection(db, 'articles');

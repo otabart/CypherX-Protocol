@@ -1,5 +1,5 @@
 // pages/api/user/updateProfile.ts
-import { NextApiRequest, NextApiResponse } from "next";
+import type { NextApiRequest, NextApiResponse } from "next";
 import { db } from "@/lib/firebase";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
@@ -15,7 +15,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         updatedAt: serverTimestamp(),
       }, { merge: true });
       res.status(200).json({ success: true, message: "Profile updated" });
-    } catch (error) {
+    } catch {
       res.status(500).json({ success: false, message: "Failed to update profile" });
     }
   } else {

@@ -34,9 +34,9 @@ interface TokenMetadataResult {
 
 export async function GET(
   _request: Request,
-  { params }: { params: { address: string } }
+  { params }: { params: Promise<{ address: string }> }
 ) {
-  const { address } = params;
+  const { address } = await params;
 
   // Validate Ethereum address
   if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {

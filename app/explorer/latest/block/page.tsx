@@ -4,8 +4,27 @@ import React, { useState, useEffect } from "react";
 import { formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
 import { db } from "../../../../lib/firebase.ts";
 import { doc, getDoc, setDoc, query, where, getDocs, collection } from "firebase/firestore";
+import {
+  FiSearch,
+  FiRefreshCw,
+  FiFilter,
+  FiEye,
+  FiHash,
+  FiClock,
+  FiActivity,
+  FiZap,
+  FiDatabase,
+  FiArrowRight,
+  FiArrowLeft,
+  FiGrid,
+  FiList,
+  FiBarChart,
+} from "react-icons/fi";
+import Header from "../../../components/Header";
+import Footer from "../../../components/Footer";
 
 interface Block {
   number: number;
@@ -24,9 +43,10 @@ export default function CypherScanPage() {
   const [page, setPage] = useState<number>(1);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("All");
-  const [theme, setTheme] = useState<string>("dark");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("list");
+  const [showStats, setShowStats] = useState<boolean>(true);
   const router = useRouter();
-  const blocksPerPage = 50; // Display 50 blocks per page, we'll fetch 100 total and paginate
+  const blocksPerPage = 50;
 
   const fetchBlocks = async (startPage: number) => {
     setLoading(true);
@@ -60,9 +80,9 @@ export default function CypherScanPage() {
       }
 
       // Calculate the range for the last 100 blocks, adjusted for pagination
-      const totalBlocksToFetch = 100; // We want the last 100 blocks
-      const startBlock = Math.max(latestBlock - totalBlocksToFetch + 1, 0); // Start from (latest - 99)
-      const endBlock = latestBlock; // Up to the latest block
+      const totalBlocksToFetch = 100;
+      const startBlock = Math.max(latestBlock - totalBlocksToFetch + 1, 0);
+      const endBlock = latestBlock;
 
       // Adjust for pagination
       const startIndex = (startPage - 1) * blocksPerPage;
@@ -126,8 +146,9 @@ export default function CypherScanPage() {
           try {
             await setDoc(blockRef, blockInfo);
             console.log(`Block ${blockNumber} stored in Firestore`);
-          } catch (writeError: any) {
-            console.warn(`Failed to store block ${blockNumber} in Firestore: ${writeError.message}`);
+          } catch (writeError: unknown) {
+            const errorMessage = writeError instanceof Error ? writeError.message : "Unknown error";
+            console.warn(`Failed to store block ${blockNumber} in Firestore: ${errorMessage}`);
           }
         }
       }
@@ -136,9 +157,10 @@ export default function CypherScanPage() {
       if (fetchedBlocks.length === 0) {
         setError("No blocks found in the fetched range");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Fetch blocks error:", err);
-      setError(err.message);
+      const errorMessage = err instanceof Error ? err.message : "Unknown error";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -166,9 +188,10 @@ export default function CypherScanPage() {
       } else {
         setError("Invalid search: Enter a block number or valid hash");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Search error:", err);
-      setError("Failed to search: " + err.message);
+      const errorMessage = err instanceof Error ? err.message : "Unknown error";
+      setError("Failed to search: " + errorMessage);
     } finally {
       setLoading(false);
     }
@@ -178,30 +201,13 @@ export default function CypherScanPage() {
     fetchBlocks(page);
   };
 
-  const toggleTheme = () => {
-    setTheme(theme === "dark" ? "light" : "dark");
-  };
-
   const filteredBlocks = blocks.filter((block) =>
     filterStatus === "All" ? true : block.status === filterStatus
   );
 
-  const themeClasses = {
-    background: theme === "dark" ? "bg-gray-950" : "bg-gray-100",
-    text: theme === "dark" ? "text-gray-200" : "text-gray-900",
-    border: theme === "dark" ? "border-blue-500/30" : "border-gray-300",
-    headerBg: theme === "dark" ? "bg-gray-950" : "bg-gray-200",
-    containerBg: theme === "dark" ? "bg-gray-950" : "bg-white",
-    hoverBg: theme === "dark" ? "hover:bg-gray-900" : "hover:bg-gray-200",
-    placeholder: theme === "dark" ? "placeholder-gray-400" : "placeholder-gray-500",
-    secondaryText: theme === "dark" ? "text-gray-400" : "text-gray-600",
-    errorText: theme === "dark" ? "text-red-400" : "text-red-600",
-    buttonBg: theme === "dark" ? "bg-blue-500/20" : "bg-blue-500",
-    buttonHover: theme === "dark" ? "hover:bg-blue-500/40" : "hover:bg-blue-600",
-    buttonDisabled: theme === "dark" ? "bg-gray-800" : "bg-gray-400",
-    shadow: theme === "dark" ? "shadow-[0_2px_8px_rgba(59,130,246,0.2)]" : "shadow-[0_2px_8px_rgba(0,0,0,0.1)]",
-    filterBg: theme === "dark" ? "bg-gray-950" : "bg-white",
-  };
+  const totalTransactions = blocks.reduce((sum, block) => sum + block.transactions, 0);
+  const averageTransactions = blocks.length > 0 ? Math.round(totalTransactions / blocks.length) : 0;
+  const latestBlockNumber = blocks.length > 0 ? Math.max(...blocks.map(b => b.number)) : 0;
 
   useEffect(() => {
     if (!db) {
@@ -216,195 +222,359 @@ export default function CypherScanPage() {
   }, [page]);
 
   return (
-    <div className={`min-h-screen w-full font-mono ${themeClasses.background} ${themeClasses.text}`}>
-      <div className={`border ${themeClasses.border} ${themeClasses.shadow} w-full min-h-screen`}>
-        <div className={`flex items-center justify-between px-4 py-3 sm:px-3 sm:py-2 ${themeClasses.headerBg}`}>
-          <h1 className={`${themeClasses.text} text-lg sm:text-base font-semibold uppercase`}> LATEST BLOCKS </h1>
-          <button
-            onClick={toggleTheme}
-            className={`p-2 sm:p-1 ${themeClasses.buttonBg} ${themeClasses.buttonHover} border border-blue-500/30 transition-colors ${themeClasses.shadow}`}
-          >
-            {theme === "dark" ? (
-              <svg
-                className="w-5 h-5 sm:w-4 sm:h-4 text-gray-200"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
-                />
-              </svg>
-            ) : (
-              <svg
-                className="w-5 h-5 sm:w-4 sm:h-4 text-gray-900"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
-                />
-              </svg>
-            )}
-          </button>
-        </div>
-        <div className="p-4 sm:p-3">
-          <div className="flex flex-col space-y-4 sm:space-y-3 mb-4 sm:mb-3">
-            <form onSubmit={handleSearch} className={`flex items-center w-full ${themeClasses.containerBg} border ${themeClasses.border} p-2 flex-wrap`}>
-              <span className="text-blue-400 mr-2 sm:mr-1 text-sm sm:text-xs shrink-0">user@cypherscan:~$</span>
-              <input
-                type="text"
-                placeholder="find block/hash..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className={`flex-1 bg-transparent focus:outline-none ${themeClasses.text} ${themeClasses.placeholder} text-sm sm:text-xs min-w-0`}
-              />
+    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 flex flex-col">
+      <Header />
+      
+      <main className="flex-1 container mx-auto px-4 py-8">
+        {/* Header Section */}
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-4xl font-bold text-white mb-2 flex items-center">
+                <FiDatabase className="w-8 h-8 mr-3 text-blue-400" />
+                Block Explorer
+              </h1>
+              <p className="text-gray-400">Real-time blockchain data from Base network</p>
+            </div>
+            <div className="flex items-center gap-3">
               <button
-                type="submit"
-                className={`px-2 py-1 ${themeClasses.buttonBg} text-blue-400 ${themeClasses.buttonHover} border border-blue-500/30 transition-colors ${themeClasses.shadow} text-sm sm:text-xs shrink-0 mt-1 sm:mt-0 uppercase`}
+                onClick={() => setShowStats(!showStats)}
+                className="p-2 bg-gray-800 rounded-lg text-gray-300 hover:bg-gray-700 transition-colors"
+                title="Toggle Statistics"
               >
-                EXEC
+                <FiBarChart className="w-5 h-5" />
               </button>
-            </form>
-            <div className="flex items-center space-x-2">
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className={`${themeClasses.filterBg} ${themeClasses.text} border ${themeClasses.border} px-2 py-1 text-sm sm:text-xs uppercase`}
-              >
-                <option value="All">All Statuses</option>
-                <option value="Finalized">Finalized</option>
-              </select>
               <button
-                onClick={handleRefresh}
-                className={`px-2 py-1 ${themeClasses.buttonBg} text-blue-400 ${themeClasses.buttonHover} border border-blue-500/30 transition-colors ${themeClasses.shadow} flex items-center text-sm sm:text-xs uppercase`}
-                disabled={loading}
+                onClick={() => setViewMode(viewMode === "list" ? "grid" : "list")}
+                className="p-2 bg-gray-800 rounded-lg text-gray-300 hover:bg-gray-700 transition-colors"
+                title={`Switch to ${viewMode === "list" ? "Grid" : "List"} View`}
               >
-                <svg
-                  className={`w-4 h-4 sm:w-4 sm:h-4 mr-1 ${loading ? "animate-spin" : ""}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                  />
-                </svg>
-                REFRESH
+                {viewMode === "list" ? <FiGrid className="w-5 h-5" /> : <FiList className="w-5 h-5" />}
               </button>
             </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm sm:text-xs">
-              <thead>
-                <tr className={`text-white border-b border-blue-500/30`}>
-                  <th className="py-2 px-2 text-left font-semibold uppercase">BLOCK</th>
-                  <th className="py-2 px-2 text-left font-semibold uppercase">STATUS</th>
-                  <th className="py-2 px-2 text-left font-semibold uppercase">TIMESTAMP</th>
-                  <th className="py-2 px-2 text-left font-semibold uppercase">HASH</th>
-                  <th className="py-2 px-2 text-left font-semibold uppercase">TXNS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={5} className="text-center py-4 sm:py-3">
-                      <div className="flex justify-center items-center">
-                        <svg
-                          className="w-6 h-6 sm:w-5 sm:h-5 animate-spin text-blue-400"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="2"
-                            d="M4 12a8 8 0 018-8v8h8a8 8 0 01-16 0z"
-                          />
-                        </svg>
-                        <span className={`ml-2 ${themeClasses.secondaryText} text-sm sm:text-xs uppercase`}>[LOADING...]</span>
-                      </div>
-                    </td>
-                  </tr>
-                ) : error ? (
-                  <tr>
-                    <td colSpan={5} className={`text-center py-4 sm:py-3 ${themeClasses.errorText} text-sm sm:text-xs uppercase`}>
-                      ERR: {error}
-                    </td>
-                  </tr>
-                ) : filteredBlocks.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className={`text-center py-4 sm:py-3 ${themeClasses.secondaryText} text-sm sm:text-xs uppercase`}>
-                      [NO BLOCKS DETECTED]
-                    </td>
-                  </tr>
-                ) : (
-                  filteredBlocks.map((block) => (
-                    <tr
-                      key={block.number}
-                      className={`border-b ${themeClasses.border} ${themeClasses.hoverBg} transition-colors`}
-                    >
-                      <td className="py-2 px-2">
-                        <Link
-                          href={`/explorer/latest/block/${block.number}`}
-                          className="text-blue-400 hover:underline"
-                        >
-                          {block.number}
-                        </Link>
-                      </td>
-                      <td className="py-2 px-2">
-                        <span className="text-green-400 whitespace-nowrap">[ {block.status} ]</span>
-                      </td>
-                      <td className={`py-2 px-2 ${themeClasses.secondaryText}`}>{block.timestamp}</td>
-                      <td className="py-2 px-2 truncate">
-                        <Link
-                          href={`/explorer/latest/hash/${block.hash}`}
-                          className="text-blue-400 hover:underline"
-                        >
-                          {block.hash}
-                        </Link>
-                      </td>
-                      <td className="py-2 px-2">{block.transactions}</td>
+        </motion.div>
+
+        {/* Statistics Cards */}
+        <AnimatePresence>
+          {showStats && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8"
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.1 }}
+                className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg p-6 text-white"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-blue-200 text-sm font-medium">Latest Block</p>
+                    <p className="text-2xl font-bold">{latestBlockNumber.toLocaleString()}</p>
+                  </div>
+                  <FiHash className="w-8 h-8 text-blue-200" />
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.2 }}
+                className="bg-gradient-to-r from-green-600 to-green-700 rounded-lg p-6 text-white"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-green-200 text-sm font-medium">Total Transactions</p>
+                    <p className="text-2xl font-bold">{totalTransactions.toLocaleString()}</p>
+                  </div>
+                  <FiActivity className="w-8 h-8 text-green-200" />
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.3 }}
+                className="bg-gradient-to-r from-purple-600 to-purple-700 rounded-lg p-6 text-white"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-purple-200 text-sm font-medium">Avg Transactions</p>
+                    <p className="text-2xl font-bold">{averageTransactions}</p>
+                  </div>
+                  <FiActivity className="w-8 h-8 text-purple-200" />
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.4 }}
+                className="bg-gradient-to-r from-orange-600 to-orange-700 rounded-lg p-6 text-white"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-orange-200 text-sm font-medium">Blocks Loaded</p>
+                    <p className="text-2xl font-bold">{blocks.length}</p>
+                  </div>
+                  <FiZap className="w-8 h-8 text-orange-200" />
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Search and Controls */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6 mb-8 border border-gray-700"
+        >
+          <div className="flex flex-col lg:flex-row gap-4 items-center">
+            <form onSubmit={handleSearch} className="flex-1 w-full">
+              <div className="relative">
+                <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <input
+                  type="text"
+                  placeholder="Search by block number or hash..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </form>
+
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <FiFilter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="pl-10 pr-8 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none"
+                >
+                  <option value="All">All Statuses</option>
+                  <option value="Finalized">Finalized</option>
+                </select>
+              </div>
+
+              <button
+                onClick={handleRefresh}
+                disabled={loading}
+                className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FiRefreshCw className={`w-5 h-5 ${loading ? "animate-spin" : ""}`} />
+                Refresh
+              </button>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Error Display */}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 mb-6 text-red-400"
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></div>
+                Error: {error}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Blocks Display */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.3 }}
+          className="bg-gray-800/30 backdrop-blur-sm rounded-lg border border-gray-700 overflow-hidden"
+        >
+          {/* Table Header */}
+          <div className="bg-gray-800/50 px-6 py-4 border-b border-gray-700">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-white">Latest Blocks</h2>
+              <div className="flex items-center gap-2 text-sm text-gray-400">
+                <FiEye className="w-4 h-4" />
+                Showing {filteredBlocks.length} of {blocks.length} blocks
+              </div>
+            </div>
+          </div>
+
+          {/* Loading State */}
+          {loading && (
+            <div className="flex items-center justify-center py-12">
+              <div className="flex items-center gap-3">
+                <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                <span className="text-gray-400">Loading blocks...</span>
+              </div>
+            </div>
+          )}
+
+          {/* Blocks Table/Grid */}
+          {!loading && (
+            <div className="overflow-x-auto">
+              {viewMode === "list" ? (
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-gray-800/50 text-gray-300 text-sm">
+                      <th className="px-6 py-4 text-left font-medium">Block</th>
+                      <th className="px-6 py-4 text-left font-medium">Status</th>
+                      <th className="px-6 py-4 text-left font-medium">Timestamp</th>
+                      <th className="px-6 py-4 text-left font-medium">Hash</th>
+                      <th className="px-6 py-4 text-left font-medium">Transactions</th>
+                      <th className="px-6 py-4 text-left font-medium">Actions</th>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    <AnimatePresence>
+                      {filteredBlocks.map((block, index) => (
+                        <motion.tr
+                          key={block.number}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.05 }}
+                          className="border-b border-gray-700/50 hover:bg-gray-700/30 transition-colors"
+                        >
+                          <td className="px-6 py-4">
+                            <Link
+                              href={`/explorer/latest/block/${block.number}`}
+                              className="text-blue-400 hover:text-blue-300 font-mono font-medium"
+                            >
+                              #{block.number.toLocaleString()}
+                            </Link>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-900/30 text-green-400 border border-green-500/30">
+                              <div className="w-2 h-2 bg-green-400 rounded-full mr-2"></div>
+                              {block.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-gray-400">
+                            <div className="flex items-center gap-2">
+                              <FiClock className="w-4 h-4" />
+                              {block.timestamp}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <Link
+                              href={`/explorer/latest/hash/${block.hash}`}
+                              className="text-blue-400 hover:text-blue-300 font-mono text-sm truncate block max-w-xs"
+                            >
+                              {block.hash}
+                            </Link>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-900/30 text-blue-400 border border-blue-500/30">
+                              {block.transactions} txns
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <Link
+                              href={`/explorer/latest/block/${block.number}`}
+                              className="inline-flex items-center gap-1 px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm text-gray-300 transition-colors"
+                            >
+                              View
+                              <FiArrowRight className="w-3 h-3" />
+                            </Link>
+                          </td>
+                        </motion.tr>
+                      ))}
+                    </AnimatePresence>
+                  </tbody>
+                </table>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
+                  <AnimatePresence>
+                    {filteredBlocks.map((block, index) => (
+                      <motion.div
+                        key={block.number}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: index * 0.05 }}
+                        className="bg-gray-700/50 rounded-lg p-4 border border-gray-600 hover:border-gray-500 transition-colors"
+                      >
+                        <div className="flex items-center justify-between mb-3">
+                          <Link
+                            href={`/explorer/latest/block/${block.number}`}
+                            className="text-blue-400 hover:text-blue-300 font-mono font-medium"
+                          >
+                            #{block.number.toLocaleString()}
+                          </Link>
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-900/30 text-green-400 border border-green-500/30">
+                            <div className="w-2 h-2 bg-green-400 rounded-full mr-1"></div>
+                            {block.status}
+                          </span>
+                        </div>
+                        
+                        <div className="space-y-2 text-sm">
+                          <div className="flex items-center gap-2 text-gray-400">
+                            <FiClock className="w-4 h-4" />
+                            {block.timestamp}
+                          </div>
+                          
+                          <div className="flex items-center gap-2 text-gray-400">
+                            <FiActivity className="w-4 h-4" />
+                            {block.transactions} transactions
+                          </div>
+                          
+                          <div className="pt-2">
+                            <Link
+                              href={`/explorer/latest/block/${block.number}`}
+                              className="inline-flex items-center gap-1 px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-sm text-white transition-colors"
+                            >
+                              View Details
+                              <FiArrowRight className="w-3 h-3" />
+                            </Link>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Pagination */}
+          <div className="bg-gray-800/50 px-6 py-4 border-t border-gray-700">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1 || loading}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FiArrowLeft className="w-4 h-4" />
+                Previous
+              </button>
+              
+              <span className="text-gray-400 font-medium">Page {page}</span>
+              
+              <button
+                onClick={() => setPage((p) => p + 1)}
+                disabled={loading || blocks.length < blocksPerPage}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+                <FiArrowRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
-          <div className="flex justify-between items-center mt-4 sm:mt-3">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1 || loading}
-              className={`px-2 py-1 ${themeClasses.buttonBg} text-blue-400 ${themeClasses.buttonHover} border border-blue-500/30 disabled:${themeClasses.buttonDisabled} disabled:cursor-not-allowed transition-colors ${themeClasses.shadow} text-sm sm:text-xs uppercase`}
-            >
-              PREV
-            </button>
-            <span className={`${themeClasses.secondaryText} text-sm sm:text-xs uppercase`}>[ PAGE {page} ]</span>
-            <button
-              onClick={() => setPage((p) => p + 1)}
-              disabled={loading || blocks.length < blocksPerPage} // Disable "Next" if fewer than blocksPerPage blocks are fetched
-              className={`px-2 py-1 ${themeClasses.buttonBg} text-blue-400 ${themeClasses.buttonHover} border border-blue-500/30 disabled:${themeClasses.buttonDisabled} disabled:cursor-not-allowed transition-colors ${themeClasses.shadow} text-sm sm:text-xs uppercase`}
-            >
-              NEXT
-            </button>
-          </div>
-        </div>
-      </div>
+        </motion.div>
+      </main>
+
+      <Footer />
     </div>
   );
 }

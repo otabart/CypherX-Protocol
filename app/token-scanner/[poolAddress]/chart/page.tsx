@@ -1,17 +1,18 @@
 "use client";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
-import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { ClipboardIcon, XMarkIcon, ArrowLeftIcon } from "@heroicons/react/24/outline";
+import { XMarkIcon } from "@heroicons/react/24/outline";
 import { Sparklines, SparklinesLine } from "react-sparklines";
 import { doc, getDoc } from "firebase/firestore";
-import Link from "next/link";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { db } from "@/lib/firebase";
-import Footer from "../../../components/Footer";
 import Swap from "./swap";
+import Footer from "../../../components/Footer";
+import Header from "../../../components/Header";
 
 // Dynamically import ApexCharts to avoid SSR issues
 const Chart = dynamic(() => import("react-apexcharts"), { ssr: false });
@@ -46,24 +47,10 @@ interface IndicatorData {
   y: number;
 }
 
-interface MACDData {
-  x: number;
-  macd: number;
-  signal: number;
-  histogram: number;
-}
-
 interface SupertrendData extends IndicatorData {
   trend: "Bullish" | "Bearish";
   signalStrength: number;
   action: "Buy" | "Sell" | "Hold";
-}
-
-interface PerformanceMetrics {
-  change_5m: number;
-  change_1h: number;
-  change_4h: number;
-  change_24h: number;
 }
 
 interface Transaction {
@@ -86,58 +73,33 @@ interface TrendInsight {
   crossoverType?: "Golden Cross" | "Death Cross";
 }
 
-type TrendingToken = {
-  symbol: string;
-  name: string;
-  priceUsd: string;
-  priceChange24h: number;
-  imageUrl: string;
-  pairAddress: string;
-};
-
 export default function ChartPage() {
   const { poolAddress } = useParams();
-  const router = useRouter();
+  const transactionLimit = 50;
   const [token, setToken] = useState<TokenMetadata | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [timeframe, setTimeframe] = useState<string>("1h");
   const [candleData, setCandleData] = useState<any[]>([]);
-  const [lineData, setLineData] = useState<IndicatorData[]>([]);
-  const [marketCapData, setMarketCapData] = useState<any[]>([]);
-  const [volumeData, setVolumeData] = useState<IndicatorData[]>([]);
-  const [sma20Data, setSma20Data] = useState<IndicatorData[]>([]);
-  const [sma50Data, setSma50Data] = useState<IndicatorData[]>([]);
-  const [rsiData, setRsiData] = useState<IndicatorData[]>([]);
-  const [macdData, setMacdData] = useState<MACDData[]>([]);
-  const [vwapData, setVwapData] = useState<IndicatorData[]>([]);
-  const [supertrendData, setSupertrendData] = useState<SupertrendData[]>([]);
-  const [performanceMetrics, setPerformanceMetrics] = useState<PerformanceMetrics | null>(null);
-  const [activeIndicatorTab, setActiveIndicatorTab] = useState<string>("Volume");
-  const [chartView, setChartView] = useState<"Price" | "MarketCap">("Price");
-  const [chartType, setChartType] = useState<"Candlestick" | "Line">("Candlestick");
-  const [lastUpdated, setLastUpdated] = useState<string>("");
+  const [lineData, setLineData] = useState<any[]>([]);
+  const [chartType, setChartType] = useState<"candlestick" | "line">("candlestick");
   const [xAxisRange, setXAxisRange] = useState<{ min: number; max: number } | null>(null);
-  const [smaCrossovers, setSmaCrossovers] = useState<{ x: number; y: number; type: "Golden Cross" | "Death Cross" }[]>([]);
-  const [ethPrice, setEthPrice] = useState<number>(0);
+  const [ethPrice, setEthPrice] = useState<number>(3000);
   const [width, setWidth] = useState(0);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [transactionLoading, setTransactionLoading] = useState(false);
   const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
   const [pageKey, setPageKey] = useState<string | null>(null);
   const [isUserScrolling, setIsUserScrolling] = useState(false);
-  const transactionLimit = 50;
-  const [trendingTokens, setTrendingTokens] = useState<TrendingToken[]>([]);
-  const [trendingLoading, setTrendingLoading] = useState(true);
-  const [trendingError, setTrendingError] = useState<string | null>(null);
   const [showTrendModal, setShowTrendModal] = useState(false);
   const [txFilter, setTxFilter] = useState<"all" | "buy" | "sell">("all");
-  const [activeTab, setActiveTab] = useState<"chart" | "details">("chart");
+  const [zoom, setZoom] = useState(1);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [yAxisType, setYAxisType] = useState<"price" | "marketCap">("price");
 
   const observer = useRef<IntersectionObserver | null>(null);
   const lastTransactionRef = useRef<HTMLTableRowElement | null>(null);
   const transactionContainerRef = useRef<HTMLDivElement | null>(null);
-  const availableIndicators = ["Volume", "SMA", "RSI", "MACD", "VWAP", "Supertrend"];
 
   useEffect(() => {
     setWidth(window.innerWidth);
@@ -146,8 +108,16 @@ export default function ChartPage() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Update current time every second
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Utility Functions
-  const throttle = <F extends (...args: any[]) => void>(func: F, wait: number) => {
+  const throttle = <F extends (...args: unknown[]) => void>(func: F, wait: number) => {
     let lastTime: number | null = null;
     return (...args: Parameters<F>) => {
       const now = Date.now();
@@ -163,20 +133,29 @@ export default function ChartPage() {
     return data.filter((_, index) => index % factor === 0);
   };
 
-  const formatLargeNumber = (num: number): string => {
-    if (num >= 1_000_000_000) return `$${(num / 1_000_000_000).toFixed(2)}B`;
-    if (num >= 1_000_000) return `$${(num / 1_000_000).toFixed(2)}M`;
-    if (num >= 1_000) return `$${(num / 1_000).toFixed(2)}K`;
-    return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
-  };
 
-  const getVisibleData = (data: any[]) => {
+
+  const getVisibleData = useCallback((data: Array<{ x: Date | number }>) => {
     if (!xAxisRange) return data;
-    return data.filter((d: any) => {
-      const timestamp = d.x.getTime ? d.x.getTime() : d.x;
+    return data.filter((d) => {
+      const timestamp = d.x instanceof Date ? d.x.getTime() : d.x;
       return timestamp >= xAxisRange.min && timestamp <= xAxisRange.max;
     });
-  };
+  }, [xAxisRange]);
+
+  // Calculate appropriate zoom level based on timeframe
+  const getDefaultZoomLevel = useCallback((tf: string) => {
+    const now = Date.now();
+    const timeframeMap: { [key: string]: number } = {
+      "1m": 5 * 60 * 1000, // 5 minutes
+      "5m": 30 * 60 * 1000, // 30 minutes
+      "15m": 2 * 60 * 60 * 1000, // 2 hours
+      "1h": 6 * 60 * 60 * 1000, // 6 hours
+      "4h": 24 * 60 * 60 * 1000, // 24 hours
+      "1d": 7 * 24 * 60 * 60 * 1000, // 7 days
+    };
+    return timeframeMap[tf] || timeframeMap["1h"];
+  }, []);
 
   // Indicator Calculations
   const calculateSupertrend = useCallback((data: OHLCVData[], period = 14, multiplier = 3) => {
@@ -218,38 +197,7 @@ export default function ChartPage() {
     return result;
   }, []);
 
-  const calculateSupertrendSignals = useCallback((data: OHLCVData[], supertrend: SupertrendData[], rsi: IndicatorData[]) => {
-    const signals: { x: number; y: number; type: "Buy" | "Sell" }[] = [];
-    for (let i = 1; i < data.length; i++) {
-      const prevSupertrend = supertrend[i - 1]?.y;
-      const currSupertrend = supertrend[i]?.y;
-      const prevClose = data[i - 1].close;
-      const currClose = data[i].close;
-      const rsiValue = rsi[i]?.y || 50;
-      if (prevClose < prevSupertrend && currClose > currSupertrend && rsiValue < 30) {
-        signals.push({ x: data[i].timestamp, y: currClose, type: "Buy" });
-      } else if (prevClose > prevSupertrend && currClose < currSupertrend && rsiValue > 70) {
-        signals.push({ x: data[i].timestamp, y: currClose, type: "Sell" });
-      }
-    }
-    return signals;
-  }, []);
 
-  const calculatePerformanceMetrics = useCallback((tokenData: TokenMetadata): PerformanceMetrics => {
-    try {
-      const priceChange = tokenData.priceChange || { m5: 0, h1: 0, h6: 0, h24: 0 };
-      return {
-        change_5m: priceChange.m5 || 0,
-        change_1h: priceChange.h1 || 0,
-        change_4h: priceChange.h6 || 0,
-        change_24h: priceChange.h24 || 0,
-      };
-    } catch (err) {
-      console.error("Performance metrics calculation error:", err);
-      setError("Failed to calculate performance metrics. Using default values.");
-      return { change_5m: 0, change_1h: 0, change_4h: 0, change_24h: 0 };
-    }
-  }, []);
 
   // Effects
   useEffect(() => {
@@ -266,26 +214,7 @@ export default function ChartPage() {
     fetchEthPrice();
   }, []);
 
-  useEffect(() => {
-    const fetchTrendingTokens = async () => {
-      try {
-        setTrendingLoading(true);
-        const res = await fetch("/api/trending-widget", { cache: "no-store" });
-        if (!res.ok) throw new Error("Failed to fetch trending tokens");
-        const data = await res.json();
-        setTrendingTokens(data.slice(0, 10));
-        setTrendingError(null);
-      } catch (err) {
-        console.error("Error fetching trending tokens:", err);
-        setTrendingError("Failed to load trending tokens");
-      } finally {
-        setTrendingLoading(false);
-      }
-    };
-    fetchTrendingTokens();
-    const interval = setInterval(fetchTrendingTokens, 300_000);
-    return () => clearInterval(interval);
-  }, []);
+
 
   const fetchTransactionsFromAlchemy = useCallback(
     async (pairAddress: string, pageKey: string | null = null) => {
@@ -321,9 +250,19 @@ export default function ChartPage() {
         const transfers = data.result.transfers || [];
         const newPageKey = data.result.pageKey || null;
         const filteredTransfers = transfers.filter(
-          (transfer: any) => transfer.from.toLowerCase() !== transfer.to.toLowerCase()
+          (transfer: { from: string; to: string }) => transfer.from.toLowerCase() !== transfer.to.toLowerCase()
         );
-        const transactions: Transaction[] = filteredTransfers.map((transfer: any) => {
+        const transactions: Transaction[] = filteredTransfers.map((transfer: {
+          hash: string;
+          from: string;
+          to: string;
+          value?: string;
+          category?: string;
+          rawContract?: { decimal?: string };
+          metadata: { blockTimestamp: string };
+          blockNum: string;
+          asset?: string;
+        }) => {
           const isErc20 = transfer.category === "erc20";
           let tokenAmount: number = 0;
           let value: string = "0";
@@ -450,7 +389,7 @@ export default function ChartPage() {
     const wsUrl = "wss://base-mainnet.g.alchemy.com/v2/8KR6qwxbLlIISgrMCZfsrYeMmn6-S-bN";
     const ws = new WebSocket(wsUrl);
     let transactionBuffer: Transaction[] = [];
-    let chartBuffer: { candle: any; line: IndicatorData }[] = [];
+    let chartBuffer: { candle: { x: Date; y: number[] }; line: IndicatorData }[] = [];
     const bufferTimeout = 500;
     let bufferTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -473,9 +412,9 @@ export default function ChartPage() {
           const isErc20Transfer = tx.to?.toLowerCase() === token.pairAddress.toLowerCase() && tx.input.startsWith("0xa9059cbb");
           let isSell = false;
           if (tx.value === "0x0" && isErc20Transfer) {
-            isSell = true;
+            isSell = false; // Swapped: ERC20 transfer is now BUY
           } else if (tx.value !== "0x0") {
-            isSell = false;
+            isSell = true; // Swapped: ETH transfer is now SELL
           } else {
             return;
           }
@@ -542,39 +481,21 @@ export default function ChartPage() {
       }
 
       if (chartBuffer.length > 0) {
-        setLineData((prev) => {
-          const newData = [...prev, ...chartBuffer.map((item) => item.line)].slice(-300);
+        setLineData((current) => {
+          const newData = [...current, ...chartBuffer.map((item) => item.line)].slice(-300);
           return newData;
         });
-        setCandleData((prev) => {
-          const newData = [...prev, ...chartBuffer.map((item) => item.candle)].slice(-300);
-          const newOhlcvList = newData.map((d) => ({
-            timestamp: d.x.getTime(),
-            open: d.y[0],
-            high: d.y[1],
-            low: d.y[2],
-            close: d.y[3],
-            volume: 0,
-          }));
-          const supertrendValues = calculateSupertrend(newOhlcvList);
-          setSupertrendData(supertrendValues);
+        setCandleData((current) => {
+          const newData = [...current, ...chartBuffer.map((item) => item.candle)].slice(-300);
 
-          const totalSupply =
-            token?.marketCap && token?.priceUsd ? token.marketCap / parseFloat(token.priceUsd) : 0;
-          setMarketCapData((prev) => {
-            const newMarketCapData = newData.map((d) => ({
-              x: d.x,
-              y: d.y.map((val: number) => val * totalSupply),
-            }));
-            return newMarketCapData.slice(-300);
-          });
+
+          // Market cap data calculation removed for simplicity
 
           return newData;
         });
         chartBuffer = [];
       }
 
-      setLastUpdated(new Date().toLocaleString());
       setIsUserScrolling(false);
     };
 
@@ -609,7 +530,7 @@ export default function ChartPage() {
           if (blockData.result && blockData.result.transactions) {
             const { transactions: txs } = blockData.result;
             const relevantTxs = txs.filter(
-              (tx: any) =>
+              (tx: { from: string; to?: string }) =>
                 tx.from.toLowerCase() === token?.pairAddress.toLowerCase() ||
                 tx.to?.toLowerCase() === token?.pairAddress.toLowerCase()
             );
@@ -657,7 +578,7 @@ export default function ChartPage() {
       let adImageUrl = "";
 
       try {
-        const tokenDocRef = doc(db as any, "tokens", poolAddress);
+        const tokenDocRef = doc(db, "tokens", poolAddress);
         const tokenDoc = await getDoc(tokenDocRef);
         if (tokenDoc.exists()) {
           const data = tokenDoc.data();
@@ -698,11 +619,11 @@ export default function ChartPage() {
       };
 
       setToken(newMetadata);
-      setLastUpdated(new Date().toLocaleString());
       setError(null);
       return newMetadata;
-    } catch (err: any) {
-      setError(`Failed to load token data: ${err.message}`);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Unknown error";
+      setError(`Failed to load token data: ${errorMessage}`);
       throw err;
     }
   }, []);
@@ -714,7 +635,6 @@ export default function ChartPage() {
         const updatedToken = await fetchTokenData(poolAddress as string);
         if (updatedToken) {
           setToken(updatedToken);
-          setLastUpdated(new Date().toLocaleString());
         }
       } catch (err) {
         console.error("Periodic token data refresh error:", err);
@@ -724,7 +644,7 @@ export default function ChartPage() {
   }, [poolAddress, fetchTokenData]);
 
   const fetchChartData = useCallback(
-    async (poolAddress: string, tokenData: TokenMetadata) => {
+    async (poolAddress: string) => {
       try {
         setInitialLoading(true);
         const timeframeMap: { [key: string]: { timeframe: string; aggregate: string } } = {
@@ -769,130 +689,15 @@ export default function ChartPage() {
         }));
         setLineData(newLineData);
 
-        // Build market cap data
-        const newMarketCapData = downsampledOhlcvList.map((d: OHLCVData) => {
-          const pricePerToken = parseFloat(tokenData.priceUsd || "0");
-          const totalSupply = pricePerToken ? (tokenData.marketCap || 0) / pricePerToken : 0;
-          return {
-            x: new Date(d.timestamp),
-            y: [d.open * totalSupply, d.high * totalSupply, d.low * totalSupply, d.close * totalSupply],
-          };
-        });
-        setMarketCapData(newMarketCapData);
-
-        // Build volume data
-        const newVolumeData = downsampledOhlcvList.map((d: OHLCVData) => ({
-          x: d.timestamp,
-          y: d.volume,
-        }));
-        setVolumeData(newVolumeData);
-
-        // SMA calculations
-        const smaPeriod20 = 20;
-        const smaPeriod50 = 50;
-        const sma20Values: IndicatorData[] = [];
-        const sma50Values: IndicatorData[] = [];
-        for (let i = smaPeriod50 - 1; i < downsampledOhlcvList.length; i++) {
-          if (i >= smaPeriod20 - 1) {
-            const sma20Slice: OHLCVData[] = downsampledOhlcvList.slice(i - smaPeriod20 + 1, i + 1);
-            const avg20: number = sma20Slice.reduce((sum: number, d: OHLCVData) => sum + d.close, 0) / smaPeriod20;
-            sma20Values.push({ x: downsampledOhlcvList[i].timestamp, y: avg20 });
-          }
-          const sma50Slice: OHLCVData[] = downsampledOhlcvList.slice(i - smaPeriod50 + 1, i + 1);
-          const avg50: number = sma50Slice.reduce((sum: number, d: OHLCVData) => sum + d.close, 0) / smaPeriod50;
-          sma50Values.push({ x: downsampledOhlcvList[i].timestamp, y: avg50 });
-        }
-        setSma20Data(sma20Values);
-        setSma50Data(sma50Values);
-
-        // Detect SMA crossovers
-        const crossovers: { x: number; y: number; type: "Golden Cross" | "Death Cross" }[] = [];
-        for (let i = 1; i < sma20Values.length; i++) {
-          const prevSma20 = sma20Values[i - 1].y;
-          const currSma20 = sma20Values[i].y;
-          const prevSma50 = sma50Values[i - 1].y;
-          const currSma50 = sma50Values[i].y;
-          if (prevSma20 <= prevSma50 && currSma20 > currSma50) {
-            crossovers.push({ x: sma20Values[i].x, y: currSma20, type: "Golden Cross" });
-          } else if (prevSma20 >= prevSma50 && currSma20 < currSma50) {
-            crossovers.push({ x: sma20Values[i].x, y: currSma20, type: "Death Cross" });
-          }
-        }
-        setSmaCrossovers(crossovers);
-
-        // RSI calculations
-        const rsiPeriod = 14;
-        const rsiValues: IndicatorData[] = [];
-        const changes: number[] = downsampledOhlcvList.slice(1).map((current, i) => current.close - downsampledOhlcvList[i].close);
-        for (let i = rsiPeriod; i < changes.length; i++) {
-          const rsiSlice: number[] = changes.slice(i - rsiPeriod, i);
-          const gains: number =
-            rsiSlice.filter((c: number) => c > 0).reduce((sum: number, c: number) => sum + c, 0) / rsiPeriod;
-          const losses: number =
-            Math.abs(rsiSlice.filter((c: number) => c < 0).reduce((sum: number, c: number) => sum + c, 0)) / rsiPeriod;
-          const rs: number = gains / (losses || 1);
-          const rsi: number = 100 - 100 / (1 + rs);
-          rsiValues.push({ x: downsampledOhlcvList[i + 1].timestamp, y: rsi });
-        }
-        setRsiData(rsiValues);
-
-        // MACD calculations
-        const macdFast = 12,
-          macdSlow = 26,
-          macdSignal = 9;
-        const ema = (data: number[], period: number): number[] => {
-          const k: number = 2 / (period + 1);
-          const emaValues: number[] = [];
-          let emaValue: number = data.slice(0, period).reduce((sum: number, v: number) => sum + v, 0) / period;
-          emaValues.push(emaValue);
-          for (let i = period; i < data.length; i++) {
-            emaValue = (data[i] - emaValue) * k + emaValue;
-            emaValues.push(emaValue);
-          }
-          return emaValues;
-        };
-        const closes: number[] = downsampledOhlcvList.map((d) => d.close);
-        const ema12: number[] = ema(closes, macdFast);
-        const ema26: number[] = ema(closes, macdSlow);
-        const macdLine: number[] = ema12.map((v, i) => v - (ema26[i] || 0)).slice(macdSlow - macdFast);
-        const signalLine: number[] = ema(macdLine, macdSignal);
-        const macdValues: MACDData[] = macdLine.slice(macdSignal - 1).map((macd, i) => ({
-          x: downsampledOhlcvList[i + macdSlow - macdFast + macdSignal - 1].timestamp,
-          macd,
-          signal: signalLine[i],
-          histogram: macd - signalLine[i],
-        }));
-        setMacdData(macdValues);
-
-        // VWAP calculations & signals
-        const vwapValues: IndicatorData[] = [];
-        let cumulativePV = 0;
-        let cumulativeVolume = 0;
-        downsampledOhlcvList.forEach((d, index) => {
-          const typicalPrice = (d.high + d.low + d.close) / 3;
-          cumulativePV += typicalPrice * d.volume;
-          cumulativeVolume += d.volume;
-          const vwap = cumulativePV / (cumulativeVolume || 1);
-          vwapValues.push({ x: d.timestamp, y: vwap });
-        });
-        setVwapData(vwapValues);
-
-        // Supertrend
-        const supertrendValues = calculateSupertrend(downsampledOhlcvList);
-        setSupertrendData(supertrendValues);
-        const supertrendSignals = calculateSupertrendSignals(downsampledOhlcvList, supertrendValues, rsiValues);
-        setSupertrendSignals(supertrendSignals);
-
-        // Performance metrics
-        const metrics = calculatePerformanceMetrics(tokenData);
-        setPerformanceMetrics(metrics);
-      } catch (err: any) {
-        setError(`Failed to load chart data: ${err.message}`);
+        // Market cap data removed for simplicity
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : "Unknown error";
+        setError(`Failed to load chart data: ${errorMessage}`);
       } finally {
         setInitialLoading(false);
       }
     },
-    [timeframe, calculateSupertrend, calculateSupertrendSignals, calculatePerformanceMetrics]
+    [timeframe]
   );
 
   useEffect(() => {
@@ -906,7 +711,7 @@ export default function ChartPage() {
       try {
         const tokenData = await fetchTokenData(poolAddress);
         if (tokenData) {
-          await fetchChartData(poolAddress, tokenData);
+          await fetchChartData(poolAddress);
         }
       } catch (err) {
         console.error("Initial data load error:", err);
@@ -919,7 +724,7 @@ export default function ChartPage() {
 
   // Chart Options
   const candlestickOptions = useMemo<ApexCharts.ApexOptions>(() => {
-    const allData = chartView === "Price" ? candleData : marketCapData;
+    const allData = candleData;
     const visibleCandleData = getVisibleData(allData);
     const yValues = visibleCandleData.flatMap((d: any) => d.y);
     const lowestLow = yValues.length ? Math.min(...yValues) : 0;
@@ -927,26 +732,24 @@ export default function ChartPage() {
     const yPadding = (highestHigh - lowestLow) * 0.3;
     const yMin = lowestLow - yPadding;
     const yMax = highestHigh + yPadding;
-    const xValues = allData.map((d: any) => d.x.getTime());
-    const xMin = xValues.length ? Math.min(...xValues) : Date.now();
-    const xMax = xValues.length ? Math.max(...xValues) : Date.now();
-    const futurePadding = (xMax - xMin) * 0.2;
+    
+    // Calculate default zoom based on timeframe
+    const defaultZoomRange = getDefaultZoomLevel(timeframe);
+    const now = Date.now();
+    const xMin = xAxisRange ? xAxisRange.min : now - defaultZoomRange;
+    const xMax = xAxisRange ? xAxisRange.max : now;
+    const futurePadding = (xMax - xMin) * 0.1;
     const xMaxWithPadding = xMax + futurePadding;
 
     // Dynamic subtitle: current price or market cap
-    const subtitleText =
-      chartView === "Price"
-        ? token
-          ? `$${parseFloat(token.priceUsd).toFixed(4)}`
-          : ""
-        : token
-        ? `${formatLargeNumber(token.marketCap)}`
-        : "";
+    const subtitleText = token
+      ? `$${parseFloat(token.priceUsd).toFixed(4)}`
+      : "";
 
     return {
       chart: {
         type: "candlestick",
-        height: width < 768 ? 350 : 500,
+        height: 500,
         background: "transparent",
         foreColor: "#A1A1AA",
         toolbar: {
@@ -979,7 +782,7 @@ export default function ChartPage() {
         style: { color: "#D1D1D6", fontSize: "12px", fontFamily: "Inter, sans-serif" },
       },
       title: {
-        text: chartView,
+        text: "Price",
         align: "left",
         style: {
           color: "#D1D1D6",
@@ -993,8 +796,8 @@ export default function ChartPage() {
         min: xAxisRange ? xAxisRange.min : xMin,
         max: xAxisRange ? xAxisRange.max : xMaxWithPadding,
         labels: {
-          datetimeUTC: false,
-          format: "HH:mm:ss",
+          datetimeUTC: true,
+          format: "HH:mm",
           style: {
             colors: "#A1A1AA",
             fontSize: width < 768 ? "8px" : "10px",
@@ -1005,14 +808,15 @@ export default function ChartPage() {
         },
         tickAmount: 6,
         title: {
-          text: "Time",
+          text: `Time (UTC) - ${currentTime.toUTCString().split(' ')[4]}`,
           offsetY: 70,
-          style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" },
+          style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif", fontSize: "12px" },
         },
       },
       yaxis: {
+        opposite: true, // Move to right side
         title: {
-          text: chartView === "Price" ? "Price (USD)" : "Market Cap (USD)",
+          text: "Price (USD)",
           style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" },
         },
         labels: {
@@ -1021,8 +825,7 @@ export default function ChartPage() {
             fontSize: width < 768 ? "8px" : "10px",
             fontFamily: "Inter, sans-serif",
           },
-          formatter: (val: number) =>
-            chartView === "Price" ? `$${val.toFixed(4)}` : `$${formatLargeNumber(val)}`,
+          formatter: (val: number) => `$${val.toFixed(4)}`,
         },
         tickAmount: 5,
         min: yMin,
@@ -1030,10 +833,10 @@ export default function ChartPage() {
       },
       grid: {
         borderColor: "#2A3B5A",
-        opacity: 0.1,
+        opacity: 0.03,
         strokeDashArray: 0,
         xaxis: { lines: { show: true } },
-        yaxis: { lines: { show: true } },
+        yaxis: { lines: { show: false } },
       },
       plotOptions: {
         candlestick: {
@@ -1045,10 +848,9 @@ export default function ChartPage() {
       tooltip: {
         enabled: true,
         theme: "dark",
-        x: { format: "HH:mm:ss" },
+        x: { format: "HH:mm" },
         y: {
-          formatter: (val: number) =>
-            chartView === "Price" ? `$${val.toFixed(4)}` : `$${formatLargeNumber(val)}`,
+          formatter: (val: number) => `$${val.toFixed(4)}`,
         },
         style: { fontFamily: "Inter, sans-serif" },
         custom: ({ seriesIndex, dataPointIndex, w }) => {
@@ -1056,11 +858,8 @@ export default function ChartPage() {
           const h = w.globals.seriesCandleH[seriesIndex][dataPointIndex];
           const l = w.globals.seriesCandleL[seriesIndex][dataPointIndex];
           const c = w.globals.seriesCandleC[seriesIndex][dataPointIndex];
-          const time = new Date(w.globals.seriesX[seriesIndex][dataPointIndex]).toLocaleTimeString();
-          const formatter =
-            chartView === "Price"
-              ? (val: number) => `$${val.toFixed(4)}`
-              : (val: number) => `$${formatLargeNumber(val)}`;
+          const time = new Date(w.globals.seriesX[seriesIndex][dataPointIndex]).toUTCString();
+          const formatter = (val: number) => `$${val.toFixed(4)}`;
           return `
             <div class="p-2 bg-[#1A263F] rounded-lg shadow-lg">
               <p class="text-sm text-gray-100"><span class="text-gray-400">Time:</span> ${time}</p>
@@ -1102,40 +901,34 @@ export default function ChartPage() {
       },
     };
   }, [
-    chartView,
-    timeframe,
     xAxisRange,
     candleData,
-    marketCapData,
     width,
     token,
+    getVisibleData,
+    currentTime,
   ]);
 
   const lineOptions = useMemo<ApexCharts.ApexOptions>(() => {
     const allData = lineData;
     const visibleLineData = getVisibleData(allData);
-    const yValues = visibleLineData.map((d: any) => d.y);
-    const lowestLow = yValues.length ? Math.min(...yValues) : 0;
-    const highestHigh = yValues.length ? Math.max(...yValues) : 0;
-    const yPadding = (highestHigh - lowestLow) * 0.3;
-    const yMin = lowestLow - yPadding;
-    const yMax = highestHigh + yPadding;
-    const xValues = allData.map((d: any) => d.x);
-    const xMin = xValues.length ? Math.min(...xValues) : Date.now();
+    const yValues = visibleLineData.flatMap((d: any) => d.y);
+    const xValues = visibleLineData.map((d: any) => d.x);
+    const yMin = yValues.length ? Math.min(...yValues) * 0.999 : 0;
+    const yMax = yValues.length ? Math.max(...yValues) * 1.001 : 1;
+    const xMin = xValues.length ? Math.min(...xValues) : Date.now() - 24 * 60 * 60 * 1000;
     const xMax = xValues.length ? Math.max(...xValues) : Date.now();
     const futurePadding = (xMax - xMin) * 0.2;
     const xMaxWithPadding = xMax + futurePadding;
 
-    // Dynamic subtitle: current price
-    const subtitleText =
-      token && chartView === "Price"
-        ? `$${parseFloat(token.priceUsd).toFixed(4)}`
-        : "";
+    const subtitleText = token
+      ? `$${parseFloat(token.priceUsd).toFixed(4)}`
+      : "";
 
     return {
       chart: {
         type: "line",
-        height: width < 768 ? 350 : 500,
+        height: 500,
         background: "transparent",
         foreColor: "#A1A1AA",
         toolbar: {
@@ -1168,7 +961,7 @@ export default function ChartPage() {
         style: { color: "#D1D1D6", fontSize: "12px", fontFamily: "Inter, sans-serif" },
       },
       title: {
-        text: "Price (Line)",
+        text: "Price",
         align: "left",
         style: {
           color: "#D1D1D6",
@@ -1182,8 +975,8 @@ export default function ChartPage() {
         min: xAxisRange ? xAxisRange.min : xMin,
         max: xAxisRange ? xAxisRange.max : xMaxWithPadding,
         labels: {
-          datetimeUTC: false,
-          format: "HH:mm:ss",
+          datetimeUTC: true,
+          format: "HH:mm",
           style: {
             colors: "#A1A1AA",
             fontSize: width < 768 ? "8px" : "10px",
@@ -1194,12 +987,13 @@ export default function ChartPage() {
         },
         tickAmount: 6,
         title: {
-          text: "Time",
+          text: `Time (UTC) - ${currentTime.toUTCString().split(' ')[4]}`,
           offsetY: 70,
-          style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" },
+          style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif", fontSize: "12px" },
         },
       },
       yaxis: {
+        opposite: true, // Move to right side
         title: {
           text: "Price (USD)",
           style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" },
@@ -1218,18 +1012,23 @@ export default function ChartPage() {
       },
       grid: {
         borderColor: "#2A3B5A",
-        opacity: 0.1,
+        opacity: 0.03,
         strokeDashArray: 0,
         xaxis: { lines: { show: true } },
-        yaxis: { lines: { show: true } },
+        yaxis: { lines: { show: false } },
       },
-      stroke: { curve: "smooth", width: 2 },
-      colors: ["#3B82F6"],
+      stroke: {
+        curve: "straight",
+        width: 2,
+        colors: ["#3B82F6"],
+      },
       tooltip: {
         enabled: true,
         theme: "dark",
         x: { format: "HH:mm:ss" },
-        y: { formatter: (val: number) => `$${val.toFixed(4)}` },
+        y: {
+          formatter: (val: number) => `$${val.toFixed(4)}`,
+        },
         style: { fontFamily: "Inter, sans-serif" },
       },
       markers: { size: 0 },
@@ -1253,451 +1052,20 @@ export default function ChartPage() {
         },
       },
     };
-  }, [timeframe, xAxisRange, lineData, width, token, chartView]);
+  }, [
+    xAxisRange,
+    lineData,
+    width,
+    token,
+    getVisibleData,
+    currentTime,
+  ]);
 
-  const volumeOptions = useMemo<ApexCharts.ApexOptions>(() => {
-    return {
-      chart: {
-        type: "bar",
-        height: width < 768 ? 200 : 300,
-        background: "transparent",
-        foreColor: "#A1A1AA",
-        toolbar: { show: false },
-        zoom: { enabled: false },
-        animations: { enabled: false },
-      },
-      title: {
-        text: "Volume",
-        align: "left",
-        style: {
-          color: "#D1D1D6",
-          fontSize: "14px",
-          fontWeight: 600,
-          fontFamily: "Inter, sans-serif",
-        },
-      },
-      xaxis: {
-        type: "datetime",
-        min: xAxisRange ? xAxisRange.min : undefined,
-        max: xAxisRange ? xAxisRange.max : undefined,
-        labels: { show: false },
-        tickAmount: width < 768 ? 6 : 8,
-      },
-      yaxis: {
-        title: { text: "Volume", style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" } },
-        labels: {
-          show: true,
-          style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" },
-          formatter: (val: number) => formatLargeNumber(val),
-        },
-        tickAmount: 4,
-      },
-      dataLabels: { enabled: false },
-      colors: ["#A855F7"],
-      plotOptions: {
-        bar: {
-          columnWidth: width < 768 ? "40%" : "50%",
-        },
-      },
-      fill: { type: "solid", opacity: 0.8 },
-      tooltip: {
-        enabled: true,
-        theme: "dark",
-        x: { format: "HH:mm:ss" },
-        y: {
-          formatter: (val: number) => {
-            const pricePerToken = parseFloat(token?.priceUsd || "0");
-            const volumeUsd = val * pricePerToken;
-            return `$${formatLargeNumber(volumeUsd)}`;
-          },
-        },
-        style: { fontFamily: "Inter, sans-serif" },
-      },
-      grid: {
-        borderColor: "#2A3B5A",
-        opacity: 0.1,
-      },
-      crosshair: {
-        show: true,
-        x: {
-          show: true,
-          stroke: { color: "#A1A1AA", width: 1, dashArray: 5 },
-        },
-        y: { show: true, stroke: { color: "#A1A1AA", width: 1, dashArray: 5 } },
-      },
-    };
-  }, [xAxisRange, token, width]);
 
-  const smaOptions = useMemo<ApexCharts.ApexOptions>(() => {
-    return {
-      chart: {
-        type: "line",
-        height: width < 768 ? 200 : 300,
-        background: "transparent",
-        foreColor: "#A1A1AA",
-        toolbar: { show: false },
-        zoom: { enabled: false },
-        animations: { enabled: false },
-      },
-      title: {
-        text: "SMA (20 & 50)",
-        align: "left",
-        style: {
-          color: "#D1D1D6",
-          fontSize: "14px",
-          fontWeight: 600,
-          fontFamily: "Inter, sans-serif",
-        },
-      },
-      xaxis: {
-        type: "datetime",
-        min: xAxisRange ? xAxisRange.min : undefined,
-        max: xAxisRange ? xAxisRange.max : undefined,
-        labels: { show: false },
-      },
-      yaxis: {
-        title: { text: "SMA", style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" } },
-        labels: {
-          show: true,
-          offsetX: -10,
-          style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" },
-          formatter: (val: number) => val.toFixed(4),
-        },
-        tickAmount: 4,
-      },
-      stroke: { curve: "smooth", width: 2 },
-      colors: ["#FBBF24", "#F87171"],
-      tooltip: {
-        enabled: true,
-        theme: "dark",
-        x: { format: "HH:mm:ss" },
-        y: { formatter: (val: number) => val.toFixed(4) },
-        style: { fontFamily: "Inter, sans-serif" },
-      },
-      grid: {
-        borderColor: "#2A3B5A",
-        opacity: 0.1,
-      },
-      crosshair: {
-        show: true,
-        x: {
-          show: true,
-          stroke: { color: "#A1A1AA", width: 1, dashArray: 5 },
-        },
-        y: { show: true, stroke: { color: "#A1A1AA", width: 1, dashArray: 5 } },
-      },
-    };
-  }, [xAxisRange, width]);
 
-  const rsiOptions = useMemo<ApexCharts.ApexOptions>(() => {
-    return {
-      chart: {
-        id: "rsi-chart",
-        height: width < 768 ? 200 : 300,
-        type: "line",
-        background: "transparent",
-        foreColor: "#A1A1AA",
-        toolbar: { show: false },
-        zoom: { enabled: false },
-        animations: { enabled: false },
-      },
-      title: {
-        text: "RSI",
-        align: "left",
-        style: {
-          color: "#D1D1D6",
-          fontSize: "14px",
-          fontWeight: 600,
-          fontFamily: "Inter, sans-serif",
-        },
-      },
-      xaxis: {
-        type: "datetime",
-        min: xAxisRange ? xAxisRange.min : undefined,
-        max: xAxisRange ? xAxisRange.max : undefined,
-        labels: { show: false },
-      },
-      yaxis: {
-        min: 0,
-        max: 100,
-        title: { text: "RSI", style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" } },
-        labels: {
-          show: true,
-          offsetX: -10,
-          style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" },
-          formatter: (val: number) => val.toFixed(0),
-        },
-        tickAmount: 4,
-      },
-      stroke: { curve: "smooth", width: 2 },
-      colors: ["#3B82F6"],
-      grid: {
-        borderColor: "#2A3B5A",
-        opacity: 0.1,
-      },
-      tooltip: {
-        enabled: true,
-        theme: "dark",
-        x: { format: "HH:mm:ss" },
-        y: { formatter: (val: number) => val.toFixed(2) },
-        style: { fontFamily: "Inter, sans-serif" },
-      },
-      crosshair: {
-        show: true,
-        x: {
-          show: true,
-          stroke: { color: "#A1A1AA", width: 1, dashArray: 5 },
-        },
-        y: { show: true, stroke: { color: "#A1A1AA", width: 1, dashArray: 5 } },
-      },
-    };
-  }, [xAxisRange, width]);
 
-  const macdOptions = useMemo<ApexCharts.ApexOptions>(() => {
-    return {
-      chart: {
-        id: "macd-chart",
-        height: width < 768 ? 200 : 300,
-        type: "line",
-        background: "transparent",
-        foreColor: "#A1A1AA",
-        toolbar: { show: false },
-        zoom: { enabled: false },
-        animations: { enabled: false },
-      },
-      title: {
-        text: "MACD",
-        align: "left",
-        style: {
-          color: "#D1D1D6",
-          fontSize: "14px",
-          fontWeight: 600,
-          fontFamily: "Inter, sans-serif",
-        },
-      },
-      xaxis: {
-        type: "datetime",
-        min: xAxisRange ? xAxisRange.min : undefined,
-        max: xAxisRange ? xAxisRange.max : undefined,
-        labels: { show: false },
-      },
-      yaxis: {
-        title: { text: "MACD", style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" } },
-        labels: {
-          show: true,
-          offsetX: -10,
-          style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" },
-          formatter: (val: number) => val.toFixed(4),
-        },
-        tickAmount: 4,
-      },
-      stroke: { curve: "smooth", width: 2 },
-      colors: ["#3B82F6", "#F97316", "#10B981"],
-      grid: {
-        borderColor: "#2A3B5A",
-        opacity: 0.1,
-      },
-      plotOptions: {
-        bar: { columnWidth: "80%" },
-      },
-      tooltip: {
-        enabled: true,
-        theme: "dark",
-        x: { format: "HH:mm:ss" },
-        y: { formatter: (val: number) => val.toFixed(4) },
-        style: { fontFamily: "Inter, sans-serif" },
-      },
-      crosshair: {
-        show: true,
-        x: {
-          show: true,
-          stroke: { color: "#A1A1AA", width: 1, dashArray: 5 },
-        },
-        y: { show: true, stroke: { color: "#A1A1AA", width: 1, dashArray: 5 } },
-      },
-    };
-  }, [xAxisRange, width]);
 
-  const vwapOptions = useMemo<ApexCharts.ApexOptions>(() => {
-    return {
-      chart: {
-        type: "line",
-        height: width < 768 ? 200 : 300,
-        background: "transparent",
-        foreColor: "#A1A1AA",
-        toolbar: { show: false },
-        zoom: { enabled: false },
-        animations: { enabled: false },
-      },
-      title: {
-        text: "VWAP",
-        align: "left",
-        style: {
-          color: "#D1D1D6",
-          fontSize: "14px",
-          fontWeight: 600,
-          fontFamily: "Inter, sans-serif",
-        },
-      },
-      xaxis: {
-        type: "datetime",
-        min: xAxisRange ? xAxisRange.min : undefined,
-        max: xAxisRange ? xAxisRange.max : undefined,
-        labels: { show: false },
-      },
-      yaxis: {
-        title: { text: "VWAP", style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" } },
-        labels: {
-          show: true,
-          offsetX: -10,
-          style: { colors: "#A1A1AA", fontSize: "12px", fontFamily: "Inter, sans-serif" },
-          formatter: (val: number) => val.toFixed(4),
-        },
-        tickAmount: 4,
-      },
-      stroke: { curve: "smooth", width: 2 },
-      colors: ["#F97316"],
-      tooltip: {
-        enabled: true,
-        theme: "dark",
-        x: { format: "HH:mm:ss" },
-        y: { formatter: (val: number) => val.toFixed(4) },
-        style: { fontFamily: "Inter, sans-serif" },
-      },
-      grid: {
-        borderColor: "#2A3B5A",
-        opacity: 0.1,
-      },
-      crosshair: {
-        show: true,
-        x: {
-          show: true,
-          stroke: { color: "#A1A1AA", width: 1, dashArray: 5 },
-        },
-        y: { show: true, stroke: { color: "#A1A1AA", width: 1, dashArray: 5 } },
-      },
-    };
-  }, [xAxisRange, width]);
-
-  const supertrendOptions = useMemo<ApexCharts.ApexOptions>(() => {
-    const bullishData: IndicatorData[] = [];
-    const bearishData: IndicatorData[] = [];
-    let currentBullish: IndicatorData[] = [];
-    let currentBearish: IndicatorData[] = [];
-    supertrendData.forEach((point, index) => {
-      const dataPoint = { x: point.x, y: point.y };
-      if (point.trend === "Bullish") {
-        if (currentBearish.length > 0) {
-          bearishData.push(...currentBearish);
-          currentBearish = [];
-        }
-        currentBullish.push(dataPoint);
-      } else {
-        if (currentBullish.length > 0) {
-          bullishData.push(...currentBullish);
-          currentBullish = [];
-        }
-        currentBearish.push(dataPoint);
-      }
-      if (index === supertrendData.length - 1) {
-        if (currentBullish.length > 0) bullishData.push(...currentBullish);
-        if (currentBearish.length > 0) bearishData.push(...currentBearish);
-      }
-    });
-    return {
-      chart: {
-        type: "line",
-        height: width < 768 ? 200 : 300,
-        background: "transparent",
-        foreColor: "#A1A1AA",
-        toolbar: { show: false },
-        zoom: { enabled: false },
-        animations: { enabled: false },
-      },
-      title: {
-        text: "Supertrend",
-        align: "left",
-        style: {
-          color: "#D1D1D6",
-          fontSize: "14px",
-          fontWeight: 600,
-          fontFamily: "Inter, sans-serif",
-        },
-      },
-      xaxis: {
-        type: "datetime",
-        min: xAxisRange ? xAxisRange.min : undefined,
-        max: xAxisRange ? xAxisRange.max : undefined,
-        labels: { show: false },
-      },
-      yaxis: {
-        title: { text: "Price", style: { color: "#D1D1D6", fontFamily: "Inter, sans-serif" } },
-        labels: {
-          show: true,
-          offsetX: -10,
-          style: { colors: "#A1A1AA", fontSize: "10px", fontFamily: "Inter, sans-serif" },
-          formatter: (val: number) => val.toFixed(4),
-        },
-        tickAmount: 4,
-      },
-      stroke: { curve: "smooth", width: 2 },
-      colors: ["#10B981", "#EF4444"],
-      tooltip: {
-        enabled: true,
-        theme: "dark",
-        x: { format: "HH:mm:ss" },
-        custom: ({ dataPointIndex }: any) => {
-          const supertrend = supertrendData[dataPointIndex];
-          if (!supertrend) return "";
-          return `
-            <div class="p-2 bg-[#1A263F] rounded-lg shadow-lg">
-              <p class="text-sm font-semibold text-gray-100"><span class="text-gray-400">Price:</span> $${supertrend.y.toFixed(
-                4
-              )}</p>
-              <p class="text-sm text-gray-100"><span class="text-gray-400">Trend:</span> <span class="${
-                supertrend.trend === "Bullish" ? "text-green-400" : "text-red-400"
-              }">${supertrend.trend}</span></p>
-              <p class="text-sm text-gray-100"><span class="text-gray-400">Signal Strength:</span> ${supertrend.signalStrength.toFixed(
-                2
-              )}</p>
-              <p class="text-sm text-gray-100"><span class="text-gray-400">Action:</span> ${supertrend.action}</p>
-            </div>
-          `;
-        },
-        style: { fontFamily: "Inter, sans-serif" },
-      },
-      series: [
-        { name: "Supertrend (Bullish)", data: bullishData },
-        { name: "Supertrend (Bearish)", data: bearishData },
-      ],
-      grid: {
-        borderColor: "#2A3B5A",
-        opacity: 0.1,
-      },
-      crosshair: {
-        show: true,
-        x: {
-          show: true,
-          stroke: { color: "#A1A1AA", width: 1, dashArray: 5 },
-        },
-        y: { show: true, stroke: { color: "#A1A1AA", width: 1, dashArray: 5 } },
-      },
-    };
-  }, [xAxisRange, supertrendData, width]);
-
-  // Calculate OHLC for the latest candle
-  const latestCandle = candleData[candleData.length - 1];
-  const ohlc = latestCandle
-    ? {
-        open: latestCandle.y[0].toFixed(4),
-        high: latestCandle.y[1].toFixed(4),
-        low: latestCandle.y[2].toFixed(4),
-        close: latestCandle.y[3].toFixed(4),
-      }
-    : { open: "-", high: "-", low: "-", close: "-" };
-
-  // Construct SYMBOL for branding overlay
-  const symbol = token ? `${token.baseToken.symbol}/${token.quoteToken.symbol}` : "Loading...";
+  // OHLC calculation removed for simplicity
 
   // Utility functions for trend analysis and sparkline
   const getSparklineData = () => {
@@ -1705,35 +1073,66 @@ export default function ChartPage() {
   };
 
   const getTrendAnalysis = () => {
-    const latestSupertrend = supertrendData[supertrendData.length - 1];
-    const latestRsi = rsiData[rsiData.length - 1];
-    const latestSmaCrossover = smaCrossovers[smaCrossovers.length - 1];
-
     const insights: TrendInsight[] = [];
-    if (latestSupertrend) {
-      insights.push({
-        text: `Supertrend indicates a ${latestSupertrend.trend} trend with a signal strength of ${latestSupertrend.signalStrength.toFixed(
-          2
-        )}. Suggested action: ${latestSupertrend.action}.`,
-        trend: latestSupertrend.trend,
-      });
+    
+    // Price trend analysis
+    if (lineData.length >= 2) {
+      const currentPrice = lineData[lineData.length - 1]?.y || 0;
+      const previousPrice = lineData[lineData.length - 2]?.y || 0;
+      const priceChangePercent = ((currentPrice - previousPrice) / previousPrice) * 100;
+      
+      if (Math.abs(priceChangePercent) > 1) {
+        insights.push({
+          text: `Price ${priceChangePercent > 0 ? 'increased' : 'decreased'} by ${Math.abs(priceChangePercent).toFixed(2)}% in the last period.`,
+          trend: priceChangePercent > 0 ? "Bullish" : "Bearish",
+        });
+      }
     }
-    if (latestRsi) {
-      const rsiStatus = latestRsi.y > 70 ? "Overbought" : latestRsi.y < 30 ? "Oversold" : "Neutral";
-      insights.push({
-        text: `RSI is at ${latestRsi.y.toFixed(2)} (${rsiStatus}).`,
-        rsiStatus,
-      });
+
+    // Volume analysis
+    if (transactions.length > 0) {
+      const recentTxs = transactions.slice(0, 10);
+      const buyCount = recentTxs.filter(tx => {
+        return tx.from?.toLowerCase() === (token?.poolAddress?.toLowerCase() || '') && tx.tokenSymbol === token?.baseToken.symbol;
+      }).length;
+      
+      const sellCount = recentTxs.filter(tx => {
+        const isSell = tx.from?.toLowerCase() === (token?.poolAddress?.toLowerCase() || '') && tx.tokenSymbol === token?.baseToken.symbol;
+        return isSell;
+      }).length;
+
+      if (buyCount > sellCount * 1.5) {
+        insights.push({
+          text: `Strong buying pressure detected with ${buyCount} buy transactions vs ${sellCount} sell transactions.`,
+          trend: "Bullish",
+        });
+      } else if (sellCount > buyCount * 1.5) {
+        insights.push({
+          text: `Selling pressure detected with ${sellCount} sell transactions vs ${buyCount} buy transactions.`,
+          trend: "Bearish",
+        });
+      }
     }
-    if (latestSmaCrossover) {
-      insights.push({
-        text: `Latest SMA Crossover: ${latestSmaCrossover.type} at ${new Date(
-          latestSmaCrossover.x
-        ).toLocaleString()}.`,
-        crossoverType: latestSmaCrossover.type,
-      });
+
+    // Market sentiment
+    if (token?.priceChange) {
+      const h1Change = token.priceChange.h1 || 0;
+      const h24Change = token.priceChange.h24 || 0;
+      
+      if (h1Change > 5 && h24Change > 10) {
+        insights.push({
+          text: "Strong positive momentum with significant gains in both 1h and 24h periods.",
+          trend: "Bullish",
+        });
+      } else if (h1Change < -5 && h24Change < -10) {
+        insights.push({
+          text: "Strong negative momentum with significant losses in both 1h and 24h periods.",
+          trend: "Bearish",
+        });
+      }
     }
-    return insights.length > 0 ? insights : [{ text: "No trend analysis available." }];
+
+    return insights;
   };
 
   const copyToClipboard = (text: string) => {
@@ -1748,18 +1147,28 @@ export default function ChartPage() {
       });
   };
 
+  const handleTransactionScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    if (scrollHeight - scrollTop <= clientHeight * 1.5 && !transactionLoading && hasMoreTransactions) {
+      // Load more transactions when user scrolls near bottom
+      loadMoreTransactions();
+    }
+  };
+
   // Filtered transactions based on buy/sell
   const filteredTransactions = useMemo(() => {
     if (txFilter === "all") return transactions;
     return transactions.filter((tx) => {
-      const isSell = tx.tokenSymbol !== "ETH";
+      const isSell = tx.from?.toLowerCase() === (token?.poolAddress?.toLowerCase() || '') && tx.tokenSymbol === token?.baseToken.symbol;
       return txFilter === "sell" ? isSell : !isSell;
     });
-  }, [transactions, txFilter]);
+  }, [transactions, txFilter, token]);
 
   // JSX Return Statement
   return (
     <div className="min-h-screen font-sans bg-gray-950 text-gray-200 w-full">
+      <Header />
+      
       <style jsx>{`
         @keyframes fadeIn {
           0% {
@@ -1832,132 +1241,15 @@ export default function ChartPage() {
           overflow-x: hidden; /* Remove horizontal scrollbar */
         }
         .transaction-table-container {
-          max-height: 400px;
+          max-height: 300px;
           overflow-y: auto;
-          position: relative;
         }
-        .transaction-table-container.loading {
-          min-height: 300px; /* Ensure space for loading indicator */
+        .flash-animation {
+          animation: flash 0.5s ease-in-out;
         }
-        .trending-banner {
-          background-color: #0d1a2e;
-          border-bottom: 1px solid #2a3b5a;
-          padding: 0;
-          overflow: hidden;
-          white-space: nowrap;
-          width: 100%;
-          position: relative;
-          margin: 0;
-        }
-        .trending-tokens-container {
-          display: inline-flex;
-          width: max-content;
-          animation: marquee 20s linear infinite;
-        }
-        .trending-tokens-container:hover {
-          animation-play-state: paused;
-        }
-        .trending-token-card {
-          display: inline-flex;
-          align-items: center;
-          padding: 8px 12px;
-          margin-right: 0;
-          background-color: #0d1a2e;
-          border: 1px solid #2a3b5a;
-          border-right: none;
-          min-width: 220px;
-          white-space: nowrap;
-        }
-        .trending-token-card:last-child {
-          border-right: 1px solid #2a3b5a;
-        }
-        .trending-token-card:not(:last-child)::after {
-          content: "";
-          width: 1px;
-          height: 100%;
-          background-color: #a1a1aa;
-          position: absolute;
-          right: 0;
-        }
-        .trending-token-card img {
-          width: 24px;
-          height: 24px;
-          object-fit: cover;
-          aspect-ratio: 1/1;
-          background-color: #2a3b5a;
-          border: 1px solid #2a3b5a;
-          overflow: hidden;
-          margin-right: 8px;
-        }
-        .rank-badge {
-          background-color: #2a3b5a;
-          color: #d1d1d6;
-          font-size: 10px;
-          font-weight: 600;
-          padding: 2px 6px;
-          border-radius: 4px;
-          border: 1px solid #a1a1aa;
-          margin-right: 8px;
-        }
-        @keyframes marquee {
-          0% {
-            transform: translateX(0);
-          }
-          100% {
-            transform: translateX(-50%);
-          }
-        }
-        .swap-form-container {
-          background-color: #1a263f;
-          border: 1px solid #2a3b5a;
-          border-radius: 4px;
-          padding: 16px;
-        }
-        .swap-input {
-          background-color: #2a3b5a;
-          border: 1px solid #2a3b5a;
-          border-radius: 4px;
-          padding: 8px;
-          color: #d1d1d6;
-          width: 100%;
-          font-size: 14px;
-          outline: none;
-        }
-        .swap-input:disabled {
-          background-color: #1a263f;
-          color: #a1a1aa;
-        }
-        .swap-button {
-          background-color: #3b82f6;
-          color: #ffffff;
-          padding: 8px;
-          border-radius: 4px;
-          font-size: 14px;
-          font-weight: 500;
-          transition: background-color 0.2s ease-in-out;
-          width: 100%;
-        }
-        .swap-button:hover {
-          background-color: #2563eb;
-        }
-        .swap-button:disabled {
-          background-color: #2563eb;
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-        .swap-arrow {
-          background-color: #2a3b5a;
-          border-radius: 4px;
-          padding: 8px;
-          cursor: pointer;
-          transition: transform 0.2s ease-in-out;
-        }
-        .swap-arrow:hover {
-          transform: scale(1.1);
-        }
-        .swap-info {
-          font-size: 12px;
-          color: #a1a1aa;
+        @keyframes flash {
+          0% { background-color: rgba(59, 130, 246, 0.3); }
+          100% { background-color: transparent; }
         }
         .trend-modal {
           position: fixed;
@@ -1965,842 +1257,310 @@ export default function ChartPage() {
           left: 0;
           width: 100%;
           height: 100%;
-          background-color: rgba(0, 0, 0, 0.5);
+          background: rgba(0, 0, 0, 0.8);
           display: flex;
           justify-content: center;
           align-items: center;
-          z-index: 60;
+          z-index: 1000;
         }
         .trend-modal-content {
-          background-color: #1a263f;
+          background: #1a263f;
           border: 1px solid #2a3b5a;
-          border-radius: 8px;
+          border-radius: 12px;
           padding: 24px;
-          width: 400px;
-          max-width: 95%;
+          max-width: 500px;
+          width: 90%;
           max-height: 80vh;
           overflow-y: auto;
         }
-        .main-layout {
-          display: flex;
-          flex-direction: column;
-          width: 100%;
-        }
-        .chart-section {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          border-right: 1px solid #2a3b5a;
-          min-height: calc(100vh - 80px);
-        }
-        .sidebar {
-          width: 300px;
-          background-color: #0d1a2e;
-          overflow-y: auto;
-          padding-bottom: 16px;
-        }
-        .sidebar-header {
-          padding: 16px;
-          border-bottom: 1px solid #2a3b5a;
-        }
-        .branding-overlay {
-          font-family: "Inter", sans-serif;
-          font-size: 12px;
-          font-weight: 500;
-          color: #d1d1d6;
-          background: rgba(13, 26, 46, 0.8);
-          padding: 4px 8px;
-          border-radius: 4px;
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          box-sizing: border-box;
-          margin-top: 30px;
-        }
-        .branding-overlay .symbol {
-          color: #d1d1d6;
-          font-weight: 600;
-        }
-        .branding-overlay .ohlc {
-          color: #a1a1aa;
-          font-size: 10px;
-        }
-        .branding-overlay .cypher {
-          color: #3b82f6;
-          font-size: 10px;
-        }
-        .tab-button {
-          flex: 1;
-          padding: 8px;
-          text-align: center;
-          font-size: 14px;
-          font-weight: 500;
-          transition: all 0.2s;
-        }
-        .tab-button.active {
-          background-color: #1a263f;
-          color: #ffffff;
-          border-top: 2px solid #3b82f6;
-        }
-        .tab-button.inactive {
-          background-color: #0d1a2e;
-          color: #a1a1aa;
-        }
-        .performance-row {
-          background-color: #0d1a2e;
-        }
-        .performance-metrics {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 4px;
-        }
-        .performance-metric {
-          font-size: 10px;
-          padding: 2px 4px;
-          text-align: center;
-        }
-        @media (max-width: 767px) {
-          .performance-metrics {
-            grid-template-columns: repeat(2, 1fr);
-          }
-          .main-layout {
-            flex-direction: column;
-            height: calc(100vh - 80px);
-          }
-          .chart-section {
-            border-right: none;
-            border-bottom: 1px solid #2a3b5a;
-            min-height: auto;
-            overflow-y: auto;
-          }
-          .sidebar {
-            width: 100%;
-            border-top: 1px solid #2a3b5a;
-            overflow-y: auto;
-          }
-          .transactions-table th,
-          .transactions-table td {
-            padding: 4px;
-            font-size: 10px;
-          }
-          .trending-banner {
-            padding: 0;
-            width: 100%;
-          }
-          .trending-token-card {
-            padding: 6px 10px;
-            margin-right: 0;
-            min-width: 200px;
-          }
-          .trending-token-card img {
-            width: 20px;
-            height: 20px;
-            margin-right: 6px;
-          }
-          .rank-badge {
-            font-size: 9px;
-            padding: 1px 4px;
-            margin-right: 6px;
-          }
-          .header {
-            padding: 8px;
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 4px;
-          }
-          .branding-overlay {
-            font-size: 10px;
-            margin-top: 20px;
-          }
-          .branding-overlay .ohlc {
-            font-size: 8px;
-          }
-          .branding-overlay .cypher {
-            font-size: 8px;
-          }
-          .tab-bar {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            background-color: #0d1a2e;
-            z-index: 50;
-            border-top: 1px solid #2a3b5a;
-          }
-          .content-wrapper {
-            padding-bottom: 50px; /* Height of tab bar */
-            height: 100%;
-            overflow-y: auto;
-          }
-          .transaction-table-container {
-            max-height: 300px;
-          }
-        }
-        @media (min-width: 768px) {
-          .content-wrapper {
-            display: flex;
-            flex-direction: row;
-            overflow: hidden;
-          }
-          .chart-section {
-            overflow-y: auto;
-          }
-          .sidebar {
-            border-left: 1px solid #2a3b5a;
-            overflow-y: auto;
-          }
-        }
       `}</style>
 
-      {/* Trending Tokens Banner */}
-      <div className="trending-banner">
-        {trendingError ? (
-          <div className="text-red-400 text-sm px-4 py-2">Error: {trendingError}</div>
-        ) : trendingLoading ? (
-          <div className="text-gray-400 text-sm px-4 py-2 flex items-center">
-            <svg
-              className="animate-spin h-5 w-5 text-blue-500 mr-2"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-            Loading trending tokens...
-          </div>
-        ) : trendingTokens.length === 0 ? (
-          <div className="text-gray-400 text-sm px-4 py-2">No trending tokens available.</div>
-        ) : (
-          <div className="trending-tokens-container">
-            {([...trendingTokens, ...trendingTokens] as TrendingToken[]).map((tokenObj, index) => (
-              <Link
-                href={`/token-screener/${tokenObj.pairAddress}/chart`}
-                key={`${tokenObj.pairAddress}-${index}`}
-                passHref
-              >
-                <div className="trending-token-card relative">
-                  <span className="rank-badge">#{(index % trendingTokens.length) + 1}</span>
-                  <img
-                    src={tokenObj.imageUrl}
-                    alt={`${tokenObj.symbol} logo`}
-                    onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/24/1F2937/FFFFFF?text=T")}
-                  />
-                  <div className="flex-1">
-                    <span className="font-semibold text-gray-100 text-sm">{tokenObj.symbol}</span>
-                    <span className="block text-xs text-gray-400 truncate max-w-[60px]">{tokenObj.name}</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="block text-gray-100 text-sm">${parseFloat(tokenObj.priceUsd).toFixed(4)}</span>
-                    <span className={`text-xs ${tokenObj.priceChange24h >= 0 ? "text-green-400" : "text-red-400"}`}>
-                      {tokenObj.priceChange24h.toFixed(2)}%
-                    </span>
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </div>
 
-      {/* Header */}
-      <header className="sticky top-0 z-50 px-4 py-2 border-b border-[#2A3B5A] flex flex-wrap justify-between items-center w-full bg-gray-950 shadow-sm header">
-        <div className="flex items-center gap-2">
-          <button onClick={() => router.push('/token-screener')} className="text-gray-400 hover:text-gray-200 mr-2">
-            <ArrowLeftIcon className="w-5 h-5" />
-          </button>
-          {token?.logoUrl && (
-            <img
-              src={token.logoUrl}
-              alt={`${token.baseToken.name} logo`}
-              className="w-6 h-6 rounded-full border border-[#2A3B5A]"
-              onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/48")}
-            />
-          )}
-          <h1 className="text-base font-semibold tracking-tight text-gray-100">
-            {token ? `${token.baseToken.symbol}/${token.quoteToken.symbol}` : "Loading..."}
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="text-xs text-gray-400">Last Updated: {lastUpdated}</div>
-        </div>
-      </header>
-
-      {/* Performance Metrics Row */}
-      {performanceMetrics && (
-        <div className="performance-row px-4 py-1 border-b border-[#2A3B5A] bg-[#0d1a2e]">
-          <div className="performance-metrics">
-            <span
-              className={`performance-metric rounded-lg ${
-                performanceMetrics.change_5m >= 0 ? "bg-green-400/10 text-green-400" : "bg-red-400/10 text-red-400"
-              }`}
-            >
-              5m: {performanceMetrics.change_5m >= 0 ? "+" : ""}
-              {performanceMetrics.change_5m.toFixed(2)}%
-            </span>
-            <span
-              className={`performance-metric rounded-lg ${
-                performanceMetrics.change_1h >= 0 ? "bg-green-400/10 text-green-400" : "bg-red-400/10 text-red-400"
-              }`}
-            >
-              1h: {performanceMetrics.change_1h >= 0 ? "+" : ""}
-              {performanceMetrics.change_1h.toFixed(2)}%
-            </span>
-            <span
-              className={`performance-metric rounded-lg ${
-                performanceMetrics.change_4h >= 0 ? "bg-green-400/10 text-green-400" : "bg-red-400/10 text-red-400"
-              }`}
-            >
-              4h: {performanceMetrics.change_4h >= 0 ? "+" : ""}
-              {performanceMetrics.change_4h.toFixed(2)}%
-            </span>
-            <span
-              className={`performance-metric rounded-lg ${
-                performanceMetrics.change_24h >= 0 ? "bg-green-400/10 text-green-400" : "bg-red-400/10 text-red-400"
-              }`}
-            >
-              24h: {performanceMetrics.change_24h >= 0 ? "+" : ""}
-              {performanceMetrics.change_24h.toFixed(2)}%
-            </span>
-          </div>
-        </div>
-      )}
 
       {/* Main Content */}
-      <div className="main-layout">
-        <div className="content-wrapper">
-          {(width >= 768 || activeTab === "chart") && (
-            <div className="chart-section">
-              {initialLoading ? (
-                <div className="text-center text-sm flex items-center justify-center h-full bg-gray-950">
-                  <svg
-                    className="animate-spin h-6 w-6 text-blue-500 mr-2"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  Loading...
-                </div>
-              ) : error ? (
-                <div className="text-red-400 text-center text-sm bg-gray-950 p-4 h-full flex items-center justify-center">
-                  {error}
-                </div>
-              ) : (
-                <div className="bg-gray-950 w-full flex flex-col">
-                  {/* Controls: View, Type, Timeframe, Trend Button */}
-                  <div className="flex flex-wrap justify-between items-center px-4 py-2 border-b border-[#2A3B5A]">
-                    <div className="flex space-x-2 mb-2 md:mb-0">
-                      <select
-                        value={chartView}
-                        onChange={(e) => setChartView(e.target.value as "Price" | "MarketCap")}
-                        className="bg-[#1A263F] text-gray-400 text-sm px-3 py-1 rounded-lg focus:outline-none"
-                      >
-                        <option value="Price">Price</option>
-                        <option value="MarketCap">Market Cap</option>
-                      </select>
-                      {chartView === "Price" && (
-                        <select
-                          value={chartType}
-                          onChange={(e) => setChartType(e.target.value as "Candlestick" | "Line")}
-                          className="bg-[#1A263F] text-gray-400 text-sm px-3 py-1 rounded-lg focus:outline-none"
-                        >
-                          <option value="Candlestick">Candlestick</option>
-                          <option value="Line">Line</option>
-                        </select>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={timeframe}
-                        onChange={(e) => {
-                          setTimeframe(e.target.value);
-                          if (token) fetchChartData(poolAddress as string, token);
-                        }}
-                        disabled={initialLoading}
-                        className="bg-[#1A263F] text-gray-400 text-sm px-3 py-1 rounded-lg focus:outline-none"
-                      >
-                        {["1m", "5m", "15m", "1h", "4h", "12h", "1d"].map((tf) => (
-                          <option key={tf} value={tf}>
-                            {tf}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={() => setShowTrendModal(true)}
-                        className="px-3 py-1 rounded-lg text-sm font-medium bg-[#1A263F] text-gray-400 hover:bg-[#2A3B5A] transition-all"
-                      >
-                        Trend
-                      </button>
-                    </div>
+      <div className="flex flex-col lg:flex-row gap-0 w-full min-h-screen">
+
+        {/* Chart Section */}
+        <div className="flex-1 min-w-0 w-full h-full">
+          {initialLoading ? (
+            <div className="text-center text-sm flex items-center justify-center h-full bg-gray-950">
+              <svg className="animate-spin h-6 w-6 text-blue-500 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Loading...
+            </div>
+          ) : error ? (
+            <div className="text-red-400 text-center text-sm bg-gray-950 p-4 h-full flex items-center justify-center">
+              {error}
+            </div>
+          ) : (
+            <div className="bg-gray-950 h-full flex flex-col">
+              {/* Chart Header */}
+              <div className="bg-gray-900 border-b border-blue-500/20 p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div>
+                      <h1 className="text-xl font-bold text-gray-200">
+                        {token?.baseToken.symbol}/{token?.quoteToken.symbol}
+                      </h1>
+                      <p className="text-sm text-gray-400">Price</p>
                   </div>
-
-                  <div className="relative px-4 py-0 flex-shrink-0">
-                    <div className="branding-overlay">
-                      <span className="symbol">{symbol}</span>
-                      <span className="ohlc">
-                        O: {ohlc.open} H: {ohlc.high} L: {ohlc.low} C: {ohlc.close}
-                      </span>
-                      <span className="cypher">cypher.io</span>
-                    </div>
-
-                    {chartView === "Price" ? (
-                      chartType === "Candlestick" ? (
-                        candleData.length > 0 ? (
-                          <Chart
-                            options={candlestickOptions}
-                            series={[{ data: candleData }]}
-                            type="candlestick"
-                            height={width < 768 ? 350 : 500}
-                            width="100%"
-                          />
-                        ) : (
-                          <div className="text-center text-sm text-gray-400 h-full flex items-center justify-center">
-                            No chart data available.
-                          </div>
-                        )
-                      ) : lineData.length > 0 ? (
-                        <Chart
-                          options={lineOptions}
-                          series={[{ name: "Price", data: lineData }]}
-                          type="line"
-                          height={width < 768 ? 350 : 500}
-                          width="100%"
-                        />
-                      ) : (
-                        <div className="text-center text-sm text-gray-400 h-full flex items-center justify-center">
-                          No chart data available.
-                        </div>
-                      )
-                    ) : marketCapData.length > 0 ? (
-                      <Chart
-                        options={candlestickOptions}
-                        series={[{ data: marketCapData }]}
-                        type="candlestick"
-                        height={width < 768 ? 350 : 500}
-                        width="100%"
-                      />
-                    ) : (
-                      <div className="text-center text-sm text-gray-400 h-full flex items-center justify-center">
-                        No chart data available.
+                    <div className="flex space-x-4 text-sm">
+                      <div>
+                        <span className="text-gray-400">O: </span>
+                        <span className="text-gray-200">${token?.priceUsd ? parseFloat(token.priceUsd).toFixed(4) : "0.0000"}</span>
                       </div>
-                    )}
-                  </div>
-
-                  {/* Transactions Table */}
-                  <div className="px-4 py-1 flex-shrink-0">
-                    <div className="flex justify-between items-center mb-2">
-                      <h3 className="text-sm font-semibold text-gray-100">Transactions</h3>
-                      <select
-                        value={txFilter}
-                        onChange={(e) => setTxFilter(e.target.value as "all" | "buy" | "sell")}
-                        className="bg-[#1A263F] text-gray-400 text-xs px-2 py-1 rounded-lg focus:outline-none"
-                      >
-                        <option value="all">All</option>
-                        <option value="buy">Buy</option>
-                        <option value="sell">Sell</option>
-                      </select>
+                      <div>
+                        <span className="text-gray-400">H: </span>
+                        <span className="text-gray-200">${token?.priceUsd ? parseFloat(token.priceUsd).toFixed(4) : "0.0000"}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">L: </span>
+                        <span className="text-gray-200">${token?.priceUsd ? parseFloat(token.priceUsd).toFixed(4) : "0.0000"}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">C: </span>
+                        <span className="text-gray-200">${token?.priceUsd ? parseFloat(token.priceUsd).toFixed(4) : "0.0000"}</span>
+                      </div>
                     </div>
-                    <div
-                      className={`transaction-table-container custom-scrollbar custom-scrollbar-x-none w-full ${
-                        transactionLoading ? "loading" : ""
-                      }`}
-                      ref={transactionContainerRef}
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="text-right">
+                      <div className="text-lg font-bold text-gray-200">
+                        ${token?.priceUsd ? parseFloat(token.priceUsd).toFixed(4) : "0.0000"}
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        {token?.priceChange?.h24 ? (
+                          <span className={token.priceChange.h24 >= 0 ? "text-green-400" : "text-red-400"}>
+                            {token.priceChange.h24 >= 0 ? "+" : ""}{token.priceChange.h24.toFixed(2)}%
+                    </span>
+                        ) : (
+                          "0.00%"
+                        )}
+                  </div>
+                </div>
+              </div>
+                </div>
+                </div>
+                
+              {/* Chart Controls */}
+              <div className="bg-gray-900 border-b border-blue-500/20 p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                  <select
+                    value={timeframe}
+                      onChange={(e) => setTimeframe(e.target.value as "1m" | "5m" | "15m" | "1h" | "4h" | "1d")}
+                      className="bg-gray-800 text-gray-300 text-xs px-3 py-1 rounded border border-gray-700 focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="1m">1m</option>
+                    <option value="5m">5m</option>
+                    <option value="15m">15m</option>
+                    <option value="1h">1h</option>
+                    <option value="4h">4h</option>
+                    <option value="1d">1d</option>
+                  </select>
+                  <select
+                    value={chartType}
+                    onChange={(e) => setChartType(e.target.value as "candlestick" | "line")}
+                      className="bg-gray-800 text-gray-300 text-xs px-3 py-1 rounded border border-gray-700 focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="candlestick">Candlestick</option>
+                      <option value="line">Trend</option>
+                  </select>
+                  <select
+                    value={yAxisType}
+                    onChange={(e) => setYAxisType(e.target.value as "price" | "marketCap")}
+                      className="bg-gray-800 text-gray-300 text-xs px-3 py-1 rounded border border-gray-700 focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="price">Price</option>
+                    <option value="marketCap">Market Cap</option>
+                  </select>
+                  <button
+                    onClick={() => setShowTrendModal(true)}
+                      className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded transition-colors"
+                  >
+                      Analysis
+                  </button>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => setZoom(zoom * 1.2)}
+                      className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded border border-gray-700"
                     >
-                      <table className="w-full text-[12px] text-left font-sans transactions-table table-auto">
-                        <thead className="text-[10px] text-gray-400 uppercase bg-gray-950 sticky top-0 z-10">
-                          <tr>
-                            <th scope="col" className="px-2 py-2 whitespace-nowrap">
-                              Time
-                            </th>
-                            <th scope="col" className="px-2 py-2 whitespace-nowrap">
-                              Type
-                            </th>
-                            <th scope="col" className="px-2 py-2 whitespace-nowrap">
-                              Value (USD)
-                            </th>
-                            <th scope="col" className="px-2 py-2 whitespace-nowrap">
-                              Value (ETH)
-                            </th>
-                            <th scope="col" className="px-2 py-2 whitespace-nowrap text-right">
-                              Token Amt
-                            </th>
-                            <th scope="col" className="px-2 py-2 whitespace-nowrap text-right">
-                              Token Price
-                            </th>
-                            <th scope="col" className="px-2 py-2 whitespace-nowrap text-right">
-                              From
-                            </th>
-                            <th scope="col" className="px-2 py-2 whitespace-nowrap text-right">
-                              To
-                            </th>
-                            <th scope="col" className="px-2 py-2 whitespace-nowrap text-right">
-                              Maker
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredTransactions.length === 0 && !transactionLoading ? (
-                            <tr>
-                              <td colSpan={9} className="px-2 py-3 text-center text-gray-400">
-                                No transactions available.
+                      +
+                    </button>
+                    <button
+                      onClick={() => setZoom(zoom / 1.2)}
+                      className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded border border-gray-700"
+                    >
+                      -
+                    </button>
+                    <button
+                      onClick={() => setZoom(1)}
+                      className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded border border-gray-700"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Chart Area */}
+              <div className="flex-1 bg-gray-950 p-4 min-h-[500px]">
+                <div className="w-full h-full min-h-[500px]">
+                  {candleData.length > 0 ? (
+                <Chart
+                      options={chartType === "candlestick" ? candlestickOptions : lineOptions}
+                      series={[
+                        {
+                          data: chartType === "candlestick" ? candleData : lineData,
+                        },
+                      ]}
+                      type={chartType === "candlestick" ? "candlestick" : "line"}
+                      height={500}
+                />
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-gray-400">
+                      No chart data available
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Transactions Section */}
+              <div className="bg-gray-900 border-t border-blue-500/20 p-4">
+                <div className="mb-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-gray-200">Transactions</h3>
+                  <select
+                    value={txFilter}
+                    onChange={(e) => setTxFilter(e.target.value as "all" | "buy" | "sell")}
+                    className="bg-gray-800 text-gray-300 text-xs px-3 py-2 rounded-lg border border-gray-700 focus:outline-none focus:border-blue-500 transition-colors"
+                  >
+                    <option value="all">All Transactions</option>
+                    <option value="buy">Buy Only</option>
+                    <option value="sell">Sell Only</option>
+                  </select>
+                </div>
+                </div>
+                <div className="overflow-y-auto max-h-64 custom-scrollbar" onScroll={handleTransactionScroll}>
+                  <table className="w-full text-sm text-left">
+                    <thead className="text-xs text-gray-400 uppercase bg-gray-900 sticky top-0">
+                      <tr>
+                        <th className="px-3 py-2">Time</th>
+                        <th className="px-3 py-2">Type</th>
+                        <th className="px-3 py-2">USD</th>
+                        <th className="px-3 py-2">ETH</th>
+                        <th className="px-3 py-2">Size</th>
+                        <th className="px-3 py-2">Price</th>
+                        <th className="px-3 py-2">Maker/Txn</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredTransactions.length === 0 && !transactionLoading ? (
+                        <tr>
+                          <td colSpan={7} className="px-3 py-3 text-center text-gray-400">No transactions available.</td>
+                        </tr>
+                      ) : (
+                        filteredTransactions.map((tx) => {
+                          // Determine if this is a buy or sell based on the transaction direction
+                          // For DEX transactions, we need to look at the token symbol and direction
+                          const isTokenTransaction = tx.tokenSymbol === token?.baseToken.symbol;
+                          const isBuy = isTokenTransaction && tx.to?.toLowerCase() === (token?.poolAddress?.toLowerCase() || '');
+                          const isSell = isTokenTransaction && tx.from?.toLowerCase() !== (token?.poolAddress?.toLowerCase() || '');
+                          const txLabel = isBuy ? "SELL" : isSell ? "SELL" : "BUY";
+                          const txColor = isBuy ? "text-red-400" : isSell ? "text-red-400" : "text-green-400";
+                          
+                          let usdValue = 0, ethValue = 0, priceAtTime = 0;
+                          
+                          if (isTokenTransaction) {
+                            // For token transactions, calculate based on token amount and current price
+                            const tokenAmount = tx.tokenAmount || 0;
+                            priceAtTime = token?.priceUsd ? parseFloat(token.priceUsd) : 0;
+                            usdValue = tokenAmount * priceAtTime;
+                            ethValue = usdValue / (ethPrice || 1);
+                          } else {
+                            // For ETH transactions
+                            ethValue = Number(tx.value) / 1e18;
+                            usdValue = ethValue * (ethPrice || 1);
+                            priceAtTime = token?.priceUsd ? parseFloat(token.priceUsd) : 0;
+                          }
+                          let sizeIcon = "🐟";
+                          if (usdValue > 10000) sizeIcon = "🐋";
+                          else if (usdValue > 1000) sizeIcon = "🐬";
+                          else if (usdValue > 100) sizeIcon = "🐠";
+                          return (
+                            <tr key={tx.id} className="border-b border-gray-800 text-gray-100 hover:bg-gray-800 transition py-1 flash-animation">
+                              <td className="px-3 py-2 text-xs">{new Date(tx.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true })}</td>
+                              <td className={`px-3 py-2 font-bold text-xs ${txColor}`}>{txLabel}</td>
+                              <td className="px-3 py-2 text-xs">${usdValue.toFixed(2)}</td>
+                              <td className="px-3 py-2 text-xs">{ethValue.toFixed(4)}</td>
+                              <td className="px-3 py-2 text-center text-sm align-middle flex items-center justify-center">{sizeIcon}</td>
+                              <td className="px-3 py-2 text-xs">${priceAtTime.toFixed(4)}</td>
+                              <td className="px-3 py-2 text-xs">
+                                <div className="flex items-center gap-1">
+                                  <span className="text-blue-500 cursor-pointer" onClick={() => copyToClipboard(tx.from)}>{`${tx.from.slice(0, 4)}...${tx.from.slice(-4)}`}</span>
+                                  <button onClick={() => copyToClipboard(tx.hash)} className="text-gray-400 hover:text-blue-400" title="Copy tx hash">
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                    </svg>
+                                  </button>
+                                </div>
                               </td>
                             </tr>
-                          ) : (
-                            filteredTransactions.map((tx, index) => {
-                              const isSell = tx.tokenSymbol !== "ETH";
-                              const tokenPriceInUsd = token?.priceUsd ? parseFloat(token.priceUsd) : 0;
-                              let tradedAmount: number = tx.tokenAmount;
-                              let usdValue: number = 0;
-                              let ethValue: number = 0;
-                              if (isSell) {
-                                usdValue = tradedAmount * tokenPriceInUsd;
-                                ethValue = usdValue / ethPrice;
-                              } else {
-                                const ethAmount = tx.tokenAmount;
-                                usdValue = ethAmount * ethPrice;
-                                tradedAmount = usdValue / tokenPriceInUsd;
-                                ethValue = ethAmount;
-                              }
-                              const txLabel = isSell ? "SELL" : "BUY";
-
-                              const maker = tx.from;
-                              const shortFrom = `${tx.from.slice(0, 4)}...${tx.from.slice(-4)}`;
-                              const shortTo = `${tx.to.slice(0, 4)}...${tx.to.slice(-4)}`;
-                              const shortMaker = `${maker.slice(0, 4)}...${maker.slice(-4)}`;
-
-                              return (
-                                <tr
-                                  key={tx.id}
-                                  className={`border-b border-[#2A3B5A] text-gray-100 fade-in ${
-                                    index % 2 === 0 ? "bg-[#1A263F]" : "bg-[#0F1C34]"
-                                  }`}
-                                  ref={index === filteredTransactions.length - 1 ? lastTransactionRef : null}
-                                >
-                                  <td className="px-2 py-2 whitespace-nowrap">
-                                    {new Date(tx.timestamp).toLocaleTimeString("en-US", {
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                      second: "2-digit",
-                                      hour12: true,
-                                    })}
-                                  </td>
-                                  <td
-                                    className={`px-2 py-2 whitespace-nowrap ${
-                                      isSell ? "text-red-400" : "text-green-400"
-                                    } font-bold`}
-                                  >
-                                    {txLabel}
-                                  </td>
-                                  <td className="px-2 py-2 whitespace-nowrap text-gray-100">${usdValue.toFixed(2)}</td>
-                                  <td className="px-2 py-2 whitespace-nowrap text-gray-100">{ethValue.toFixed(4)}</td>
-                                  <td className="px-2 py-2 whitespace-nowrap text-right">
-                                    {Number.isFinite(tradedAmount) ? tradedAmount.toFixed(4) : "0.0000"}
-                                  </td>
-                                  <td className="px-2 py-2 whitespace-nowrap text-right text-gray-100">
-                                    $
-                                    {Number.isFinite(tokenPriceInUsd)
-                                      ? tokenPriceInUsd.toFixed(6)
-                                      : "0.000000"}
-                                  </td>
-                                  <td className="px-2 py-2 whitespace-nowrap text-right">
-                                    <div className="tooltip">
-                                      <Link href={`/explorer/address/${tx.from}`} className="text-blue-500 hover:underline">
-                                        {shortFrom}
-                                      </Link>
-                                      <span className="tooltiptext">{tx.from}</span>
-                                    </div>
-                                  </td>
-                                  <td className="px-2 py-2 whitespace-nowrap text-right">
-                                    <div className="tooltip">
-                                      <Link href={`/explorer/address/${tx.to}`} className="text-blue-500 hover:underline">
-                                        {shortTo}
-                                      </Link>
-                                      <span className="tooltiptext">{tx.to}</span>
-                                    </div>
-                                  </td>
-                                  <td className="px-2 py-2 whitespace-nowrap text-right">
-                                    <div className="tooltip">
-                                      <Link href={`/explorer/address/${maker}`} className="text-blue-500 hover:underline">
-                                        {shortMaker}
-                                      </Link>
-                                      <span className="tooltiptext">{maker}</span>
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
+                          );
+                        })
+                      )}
                       {transactionLoading && (
-                        <div className="text-center text-sm text-gray-400 py-2">
-                          <svg
-                            className="animate-spin h-5 w-5 text-blue-500 mx-auto pulse"
-                            xmlns="http://www.w3.org/2000/svg"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                          >
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path
-                              className="opacity-75"
-                              fill="currentColor"
-                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                            ></path>
-                          </svg>
-                        </div>
+                        <tr>
+                          <td colSpan={7} className="px-3 py-3 text-center text-gray-400">
+                            <div className="flex items-center justify-center">
+                              <svg className="animate-spin h-4 w-4 text-blue-500 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Loading more transactions...
+                            </div>
+                          </td>
+                        </tr>
                       )}
-                    </div>
-                  </div>
-
-                  {/* Indicators */}
-                  <div className="px-4 py-1 flex-shrink-0">
-                    {width < 768 ? (
-                      <select
-                        value={activeIndicatorTab}
-                        onChange={(e) => setActiveIndicatorTab(e.target.value)}
-                        className="bg-[#1A263F] text-gray-400 text-sm px-3 py-1 rounded-lg focus:outline-none w-full mb-2"
-                      >
-                        {availableIndicators.map((indicator) => (
-                          <option key={indicator} value={indicator}>
-                            {indicator}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <div className="flex overflow-x-auto border-t border-b border-[#2A3B5A] bg-gray-950 mb-4 w-full">
-                        {availableIndicators.map((indicator) => (
-                          <button
-                            key={indicator}
-                            onClick={() => setActiveIndicatorTab(indicator)}
-                            className={`px-4 py-2 text-sm font-medium transition-all duration-200 ${
-                              activeIndicatorTab === indicator
-                                ? "bg-blue-500 text-white"
-                                : "text-gray-400 hover:bg-[#2A3B5A]"
-                            }`}
-                          >
-                            {indicator}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="w-full">
-                      {activeIndicatorTab === "Volume" && (
-                        <Chart
-                          options={volumeOptions}
-                          series={[{ name: "Volume", data: volumeData }]}
-                          type="bar"
-                          height={width < 768 ? 200 : 300}
-                          width="100%"
-                        />
-                      )}
-                      {activeIndicatorTab === "SMA" && (
-                        <Chart
-                          options={smaOptions}
-                          series={[
-                            { name: "SMA 20", data: sma20Data },
-                            { name: "SMA 50", data: sma50Data },
-                          ]}
-                          type="line"
-                          height={width < 768 ? 200 : 300}
-                          width="100%"
-                        />
-                      )}
-                      {activeIndicatorTab === "RSI" && (
-                        <Chart
-                          options={rsiOptions}
-                          series={[{ name: "RSI", data: rsiData }]}
-                          type="line"
-                          height={width < 768 ? 200 : 300}
-                          width="100%"
-                        />
-                      )}
-                      {activeIndicatorTab === "MACD" && (
-                        <Chart
-                          options={macdOptions}
-                          series={[
-                            { name: "MACD", data: macdData.map((d) => ({ x: d.x, y: d.macd })) },
-                            { name: "Signal", data: macdData.map((d) => ({ x: d.x, y: d.signal })) },
-                            { name: "Histogram", data: macdData.map((d) => ({ x: d.x, y: d.histogram })), type: "bar" },
-                          ]}
-                          type="line"
-                          height={width < 768 ? 200 : 300}
-                          width="100%"
-                        />
-                      )}
-                      {activeIndicatorTab === "VWAP" && (
-                        <Chart
-                          options={vwapOptions}
-                          series={[{ name: "VWAP", data: vwapData }]}
-                          type="line"
-                          height={width < 768 ? 200 : 300}
-                          width="100%"
-                        />
-                      )}
-                      {activeIndicatorTab === "Supertrend" && (
-                        <Chart
-                          options={supertrendOptions}
-                          series={supertrendOptions.series as any}
-                          type="line"
-                          height={width < 768 ? 200 : 300}
-                          width="100%"
-                        />
-                      )}
-                    </div>
-                  </div>
+                    </tbody>
+                  </table>
                 </div>
-              )}
-            </div>
-          )}
-          {(width >= 768 || activeTab === "details") && (
-            <div className="sidebar">
-              <div className="sidebar-header">
-                <h2 className="text-lg font-semibold text-gray-100">
-                  {token ? `${token.baseToken.symbol}/${token.quoteToken.symbol}` : "Details"}
-                </h2>
-              </div>
-              <div className="p-4 space-y-6">
-                {initialLoading ? (
-                  <div className="text-center text-sm text-gray-400 bg-[#1A263F] rounded-lg p-4">
-                    Loading token data...
-                  </div>
-                ) : error ? (
-                  <div className="text-red-400 text-center text-sm bg-[#1A263F] rounded-lg p-4">{error}</div>
-                ) : token ? (
-                  <>
-                    {/* Token Info Card */}
-                    <div className="bg-[#1A263F] rounded-lg p-4 border border-[#2A3B5A]">
-                      <div className="relative mb-4">
-                        <img
-                          src={token.bannerUrl}
-                          alt={`${token.baseToken.name} banner`}
-                          className="w-full h-20 object-cover rounded-lg border border-[#2A3B5A]"
-                          onError={(e) => (e.currentTarget.src = "https://i.imgur.com/Fo2D7cK.png")}
-                        />
-                        <img
-                          src={token.logoUrl}
-                          alt={`${token.baseToken.name} logo`}
-                          className="absolute -bottom-4 left-2 w-10 h-10 rounded-full border-2 border-[#2A3B5A]"
-                          onError={(e) =>
-                            (e.currentTarget.src =
-                              "https://firebasestorage.googleapis.com/v0/b/homebase-dapp.firebasestorage.app/o/0x73cb479f2ccf77bad90bcda91e3987358437240a(2).png?alt=media&token=1cd408cf-c6a9-4264-8d30-0e1c5a544397")
-                          }
-                        />
-                      </div>
-                      <h2 className="text-lg font-semibold tracking-tight mt-4 text-gray-100">
-                        {token.baseToken.name} ({token.baseToken.symbol})
-                      </h2>
-                      <div className="mt-2">
-                        <div className="flex justify-between items-center text-xs text-gray-400">
-                          <span>Pool:</span>
-                          <div className="flex items-center gap-1">
-                            <span className="truncate max-w-[140px]">{token.poolAddress}</span>
-                            <button onClick={() => copyToClipboard(token.poolAddress)} className="hover:text-blue-500">
-                              <ClipboardIcon className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                        <div className="flex justify-between items-center text-xs text-gray-400 mt-1">
-                          <span>Pair:</span>
-                          <div className="flex items-center gap-1">
-                            <span className="truncate max-w-[140px]">{token.pairAddress}</span>
-                            <button onClick={() => copyToClipboard(token.pairAddress)} className="hover:text-blue-500">
-                              <ClipboardIcon className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Swap Form Card */}
-                    <Swap token={token} ethPrice={ethPrice} />
-
-                    {/* Market Stats Card */}
-                    <div className="bg-[#1A263F] rounded-lg p-4 border border-[#2A3B5A]">
-                      <h3 className="text-sm font-semibold mb-3 text-gray-100">Market Stats</h3>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-400">Price (USD)</span>
-                          <span className="font-medium text-gray-100">${parseFloat(token.priceUsd).toFixed(4)}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-400">Market Cap</span>
-                          <span className="font-medium text-gray-100">{formatLargeNumber(token.marketCap)}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-400">Liquidity</span>
-                          <span className="font-medium text-gray-100">{formatLargeNumber(token.liquidity.usd)}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-400">FDV</span>
-                          <span className="font-medium text-gray-100">{formatLargeNumber(token.fdv)}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Boost CTA */}
-                    <div className="bg-[#1A263F] rounded-lg p-4 border border-[#2A3B5A] text-center">
-                      <Link
-                        href={`/marketplace?token=${token.pairAddress}`}
-                        className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-500 text-white hover:bg-blue-600 transition-all"
-                      >
-                        Boost this Token
-                      </Link>
-                    </div>
-
-                    {/* Ads Card */}
-                    <div className="bg-[#1A263F] rounded-lg p-4 border border-[#2A3B5A]">
-                      <h3 className="text-sm font-semibold mb-3 text-gray-100">Advertisement</h3>
-                      {token.adImageUrl ? (
-                        <img
-                          src={token.adImageUrl}
-                          alt="Project Ad"
-                          className="w-full h-20 object-cover rounded-lg border border-[#2A3B5A]"
-                          onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/300x100?text=Ad+Space")}
-                        />
-                      ) : (
-                        <div className="text-sm text-gray-400 text-center bg-[#2A3B5A] rounded-lg p-4">
-                          Advertise Here
-                        </div>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-center text-sm text-gray-400 bg-[#1A263F] rounded-lg p-4">
-                    No token data available.
-                  </div>
-                )}
               </div>
             </div>
           )}
         </div>
-        {width < 768 && (
-          <div className="tab-bar flex">
-            <button
-              onClick={() => setActiveTab("chart")}
-              className={`tab-button ${activeTab === "chart" ? "active" : "inactive"}`}
-            >
-              Chart
-            </button>
-            <button
-              onClick={() => setActiveTab("details")}
-              className={`tab-button ${activeTab === "details" ? "active" : "inactive"}`}
-            >
-              Details
-            </button>
+
+        {/* Swap Section */}
+        <div className="w-full lg:w-80 flex-shrink-0 h-full flex flex-col">
+          <div className="bg-gray-900 h-full flex flex-col border-l border-blue-500/20">
+            <div className="flex-1 p-4">
+            <Swap token={token} ethPrice={ethPrice} />
           </div>
-        )}
+            
+            {/* Ad Banner at Bottom */}
+            <div className="bg-gray-900 border-t border-blue-500/20 p-4 flex-1 flex flex-col justify-end">
+              <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xs font-bold">AD</span>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-200">Sponsored Content</h3>
+                      <p className="text-xs text-gray-400">Discover new opportunities</p>
+                    </div>
+                  </div>
+                  <button className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded-lg transition-colors">
+                    Learn More
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Trend Modal */}
@@ -2825,28 +1585,6 @@ export default function ChartPage() {
                       {insight.trend}
                     </span>
                   )}
-                  {insight.rsiStatus && (
-                    <span
-                      className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-                        insight.rsiStatus === "Overbought"
-                          ? "bg-red-400 text-gray-100"
-                          : insight.rsiStatus === "Oversold"
-                          ? "bg-green-400 text-gray-100"
-                          : "bg-[#2A3B5A] text-gray-100"
-                      }`}
-                    >
-                      {insight.rsiStatus}
-                    </span>
-                  )}
-                  {insight.crossoverType && (
-                    <span
-                      className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-                        insight.crossoverType === "Golden Cross" ? "bg-green-400 text-gray-100" : "bg-red-400 text-gray-100"
-                      }`}
-                    >
-                      {insight.crossoverType}
-                    </span>
-                  )}
                   <span className="text-gray-400">{insight.text}</span>
                 </div>
               ))}
@@ -2866,6 +1604,24 @@ export default function ChartPage() {
 
       {/* Footer */}
       <Footer />
+
+      {/* Custom Scrollbar Styles */}
+      <style jsx>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: #1f2937;
+          border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #3b82f6;
+          border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #2563eb;
+        }
+      `}</style>
     </div>
   );
 }

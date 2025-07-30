@@ -1,14 +1,16 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback, Suspense } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+
 import { useRouter } from "next/navigation";
+
 import { motion } from "framer-motion";
+
 import {
   FaTrophy,
   FaBolt,
   FaStar,
   FaBell,
-  FaClipboard,
   FaPlusCircle,
   FaUser,
   FaSearch,
@@ -22,10 +24,18 @@ import {
   FaDollarSign,
   FaEdit,
   FaRedo,
+  FaExclamationTriangle,
+  FaShieldAlt,
+  FaRocket,
+  FaCopy,
 } from "react-icons/fa";
+
 import debounce from "lodash/debounce";
+
 import { onAuthStateChanged } from "firebase/auth";
+
 import type { User } from "firebase/auth";
+
 import {
   collection,
   query,
@@ -40,20 +50,35 @@ import {
   arrayUnion,
   arrayRemove,
 } from "firebase/firestore";
+
 import type { Auth } from "firebase/auth";
+
 import type { Firestore } from "firebase/firestore";
+
 import { auth, db } from "@/lib/firebase";
-import PortfolioTable from "./PortfolioTable";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+
+
+
 import { ToastContainer, toast as reactToast } from "react-toastify";
+
 import 'react-toastify/dist/ReactToastify.css';
+
 import Image from 'next/image';
 
+// Performance constants
+
+const DEBOUNCE_DELAY = 300;
+
+const MOBILE_BREAKPOINT = 768;
+
 // Explicitly type auth and db
+
 const firebaseAuth: Auth = auth;
+
 const firestoreDb: Firestore = db;
 
 // DexScreenerPair type
+
 type DexScreenerPair = {
   pairAddress: string;
   baseToken?: {
@@ -88,7 +113,139 @@ type DexScreenerPair = {
   pairCreatedAt: number;
 };
 
+// Memoized Token Row Component
+
+const TokenRow = React.memo(({ token, index, style, onTokenClick, favorites, onToggleFavorite, formatPrice, getColorClass, getAge, getTxns24h, getTrophy, MarketingIcon }: {
+  token: TokenData;
+  index: number;
+  style: React.CSSProperties;
+  onTokenClick: (pool: string) => void;
+  favorites: string[];
+  onToggleFavorite: (poolAddress: string) => void;
+  formatPrice: (price: string | number) => string;
+  getColorClass: (value: number) => string;
+  getAge: (createdAt?: number) => string;
+  getTxns24h: (token: TokenData) => number;
+  getTrophy: (rank: number) => JSX.Element | null;
+  MarketingIcon: () => JSX.Element;
+}) => {
+  const isFavorite = favorites.includes(token.poolAddress);
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < MOBILE_BREAKPOINT;
+
+  if (isMobile) {
+    return (
+      <div style={style} className="p-2">
+        <div
+          className="bg-gray-900 rounded-lg p-3 border border-blue-500/20 hover:border-blue-500/40 transition-colors cursor-pointer"
+          onClick={() => onTokenClick(token.poolAddress)}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center space-x-2">
+              {token.info?.imageUrl && (
+                <Image src={token.info.imageUrl} alt={token.symbol} width={24} height={24} className="w-6 h-6 rounded-full" />
+              )}
+              <span className="font-bold text-white">{token.symbol}</span>
+              {getTrophy(index + 1)}
+              {token.boosted && <MarketingIcon />}
+            </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleFavorite(token.poolAddress);
+              }}
+              className="text-yellow-400 hover:text-yellow-300 p-2"
+            >
+              {isFavorite ? <FaStar className="w-4 h-4" /> : <FaStar className="w-4 h-4 opacity-50" />}
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <span className="text-gray-400">Price:</span>
+              <span className="text-white ml-1">{formatPrice(token.priceUsd || "0")}</span>
+            </div>
+            <div>
+              <span className="text-gray-400">24h:</span>
+              <span className={`ml-1 ${getColorClass(token.priceChange?.h24 || 0)}`}>
+                {token.priceChange?.h24 ? `${token.priceChange.h24 >= 0 ? "+" : ""}${token.priceChange.h24.toFixed(2)}%` : "0.00%"}
+              </span>
+            </div>
+            <div>
+              <span className="text-gray-400">Volume:</span>
+              <span className="text-white ml-1">{formatPrice(token.volume?.h24 || 0)}</span>
+            </div>
+            <div>
+              <span className="text-gray-400">MCap:</span>
+              <span className="text-white ml-1">{formatPrice(token.marketCap || 0)}</span>
+            </div>
+          </div>
+          <div className="mt-2 flex justify-between items-center">
+            <span className="text-xs text-gray-500">{getAge(token.pairCreatedAt)}</span>
+            <span className="text-xs text-gray-500">{getTxns24h(token)} txns</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={style}
+      className="border-b border-gray-800 hover:bg-gray-900/50 transition-colors cursor-pointer"
+      onClick={() => onTokenClick(token.poolAddress)}
+    >
+      <div className="flex items-center px-4 py-3 text-sm">
+        <div className="flex items-center space-x-3 w-32">
+          <span className="text-gray-400">#{index + 1}</span>
+          {getTrophy(index + 1)}
+          {token.boosted && <MarketingIcon />}
+        </div>
+        <div className="flex items-center space-x-3 w-32">
+          {token.info?.imageUrl && (
+            <Image src={token.info.imageUrl} alt={token.symbol} width={24} height={24} className="w-6 h-6 rounded-full" />
+          )}
+          <div>
+            <div className="font-bold text-white">{token.symbol}</div>
+            <div className="text-xs text-gray-500">{getAge(token.pairCreatedAt)}</div>
+          </div>
+        </div>
+        <div className="w-32 text-right">
+          <div className="text-white">{formatPrice(token.priceUsd || "0")}</div>
+          <div className={`text-xs ${getColorClass(token.priceChange?.h24 || 0)}`}>
+            {token.priceChange?.h24 ? `${token.priceChange.h24 >= 0 ? "+" : ""}${token.priceChange.h24.toFixed(2)}%` : "0.00%"}
+          </div>
+        </div>
+        <div className="w-32 text-right">
+          <div className="text-white">{formatPrice(token.volume?.h24 || 0)}</div>
+          <div className="text-xs text-gray-500">24h</div>
+        </div>
+        <div className="w-32 text-right">
+          <div className="text-white">{formatPrice(token.marketCap || 0)}</div>
+          <div className="text-xs text-gray-500">MCap</div>
+        </div>
+        <div className="w-32 text-right">
+          <div className="text-white">{getTxns24h(token)}</div>
+          <div className="text-xs text-gray-500">Txns</div>
+        </div>
+        <div className="w-20 text-right">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFavorite(token.poolAddress);
+            }}
+            className="text-yellow-400 hover:text-yellow-300 p-2"
+          >
+            {isFavorite ? <FaStar className="w-4 h-4" /> : <FaStar className="w-4 h-4 opacity-50" />}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+TokenRow.displayName = 'TokenRow';
+
 // ====== TYPES ======
+
 export type TokenData = {
   poolAddress: string;
   tokenAddress: string;
@@ -126,13 +283,6 @@ export type TokenData = {
   docId?: string;
 };
 
-export type PortfolioItem = {
-  poolAddress: string;
-  amount: number;
-  purchasePrice: number;
-  history?: { date: string; price: number; pnl: number }[];
-};
-
 export type Watchlist = {
   id: string;
   name: string;
@@ -148,18 +298,27 @@ export type CustomAlert = {
 };
 
 // ====== CONSTANTS ======
+
 const DECAY_CONSTANT = 7;
+
 const COOLDOWN_PERIOD = 300_000; // 5 minutes
+
 const LONG_COOLDOWN_PERIOD = 1_800_000; // 30 minutes
+
 const PRICE_CHECK_INTERVAL = 300_000; // 5 minutes
+
 const TOP_MOVERS_LOSERS_INTERVAL = 3_600_000; // 1 hour
+
 const NOTIFICATION_EXPIRY = 3 * 60 * 60 * 1000; // 3 hours
+
 const MAX_NOTIFICATIONS_PER_HOUR = 18;
+
 const MAX_NOTIFICATIONS_PER_TOKEN = 5;
-const PORTFOLIO_UPDATE_INTERVAL = 86_400_000; // 24 hours
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#A28FEF', '#FF6384', '#36A2EB', '#FFCE56'];
+
+
 
 // ====== UTILITY FUNCTIONS ======
+
 function getColorClass(value: number): string {
   return value >= 0 ? "text-green-500" : "text-red-500";
 }
@@ -377,18 +536,6 @@ type Alert = {
   priceChangePercent?: number;
 };
 
-export interface PortfolioTableProps {
-  portfolio: PortfolioItem[];
-  tokens: TokenData[];
-  handleTokenClick: (pool: string) => void;
-  handleRemoveFromPortfolio: (poolAddress: string) => Promise<void>;
-  handleEditPortfolioEntry: (poolAddress: string, amount: number, purchasePrice: number) => Promise<void>;
-  formatPrice: (price: string | number) => string;
-  getColorClass: (value: number) => string;
-  setEditingPortfolio: (item: PortfolioItem | null) => void;
-  setPortfolioForm: (form: { poolAddress: string; amount: string; purchasePrice: string }) => void;
-}
-
 export default function TokenScreener() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
@@ -397,13 +544,15 @@ export default function TokenScreener() {
   const [error, setError] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [viewMode, setViewMode] = useState<"all" | "favorites" | "alerts" | "new" | "portfolio" | "watchlist">(
+  const [viewMode, setViewMode] = useState<"all" | "favorites" | "alerts" | "watchlist">(
     "all"
   );
   const [alertTab, setAlertTab] = useState<"feed" | "triggers" | "history">("feed");
   const [sortFilter, setSortFilter] = useState("trending");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const [filters, setFilters] = useState({
     minLiquidity: 0,
     minVolume: 0,
@@ -427,13 +576,6 @@ export default function TokenScreener() {
   const [showFavoritePopup, setShowFavoritePopup] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
-  const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
-  const [portfolioForm, setPortfolioForm] = useState({
-    poolAddress: "",
-    amount: "",
-    purchasePrice: "",
-  });
-  const [editingPortfolio, setEditingPortfolio] = useState<PortfolioItem | null>(null);
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [selectedWatchlist, setSelectedWatchlist] = useState<string | null>(null);
   const [showCreateWatchlistModal, setShowCreateWatchlistModal] = useState(false);
@@ -449,11 +591,109 @@ export default function TokenScreener() {
   const [showAddToWatchlistModal, setShowAddToWatchlistModal] = useState(false);
   const [selectedTokenForWatchlist, setSelectedTokenForWatchlist] = useState<string | null>(null);
   const [watchlistSelections, setWatchlistSelections] = useState<string[]>([]);
-  const [lastPortfolioUpdate, setLastPortfolioUpdate] = useState<number>(0);
   const [pageLoadTime, setPageLoadTime] = useState<number>(Date.now());
   const [snoozedAlerts, setSnoozedAlerts] = useState<string[]>([]);
   const [triggerFilter, setTriggerFilter] = useState<"all" | "price_above" | "price_below" | "volume_above" | "mc_above">("all");
   const pageSize = 25;
+
+  // Memoized filtered and sorted tokens
+  const filteredAndSortedTokens = useMemo(() => {
+    let filtered = tokens;
+
+    // Apply search filter
+    if (debouncedSearchQuery) {
+      const query = debouncedSearchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (token) =>
+          token.symbol.toLowerCase().includes(query) ||
+          token.name.toLowerCase().includes(query) ||
+          token.poolAddress.toLowerCase().includes(query)
+      );
+    }
+
+    // Apply view mode filter
+    switch (viewMode) {
+      case "favorites":
+        filtered = filtered.filter((token) => favorites.includes(token.poolAddress));
+        break;
+      case "watchlist":
+        if (selectedWatchlist) {
+          const watchlist = watchlists.find((w) => w.id === selectedWatchlist);
+          if (watchlist) {
+            filtered = filtered.filter((token) => watchlist.tokens.includes(token.poolAddress));
+          }
+        }
+        break;
+    }
+
+    // Apply filters
+    filtered = filtered.filter((token) => {
+      const liquidity = token.liquidity?.usd || 0;
+      const volume = token.volume?.h24 || 0;
+      const age = token.pairCreatedAt || 0;
+      const now = Date.now();
+      const ageInHours = (now - age) / (1000 * 60 * 60);
+      return (
+        liquidity >= filters.minLiquidity &&
+        volume >= filters.minVolume &&
+        ageInHours >= filters.minAge &&
+        ageInHours <= filters.maxAge
+      );
+    });
+
+    // Sort tokens
+    const sorted = [...filtered].sort((a, b) => {
+      let aValue: number;
+      let bValue: number;
+      switch (sortFilter) {
+        case "trending":
+          aValue = a.trendingScore || 0;
+          bValue = b.trendingScore || 0;
+          break;
+        case "price":
+          aValue = parseFloat(a.priceUsd || "0");
+          bValue = parseFloat(b.priceUsd || "0");
+          break;
+        case "volume":
+          aValue = a.volume?.h24 || 0;
+          bValue = b.volume?.h24 || 0;
+          break;
+        case "marketCap":
+          aValue = a.marketCap || 0;
+          bValue = b.marketCap || 0;
+          break;
+        case "liquidity":
+          aValue = a.liquidity?.usd || 0;
+          bValue = b.liquidity?.usd || 0;
+          break;
+        case "age":
+          aValue = a.pairCreatedAt || 0;
+          bValue = b.pairCreatedAt || 0;
+          break;
+        default:
+          aValue = a.trendingScore || 0;
+          bValue = b.trendingScore || 0;
+      }
+      return sortDirection === "asc" ? aValue - bValue : bValue - aValue;
+    });
+
+    return sorted;
+  }, [tokens, debouncedSearchQuery, viewMode, favorites, selectedWatchlist, watchlists, filters, sortFilter, sortDirection]);
+
+  // Debounced search effect
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, DEBOUNCE_DELAY);
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchQuery]);
 
   // Ensure component is mounted on client
   useEffect(() => {
@@ -482,7 +722,7 @@ export default function TokenScreener() {
     };
   }, [showFilterMenu]);
 
-  // Check Authentication & fetch favorites, watchlists, portfolio, custom alerts, lastPortfolioUpdate
+  // Check Authentication & fetch favorites, watchlists, custom alerts
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(firebaseAuth, (currentUser) => {
       setUser(currentUser);
@@ -490,10 +730,7 @@ export default function TokenScreener() {
         // Combine snapshots for optimization
         const favoritesRef = collection(firestoreDb, `users/${currentUser.uid}/favorites`);
         const watchlistsRef = collection(firestoreDb, `users/${currentUser.uid}/watchlists`);
-        const portfolioRef = collection(firestoreDb, `users/${currentUser.uid}/portfolio`);
         const customAlertsRef = collection(firestoreDb, `users/${currentUser.uid}/customAlerts`);
-        const userDocRef = doc(firestoreDb, `users/${currentUser.uid}`);
-
         const unsubFavs = onSnapshot(favoritesRef, (snapshot) => {
           const favs = snapshot.docs.map((doc) => doc.id);
           setFavorites(favs);
@@ -502,7 +739,6 @@ export default function TokenScreener() {
             return [{ id: "favorites", name: "Favorites", tokens: favs }, ...updated];
           });
         });
-
         const unsubWatchlists = onSnapshot(watchlistsRef, (snapshot) => {
           const wls = snapshot.docs.map((doc) => ({
             id: doc.id,
@@ -513,15 +749,6 @@ export default function TokenScreener() {
             return [favorites, ...wls];
           });
         });
-
-        const unsubPortfolio = onSnapshot(portfolioRef, (snapshot) => {
-          const portfolioItems = snapshot.docs.map((doc) => ({
-            poolAddress: doc.id,
-            ...doc.data(),
-          })) as PortfolioItem[];
-          setPortfolio(portfolioItems);
-        });
-
         const unsubCustomAlerts = onSnapshot(customAlertsRef, (snapshot) => {
           const cas = snapshot.docs.map((doc) => ({
             id: doc.id,
@@ -529,46 +756,19 @@ export default function TokenScreener() {
           })) as CustomAlert[];
           setCustomAlerts(cas);
         });
-
-        getDoc(userDocRef).then((docSnap) => {
-          if (docSnap.exists()) {
-            setLastPortfolioUpdate(docSnap.data().lastPortfolioUpdate || 0);
-          }
-        });
-
         return () => {
           unsubFavs();
           unsubWatchlists();
-          unsubPortfolio();
           unsubCustomAlerts();
         };
       } else {
         setFavorites([]);
         setWatchlists([]);
-        setPortfolio([]);
         setCustomAlerts([]);
       }
     });
     return () => unsubscribe();
   }, []);
-
-  // Auto-subscribe to alerts for portfolio tokens
-  useEffect(() => {
-    if (!user) return;
-    portfolio.forEach(async (item) => {
-      if (!customAlerts.some(ca => ca.poolAddress === item.poolAddress && ca.type === "price_below")) {
-        const threshold = item.purchasePrice * 0.9;
-        const docRef = await addDoc(collection(firestoreDb, `users/${user.uid}/customAlerts`), {
-          poolAddress: item.poolAddress,
-          type: "price_below",
-          threshold,
-          notified: false,
-          createdAt: serverTimestamp(),
-        });
-        setCustomAlerts(prev => [...prev, {id: docRef.id, poolAddress: item.poolAddress, type: "price_below", threshold, notified: false}]);
-      }
-    });
-  }, [portfolio, customAlerts, user]);
 
   // Fetch Tokens from Firebase and DexScreener - Ensure unique by tokenAddress, optimize with caching
   useEffect(() => {
@@ -585,17 +785,14 @@ export default function TokenScreener() {
           pairCreatedAt: doc.data().createdAt?.toDate().getTime() || 0,
           docId: doc.id,
         }));
-
         const uniqueTokenMap = new Map<string, typeof tokenList[0]>();
         tokenList.forEach((token) => {
           if (!uniqueTokenMap.has(token.tokenAddress)) {
             uniqueTokenMap.set(token.tokenAddress, token);
           }
         });
-
         const uniqueTokens = Array.from(uniqueTokenMap.values());
         const validTokens = uniqueTokens.filter((token) => /^0x[a-fA-F0-9]{40}$/.test(token.tokenAddress));
-
         if (validTokens.length === 0) {
           setError("No valid token addresses found in Firebase.");
           setTokens([]);
@@ -608,7 +805,6 @@ export default function TokenScreener() {
         for (let i = 0; i < validTokens.length; i += 10) {
           tokenChunks.push(validTokens.slice(i, i + 10).map((t) => t.tokenAddress));
         }
-
         const allResults: TokenData[] = [];
         for (const chunk of tokenChunks) {
           const joinedChunk = chunk.join(",");
@@ -618,17 +814,15 @@ export default function TokenScreener() {
               headers: { Accept: "application/json" },
             }
           );
-
           if (!res.ok) {
             console.error(`API fetch failed for chunk: ${joinedChunk}, status: ${res.status}`);
             continue;
           }
-
           const data: DexScreenerPair[] = await res.json();
           data.forEach((pair) => {
             if (pair && pair.baseToken && pair.baseToken.address) {
               const firestoreToken = validTokens.find(
-                (t) => t.tokenAddress.toLowerCase() === pair.baseToken.address.toLowerCase()
+                (t) => t.tokenAddress.toLowerCase() === pair.baseToken?.address.toLowerCase()
               );
               if (firestoreToken && !allResults.some((r) => r.tokenAddress === firestoreToken.tokenAddress)) {
                 allResults.push({
@@ -646,7 +840,6 @@ export default function TokenScreener() {
             }
           });
         }
-
         if (allResults.length === 0) {
           setTokens([]);
         } else {
@@ -702,30 +895,13 @@ export default function TokenScreener() {
     return () => unsubscribe();
   }, []);
 
-  // Price Spike and Volume Spike Alerts + Custom Alerts Check + Portfolio Daily Update
+  // Price Spike and Volume Spike Alerts + Custom Alerts Check
   useEffect(() => {
-    async function checkPriceAndVolumeAndPortfolio() {
+    async function checkPriceAndVolume() {
       const now = Date.now();
       const newPrices: { [symbol: string]: number } = {};
       const newAlerts: Alert[] = [];
       if (notificationCount >= MAX_NOTIFICATIONS_PER_HOUR) return;
-      if (user && now - lastPortfolioUpdate >= PORTFOLIO_UPDATE_INTERVAL) {
-        for (const item of portfolio) {
-          const token = tokens.find((t) => t.poolAddress === item.poolAddress);
-          if (token) {
-            const currentPrice = parseFloat(token.priceUsd || "0");
-            const pnl = item.amount * (currentPrice - item.purchasePrice);
-            const history = item.history || [];
-            history.push({ date: new Date().toISOString(), price: currentPrice, pnl });
-            const portfolioDocRef = doc(firestoreDb, `users/${user.uid}/portfolio`, item.poolAddress);
-            await updateDoc(portfolioDocRef, { history });
-          }
-        }
-        const userDocRef = doc(firestoreDb, `users/${user.uid}`);
-        await updateDoc(userDocRef, { lastPortfolioUpdate: now });
-        setLastPortfolioUpdate(now);
-        reactToast.success("Portfolio data updated", { position: "bottom-left" });
-      }
       tokens.forEach((token) => {
         const symbol = token.symbol;
         const poolAddress = token.poolAddress;
@@ -843,6 +1019,7 @@ export default function TokenScreener() {
             reactToast(alert.message, getAlertToastOptions(alert));
           }
         }
+
         // Custom alerts check
         if (user) {
           customAlerts.forEach((ca) => {
@@ -889,12 +1066,12 @@ export default function TokenScreener() {
       setPreviousPrices(newPrices);
       setAlerts((prev) => [...prev, ...newAlerts]);
     }
-    checkPriceAndVolumeAndPortfolio();
-    const interval = setInterval(checkPriceAndVolumeAndPortfolio, PRICE_CHECK_INTERVAL);
+    checkPriceAndVolume();
+    const interval = setInterval(checkPriceAndVolume, PRICE_CHECK_INTERVAL);
     return () => clearInterval(interval);
-  }, [tokens, previousPrices, lastAlertTimes, notificationCount, alerts, customAlerts, user, portfolio, lastPortfolioUpdate, pageLoadTime]);
+  }, [tokens, previousPrices, lastAlertTimes, notificationCount, alerts, customAlerts, user, pageLoadTime]);
 
-  // Boost Alerts - Real-time with onSnapshot and expiration check
+  // Boost Alerts - Real-time with onSnapshot and expiration
   useEffect(() => {
     const boostsQuery = query(collection(firestoreDb, "boosts"));
     const unsubscribe = onSnapshot(boostsQuery, (snapshot) => {
@@ -1052,18 +1229,9 @@ export default function TokenScreener() {
     } else if (viewMode === "watchlist" && selectedWatchlist) {
       const wl = watchlists.find((wl) => wl.id === selectedWatchlist);
       tokenList = tokenList.filter((token) => wl?.tokens.includes(token.poolAddress));
-    } else if (viewMode === "new") {
-      tokenList = tokenList.filter(
-        (token) =>
-          token.pairCreatedAt && Date.now() - token.pairCreatedAt <= 24 * 60 * 60 * 1000
-      );
     } else if (viewMode === "alerts") {
       tokenList = tokenList.filter((token) =>
         alerts.some((alert) => alert.poolAddress === token.poolAddress)
-      );
-    } else if (viewMode === "portfolio") {
-      tokenList = tokenList.filter((token) =>
-        portfolio.some((item) => item.poolAddress === token.poolAddress)
       );
     }
     return tokenList.filter((token) => {
@@ -1080,7 +1248,7 @@ export default function TokenScreener() {
           token.symbol.toLowerCase().includes(searchQuery.toLowerCase()))
       );
     });
-  }, [tokensWithTrending, filters, viewMode, favorites, searchQuery, alerts, portfolio, watchlists, selectedWatchlist]);
+  }, [tokensWithTrending, filters, viewMode, favorites, searchQuery, alerts, watchlists, selectedWatchlist]);
 
   const sortedTokens = useMemo(() => {
     const copy = [...filteredTokens];
@@ -1135,52 +1303,6 @@ export default function TokenScreener() {
       )
       .slice(0, 5);
   }, [tokens, searchQuery]);
-
-  // Portfolio Metrics
-  const portfolioMetrics = useMemo(() => {
-    const totalValue = portfolio.reduce((sum, item) => {
-      const token = tokens.find((t) => t.poolAddress === item.poolAddress);
-      const currentPrice = token ? parseFloat(token.priceUsd || "0") : 0;
-      return sum + item.amount * currentPrice;
-    }, 0);
-    const totalPnL = portfolio.reduce((sum, item) => {
-      const token = tokens.find((t) => t.poolAddress === item.poolAddress);
-      const currentPrice = token ? parseFloat(token.priceUsd || "0") : 0;
-      return sum + item.amount * (currentPrice - item.purchasePrice);
-    }, 0);
-    const topPerformer = portfolio.reduce((max, item) => {
-      const token = tokens.find((t) => t.poolAddress === item.poolAddress);
-      const pnl = item.amount * (parseFloat(token?.priceUsd || "0") - item.purchasePrice);
-      return pnl > max.pnl ? { symbol: token?.symbol || 'UNK', pnl } : max;
-    }, { symbol: '', pnl: -Infinity });
-    const biggestLoser = portfolio.reduce((min, item) => {
-      const token = tokens.find((t) => t.poolAddress === item.poolAddress);
-      const pnl = item.amount * (parseFloat(token?.priceUsd || "0") - item.purchasePrice);
-      return pnl < min.pnl ? { symbol: token?.symbol || 'UNK', pnl } : min;
-    }, { symbol: '', pnl: Infinity });
-    const allocations = portfolio.map(item => {
-      const token = tokens.find((t) => t.poolAddress === item.poolAddress);
-      const value = item.amount * parseFloat(token?.priceUsd || "0");
-      return value / totalValue * 100;
-    });
-    const maxAlloc = Math.max(...allocations);
-    const health = maxAlloc > 50 ? "Concentrated" : "Balanced";
-    const allocData = portfolio.map(item => {
-      const token = tokens.find((t) => t.poolAddress === item.poolAddress);
-      return { name: token?.symbol || 'UNK', value: item.amount * parseFloat(token?.priceUsd || "0") };
-    });
-    return { totalValue, totalPnL, topPerformer, biggestLoser, health, allocData };
-  }, [portfolio, tokens]);
-
-  // P&L data for chart
-  const pnlData = useMemo(() => {
-    return portfolio.map((item) => {
-      const token = tokens.find((t) => t.poolAddress === item.poolAddress);
-      const currentPrice = token ? parseFloat(token.priceUsd || "0") : 0;
-      const pnl = item.amount * (currentPrice - item.purchasePrice);
-      return { name: token?.symbol || "UNK", pnl };
-    });
-  }, [portfolio, tokens]);
 
   // Handlers
   const handleCopy = useCallback(async (token: TokenData) => {
@@ -1300,131 +1422,6 @@ export default function TokenScreener() {
     [router]
   );
 
-  const handleAddToPortfolio = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!user) {
-        setShowFavoritePopup(true);
-        return;
-      }
-      const { poolAddress, amount, purchasePrice } = portfolioForm;
-      if (!/^0x[a-fA-F0-9]{40}$/.test(poolAddress)) {
-        reactToast.error("Invalid pool address", { position: "bottom-left" });
-        return;
-      }
-      try {
-        // Check if token exists in current tokens list
-        let token = tokens.find((t) => t.poolAddress === poolAddress);
-        if (!token) {
-          // Fetch token data from DexScreener API
-          const res = await fetch(
-            `https://api.dexscreener.com/tokens/v1/base/${encodeURIComponent(poolAddress)}`,
-            {
-              headers: { Accept: "application/json" },
-            }
-          );
-          if (!res.ok) {
-            throw new Error("Failed to fetch token data from DexScreener");
-          }
-          const data: DexScreenerPair[] = await res.json();
-          if (data.length > 0) {
-            const pair = data[0];
-            if (pair && pair.baseToken && pair.baseToken.address) {
-              token = {
-                poolAddress: pair.pairAddress,
-                tokenAddress: pair.baseToken.address,
-                symbol: pair.baseToken.symbol,
-                name: pair.baseToken.name,
-                decimals: pair.baseToken.decimals || 18,
-                priceUsd: pair.priceUsd || "0",
-                priceChange: pair.priceChange || { m5: 0, h1: 0, h6: 0, h24: 0 },
-                volume: pair.volume || { h1: 0, h24: 0 },
-                liquidity: pair.liquidity || { usd: 0 },
-                marketCap: pair.marketCap || 0,
-                info: pair.info ? { imageUrl: pair.info.imageUrl } : undefined,
-                txns: pair.txns || { h1: { buys: 0, sells: 0 }, h6: { buys: 0, sells: 0 }, h24: { buys: 0, sells: 0 } },
-                pairCreatedAt: pair.pairCreatedAt ? new Date(pair.pairCreatedAt).getTime() : 0,
-              };
-              setTokens((prev) => [...prev, token!]);
-            }
-          } else {
-            reactToast.error("Token not found on DexScreener", { position: "bottom-left" });
-            return;
-          }
-        }
-        const portfolioDocRef = doc(
-          firestoreDb,
-          `users/${user.uid}/portfolio`,
-          poolAddress
-        );
-        await setDoc(portfolioDocRef, {
-          poolAddress,
-          amount: Number(amount),
-          purchasePrice: Number(purchasePrice),
-          history: [],
-          createdAt: serverTimestamp(),
-        });
-        setPortfolio((prev) => [
-          ...prev,
-          {
-            poolAddress,
-            amount: Number(amount),
-            purchasePrice: Number(purchasePrice),
-            history: [],
-          },
-        ]);
-        setPortfolioForm({ poolAddress: "", amount: "", purchasePrice: "" });
-        reactToast.success("Token added to portfolio", { position: "bottom-left" });
-      } catch (err) {
-        console.error("Error adding to portfolio:", err);
-        reactToast.error("Error adding to portfolio", { position: "bottom-left" });
-      }
-    },
-    [user, portfolioForm, tokens, setTokens, setPortfolio, reactToast]
-  );
-
-  const handleRemoveFromPortfolio = useCallback(
-    async (poolAddress: string) => {
-      if (!user) {
-        setShowFavoritePopup(true);
-        return;
-      }
-      try {
-        const portfolioDocRef = doc(firestoreDb, `users/${user.uid}/portfolio`, poolAddress);
-        await deleteDoc(portfolioDocRef);
-        setPortfolio((prev) => prev.filter((item) => item.poolAddress !== poolAddress));
-        reactToast.success("Token removed from portfolio", { position: "bottom-left" });
-      } catch (err) {
-        console.error("Error removing from portfolio:", err);
-        reactToast.error("Error removing from portfolio", { position: "bottom-left" });
-      }
-    },
-    [user, reactToast]
-  );
-
-  const handleEditPortfolioEntry = useCallback(
-    async (poolAddress: string, amount: number, purchasePrice: number) => {
-      if (!user) return;
-      try {
-        const portfolioDocRef = doc(firestoreDb, `users/${user.uid}/portfolio`, poolAddress);
-        await updateDoc(portfolioDocRef, {
-          amount,
-          purchasePrice,
-        });
-        setPortfolio((prev) =>
-          prev.map((item) =>
-            item.poolAddress === poolAddress ? { ...item, amount, purchasePrice } : item
-          )
-        );
-        reactToast.success("Portfolio entry updated", { position: "bottom-left" });
-      } catch (err) {
-        console.error("Error editing portfolio entry:", err);
-        reactToast.error("Error editing portfolio entry", { position: "bottom-left" });
-      }
-    },
-    [user, reactToast]
-  );
-
   const handleBoostNow = () => {
     setShowBoostModal(false);
     router.push("/marketplace");
@@ -1478,7 +1475,7 @@ export default function TokenScreener() {
       console.error("Error creating watchlist:", err);
       reactToast.error("Error creating watchlist", { position: "bottom-left" });
     }
-  }, [user, newWatchlistName, reactToast]);
+  }, [user, newWatchlistName]);
 
   const handleSaveCustomAlert = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1532,7 +1529,7 @@ export default function TokenScreener() {
       console.error("Error saving custom alert:", err);
       reactToast.error("Error saving custom alert", { position: "bottom-left" });
     }
-  }, [user, customAlertForm, editingCustomAlert, reactToast]);
+  }, [user, customAlertForm, editingCustomAlert]);
 
   useEffect(() => {
     if (editingCustomAlert) {
@@ -1551,7 +1548,8 @@ export default function TokenScreener() {
       const docRef = doc(firestoreDb, `users/${user.uid}/customAlerts`, id);
       await updateDoc(docRef, { notified: false });
       setCustomAlerts((prev) =>
-        prev.map((ca) => (ca.id === id ? { ...ca, notified: false } : ca))
+        prev.map((ca) =>
+          ca.id === id ? { ...ca, notified: false } : ca)
       );
       reactToast.success("Alert reset", { position: "bottom-left" });
     } catch (err) {
@@ -1561,8 +1559,11 @@ export default function TokenScreener() {
   };
 
   const debouncedSetSearchQuery = useCallback(
-    debounce((value: string) => setSearchQuery(value), 300),
-    []
+    (value: string) => {
+      const debouncedFn = debounce((val: string) => setSearchQuery(val), 300);
+      debouncedFn(value);
+    },
+    [setSearchQuery]
   );
 
   const handleFilterChange = useCallback(
@@ -1579,15 +1580,17 @@ export default function TokenScreener() {
   );
 
   const debouncedSetCurrentPage = useCallback(
-    debounce((page: number) => setCurrentPage(page), 300),
-    []
+    (page: number) => {
+      const debouncedFn = debounce((val: number) => setCurrentPage(val), 300);
+      debouncedFn(page);
+    },
+    [setCurrentPage]
   );
 
   const indexOfLastToken = currentPage * pageSize;
   const indexOfFirstToken = indexOfLastToken - pageSize;
-  const currentTokens = sortedTokens.slice(indexOfFirstToken, indexOfLastToken);
+  const currentTokens = filteredAndSortedTokens.slice(indexOfFirstToken, indexOfLastToken);
   const totalPages = Math.ceil(sortedTokens.length / pageSize);
-
   const rowVariants = {
     hidden: { opacity: 0, y: 20 },
     visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: "easeOut" } },
@@ -1740,8 +1743,8 @@ export default function TokenScreener() {
             </button>
             <h2 className="text-xl font-bold mb-4 font-sans uppercase">Boost Info</h2>
             <p className="text-sm mb-4 font-sans uppercase">
-              Purchase a boost with USDC on our website to increase your token's visibility. Boosts add a score to your
-              token's trending rank:
+              Purchase a boost with USDC on our website to increase your token&apos;s visibility. Boosts add a score to your
+              token&apos;s trending rank:
             </p>
             <ul className="text-sm mb-4 list-disc list-inside font-sans uppercase">
               <li>Boost (10) - 10 USDC (12HR)</li>
@@ -1995,58 +1998,6 @@ export default function TokenScreener() {
           </div>
         </div>
       )}
-      {/* Edit Portfolio Modal */}
-      {editingPortfolio && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30 md:w-96">
-            <button onClick={() => setEditingPortfolio(null)} className="absolute top-2 right-2 text-xl font-bold">
-              ×
-            </button>
-            <h2 className="text-xl font-bold mb-4 font-sans uppercase">Edit Portfolio Entry</h2>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              handleEditPortfolioEntry(editingPortfolio.poolAddress, Number(portfolioForm.amount), Number(portfolioForm.purchasePrice));
-              setEditingPortfolio(null);
-              setPortfolioForm({ poolAddress: "", amount: "", purchasePrice: "" });
-            }}>
-              <div className="mb-4">
-                <label className="block mb-1 font-sans uppercase">Amount</label>
-                <input
-                  type="number"
-                  value={portfolioForm.amount}
-                  onChange={(e) => setPortfolioForm({ ...portfolioForm, amount: e.target.value })}
-                  className="w-full border border-blue-500/30 p-2 rounded font-sans bg-gray-900 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
-                  required
-                  min="0"
-                  step="any"
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block mb-1 font-sans uppercase">Purchase Price ($)</label>
-                <input
-                  type="number"
-                  value={portfolioForm.purchasePrice}
-                  onChange={(e) => setPortfolioForm({ ...portfolioForm, purchasePrice: e.target.value })}
-                  className="w-full border border-blue-500/30 p-2 rounded font-sans bg-gray-900 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
-                  required
-                  min="0"
-                  step="any"
-                />
-              </div>
-              <div className="flex justify-end">
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  type="submit"
-                  className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded font-sans uppercase border border-blue-500/30"
-                >
-                  Save
-                </motion.button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
       {/* Main Container */}
       <div className="flex flex-col w-full h-full">
         {/* Header Bar */}
@@ -2208,30 +2159,6 @@ export default function TokenScreener() {
                   Alerts
                 </motion.button>
                 <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  onClick={() => {
-                    setViewMode("new");
-                    setShowFilterMenu(false);
-                  }}
-                  className={`p-3 text-gray-200 rounded-lg text-base font-sans transition-colors border border-blue-500/30 uppercase ${
-                    viewMode === "new" ? "bg-blue-500/20 text-blue-400" : "bg-gray-800 hover:bg-gray-700"
-                  }`}
-                >
-                  New Tokens
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  onClick={() => {
-                    setViewMode("portfolio");
-                    setShowFilterMenu(false);
-                  }}
-                  className={`p-3 text-gray-200 rounded-lg text-base font-sans transition-colors border border-blue-500/30 uppercase ${
-                    viewMode === "portfolio" ? "bg-blue-500/20 text-blue-400" : "bg-gray-800 hover:bg-gray-700"
-                  }`}
-                >
-                  Portfolio
-                </motion.button>
-                <motion.button
                   disabled
                   className="p-3 text-gray-400 rounded-lg text-base font-sans transition-colors border border-blue-500/30 bg-gray-800 opacity-50 cursor-not-allowed truncate uppercase"
                 >
@@ -2339,30 +2266,6 @@ export default function TokenScreener() {
               >
                 Alerts
               </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                onClick={() => setViewMode("new")}
-                className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
-                  viewMode === "new" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
-                }`}
-              >
-                New Tokens
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                onClick={() => setViewMode("portfolio")}
-                className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
-                  viewMode === "portfolio" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
-                }`}
-              >
-                Portfolio
-              </motion.button>
-              <motion.button
-                disabled
-                className="p-2 text-gray-400 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 bg-gray-900 opacity-50 cursor-not-allowed truncate uppercase"
-              >
-                New Pairs v2
-              </motion.button>
             </div>
             <div className="hidden sm:flex gap-2">
               <input
@@ -2408,11 +2311,11 @@ export default function TokenScreener() {
         {/* Watchlist Selector */}
         {viewMode === "watchlist" && (
           <div className="bg-gray-900 p-4 border-b border-blue-500/30 shadow-inner">
-            <div className="flex items-center space-x-4">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
               <select
                 value={selectedWatchlist || ""}
                 onChange={(e) => setSelectedWatchlist(e.target.value)}
-                className="bg-gray-800 text-gray-200 border border-blue-500/30 p-2 rounded font-sans uppercase"
+                className="flex-1 bg-gray-800 text-gray-200 border border-blue-500/30 p-3 rounded-lg font-sans text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Select Watchlist</option>
                 {watchlists.map((wl) => (
@@ -2423,128 +2326,12 @@ export default function TokenScreener() {
               </select>
               <motion.button
                 whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={() => setShowCreateWatchlistModal(true)}
-                className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded font-sans uppercase border border-blue-500/30"
+                className="flex-1 sm:flex-none bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-3 px-4 rounded-lg font-sans text-sm uppercase border border-blue-500/30 transition-colors"
               >
                 New Watchlist
               </motion.button>
-            </div>
-          </div>
-        )}
-        {/* Portfolio Dashboard, Form, and Chart */}
-        {!showFilterMenu && viewMode === "portfolio" && (
-          <div className="bg-gray-900 p-4 border-b border-blue-500/30 shadow-inner">
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
-              <div className="bg-gray-900 p-3 rounded-lg border border-blue-500/30 shadow-sm">
-                <p className="text-sm font-sans text-gray-400 uppercase">Total Portfolio Value</p>
-                <p className="text-lg font-sans text-gray-200 uppercase">${portfolioMetrics.totalValue.toLocaleString()}</p>
-              </div>
-              <div className="bg-gray-900 p-3 rounded-lg border border-blue-500/30 shadow-sm">
-                <p className="text-sm font-sans text-gray-400 uppercase">Total P&L</p>
-                <p className={`text-lg font-sans ${getColorClass(portfolioMetrics.totalPnL)} uppercase`}>
-                  ${portfolioMetrics.totalPnL.toFixed(2)}
-                </p>
-              </div>
-              <div className="bg-gray-900 p-3 rounded-lg border border-blue-500/30 shadow-sm">
-                <p className="text-sm font-sans text-gray-400 uppercase">Top Performer</p>
-                <p className="text-lg font-sans text-gray-200 uppercase">
-                  {portfolioMetrics.topPerformer.symbol} <span className={getColorClass(portfolioMetrics.topPerformer.pnl)}>${portfolioMetrics.topPerformer.pnl.toFixed(2)}</span>
-                </p>
-              </div>
-              <div className="bg-gray-900 p-3 rounded-lg border border-blue-500/30 shadow-sm">
-                <p className="text-sm font-sans text-gray-400 uppercase">Biggest Loser</p>
-                <p className="text-lg font-sans text-gray-200 uppercase">
-                  {portfolioMetrics.biggestLoser.symbol} <span className={getColorClass(portfolioMetrics.biggestLoser.pnl)}>${portfolioMetrics.biggestLoser.pnl.toFixed(2)}</span>
-                </p>
-              </div>
-              <div className="bg-gray-900 p-3 rounded-lg border border-blue-500/30 shadow-sm">
-                <p className="text-sm font-sans text-gray-400 uppercase">Portfolio Health</p>
-                <p className={`text-lg font-sans ${portfolioMetrics.health === "Concentrated" ? "text-red-500" : "text-green-500"} uppercase`}>
-                  {portfolioMetrics.health}
-                </p>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              <div className="h-64">
-                <h3 className="text-lg font-semibold font-sans text-gray-200 uppercase mb-2">P&L Chart</h3>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={pnlData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="pnl" stroke="#8884d8" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="h-64">
-                <h3 className="text-lg font-semibold font-sans text-gray-200 uppercase mb-2">Allocation Pie</h3>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie dataKey="value" data={portfolioMetrics.allocData} cx="50%" cy="50%" outerRadius={80} fill="#8884d8" label>
-                      {portfolioMetrics.allocData.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold font-sans text-gray-200 uppercase">Add to Portfolio</h3>
-              <form onSubmit={handleAddToPortfolio} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block mb-1 text-gray-400 uppercase text-sm font-sans">Pool Address</label>
-                  <input
-                    type="text"
-                    value={portfolioForm.poolAddress}
-                    onChange={(e) => setPortfolioForm({ ...portfolioForm, poolAddress: e.target.value })}
-                    className="w-full p-2 bg-gray-800 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
-                    placeholder="0x..."
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block mb-1 text-gray-400 uppercase text-sm font-sans">Amount</label>
-                  <input
-                    type="number"
-                    value={portfolioForm.amount}
-                    onChange={(e) => setPortfolioForm({ ...portfolioForm, amount: e.target.value })}
-                    className="w-full p-2 bg-gray-800 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
-                    placeholder="Amount"
-                    required
-                    min="0"
-                    step="any"
-                  />
-                </div>
-                <div>
-                  <label className="block mb-1 text-gray-400 uppercase text-sm font-sans">Purchase Price ($)</label>
-                  <input
-                    type="number"
-                    value={portfolioForm.purchasePrice}
-                    onChange={(e) => setPortfolioForm({ ...portfolioForm, purchasePrice: e.target.value })}
-                    className="w-full p-2 bg-gray-800 text-gray-200 border border-blue-500/30 rounded-lg text-sm font-sans placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
-                    placeholder="Price"
-                    required
-                    min="0"
-                    step="any"
-                  />
-                </div>
-                <div className="flex justify-end sm:col-span-3">
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    type="submit"
-                    className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded font-sans uppercase border border-blue-500/30"
-                    title="Add this token to your portfolio for tracking"
-                  >
-                    Add
-                  </motion.button>
-                </div>
-              </form>
             </div>
           </div>
         )}
@@ -2606,7 +2393,7 @@ export default function TokenScreener() {
                 </tbody>
               </table>
             </div>
-          ) : filteredTokens.length === 0 && viewMode !== "alerts" && viewMode !== "portfolio" ? (
+          ) : filteredTokens.length === 0 && viewMode !== "alerts" ? (
             <div className="p-4 text-center text-gray-400 font-sans uppercase w-full h-full flex items-center justify-center">
               No tokens match your filters. Try adjusting filters or check Firebase data.
             </div>
@@ -2742,131 +2529,199 @@ export default function TokenScreener() {
               ) : alertTab === "triggers" ? (
                 <>
                   {filteredCustomAlerts.length === 0 ? (
-                    <p className="p-4 text-gray-400 font-sans uppercase">No triggers set.</p>
+                    <div className="p-8 text-center">
+                      <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-3xl p-8 border border-blue-500/10 shadow-2xl">
+                        <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-6">
+                          <FaExclamationTriangle className="w-8 h-8 text-gray-500" />
+                        </div>
+                        <h3 className="text-xl font-bold text-gray-200 mb-3">No Active Triggers</h3>
+                        <p className="text-gray-400 text-sm mb-6 max-w-md mx-auto">Set up custom alerts to monitor specific price levels, volume thresholds, or market cap targets with precision.</p>
+                        <motion.button
+                          whileHover={{ scale: 1.05, y: -2 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => { setEditingCustomAlert(null); setShowCustomAlertModal(true); }}
+                          className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-6 py-3 rounded-xl font-semibold transition-all duration-200 shadow-lg hover:shadow-xl"
+                        >
+                          <FaRocket className="w-4 h-4 inline mr-2" />
+                          Create First Trigger
+                        </motion.button>
+                      </div>
+                    </div>
                   ) : (
                     <>
-                      <div className="p-4 flex items-center space-x-4">
-                        <label className="text-gray-400 uppercase text-sm font-sans">Filter by Type</label>
-                        <select
-                          value={triggerFilter}
-                          onChange={(e) => setTriggerFilter(e.target.value as typeof triggerFilter)}
-                          className="bg-gray-800 text-gray-200 border border-blue-500/30 p-2 rounded font-sans uppercase"
-                        >
-                          <option value="all">All</option>
-                          <option value="price_above">Price Above</option>
-                          <option value="price_below">Price Below</option>
-                          <option value="volume_above">Volume Above</option>
-                          <option value="mc_above">Market Cap Above</option>
-                        </select>
+                      <div className="p-6 bg-gradient-to-r from-gray-900 to-gray-800 border-b border-blue-500/10">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-4">
+                            <div className="w-10 h-10 bg-blue-500/20 rounded-xl flex items-center justify-center">
+                              <FaShieldAlt className="w-5 h-5 text-blue-400" />
+                            </div>
+                            <div>
+                              <h3 className="text-xl font-bold text-gray-100">Active Triggers</h3>
+                              <p className="text-gray-400 text-sm">Monitor your custom alerts</p>
+                            </div>
+                            <span className="bg-blue-500/20 text-blue-400 px-3 py-1 rounded-full text-xs font-bold border border-blue-500/30">
+                              {filteredCustomAlerts.length}
+                            </span>
+                          </div>
+                          <select
+                            value={triggerFilter}
+                            onChange={(e) => setTriggerFilter(e.target.value as typeof triggerFilter)}
+                            className="bg-gray-800/50 text-gray-200 border border-blue-500/20 p-3 rounded-xl font-sans text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 backdrop-blur-sm"
+                          >
+                            <option value="all">All Types</option>
+                            <option value="price_above">Price Above</option>
+                            <option value="price_below">Price Below</option>
+                            <option value="volume_above">Volume Above</option>
+                            <option value="mc_above">Market Cap Above</option>
+                          </select>
+                        </div>
                       </div>
-                      <ul className="space-y-2">
+                      <div className="p-6 space-y-4">
                         {filteredCustomAlerts.map((ca) => {
                           const token = tokens.find((t) => t.poolAddress === ca.poolAddress);
                           const currentPrice = token ? parseFloat(token.priceUsd || "0") : 0;
                           const volumeH1 = token ? token.volume?.h1 || 0 : 0;
                           const marketCap = token ? token.marketCap || 0 : 0;
-                          let status = "";
                           let color = "text-gray-400";
                           let progress = 0;
                           let icon = null;
                           let isPositive = true;
                           if (ca.notified) {
-                            status = "Triggered";
-                            color = "text-red-500";
+                            color = "text-red-400";
                           } else {
                             if (ca.type === "price_above") {
-                              status = `Pending - Current: $${currentPrice.toFixed(2)} / Threshold: $${ca.threshold.toFixed(2)}`;
                               progress = Math.min(100, (currentPrice / ca.threshold) * 100);
-                              color = "text-green-500";
-                              icon = <FaArrowUp className="text-green-500 w-3 h-3" />;
+                              color = "text-green-400";
+                              icon = <FaArrowUp className="w-3 h-3" />;
                               isPositive = true;
                             } else if (ca.type === "price_below") {
-                              status = `Pending - Current: $${currentPrice.toFixed(2)} / Threshold: $${ca.threshold.toFixed(2)}`;
                               progress = currentPrice > ca.threshold ? (ca.threshold / currentPrice * 100) : 100;
-                              color = "text-red-500";
-                              icon = <FaArrowDown className="text-red-500 w-3 h-3" />;
+                              color = "text-red-400";
+                              icon = <FaArrowDown className="w-3 h-3" />;
                               isPositive = false;
                             } else if (ca.type === "volume_above") {
-                              status = `Pending - Current: $${volumeH1.toLocaleString()} / Threshold: $${ca.threshold.toLocaleString()}`;
                               progress = Math.min(100, (volumeH1 / ca.threshold) * 100);
                               color = "text-blue-400";
-                              icon = <FaVolumeUp className="text-blue-400 w-3 h-3" />;
+                              icon = <FaVolumeUp className="w-3 h-3" />;
                               isPositive = true;
                             } else if (ca.type === "mc_above") {
-                              status = `Pending - Current: $${marketCap.toLocaleString()} / Threshold: $${ca.threshold.toLocaleString()}`;
                               progress = Math.min(100, (marketCap / ca.threshold) * 100);
-                              color = "text-purple-500";
-                              icon = <FaDollarSign className="text-purple-500 w-3 h-3" />;
+                              color = "text-purple-400";
+                              icon = <FaDollarSign className="w-3 h-3" />;
                               isPositive = true;
                             }
                           }
                           return (
-                            <li
+                            <motion.div
                               key={ca.id}
-                              className="flex items-center justify-between p-3 hover:bg-gray-800 transition-colors duration-150 border-b border-blue-500/30 rounded-md"
+                              className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl p-6 border border-blue-500/10 hover:border-blue-500/30 transition-all duration-300 shadow-xl hover:shadow-2xl backdrop-blur-sm"
+                              whileHover={{ scale: 1.02, y: -2 }}
+                              whileTap={{ scale: 0.98 }}
                             >
-                              <div className="flex items-center space-x-3 w-full">
-                                {token?.info && (
-                                  <Image
-                                    src={token.info.imageUrl || "/fallback.png"}
-                                    alt={token.symbol}
-                                    width={24}
-                                    height={24}
-                                    className="rounded-full border border-blue-500/30"
-                                  />
-                                )}
-                                <div className="flex-1">
-                                  <p className="text-sm font-sans uppercase flex items-center space-x-1">
-                                    {icon}
-                                    <span>{token ? token.symbol : "Unknown"} - {ca.type.replace("_", " ").toUpperCase()} ${ca.threshold.toFixed(2)}</span>
-                                  </p>
-                                  <span className={`px-2 py-1 rounded text-xs ${color} bg-gray-800 border border-${color.split('-')[1]}-500/30`}>{status}</span>
-                                  {!ca.notified && (
-                                    <div className="w-full bg-gray-700 rounded-full h-1 mt-2">
-                                      <div className={`${getProgressColor(ca.type, isPositive)} h-1 rounded-full`} style={{ width: `${progress}%` }}></div>
+                              <div className="flex items-start justify-between">
+                                <div className="flex items-start space-x-4 flex-1">
+                                  <div className="w-12 h-12 bg-gray-800 rounded-xl flex items-center justify-center border border-blue-500/20">
+                                    {token?.info ? (
+                                      <Image
+                                        src={token.info.imageUrl || "/fallback.png"}
+                                        alt={token.symbol}
+                                        width={32}
+                                        height={32}
+                                        className="rounded-lg"
+                                      />
+                                    ) : (
+                                      <div className="w-6 h-6 bg-gray-600 rounded-lg"></div>
+                                    )}
+                                  </div>
+                                  <div className="flex-1 space-y-3">
+                                    <div className="flex items-center space-x-2">
+                                      <div className="flex items-center space-x-2">
+                                        <div className="w-4 h-4 text-gray-400">
+                                          {icon}
+                                        </div>
+                                        <span className="text-lg font-bold text-gray-100">{token ? token.symbol : "Unknown"}</span>
+                                      </div>
+                                      <span className="text-xs text-gray-400 bg-gray-800 px-2 py-1 rounded-full border border-blue-500/20">
+                                        {ca.type.replace("_", " ").toUpperCase()}
+                                      </span>
                                     </div>
-                                  )}
-                                  {ca.notified && <FaCheck className="text-green-500 w-3 h-3" />}
+                                    <div className="space-y-2">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-sm text-gray-400">Target:</span>
+                                        <span className="text-sm font-semibold text-gray-200">${ca.threshold.toFixed(4)}</span>
+                                      </div>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-sm text-gray-400">Current:</span>
+                                        <span className={`text-sm font-semibold ${color}`}>
+                                          ${ca.type === "price_above" || ca.type === "price_below"
+                                            ? currentPrice.toFixed(4)
+                                            : ca.type === "volume_above"
+                                            ? volumeH1.toLocaleString()
+                                            : marketCap.toLocaleString()}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    {!ca.notified && (
+                                      <div className="space-y-2">
+                                        <div className="flex items-center justify-between text-xs">
+                                          <span className="text-gray-400">Progress</span>
+                                          <span className="text-gray-300">{progress.toFixed(1)}%</span>
+                                        </div>
+                                        <div className="w-32 bg-gray-800 rounded-full h-1.5 border border-blue-500/10">
+                                          <div
+                                            className={`h-1.5 rounded-full transition-all duration-500 ${getProgressColor(ca.type, isPositive)}`}
+                                            style={{ width: `${progress}%` }}
+                                          ></div>
+                                        </div>
+                                      </div>
+                                    )}
+                                    {ca.notified && (
+                                      <div className="flex items-center space-x-2 text-green-400">
+                                        <FaCheck className="w-4 h-4" />
+                                        <span className="text-sm font-semibold">Triggered</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex flex-col space-y-1">
+                                  <motion.button
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => setEditingCustomAlert(ca)}
+                                    className="w-8 h-8 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center justify-center text-blue-400 transition-colors"
+                                    title="Edit Alert"
+                                  >
+                                    <FaEdit className="w-3.5 h-3.5" />
+                                  </motion.button>
+                                  <motion.button
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => handleResetNotified(ca.id!)}
+                                    className="w-8 h-8 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center justify-center text-green-400 transition-colors"
+                                    title="Reset Alert"
+                                  >
+                                    <FaRedo className="w-3.5 h-3.5" />
+                                  </motion.button>
+                                  <motion.button
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => {
+                                      if (ca.id) {
+                                        deleteDoc(doc(firestoreDb, `users/${user?.uid ?? ''}/customAlerts`, ca.id));
+                                        reactToast.success("Alert removed", { position: "bottom-left" });
+                                      }
+                                    }}
+                                    className="w-8 h-8 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center justify-center text-red-400 transition-colors"
+                                    title="Remove Alert"
+                                  >
+                                    <FaTrash className="w-3.5 h-3.5" />
+                                  </motion.button>
                                 </div>
                               </div>
-                              <div className="flex space-x-1 items-center">
-                                <motion.button
-                                  whileHover={{ scale: 1.05 }}
-                                  whileTap={{ scale: 0.95 }}
-                                  onClick={() => setEditingCustomAlert(ca)}
-                                  className="text-blue-400 p-1"
-                                  title="Edit Alert"
-                                >
-                                  <FaEdit className="w-4 h-4" />
-                                </motion.button>
-                                <motion.button
-                                  whileHover={{ scale: 1.05 }}
-                                  whileTap={{ scale: 0.95 }}
-                                  onClick={() => handleResetNotified(ca.id!)}
-                                  className="text-green-400 p-1"
-                                  title="Reset Alert"
-                                >
-                                  <FaRedo className="w-4 h-4" />
-                                </motion.button>
-                                <motion.button
-                                  whileHover={{ scale: 1.05 }}
-                                  whileTap={{ scale: 0.95 }}
-                                  onClick={() => {
-                                    if (ca.id) {
-                                      deleteDoc(doc(firestoreDb, `users/${user?.uid ?? ''}/customAlerts`, ca.id));
-                                      reactToast.success("Alert removed", { position: "bottom-left" });
-                                    }
-                                  }}
-                                  className="text-red-400 p-1"
-                                  title="Remove Alert"
-                                >
-                                  <FaTrash className="w-4 h-4" />
-                                </motion.button>
-                              </div>
-                            </li>
+                            </motion.div>
                           );
                         })}
-                      </ul>
+                      </div>
                     </>
                   )}
                 </>
@@ -2874,35 +2729,6 @@ export default function TokenScreener() {
                 <p className="p-4 text-gray-400 font-sans uppercase">Coming soon: Alert history and analytics</p>
               )}
             </div>
-          ) : viewMode === "portfolio" ? (
-            portfolio.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-gray-400 font-sans uppercase p-4">
-                <p className="text-lg mb-4">Your portfolio is empty.</p>
-                <p className="text-sm mb-4">Start by adding a token using the form above or browse tokens.</p>
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => setViewMode("all")}
-                  className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded font-sans uppercase border border-blue-500/30"
-                >
-                  Browse Tokens
-                </motion.button>
-              </div>
-            ) : (
-              <Suspense fallback={<div className="p-4 text-center text-gray-400 font-sans uppercase">Loading portfolio...</div>}>
-                <PortfolioTable
-                  portfolio={portfolio}
-                  tokens={tokens}
-                  handleTokenClick={handleTokenClick}
-                  handleRemoveFromPortfolio={handleRemoveFromPortfolio}
-                  handleEditPortfolioEntry={handleEditPortfolioEntry}
-                  formatPrice={formatPrice}
-                  getColorClass={getColorClass}
-                  setEditingPortfolio={setEditingPortfolio}
-                  setPortfolioForm={setPortfolioForm}
-                />
-              </Suspense>
-            )
           ) : (
             <>
               {/* Desktop Table View */}
@@ -3126,7 +2952,7 @@ export default function TokenScreener() {
                                   className="text-gray-400"
                                   title="Copy token address"
                                 >
-                                  <FaClipboard className="w-5 h-5" />
+                                  <FaCopy className="w-5 h-5" />
                                 </motion.button>
                               </div>
                             </td>
@@ -3195,7 +3021,7 @@ export default function TokenScreener() {
                           <div className="flex space-x-2">
                             <FaStar className={favorites.includes(token.poolAddress) ? "text-yellow-400" : "text-gray-400"} onClick={() => toggleFavorite(token.poolAddress)} />
                             <FaBell className={getBellColor(tokenAlerts)} onClick={() => setSelectedAlerts(tokenAlerts)} />
-                            <FaClipboard onClick={() => handleCopy(token)} className="text-gray-400" />
+                            <FaCopy onClick={() => handleCopy(token)} className="text-gray-400" />
                           </div>
                         </div>
                       </motion.div>

@@ -64,7 +64,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
-    const file = formData.get('file') as File | null; // Explicitly typed as File | null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fileEntry = (formData as any).get('file');
+    const file = fileEntry instanceof File ? fileEntry : null;
 
     if (!file || !file.name.endsWith('.sol')) {
       return NextResponse.json({ error: "Please upload a valid .sol file." }, { status: 400 });

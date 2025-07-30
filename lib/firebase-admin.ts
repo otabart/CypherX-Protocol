@@ -17,9 +17,8 @@ if (typeof window === "undefined") {
       FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL,
       FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY,
     };
-    // @ts-ignore: '_' is intentionally unused
     const missingAdminEnvVars = Object.entries(requiredEnvVars).filter(
-      ([_, value]) => !value
+      ([, value]) => !value
     );
     if (missingAdminEnvVars.length > 0) {
       const errorMessage = `Missing server-side Firebase Admin environment variables: ${missingAdminEnvVars

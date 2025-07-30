@@ -13,7 +13,9 @@ if (!BASE_RPC_URL || !MONGO_URI) {
   process.exit(1);
 }
 
-const provider = new ethers.JsonRpcProvider(BASE_RPC_URL);
+// Use WebSocketProvider instead of JsonRpcProvider
+const wsProvider = new ethers.WebSocketProvider("wss://base-mainnet.g.alchemy.com/v2/YOUR_KEY");
+
 const TRANSFER_TOPIC = ethers.id("Transfer(address,address,uint256)");
 
 async function fetchTokenTransfers(fromBlock: number, toBlock: number) {
@@ -24,7 +26,7 @@ async function fetchTokenTransfers(fromBlock: number, toBlock: number) {
   };
 
   try {
-    const logs = await provider.getLogs(filter);
+    const logs = await wsProvider.getLogs(filter);
     console.log(`Fetched ${logs.length} logs from blocks ${fromBlock} to ${toBlock}`);
     return logs;
   } catch (error) {
@@ -34,7 +36,7 @@ async function fetchTokenTransfers(fromBlock: number, toBlock: number) {
 }
 
 async function updateTokenMetrics(tokenAddress: string, transferValue: bigint) {
-  const client = new MongoClient(MONGO_URI);
+  const client = new MongoClient(MONGO_URI!);
   try {
     await client.connect();
     const db = client.db("BaseTokenDB");
@@ -57,14 +59,14 @@ async function updateTokenMetrics(tokenAddress: string, transferValue: bigint) {
 }
 
 async function runIndexer() {
-  const latestBlock = await provider.getBlockNumber();
+  const latestBlock = await wsProvider.getBlockNumber();
   const fromBlock = latestBlock - 100; // For example, the last 100 blocks
   const logs = await fetchTokenTransfers(fromBlock, latestBlock);
   for (const log of logs) {
     try {
       // The log data is a hex string representing the transfer value.
-      const value = ethers.BigNumber.from(log.data);
-      await updateTokenMetrics(log.address, value.toBigInt());
+      const value = ethers.toBigInt(log.data);
+      await updateTokenMetrics(log.address, value);
     } catch (error) {
       console.error("Error processing log:", error);
     }

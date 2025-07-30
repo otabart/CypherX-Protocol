@@ -1,31 +1,30 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
-import { collection, query, orderBy, onSnapshot, Timestamp, getDocs } from "firebase/firestore";
+import React, { useState, useEffect, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import {
   FaShareAlt,
   FaTimes,
-  FaSort,
   FaCoins,
-  FaExchangeAlt,
-  FaClock,
-  FaDollarSign,
-  FaPercent,
   FaAngleLeft,
   FaAngleRight,
-  FaSyncAlt,
+  FaFilter,
+  FaExternalLinkAlt,
+  FaCopy,
+  FaArrowUp,
+  FaArrowDown,
+  FaArrowRight,
 } from "react-icons/fa";
 import { GiWhaleTail } from "react-icons/gi";
-import { motion, AnimatePresence } from "framer-motion";
-import { debounce } from "lodash";
-import { FixedSizeList as List } from "react-window";
-import AutoSizer from "react-virtualized-auto-sizer";
+import Header from "../components/Header";
 import Footer from "../components/Footer";
-import Fuse from "fuse.js";
+import toast, { Toaster } from "react-hot-toast";
 
-// Interface for whale transactions
-interface WhaleTx {
+// ────────── Enhanced Interfaces ──────────
+
+interface WhaleTransaction {
   id?: string;
   tokenSymbol: string;
   tokenName: string;
@@ -38,1351 +37,915 @@ interface WhaleTx {
   source: string;
   timestamp: number;
   hash: string;
-  eventType: "Transfer" | "Swap";
-  swapType?: "Buy" | "Sell" | "Swap";
+  eventType: "Transfer" | "Swap" | "Buy" | "Sell";
+  transactionType: "Buy" | "Sell" | "Transfer";
   percentSupply: number;
+  gasUsed?: number;
+  gasPrice?: number;
   swapDetails?: {
     amountIn: number;
     amountOut: number;
     tokenIn: string;
     tokenOut: string;
+    path?: string[];
   };
+  whaleAddress?: string;
+  whaleLabel?: string;
+  impactScore?: number;
 }
 
-// Interface for token from Firestore
-interface Token {
-  address: string;
-  symbol: string;
-  name: string;
-  pool: string;
+// interface Token {
+//   address: string;
+//   symbol: string;
+//   name: string;
+//   pool: string;
+//   price?: number;
+//   marketCap?: number;
+//   volume24h?: number;
+// }
+
+interface FilterState {
+  tokenSymbol: string;
+  transactionType: "all" | "Buy" | "Sell" | "Transfer";
+  timeRange: "all" | "hour" | "day" | "week" | "month";
+  minUSD: string;
+  maxUSD: string;
+  minVolume: string;
+  minPercentage: string;
+  whaleAddress: string;
+  showOnlyWhales: boolean;
 }
 
-// Whale Icon with Animation
-function WhaleIcon({ className }: { className?: string }) {
-  return (
-    <motion.div
-      animate={{ rotate: [0, 10, -10, 0], scale: [1, 1.2, 1] }}
-      transition={{ duration: 1.5, repeat: Infinity }}
-    >
-      <GiWhaleTail className={className} />
-    </motion.div>
-  );
-}
+// ────────── Utility Functions ──────────
 
-// Loading Spinner
-function LoadingSpinner() {
-  return (
-    <motion.div
-      className="flex justify-center items-center py-8"
-      initial={{ opacity: 0, scale: 0.8 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.5 }}
-    >
-      <motion.div
-        animate={{ rotate: 360 }}
-        transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-      >
-        <WhaleIcon className="w-12 h-12 text-[#66B0FF]" />
-      </motion.div>
-    </motion.div>
-  );
-}
+const formatAddress = (address: string): string => {
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+};
 
-// Skeleton Loader
-function SkeletonLoader() {
-  return (
-    <motion.div
-      className="space-y-3 w-full px-4"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.5 }}
-    >
-      {[...Array(5)].map((_, i) => (
-        <motion.div
-          key={i}
-          className="bg-[#1E2A44] rounded-lg p-4 animate-pulse flex space-x-2 border border-[#1E2A44] w-full"
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: i * 0.1 }}
-        >
-          <div className="h-3 bg-[#2A3655] rounded w-1/6" />
-          <div className="h-3 bg-[#2A3655] rounded w-1/6" />
-          <div className="h-3 bg-[#2A3655] rounded w-1/6" />
-          <div className="h-3 bg-[#2A3655] rounded w-1/6" />
-          <div className="h-3 bg-[#2A3655] rounded w-1/6" />
-        </motion.div>
-      ))}
-    </motion.div>
-  );
-}
+const formatNumber = (num: number, decimals: number = 2): string => {
+  if (num >= 1e9) return (num / 1e9).toFixed(decimals) + 'B';
+  if (num >= 1e6) return (num / 1e6).toFixed(decimals) + 'M';
+  if (num >= 1e3) return (num / 1e3).toFixed(decimals) + 'K';
+  return num.toFixed(decimals);
+};
 
-// Transaction Row Component for Virtualized List
-interface TransactionRowProps {
-  index: number;
-  style: React.CSSProperties;
-  data: {
-    transactions: WhaleTx[];
-    getTypeColor: (type: string) => string;
-    getTransactionType: (tx: WhaleTx) => string;
-    handleShare: (tx: WhaleTx) => void;
-    setSelectedTx: (tx: WhaleTx | null) => void;
+const formatTimeAgo = (timestamp: number): string => {
+  const now = Date.now();
+  const diff = now - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (days > 0) return `${days}d ago`;
+  if (hours > 0) return `${hours}h ago`;
+  if (minutes > 0) return `${minutes}m ago`;
+  return 'Just now';
+};
+
+const getTransactionTypeColor = (type: string): string => {
+  switch (type) {
+    case 'Buy': return 'text-green-400 bg-green-400/10 border-green-400/20';
+    case 'Sell': return 'text-red-400 bg-red-400/10 border-red-400/20';
+    case 'Transfer': return 'text-blue-400 bg-blue-400/10 border-blue-400/20';
+    default: return 'text-gray-400 bg-gray-400/10 border-gray-400/20';
+  }
+};
+
+const getImpactScore = (amountUSD: number, percentSupply: number): number => {
+  const usdScore = Math.min(amountUSD / 100000, 1) * 50; // Max 50 points for USD
+  const supplyScore = Math.min(percentSupply * 10, 1) * 50; // Max 50 points for supply %
+  return Math.round(usdScore + supplyScore);
+};
+
+// ────────── Enhanced Transaction Classification ──────────
+
+const classifyTransaction = (tx: {
+  eventType?: string;
+  swapDetails?: {
+    tokenIn?: string;
+    tokenOut?: string;
   };
-}
+  tokenSymbol?: string;
+  amountToken?: number;
+  amountUSD?: number;
+}): "Buy" | "Sell" | "Transfer" => {
+  // Enhanced logic for classifying transactions
+  if (tx.eventType === "Swap") {
+    // Check if it's a buy (ETH -> Token) or sell (Token -> ETH)
+    if (tx.swapDetails) {
+      const tokenIn = tx.swapDetails.tokenIn?.toLowerCase();
+      const tokenOut = tx.swapDetails.tokenOut?.toLowerCase();
+      
+      // If input is ETH/WETH and output is the token, it's a buy
+      if ((tokenIn === 'eth' || tokenIn === 'weth') && tokenOut === tx.tokenSymbol?.toLowerCase()) {
+        return "Buy";
+      }
+      // If input is the token and output is ETH/WETH, it's a sell
+      if (tokenIn === tx.tokenSymbol?.toLowerCase() && (tokenOut === 'eth' || tokenOut === 'weth')) {
+        return "Sell";
+      }
+    }
+    
+    // Fallback: determine by amount change
+    if ((tx.amountToken ?? 0) > 0) return "Buy";
+    if ((tx.amountToken ?? 0) < 0) return "Sell";
+  }
+  
+  // For transfers, check if it's a whale transaction
+  if (tx.eventType === "Transfer") {
+    // If it's a large transfer, classify based on context
+    if ((tx.amountUSD ?? 0) > 10000) {
+      // Could be a buy/sell depending on the addresses involved
+      return "Transfer";
+    }
+  }
+  
+  return "Transfer";
+};
 
-const TransactionRow: React.FC<TransactionRowProps> = ({
-  index,
-  style,
-  data: { transactions, getTypeColor, getTransactionType, handleShare, setSelectedTx },
-}) => {
-  const tx = transactions[index];
+// ────────── Components ──────────
+
+const WhaleIcon: React.FC<{ className?: string; size?: number }> = ({ className = "", size = 24 }) => {
   return (
     <motion.div
-      style={{ ...style, padding: "0 16px" }}
-      className="grid grid-cols-[1fr_1fr_1fr_0.5fr] sm:grid-cols-[1fr_1fr_1fr_1fr_1fr_1fr_1fr_0.5fr] gap-4 py-3 text-sm border-b border-[#1E2A44] hover:bg-[#2A3655] cursor-pointer transition-all w-full items-center"
-      initial={{ opacity: 0, y: 15 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: index * 0.05 }}
-      onClick={() => setSelectedTx(tx)}
+      animate={{ 
+        rotate: [0, 5, -5, 0],
+        scale: [1, 1.1, 1]
+      }}
+      transition={{ 
+        duration: 2,
+        repeat: Infinity,
+        ease: "easeInOut"
+      }}
+      className={className}
     >
-      <div className="flex items-center space-x-2">
-        <div className="w-6 h-6 bg-[#66B0FF]/20 rounded-full flex items-center justify-center">
-          <WhaleIcon className="w-4 h-4 text-[#66B0FF]" />
-        </div>
-        <span className="font-bold text-[#66B0FF] truncate">{tx.tokenSymbol}</span>
-      </div>
-      <span className={`${getTypeColor(getTransactionType(tx))} truncate text-center`}>
-        {getTransactionType(tx)}
-      </span>
-      <span className="text-white truncate text-right">
-        {tx.amountToken.toLocaleString(undefined, {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}
-      </span>
-      <span className="text-green-400 truncate text-right sm:block hidden">
-        ${tx.amountUSD.toLocaleString(undefined, {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}
-      </span>
-      <span className="text-white truncate text-right sm:block hidden">{tx.percentSupply.toFixed(2)}%</span>
-      <span className="text-white truncate text-center sm:block hidden">{tx.source}</span>
-      <span className="text-gray-400 truncate text-right sm:block hidden">{new Date(tx.timestamp).toLocaleString()}</span>
-      <motion.button
-        onClick={(e) => {
-          e.stopPropagation();
-          handleShare(tx);
-        }}
-        className="text-gray-400 hover:text-[#66B0FF] p-1 focus:ring-2 focus:ring-[#66B0FF] rounded mx-auto"
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.9 }}
-      >
-        <FaShareAlt size={14} />
-      </motion.button>
+      <GiWhaleTail size={size} />
     </motion.div>
   );
 };
 
+const LoadingSpinner: React.FC = () => (
+  <div className="flex items-center justify-center py-12">
+    <motion.div
+      animate={{ rotate: 360 }}
+      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+      className="text-blue-500"
+    >
+      <WhaleIcon size={32} />
+    </motion.div>
+  </div>
+);
+
+const TransactionCard: React.FC<{
+  transaction: WhaleTransaction;
+  onViewDetails: (tx: WhaleTransaction) => void;
+  onShare: (tx: WhaleTransaction) => void;
+}> = ({ transaction, onViewDetails, onShare }) => {
+  const impactScore = getImpactScore(transaction.amountUSD, transaction.percentSupply);
+  
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-gradient-to-r from-gray-800/50 to-gray-700/50 rounded-xl border border-gray-600/30 p-4 hover:border-gray-500/50 transition-all duration-300 cursor-pointer"
+      onClick={() => onViewDetails(transaction)}
+    >
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-3">
+          <div className={`px-3 py-1 rounded-full text-xs font-medium border ${getTransactionTypeColor(transaction.transactionType)}`}>
+            {transaction.transactionType}
+          </div>
+          <div className="flex items-center gap-2">
+            <FaCoins className="text-yellow-400" size={14} />
+            <span className="font-semibold text-white">{transaction.tokenSymbol}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 text-xs text-gray-400">
+            <FaCoins />
+            <span>{impactScore}</span>
+          </div>
+          <motion.button
+            onClick={(e) => {
+              e.stopPropagation();
+              onShare(transaction);
+            }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            className="text-gray-400 hover:text-blue-400 transition-colors"
+          >
+            <FaShareAlt size={14} />
+          </motion.button>
+        </div>
+      </div>
+      
+      <div className="space-y-2">
+        <div className="flex justify-between items-center">
+          <span className="text-gray-400 text-sm">Amount</span>
+          <span className="text-white font-medium">
+            {formatNumber(transaction.amountToken)} {transaction.tokenSymbol}
+          </span>
+        </div>
+        
+        <div className="flex justify-between items-center">
+          <span className="text-gray-400 text-sm">USD Value</span>
+          <span className="text-green-400 font-medium">
+            ${formatNumber(transaction.amountUSD)}
+          </span>
+        </div>
+        
+        <div className="flex justify-between items-center">
+          <span className="text-gray-400 text-sm">Supply %</span>
+          <span className="text-blue-400 font-medium">
+            {transaction.percentSupply.toFixed(2)}%
+          </span>
+        </div>
+        
+        <div className="flex justify-between items-center">
+          <span className="text-gray-400 text-sm">Time</span>
+          <span className="text-gray-300 text-sm">
+            {formatTimeAgo(transaction.timestamp)}
+          </span>
+        </div>
+      </div>
+      
+      <div className="mt-3 pt-3 border-t border-gray-600/30">
+        <div className="flex justify-between items-center text-xs text-gray-400">
+          <span>From: {formatAddress(transaction.fromAddress)}</span>
+          <span>To: {formatAddress(transaction.toAddress)}</span>
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
+// ────────── Main Component ──────────
+
 export default function WhaleWatcherPage() {
-  const [transactions, setTransactions] = useState<WhaleTx[]>([]);
-  const [filteredTransactions, setFilteredTransactions] = useState<WhaleTx[]>([]);
-  const [tokens, setTokens] = useState<Token[]>([]);
-  const [tokenSuggestions, setTokenSuggestions] = useState<string[]>([]);
+  // State management
+  const [transactions, setTransactions] = useState<WhaleTransaction[]>([]);
+
+  // const [tokens, setTokens] = useState<Token[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [tokenFilter, setTokenFilter] = useState("");
-  const [typeFilter, setTypeFilter] = useState<"all" | "Buy" | "Sell" | "Transfer">("all");
-  const [minUSD, setMinUSD] = useState("");
-  const [maxUSD, setMaxUSD] = useState("");
-  const [minVolume, setMinVolume] = useState("");
-  const [timeFilter, setTimeFilter] = useState<"all" | "hour" | "day" | "week">("all");
-  const [sortBy, setSortBy] = useState<keyof WhaleTx>("timestamp");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
-  const [selectedTx, setSelectedTx] = useState<WhaleTx | null>(null);
-  const [isClient, setIsClient] = useState(false);
-  const [page, setPage] = useState(1);
-  const [minPercentage, setMinPercentage] = useState("");
+  const [selectedTransaction, setSelectedTransaction] = useState<WhaleTransaction | null>(null);
   const [showFilters, setShowFilters] = useState(false);
-  const [filterLoading, setFilterLoading] = useState(false);
-  const [headerHeight, setHeaderHeight] = useState(0);
-  const [filterBarHeight, setFilterBarHeight] = useState(0);
-  const [activeFiltersHeight, setActiveFiltersHeight] = useState(0);
-  const [filterLoadingHeight, setFilterLoadingHeight] = useState(0);
-  const transactionsPerPage = 20;
-  const modalRef = useRef<HTMLDivElement>(null);
-  const headerRef = useRef<HTMLDivElement>(null);
-  const filterBarRef = useRef<HTMLDivElement>(null);
-  const activeFiltersRef = useRef<HTMLDivElement>(null);
-  const filterLoadingRef = useRef<HTMLDivElement>(null);
+  const [showDetails, setShowDetails] = useState(false);
+  
+  // Filter states
+  const [filters, setFilters] = useState<FilterState>({
+    tokenSymbol: "",
+    transactionType: "all",
+    timeRange: "all",
+    minUSD: "",
+    maxUSD: "",
+    minVolume: "",
+    minPercentage: "",
+    whaleAddress: "",
+    showOnlyWhales: false,
+  });
 
-  const activeFilters = [
-    tokenFilter && `Token: ${tokenFilter}`,
-    typeFilter !== "all" && `Type: ${typeFilter}`,
-    minUSD && `Min USD: $${minUSD}`,
-    maxUSD && `Max USD: $${maxUSD}`,
-    minVolume && `Min Volume: ${minVolume}`,
-    timeFilter !== "all" && `Time: Last ${timeFilter}`,
-    minPercentage && `Min %: ${minPercentage}%`,
-  ].filter(Boolean);
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [transactionsPerPage] = useState(20);
 
-  const debouncedSetTokenFilter = useCallback(
-    debounce((value: string) => {
-      setTokenFilter(value);
-      setFilterLoading(false);
-    }, 300),
-    []
-  );
+  // ────────── Data Fetching ──────────
 
-  // Fetch tokens for search suggestions
   useEffect(() => {
-    const fetchTokens = async () => {
+    const fetchData = async () => {
       try {
-        const tokensSnapshot = await getDocs(collection(db, "tokens"));
-        const tokenList = tokensSnapshot.docs
-          .map((doc) => ({
-            address: doc.data().address,
-            symbol: doc.data().symbol,
-            name: doc.data().name || doc.data().symbol,
-            pool: doc.data().pool || "",
-          }))
-          .filter((token) => token.symbol && /^0x[a-fA-F0-9]{40}$/.test(token.address));
-        setTokens(tokenList);
-      } catch (err) {
-        console.error("Failed to fetch tokens for search:", err);
-      }
-    };
-    fetchTokens();
-  }, []);
+        // Fetch tokens (commented out for now)
+        // const tokensQuery = query(collection(db, "tokens"));
+        // const tokensSnapshot = await getDocs(tokensQuery);
+        // const tokensData = tokensSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Token));
+        // setTokens(tokensData);
 
-  // Update token suggestions based on search input
-  useEffect(() => {
-    if (tokenFilter) {
-      const fuse = new Fuse(tokens, {
-        keys: ["symbol", "name"],
-        threshold: 0.2, // Tighter match threshold for better accuracy
-        includeScore: true,
-        minMatchCharLength: 2, // Require at least 2 characters for search
-      });
-      const results = fuse
-        .search(tokenFilter)
-        .filter((result) => result.score! < 0.4) // Filter out low-confidence matches
-        .map((result) => result.item.symbol);
-      setTokenSuggestions(results.slice(0, 5));
-    } else {
-      setTokenSuggestions([]);
-    }
-  }, [tokenFilter, tokens]);
+        // Set up real-time listener for whale transactions
+        const transactionsQuery = query(
+          collection(db, "whaleTransactions"),
+          orderBy("timestamp", "desc")
+        );
 
-  useEffect(() => {
-    const updateHeights = () => {
-      if (headerRef.current) setHeaderHeight(headerRef.current.offsetHeight);
-      if (filterBarRef.current) setFilterBarHeight(filterBarRef.current.offsetHeight);
-      if (activeFiltersRef.current) setActiveFiltersHeight(activeFiltersRef.current.offsetHeight);
-      else setActiveFiltersHeight(0);
-      if (filterLoadingRef.current) setFilterLoadingHeight(filterLoadingRef.current.offsetHeight);
-      else setFilterLoadingHeight(0);
-    };
-
-    updateHeights();
-    window.addEventListener("resize", updateHeights);
-    return () => window.removeEventListener("resize", updateHeights);
-  }, [activeFilters, filterLoading]);
-
-  const calculateTableHeaderTop = () => {
-    const baseHeight = headerHeight + (window.innerWidth >= 640 ? filterBarHeight : 0);
-    const additionalHeight = activeFiltersHeight + filterLoadingHeight;
-    return Math.max(baseHeight + additionalHeight, 0);
-  };
-
-  useEffect(() => {
-    const handleKeydown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (selectedTx) setSelectedTx(null);
-        if (showFilters) setShowFilters(false);
-      }
-    };
-    window.addEventListener("keydown", handleKeydown);
-    return () => window.removeEventListener("keydown", handleKeydown);
-  }, [selectedTx, showFilters]);
-
-  useEffect(() => {
-    if (selectedTx && modalRef.current) {
-      const focusable = modalRef.current.querySelectorAll(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-      );
-      const first = focusable[0] as HTMLElement;
-      const last = focusable[focusable.length - 1] as HTMLElement;
-      first?.focus();
-      const trap = (e: KeyboardEvent) => {
-        if (e.key === "Tab") {
-          if (e.shiftKey && document.activeElement === first) {
-            e.preventDefault();
-            last.focus();
-          } else if (!e.shiftKey && document.activeElement === last) {
-            e.preventDefault();
-            first.focus();
-          }
-        }
-      };
-      modalRef.current.addEventListener("keydown", trap);
-      return () => modalRef.current?.removeEventListener("keydown", trap);
-    }
-  }, [selectedTx]);
-
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
-
-  useEffect(() => {
-    if (!isClient) return;
-
-    const startMonitoring = async (retries = 3, delayMs = 5000) => {
-      for (let i = 0; i < retries; i++) {
-        try {
-          const res = await fetch("/api/whale-watchers", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ startMonitoring: true }),
+        const unsubscribe = onSnapshot(transactionsQuery, (snapshot) => {
+          const transactionsData = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              ...data,
+              transactionType: classifyTransaction(data),
+              impactScore: getImpactScore(data.amountUSD || 0, data.percentSupply || 0),
+            } as WhaleTransaction;
           });
-          const data = await res.json();
-          if (data.success) return;
-          throw new Error(data.error || "Monitoring failed");
-        } catch (err) {
-          console.error(`Monitoring attempt ${i + 1} failed:`, err);
-          if (i < retries - 1) {
-            await new Promise((resolve) => setTimeout(resolve, delayMs));
-          } else {
-            setError("Failed to start monitoring. Please try again.");
-          }
-        }
+          
+          setTransactions(transactionsData);
+          setLoading(false);
+        });
+
+        return () => unsubscribe();
+      } catch (error) {
+        console.error("Error fetching whale data:", error);
+        setLoading(false);
       }
     };
 
-    startMonitoring();
-  }, [isClient]);
+    fetchData();
+  }, []);
 
-  useEffect(() => {
-    if (!isClient) return;
+  // ────────── Filtering Logic ──────────
 
-    const q = query(collection(db, "whaleTransactions"), orderBy("createdAt", "desc"));
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const txs: WhaleTx[] = snapshot.docs
-          .map((doc) => {
-            const data = doc.data();
-            const timestamp =
-              data.timestamp instanceof Timestamp
-                ? data.timestamp.toDate().getTime()
-                : typeof data.timestamp === "number"
-                ? data.timestamp
-                : new Date().getTime();
-            return {
-              id: doc.id,
-              tokenSymbol: data.tokenSymbol || "UNKNOWN",
-              tokenName: data.tokenName || "Unknown",
-              tokenAddress: data.tokenAddress || "",
-              amountToken: Number(data.amountToken) || 0,
-              amountUSD: Number(data.amountUSD) || 0,
-              blockNumber: Number(data.blockNumber) || 0,
-              fromAddress: data.fromAddress || "",
-              toAddress: data.toAddress || "",
-              source: data.source || "Unknown",
-              timestamp,
-              hash: data.hash || "",
-              eventType: data.eventType || "Transfer",
-              swapType: data.swapType,
-              swapDetails: data.swapDetails,
-              percentSupply: Number(data.percentSupply) || 0,
-            };
-          })
-          .filter((tx) => tx.tokenSymbol !== "TEST");
-        setTransactions(txs);
-        setLoading(false);
-        setLastUpdated(new Date());
-        setError(null);
-      },
-      (err) => {
-        console.error("Firestore onSnapshot error:", err);
-        setError("Failed to load transactions. Please try again.");
-        setLoading(false);
-      }
-    );
+  const filteredData = useMemo(() => {
+    let filtered = transactions;
 
-    return () => unsubscribe();
-  }, [isClient]);
+    // Token filter
+    if (filters.tokenSymbol) {
+      filtered = filtered.filter(tx => 
+        tx.tokenSymbol.toLowerCase().includes(filters.tokenSymbol.toLowerCase()) ||
+        tx.tokenName.toLowerCase().includes(filters.tokenSymbol.toLowerCase())
+      );
+    }
 
-  const applyFilters = useCallback(
-    debounce((txs: WhaleTx[]) => {
-      let filtered = [...txs];
+    // Transaction type filter
+    if (filters.transactionType !== "all") {
+      filtered = filtered.filter(tx => tx.transactionType === filters.transactionType);
+    }
 
-      if (tokenFilter) {
-        const fuse = new Fuse(txs, {
-          keys: ["tokenSymbol", "tokenName"],
-          threshold: 0.2,
-          includeScore: true,
-          minMatchCharLength: 2,
-        });
-        filtered = fuse
-          .search(tokenFilter)
-          .filter((result) => result.score! < 0.4)
-          .map((result) => result.item);
-      }
-      if (typeFilter !== "all") {
-        filtered = filtered.filter((tx) => getTransactionType(tx) === typeFilter);
-      }
-      if (minUSD) {
-        const min = parseFloat(minUSD);
-        if (!isNaN(min)) filtered = filtered.filter((tx) => tx.amountUSD >= min);
-      }
-      if (maxUSD) {
-        const max = parseFloat(maxUSD);
-        if (!isNaN(max)) filtered = filtered.filter((tx) => tx.amountUSD <= max);
-      }
-      if (minVolume) {
-        const min = parseFloat(minVolume);
-        if (!isNaN(min)) filtered = filtered.filter((tx) => tx.amountToken >= min);
-      }
+    // Time range filter
+    if (filters.timeRange !== "all") {
       const now = Date.now();
-      if (timeFilter === "hour") {
-        filtered = filtered.filter((tx) => now - tx.timestamp <= 60 * 60 * 1000);
-      } else if (timeFilter === "day") {
-        filtered = filtered.filter((tx) => now - tx.timestamp <= 24 * 60 * 60 * 1000);
-      } else if (timeFilter === "week") {
-        filtered = filtered.filter((tx) => now - tx.timestamp <= 7 * 24 * 60 * 60 * 1000);
-      }
-      if (minPercentage) {
-        const min = parseFloat(minPercentage);
-        if (!isNaN(min)) filtered = filtered.filter((tx) => tx.percentSupply >= min);
-      }
+      const timeRanges = {
+        hour: 60 * 60 * 1000,
+        day: 24 * 60 * 60 * 1000,
+        week: 7 * 24 * 60 * 60 * 1000,
+        month: 30 * 24 * 60 * 60 * 1000,
+      };
+      const cutoff = now - timeRanges[filters.timeRange as keyof typeof timeRanges];
+      filtered = filtered.filter(tx => tx.timestamp > cutoff);
+    }
 
-      filtered.sort((a, b) => {
-        const aValue = a[sortBy] ?? 0;
-        const bValue = b[sortBy] ?? 0;
-        return sortOrder === "asc" ? (aValue > bValue ? 1 : -1) : aValue < bValue ? 1 : -1;
-      });
+    // USD range filter
+    if (filters.minUSD) {
+      filtered = filtered.filter(tx => tx.amountUSD >= parseFloat(filters.minUSD));
+    }
+    if (filters.maxUSD) {
+      filtered = filtered.filter(tx => tx.amountUSD <= parseFloat(filters.maxUSD));
+    }
 
-      setFilteredTransactions(filtered);
-      setPage(1);
-      setFilterLoading(false);
-    }, 300),
-    [tokenFilter, typeFilter, minUSD, maxUSD, minVolume, timeFilter, minPercentage, sortBy, sortOrder]
+    // Volume filter
+    if (filters.minVolume) {
+      filtered = filtered.filter(tx => tx.amountToken >= parseFloat(filters.minVolume));
+    }
+
+    // Percentage filter
+    if (filters.minPercentage) {
+      filtered = filtered.filter(tx => tx.percentSupply >= parseFloat(filters.minPercentage));
+    }
+
+    // Whale address filter
+    if (filters.whaleAddress) {
+      filtered = filtered.filter(tx => 
+        tx.fromAddress.toLowerCase().includes(filters.whaleAddress.toLowerCase()) ||
+        tx.toAddress.toLowerCase().includes(filters.whaleAddress.toLowerCase())
+      );
+    }
+
+    // Show only whale transactions (high impact)
+    if (filters.showOnlyWhales) {
+      filtered = filtered.filter(tx => getImpactScore(tx.amountUSD, tx.percentSupply) >= 70);
+    }
+
+    return filtered;
+  }, [transactions, filters]);
+
+  // Pagination
+  const totalPages = Math.ceil(filteredData.length / transactionsPerPage);
+  const paginatedData = filteredData.slice(
+    (currentPage - 1) * transactionsPerPage,
+    currentPage * transactionsPerPage
   );
 
-  useEffect(() => {
-    if (!isClient) return;
-    setFilterLoading(true);
-    applyFilters(transactions);
-  }, [
-    transactions,
-    tokenFilter,
-    typeFilter,
-    minUSD,
-    maxUSD,
-    minVolume,
-    timeFilter,
-    minPercentage,
-    sortBy,
-    sortOrder,
-    isClient,
-    applyFilters,
-  ]);
+  // ────────── Event Handlers ──────────
 
-  const handleSort = (key: keyof WhaleTx) => {
-    if (sortBy === key) {
-      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-    } else {
-      setSortBy(key);
-      setSortOrder("desc");
-    }
+  const handleViewDetails = (transaction: WhaleTransaction) => {
+    setSelectedTransaction(transaction);
+    setShowDetails(true);
   };
 
-  const handleShare = (tx: WhaleTx) => {
-    const shareText = `🐳 Whale Alert: ${tx.tokenSymbol} - $${tx.amountUSD.toLocaleString()} (${getTransactionType(tx)}) at ${new Date(tx.timestamp).toLocaleString()} on ${tx.source} #WhaleAlert #Crypto`;
+  const handleShare = (transaction: WhaleTransaction) => {
+    const shareText = `🐋 Whale Alert: ${transaction.transactionType} ${formatNumber(transaction.amountToken)} ${transaction.tokenSymbol} ($${formatNumber(transaction.amountUSD)})`;
+    const shareUrl = `https://basescan.org/tx/${transaction.hash}`;
+    
     if (navigator.share) {
-      navigator
-        .share({
-          title: "Whale Transaction Alert",
-          text: shareText,
-          url: `/explorer/tx/${tx.hash}`,
-        })
-        .catch((err) => console.error("Share failed:", err));
-    } else if (navigator.clipboard) {
-      navigator.clipboard
-        .writeText(shareText)
-        .then(() => alert("Transaction details copied to clipboard!"))
-        .catch((err) => console.error("Failed to copy share text:", err));
-    }
-  };
-
-  const handleRefreshData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/whale-watchers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startMonitoring: true }),
+      navigator.share({
+        title: 'Whale Transaction',
+        text: shareText,
+        url: shareUrl,
       });
-      const data = await res.json();
-      if (data.success) {
-        const q = query(collection(db, "whaleTransactions"), orderBy("createdAt", "desc"));
-        const snapshot = await getDocs(q);
-        const txs: WhaleTx[] = snapshot.docs
-          .map((doc) => {
-            const data = doc.data();
-            const timestamp =
-              data.timestamp instanceof Timestamp
-                ? data.timestamp.toDate().getTime()
-                : typeof data.timestamp === "number"
-                ? data.timestamp
-                : new Date().getTime();
-            return {
-              id: doc.id,
-              tokenSymbol: data.tokenSymbol || "UNKNOWN",
-              tokenName: data.tokenName || "Unknown",
-              tokenAddress: data.tokenAddress || "",
-              amountToken: Number(data.amountToken) || 0,
-              amountUSD: Number(data.amountUSD) || 0,
-              blockNumber: Number(data.blockNumber) || 0,
-              fromAddress: data.fromAddress || "",
-              toAddress: data.toAddress || "",
-              source: data.source || "Unknown",
-              timestamp,
-              hash: data.hash || "",
-              eventType: data.eventType || "Transfer",
-              swapType: data.swapType,
-              swapDetails: data.swapDetails,
-              percentSupply: Number(data.percentSupply) || 0,
-            };
-          })
-          .filter((tx) => tx.tokenSymbol !== "TEST");
-        setTransactions(txs);
-        setLastUpdated(new Date());
-      } else {
-        throw new Error(data.error || "Refresh failed");
-      }
-    } catch (err) {
-      console.error("Refresh error:", err);
-      setError("Failed to refresh data. Please try again.");
-    } finally {
-      setLoading(false);
+    } else {
+      navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
+      toast.success('Transaction details copied to clipboard!');
     }
   };
 
-  const applyQuickFilter = (filter: {
-    minUSD?: string;
-    timeFilter?: "all" | "hour" | "day" | "week";
-    minVolume?: string;
-  }) => {
-    setMinUSD(filter.minUSD || "");
-    setMinVolume(filter.minVolume || "");
-    setTimeFilter(filter.timeFilter || "all");
-    setFilterLoading(true);
-    setTimeout(() => setFilterLoading(false), 300);
+  const handleCopyAddress = (address: string) => {
+    navigator.clipboard.writeText(address);
+    toast.success('Address copied to clipboard!');
   };
 
-  const getTransactionType = (tx: WhaleTx): "Buy" | "Sell" | "Transfer" => {
-    if (tx.eventType === "Swap" && tx.swapType) {
-      return tx.swapType;
-    }
-    return tx.eventType;
+  const updateFilter = (key: keyof FilterState, value: string | boolean) => {
+    setFilters(prev => ({ ...prev, [key]: value }));
+    setCurrentPage(1); // Reset to first page when filtering
   };
 
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case "Sell":
-        return "text-red-400";
-      case "Buy":
-        return "text-green-400";
-      case "Transfer":
-        return "text-[#66B0FF]";
-      default:
-        return "text-gray-400";
-    }
-  };
+  // ────────── Render ──────────
 
-  const totalPages = Math.ceil(filteredTransactions.length / transactionsPerPage);
-  const paginatedTransactions = filteredTransactions.slice(
-    (page - 1) * transactionsPerPage,
-    page * transactionsPerPage
-  );
-
-  const handlePageJump = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseInt(e.target.value);
-    if (!isNaN(value) && value >= 1 && value <= totalPages) {
-      setPage(value);
-    }
-  };
-
-  if (!isClient) {
-    return null;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
+        <Header />
+        <LoadingSpinner />
+        <Footer />
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen w-full bg-[#0A0F1C] text-white font-sans flex flex-col overflow-x-hidden">
-      <style jsx global>{`
-        html,
-        body {
-          margin: 0;
-          padding: 0;
-          box-sizing: border-box;
-          width: 100%;
-          overflow-x: hidden;
-        }
-        ::-webkit-scrollbar {
-          width: 8px;
-        }
-        ::-webkit-scrollbar-track {
-          background: #f1f1f1;
-        }
-        ::-webkit-scrollbar-thumb {
-          background: #888;
-          border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-          background: #555;
-        }
-        html {
-          scrollbar-width: thin;
-          scrollbar-color: #888 #f1f1f1;
-        }
-        @keyframes bounce {
-          0%,
-          100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-8px);
-          }
-        }
-        .animate-bounce {
-          animation: bounce 1s infinite;
-        }
-        .font-sans {
-          font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
-            Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
-        }
-        button:focus,
-        a:focus,
-        input:focus,
-        select:focus {
-          outline: none;
-          box-shadow: 0 0 0 3px rgba(102, 176, 255, 0.3);
-        }
-      `}</style>
+    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 flex flex-col">
+      <Header />
+      <Toaster position="top-right" />
+      
+      <main className="flex-1 container mx-auto px-4 py-8">
+        {/* Hero Section */}
+        <div className="text-center mb-8">
+          <div className="flex items-center justify-center gap-3 mb-4">
+            <WhaleIcon className="text-blue-400" size={32} />
+            <h1 className="text-4xl font-bold text-white">🐋 Whale Watcher</h1>
+          </div>
+          <p className="text-gray-400 text-lg max-w-2xl mx-auto">
+            Track large cryptocurrency transactions in real-time. Monitor whale movements, 
+            analyze market impact, and stay ahead of significant trading activity.
+          </p>
+        </div>
 
-      {/* Transaction Details Modal */}
-      <AnimatePresence>
-        {selectedTx && (
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <motion.div
-            className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-xl border border-blue-500/20 p-4"
           >
-            <motion.div
-              ref={modalRef}
-              className="bg-[#1E2A44] rounded-lg w-full max-w-md border border-[#1E2A44] max-h-[80vh] overflow-y-auto shadow-xl"
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <div className="flex justify-between items-center bg-[#2A3655] text-white p-3 sticky top-0 border-b border-[#1E2A44]">
-                <span className="text-sm font-semibold text-[#66B0FF] uppercase">Transaction Details</span>
-                <motion.button
-                  onClick={() => setSelectedTx(null)}
-                  className="text-gray-400 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] p-1 rounded"
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                >
-                  <FaTimes size={16} />
-                </motion.button>
+            <div className="flex items-center gap-3">
+              <FaCoins className="text-blue-400" size={20} />
+              <div>
+                <p className="text-gray-400 text-sm">Total Transactions</p>
+                <p className="text-white font-bold text-xl">{transactions.length.toLocaleString()}</p>
               </div>
-              <div className="p-4 text-sm space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Token:</span>
-                  <span className="text-[#66B0FF] font-medium">{selectedTx.tokenSymbol}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Type:</span>
-                  <span className={getTypeColor(getTransactionType(selectedTx))}>
-                    {getTransactionType(selectedTx)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Amount:</span>
-                  <span className="text-white">
-                    {selectedTx.amountToken.toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">USD Value:</span>
-                  <span className="text-green-400">
-                    ${selectedTx.amountUSD.toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Percent Supply:</span>
-                  <span className="text-white">{selectedTx.percentSupply.toFixed(2)}%</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Block Number:</span>
-                  <span className="text-white">{selectedTx.blockNumber}</span>
-                </div>
-                {selectedTx.eventType === "Swap" && selectedTx.swapDetails && (
-                  <>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Swap Input:</span>
-                      <span className="text-white">
-                        {selectedTx.swapDetails.amountIn.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}{" "}
-                        {selectedTx.swapDetails.tokenIn}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Swap Output:</span>
-                      <span className="text-white">
-                        {selectedTx.swapDetails.amountOut.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}{" "}
-                        {selectedTx.swapDetails.tokenOut}
-                      </span>
-                    </div>
-                  </>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-gray-400">From:</span>
-                  <a
-                    href={`https://basescan.org/address/${selectedTx.fromAddress}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[#66B0FF] hover:text-[#88CFFF] focus:ring-2 focus:ring-[#66B0FF] rounded"
-                  >
-                    {selectedTx.fromAddress.slice(0, 6)}...{selectedTx.fromAddress.slice(-4)}
-                  </a>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">To:</span>
-                  <a
-                    href={`https://basescan.org/address/${selectedTx.toAddress}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[#66B0FF] hover:text-[#88CFFF] focus:ring-2 focus:ring-[#66B0FF] rounded"
-                  >
-                    {selectedTx.toAddress.slice(0, 6)}...{selectedTx.toAddress.slice(-4)}
-                  </a>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Hash:</span>
-                  <a
-                    href={`/explorer/tx/${selectedTx.hash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[#66B0FF] hover:text-[#88CFFF] focus:ring-2 focus:ring-[#66B0FF] rounded"
-                  >
-                    {selectedTx.hash.slice(0, 6)}...{selectedTx.hash.slice(-4)}
-                  </a>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Source:</span>
-                  <span className="text-white">{selectedTx.source}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Timestamp:</span>
-                  <span className="text-white">{new Date(selectedTx.timestamp).toLocaleString()}</span>
-                </div>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-2 p-4 pt-0">
-                <motion.a
-                  href={`/explorer/tx/${selectedTx.hash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm flex items-center justify-center gap-2 border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <FaShareAlt size={14} /> View on Explorer
-                </motion.a>
-                <motion.button
-                  onClick={() => handleShare(selectedTx)}
-                  className="flex-1 px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm flex items-center justify-center gap-2 border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <FaShareAlt size={14} /> Share
-                </motion.button>
-                <motion.button
-                  onClick={() => setSelectedTx(null)}
-                  className="flex-1 px-4 py-2 bg-[#1E2A44] hover:bg-[#2A3655] text-white rounded-lg text-sm border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  Close
-                </motion.button>
-              </div>
-            </motion.div>
+            </div>
           </motion.div>
-        )}
-      </AnimatePresence>
 
-      {/* Header */}
-      <motion.header
-        ref={headerRef}
-        className="bg-[#0A0F1C] w-full py-4 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20 border-b border-[#1E2A44] shadow-md"
-        initial={{ y: -100 }}
-        animate={{ y: 0 }}
-        transition={{ duration: 0.5, type: "spring" }}
-      >
-        <div className="flex items-center space-x-2">
-          <WhaleIcon className="w-6 h-6 text-[#66B0FF]" />
-          <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight uppercase">Whale Watcher</h1>
-        </div>
-        <motion.button
-          className="sm:hidden px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm"
-          onClick={() => setShowFilters(true)}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          Filters
-        </motion.button>
-      </motion.header>
-
-      {/* Desktop Filter Bar */}
-      <motion.div
-        ref={filterBarRef}
-        className="hidden sm:flex items-center justify-between bg-[#0A0F1C] px-4 sm:px-6 py-4 border-b border-[#1E2A44]"
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-      >
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="relative group">
-            <input
-              type="text"
-              placeholder="Search Token (e.g., WETH)"
-              value={tokenFilter}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                setFilterLoading(true);
-                debouncedSetTokenFilter(e.target.value);
-              }}
-              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400 w-40"
-              list="token-suggestions"
-              aria-label="Search by token symbol or name"
-            />
-            <FaCoins className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
-            <datalist id="token-suggestions">
-              {tokenSuggestions.map((suggestion) => (
-                <option key={suggestion} value={suggestion} />
-              ))}
-            </datalist>
-          </div>
-          <div className="relative group">
-            <select
-              value={typeFilter}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTypeFilter(e.target.value as "all" | "Buy" | "Sell" | "Transfer")}
-              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm w-32"
-              aria-label="Filter by transaction type"
-            >
-              <option value="all">All Types</option>
-              <option value="Buy">Buy</option>
-              <option value="Sell">Sell</option>
-              <option value="Transfer">Transfer</option>
-            </select>
-            <FaExchangeAlt className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
-          </div>
-          <div className="relative group">
-            <select
-              value={timeFilter}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTimeFilter(e.target.value as "all" | "hour" | "day" | "week")}
-              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm w-32"
-              aria-label="Filter by time range"
-            >
-              <option value="all">All Time</option>
-              <option value="hour">Last Hour</option>
-              <option value="day">Last Day</option>
-              <option value="week">Last Week</option>
-            </select>
-            <FaClock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
-          </div>
-          <div className="relative group">
-            <input
-              type="number"
-              placeholder="Min USD (4000)"
-              value={minUSD}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMinUSD(e.target.value)}
-              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400 w-32"
-              aria-label="Minimum USD value"
-            />
-            <FaDollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
-          </div>
-          <div className="relative group">
-            <input
-              type="number"
-              placeholder="Max USD"
-              value={maxUSD}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxUSD(e.target.value)}
-              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400 w-32"
-              aria-label="Maximum USD value"
-            />
-            <FaDollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
-          </div>
-          <div className="relative group">
-            <input
-              type="number"
-              placeholder="Min Volume"
-              value={minVolume}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMinVolume(e.target.value)}
-              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400 w-32"
-              aria-label="Minimum token volume"
-            />
-            <FaCoins className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
-          </div>
-          <div className="relative group">
-            <input
-              type="number"
-              placeholder="Min % (0.05)"
-              value={minPercentage}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMinPercentage(e.target.value)}
-              className="pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400 w-32"
-              aria-label="Minimum percentage of token supply"
-            />
-            <FaPercent className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
-          </div>
-        </div>
-        <motion.button
-          onClick={handleRefreshData}
-          className="px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm flex items-center gap-2 border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          <FaSyncAlt size={14} /> Refresh
-        </motion.button>
-      </motion.div>
-
-      {/* Mobile Filter Bottom Sheet */}
-      <AnimatePresence>
-        {showFilters && (
           <motion.div
-            className="sm:hidden fixed inset-0 bg-black bg-opacity-80 z-30"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            onClick={() => setShowFilters(false)}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 rounded-xl border border-green-500/20 p-4"
           >
-            <motion.div
-              className="absolute bottom-0 w-full bg-[#1E2A44] p-4 sm:p-6 border-t border-[#1E2A44] rounded-t-xl max-h-[80vh] overflow-y-auto"
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ duration: 0.3 }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-semibold text-[#66B0FF] uppercase">Filters</h2>
-                <motion.button
-                  onClick={() => setShowFilters(false)}
-                  className="text-gray-400 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] p-1 rounded"
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                >
-                  <FaTimes size={18} />
-                </motion.button>
+            <div className="flex items-center gap-3">
+              <FaArrowUp className="text-green-400" size={20} />
+              <div>
+                <p className="text-gray-400 text-sm">Buy Transactions</p>
+                <p className="text-white font-bold text-xl">
+                  {transactions.filter(tx => tx.transactionType === 'Buy').length.toLocaleString()}
+                </p>
               </div>
-              <div className="space-y-4">
-                <div className="relative group">
-                  <label htmlFor="token-filter-mobile" className="text-sm text-gray-400 mb-1 block">
-                    Token
-                  </label>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="bg-gradient-to-r from-red-500/10 to-pink-500/10 rounded-xl border border-red-500/20 p-4"
+          >
+            <div className="flex items-center gap-3">
+              <FaArrowDown className="text-red-400" size={20} />
+              <div>
+                <p className="text-gray-400 text-sm">Sell Transactions</p>
+                <p className="text-white font-bold text-xl">
+                  {transactions.filter(tx => tx.transactionType === 'Sell').length.toLocaleString()}
+                </p>
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="bg-gradient-to-r from-purple-500/10 to-indigo-500/10 rounded-xl border border-purple-500/20 p-4"
+          >
+            <div className="flex items-center gap-3">
+              <FaArrowRight className="text-purple-400" size={20} />
+              <div>
+                <p className="text-gray-400 text-sm">Transfer Transactions</p>
+                <p className="text-white font-bold text-xl">
+                  {transactions.filter(tx => tx.transactionType === 'Transfer').length.toLocaleString()}
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+
+        {/* Filters Section */}
+        <div className="bg-gray-800/30 rounded-xl border border-gray-700/50 p-6 mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-white">Filters</h2>
+            <motion.button
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <FaFilter size={14} />
+              {showFilters ? 'Hide' : 'Show'} Filters
+            </motion.button>
+          </div>
+
+          <AnimatePresence>
+            {showFilters && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+              >
+                <div>
+                  <label className="block text-gray-400 text-sm mb-2">Token Symbol</label>
                   <input
-                    id="token-filter-mobile"
                     type="text"
-                    placeholder="Search Token (e.g., WETH)"
-                    value={tokenFilter}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                      setFilterLoading(true);
-                      debouncedSetTokenFilter(e.target.value);
-                    }}
-                    className="w-full pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm"
-                    list="token-suggestions-mobile"
-                    aria-label="Search by token symbol or name"
+                    placeholder="e.g., WETH, USDC"
+                    value={filters.tokenSymbol}
+                    onChange={(e) => updateFilter('tokenSymbol', e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500"
                   />
-                  <FaCoins className="absolute left-3 top-9 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
-                  <datalist id="token-suggestions-mobile">
-                    {tokenSuggestions.map((suggestion) => (
-                      <option key={suggestion} value={suggestion} />
-                    ))}
-                  </datalist>
                 </div>
-                <div className="relative group">
-                  <label htmlFor="type-filter-mobile" className="text-sm text-gray-400 mb-1 block">
-                    Type
-                  </label>
+
+                <div>
+                  <label className="block text-gray-400 text-sm mb-2">Transaction Type</label>
                   <select
-                    id="type-filter-mobile"
-                    value={typeFilter}
-                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTypeFilter(e.target.value as "all" | "Buy" | "Sell" | "Transfer")}
-                    className="w-full pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm"
-                    aria-label="Filter by transaction type"
+                    value={filters.transactionType}
+                    onChange={(e) => updateFilter('transactionType', e.target.value as "all" | "Buy" | "Sell" | "Transfer")}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="all">All Types</option>
                     <option value="Buy">Buy</option>
                     <option value="Sell">Sell</option>
                     <option value="Transfer">Transfer</option>
                   </select>
-                  <FaExchangeAlt className="absolute left-3 top-9 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
                 </div>
-                <div className="relative group">
-                  <label htmlFor="time-filter-mobile" className="text-sm text-gray-400 mb-1 block">
-                    Time Range
-                  </label>
+
+                <div>
+                  <label className="block text-gray-400 text-sm mb-2">Time Range</label>
                   <select
-                    id="time-filter-mobile"
-                    value={timeFilter}
-                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTimeFilter(e.target.value as "all" | "hour" | "day" | "week")}
-                    className="w-full pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm"
-                    aria-label="Filter by time range"
+                    value={filters.timeRange}
+                    onChange={(e) => updateFilter('timeRange', e.target.value as "all" | "hour" | "day" | "week" | "month")}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="all">All Time</option>
                     <option value="hour">Last Hour</option>
                     <option value="day">Last Day</option>
                     <option value="week">Last Week</option>
+                    <option value="month">Last Month</option>
                   </select>
-                  <FaClock className="absolute left-3 top-9 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
                 </div>
-                <div className="relative group">
-                  <label htmlFor="min-usd-mobile" className="text-sm text-gray-400 mb-1 block">
-                    Min USD
-                  </label>
+
+                <div>
+                  <label className="block text-gray-400 text-sm mb-2">Min USD Value</label>
                   <input
-                    id="min-usd-mobile"
                     type="number"
-                    placeholder="e.g., 4000"
-                    value={minUSD}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMinUSD(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400"
-                    aria-label="Minimum USD value"
+                    placeholder="e.g., 10000"
+                    value={filters.minUSD}
+                    onChange={(e) => updateFilter('minUSD', e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500"
                   />
-                  <FaDollarSign className="absolute left-3 top-9 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
                 </div>
-                <div className="relative group">
-                  <label htmlFor="max-usd-mobile" className="text-sm text-gray-400 mb-1 block">
-                    Max USD
-                  </label>
+
+                <div>
+                  <label className="block text-gray-400 text-sm mb-2">Max USD Value</label>
                   <input
-                    id="max-usd-mobile"
                     type="number"
-                    placeholder="e.g., 100000"
-                    value={maxUSD}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxUSD(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400"
-                    aria-label="Maximum USD value"
+                    placeholder="e.g., 1000000"
+                    value={filters.maxUSD}
+                    onChange={(e) => updateFilter('maxUSD', e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500"
                   />
-                  <FaDollarSign className="absolute left-3 top-9 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
                 </div>
-                <div className="relative group">
-                  <label htmlFor="min-volume-mobile" className="text-sm text-gray-400 mb-1 block">
-                    Min Volume
-                  </label>
+
+                <div>
+                  <label className="block text-gray-400 text-sm mb-2">Min Token Amount</label>
                   <input
-                    id="min-volume-mobile"
                     type="number"
-                    placeholder="e.g., 100"
-                    value={minVolume}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMinVolume(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400"
-                    aria-label="Minimum token volume"
+                    placeholder="e.g., 1000"
+                    value={filters.minVolume}
+                    onChange={(e) => updateFilter('minVolume', e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500"
                   />
-                  <FaCoins className="absolute left-3 top-9 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
                 </div>
-                <div className="relative group">
-                  <label htmlFor="min-percentage-mobile" className="text-sm text-gray-400 mb-1 block">
-                    Min % Supply
-                  </label>
+
+                <div>
+                  <label className="block text-gray-400 text-sm mb-2">Min Supply %</label>
                   <input
-                    id="min-percentage-mobile"
                     type="number"
-                    placeholder="e.g., 0.05"
-                    value={minPercentage}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMinPercentage(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] hover:border-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-sm placeholder-gray-400"
-                    aria-label="Minimum percentage of token supply"
+                    placeholder="e.g., 0.1"
+                    value={filters.minPercentage}
+                    onChange={(e) => updateFilter('minPercentage', e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500"
                   />
-                  <FaPercent className="absolute left-3 top-9 text-gray-400 group-hover:text-[#66B0FF]" size={16} />
+                </div>
+
+                <div>
+                  <label className="block text-gray-400 text-sm mb-2">Whale Address</label>
+                  <input
+                    type="text"
+                    placeholder="0x..."
+                    value={filters.whaleAddress}
+                    onChange={(e) => updateFilter('whaleAddress', e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div className="flex items-center">
+                  <label className="flex items-center gap-2 text-gray-400 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={filters.showOnlyWhales}
+                      onChange={(e) => updateFilter('showOnlyWhales', e.target.checked)}
+                      className="rounded border-gray-600 text-blue-500 focus:ring-blue-500"
+                    />
+                    Show only high-impact transactions
+                  </label>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Results Section */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-bold text-white">
+              Transactions ({filteredData.length.toLocaleString()})
+            </h3>
+            <div className="flex items-center gap-2 text-sm text-gray-400">
+              <span>Page {currentPage} of {totalPages}</span>
+            </div>
+          </div>
+
+          {paginatedData.length === 0 ? (
+            <div className="text-center py-12">
+              <WhaleIcon className="text-gray-600 mx-auto mb-4" size={48} />
+              <p className="text-gray-400 text-lg">No transactions found</p>
+              <p className="text-gray-500 text-sm">Try adjusting your filters</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {paginatedData.map((transaction) => (
+                <TransactionCard
+                  key={transaction.id}
+                  transaction={transaction}
+                  onViewDetails={handleViewDetails}
+                  onShare={handleShare}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2">
+            <motion.button
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 text-white rounded-lg transition-colors"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <FaAngleLeft size={14} />
+            </motion.button>
+            
+            <span className="text-gray-400 px-4">
+              {currentPage} of {totalPages}
+            </span>
+            
+            <motion.button
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 text-white rounded-lg transition-colors"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <FaAngleRight size={14} />
+            </motion.button>
+          </div>
+        )}
+      </main>
+
+      {/* Transaction Details Modal */}
+      <AnimatePresence>
+        {showDetails && selectedTransaction && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+            onClick={() => setShowDetails(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-gray-800 rounded-xl border border-gray-700 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold text-white">Transaction Details</h2>
+                  <motion.button
+                    onClick={() => setShowDetails(false)}
+                    className="text-gray-400 hover:text-white transition-colors"
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                  >
+                    <FaTimes size={20} />
+                  </motion.button>
+                </div>
+
+                <div className="space-y-6">
+                  {/* Transaction Overview */}
+                  <div className="bg-gray-700/30 rounded-lg p-4">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className={`px-3 py-1 rounded-full text-sm font-medium border ${getTransactionTypeColor(selectedTransaction.transactionType)}`}>
+                        {selectedTransaction.transactionType}
+                      </div>
+                      <span className="text-white font-semibold">{selectedTransaction.tokenSymbol}</span>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-gray-400 text-sm">Amount</p>
+                        <p className="text-white font-semibold">
+                          {formatNumber(selectedTransaction.amountToken)} {selectedTransaction.tokenSymbol}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-gray-400 text-sm">USD Value</p>
+                        <p className="text-green-400 font-semibold">
+                          ${formatNumber(selectedTransaction.amountUSD)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-gray-400 text-sm">Supply %</p>
+                        <p className="text-blue-400 font-semibold">
+                          {selectedTransaction.percentSupply.toFixed(2)}%
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-gray-400 text-sm">Impact Score</p>
+                        <p className="text-yellow-400 font-semibold">
+                          {getImpactScore(selectedTransaction.amountUSD, selectedTransaction.percentSupply)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Addresses */}
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-gray-400 text-sm mb-2">From Address</p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-white font-mono text-sm">
+                          {formatAddress(selectedTransaction.fromAddress)}
+                        </span>
+                        <motion.button
+                          onClick={() => handleCopyAddress(selectedTransaction.fromAddress)}
+                          className="text-gray-400 hover:text-blue-400 transition-colors"
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                        >
+                          <FaCopy size={14} />
+                        </motion.button>
+                        <motion.a
+                          href={`https://basescan.org/address/${selectedTransaction.fromAddress}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-gray-400 hover:text-blue-400 transition-colors"
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                        >
+                          <FaExternalLinkAlt size={14} />
+                        </motion.a>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-gray-400 text-sm mb-2">To Address</p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-white font-mono text-sm">
+                          {formatAddress(selectedTransaction.toAddress)}
+                        </span>
+                        <motion.button
+                          onClick={() => handleCopyAddress(selectedTransaction.toAddress)}
+                          className="text-gray-400 hover:text-blue-400 transition-colors"
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                        >
+                          <FaCopy size={14} />
+                        </motion.button>
+                        <motion.a
+                          href={`https://basescan.org/address/${selectedTransaction.toAddress}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-gray-400 hover:text-blue-400 transition-colors"
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                        >
+                          <FaExternalLinkAlt size={14} />
+                        </motion.a>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Transaction Details */}
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-gray-400 text-sm">Block Number</p>
+                        <p className="text-white font-mono text-sm">{selectedTransaction.blockNumber}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-400 text-sm">Timestamp</p>
+                        <p className="text-white text-sm">
+                          {new Date(selectedTransaction.timestamp).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-gray-400 text-sm mb-2">Transaction Hash</p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-white font-mono text-sm">
+                          {formatAddress(selectedTransaction.hash)}
+                        </span>
+                        <motion.button
+                          onClick={() => handleCopyAddress(selectedTransaction.hash)}
+                          className="text-gray-400 hover:text-blue-400 transition-colors"
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                        >
+                          <FaCopy size={14} />
+                        </motion.button>
+                        <motion.a
+                          href={`https://basescan.org/tx/${selectedTransaction.hash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-gray-400 hover:text-blue-400 transition-colors"
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                        >
+                          <FaExternalLinkAlt size={14} />
+                        </motion.a>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-3 pt-4 border-t border-gray-700">
+                    <motion.button
+                      onClick={() => handleShare(selectedTransaction)}
+                      className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      <FaShareAlt size={14} />
+                      Share
+                    </motion.button>
+                    <motion.a
+                      href={`https://basescan.org/tx/${selectedTransaction.hash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      <FaExternalLinkAlt size={14} />
+                      View on Explorer
+                    </motion.a>
+                  </div>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-3 mt-4">
-                <motion.button
-                  onClick={() => applyQuickFilter({ minUSD: "4000", minVolume: "100" })}
-                  className="px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  Low Value ($4K)
-                </motion.button>
-                <motion.button
-                  onClick={() => applyQuickFilter({ timeFilter: "hour" })}
-                  className="px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  Last Hour
-                </motion.button>
-                <motion.button
-                  onClick={handleRefreshData}
-                  className="px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm flex items-center gap-2 border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <FaSyncAlt size={14} /> Refresh
-                </motion.button>
-                <motion.button
-                  onClick={() => setShowFilters(false)}
-                  className="px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] shadow-md"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  Apply Filters
-                </motion.button>
-              </div>
-              {lastUpdated && (
-                <p className="text-xs text-gray-400 text-right mt-4">
-                  Last Updated: {lastUpdated.toLocaleString()}
-                </p>
-              )}
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Active Filters Summary */}
-      {activeFilters.length > 0 && (
-        <motion.div
-          ref={activeFiltersRef}
-          className="flex flex-wrap gap-2 px-4 py-2 bg-[#0A0F1C] border-b border-[#1E2A44]"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.3 }}
-        >
-          <span className="text-sm text-gray-400">Active Filters:</span>
-          {activeFilters.map((filter, index) => (
-            <motion.span
-              key={index}
-              className="px-2 py-1 bg-[#2A3655] text-white rounded-full text-xs"
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ duration: 0.2, delay: index * 0.1 }}
-            >
-              {filter}
-            </motion.span>
-          ))}
-          <motion.button
-            onClick={handleRefreshData}
-            className="px-2 py-1 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-full text-xs flex items-center gap-1 focus:ring-2 focus:ring-[#66B0FF]"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            Clear All <FaTimes size={12} />
-          </motion.button>
-        </motion.div>
-      )}
-
-      {/* Filter Loading Indicator */}
-      {filterLoading && (
-        <motion.div
-          ref={filterLoadingRef}
-          className="text-center py-2 text-[#66B0FF] text-sm animate-pulse"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.3 }}
-        >
-          Applying filters...
-        </motion.div>
-      )}
-
-      {/* Error Message */}
-      {error && (
-        <motion.div
-          className="bg-red-500/20 border border-red-500 text-red-400 text-center py-3 rounded-lg mx-4"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.3 }}
-        >
-          {error}
-        </motion.div>
-      )}
-
-      {/* Loading State */}
-      {loading && !filteredTransactions.length && <SkeletonLoader />}
-      {loading && filteredTransactions.length > 0 && <LoadingSpinner />}
-
-      {/* No Transactions */}
-      {!loading && filteredTransactions.length === 0 && (
-        <motion.p
-          className="text-gray-400 text-center py-12"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5 }}
-        >
-          No whale transactions found. Try adjusting filters.
-        </motion.p>
-      )}
-
-      {/* Transactions Feed */}
-      {!loading && filteredTransactions.length > 0 && (
-        <motion.div
-          className="w-full flex-1"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5 }}
-        >
-          <div
-            className="bg-[#1E2A44] text-gray-400 text-sm font-semibold uppercase border-b border-[#1E2A44] sticky z-10 shadow-md"
-            style={{ top: `${calculateTableHeaderTop()}px` }}
-          >
-            <div className="grid grid-cols-[1fr_1fr_1fr_0.5fr] sm:grid-cols-[1fr_1fr_1fr_1fr_1fr_1fr_1fr_0.5fr] gap-4 px-4 py-3 items-center w-full">
-              <button
-                onClick={() => handleSort("tokenSymbol")}
-                className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-left"
-              >
-                Token
-                {sortBy === "tokenSymbol" && (
-                  <FaSort className={sortOrder === "asc" ? "rotate-180" : ""} size={12} />
-                )}
-              </button>
-              <button
-                onClick={() => handleSort("eventType")}
-                className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-center"
-              >
-                Type
-                {sortBy === "eventType" && (
-                  <FaSort className={sortOrder === "asc" ? "rotate-180" : ""} size={12} />
-                )}
-              </button>
-              <button
-                onClick={() => handleSort("amountToken")}
-                className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-right"
-              >
-                Amount
-                {sortBy === "amountToken" && (
-                  <FaSort className={sortOrder === "asc" ? "rotate-180" : ""} size={12} />
-                )}
-              </button>
-              <button
-                onClick={() => handleSort("amountUSD")}
-                className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-right sm:block hidden"
-              >
-                USD Value
-                {sortBy === "amountUSD" && (
-                  <FaSort className={sortOrder === "asc" ? "rotate-180" : ""} size={12} />
-                )}
-              </button>
-              <button
-                onClick={() => handleSort("percentSupply")}
-                className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-right sm:block hidden"
-              >
-                % Supply
-                {sortBy === "percentSupply" && (
-                  <FaSort className={sortOrder === "asc" ? "rotate-180" : ""} size={12} />
-                )}
-              </button>
-              <button
-                onClick={() => handleSort("source")}
-                className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-center sm:block hidden"
-              >
-                Source
-                {sortBy === "source" && (
-                  <FaSort className={sortOrder === "asc" ? "rotate-180" : ""} size={12} />
-                )}
-              </button>
-              <button
-                onClick={() => handleSort("timestamp")}
-                className="flex items-center gap-1 hover:text-[#66B0FF] focus:ring-2 focus:ring-[#66B0FF] text-right sm:block hidden"
-              >
-                Timestamp
-                {sortBy === "timestamp" && (
-                  <FaSort className={sortOrder === "asc" ? "rotate-180" : ""} size={12} />
-                )}
-              </button>
-              <span className="text-center">Actions</span>
-            </div>
-          </div>
-          <div className="w-full" style={{ height: `calc(100vh - ${calculateTableHeaderTop() + 60}px)` }}>
-            <AutoSizer>
-              {({ height, width }) => (
-                <List
-                  height={height}
-                  width={width}
-                  itemCount={paginatedTransactions.length}
-                  itemSize={60}
-                  itemData={{
-                    transactions: paginatedTransactions,
-                    getTypeColor,
-                    getTransactionType,
-                    handleShare,
-                    setSelectedTx,
-                  }}
-                >
-                  {TransactionRow}
-                </List>
-              )}
-            </AutoSizer>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <motion.div
-          className="flex items-center justify-center space-x-2 p-4 bg-[#0A0F1C] border-t border-[#1E2A44] sticky bottom-0 z-10"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.3 }}
-        >
-          <motion.button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
-            className="px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm flex items-center gap-2 border border-[#1E2A44] disabled:opacity-50 disabled:cursor-not-allowed focus:ring-2 focus:ring-[#66B0FF] shadow-md"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <FaAngleLeft size={14} /> Prev
-          </motion.button>
-          <div className="flex items-center space-x-1 text-sm text-gray-400">
-            <span>Page</span>
-            <input
-              type="number"
-              value={page}
-              onChange={handlePageJump}
-              className="w-12 px-1 py-1 bg-[#1E2A44] text-white rounded-lg border border-[#1E2A44] focus:ring-2 focus:ring-[#66B0FF] text-center"
-              aria-label="Current page number"
-            />
-            <span>of {totalPages}</span>
-          </div>
-          <motion.button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-            className="px-4 py-2 bg-[#2A3655] hover:bg-[#66B0FF] text-white rounded-lg text-sm flex items-center gap-2 border border-[#1E2A44] disabled:opacity-50 disabled:cursor-not-allowed focus:ring-2 focus:ring-[#66B0FF] shadow-md"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            Next <FaAngleRight size={14} />
-          </motion.button>
-        </motion.div>
-      )}
       <Footer />
     </div>
   );

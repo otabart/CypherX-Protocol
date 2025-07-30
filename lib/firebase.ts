@@ -140,7 +140,7 @@ const listenToAuthState = (
         const userDoc = await getDoc(userDocRef);
         let roles: { [key: string]: boolean } = {};
         if (userDoc.exists()) {
-          roles = (userDoc.data() as any).roles || {};
+          roles = (userDoc.data() as { roles?: { [key: string]: boolean } }).roles || {};
           console.log(
             `Auth state changed: User ${user.uid} signed in, Roles:`,
             roles

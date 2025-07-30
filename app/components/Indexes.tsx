@@ -9,8 +9,8 @@ import { Tooltip } from "react-tooltip";
 import toast from "react-hot-toast";
 
 // Custom debounce function to replace lodash
-const debounce = <T extends (...args: any[]) => any>(func: T, wait: number) => {
-  let timeout: NodeJS.Timeout | null = null;
+const debounce = <T extends (...args: unknown[]) => unknown>(func: T, wait: number) => {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
   return (...args: Parameters<T>): void => {
     if (timeout) clearTimeout(timeout);
     timeout = setTimeout(() => func(...args), wait);
@@ -94,7 +94,7 @@ const imageVariants = {
 };
 
 const cardVariants = {
-  hover: { scale: 1.03, boxShadow: "0 10px 15px rgba(59, 130, 246, 0.3)", borderColor: "rgba(59, 130, 246, 0.5)", transition: { duration: 0.3 } },
+  hover: { scale: 1.02, transition: { duration: 0.2 } },
   tap: { scale: 0.98 },
 };
 
@@ -362,9 +362,8 @@ export default function BaseAiIndex() {
   const indexRef = useRef<HTMLDivElement>(null);
   const [currentIndex, setCurrentIndex] = useState(0); // For mobile carousel
 
-  const indexNames = ["CDEX", "BDEX", "VDEX", "AIDEX"];
-
   const fetchData = useCallback(async () => {
+    const indexNames = ["CDEX", "BDEX", "VDEX", "AIDEX"];
     setLoading(true);
     setError(null);
 
@@ -545,14 +544,15 @@ export default function BaseAiIndex() {
 
   if (loading) {
     return (
-      <div className="p-4 md:p-6 bg-gray-900 w-full rounded-xl border border-blue-500/30">
-        <div className="w-full p-2 bg-gray-800 rounded-xl border border-blue-500/30">
-          <div className="w-32 h-6 bg-gray-700 rounded animate-pulse mb-2 mx-auto" />
-          <div className="space-y-4">
-            {Array(4).fill(null).map((_, idx) => (
-              <div key={idx} className="h-64 bg-gray-700 rounded animate-pulse mx-auto w-full max-w-[300px]" />
-            ))}
-          </div>
+      <div className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl border border-blue-500/30 p-4 sm:p-6">
+        <div className="flex justify-between items-center mb-4 sm:mb-6">
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-200">[ INDEXES ]</h2>
+          <div className="h-8 w-8 bg-gray-800 rounded animate-pulse" />
+        </div>
+        <div className="space-y-4">
+          {Array(4).fill(null).map((_, idx) => (
+            <div key={idx} className="h-64 bg-gray-800 rounded-lg animate-pulse" />
+          ))}
         </div>
       </div>
     );
@@ -560,31 +560,35 @@ export default function BaseAiIndex() {
 
   if (error) {
     return (
-      <div className="p-4 text-center text-red-400 w-full rounded-xl border border-blue-500/30">
-        {error}
-        <button
-          onClick={debouncedRefresh}
-          className="ml-2 px-3 py-1 bg-teal-500/20 text-teal-400 rounded-md hover:bg-teal-500/40"
-        >
-          Retry
-        </button>
+      <div className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl border border-blue-500/30 p-4 sm:p-6">
+        <h2 className="text-xl sm:text-2xl font-bold text-gray-200 mb-4 sm:mb-6">[ INDEXES ]</h2>
+        <div className="text-center text-red-400">
+          {error}
+          <button
+            onClick={debouncedRefresh}
+            className="ml-2 px-3 py-1 bg-teal-500/20 text-teal-400 rounded-md hover:bg-teal-500/40 transition-all duration-200"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
     <motion.div
-      className="p-2 md:p-4 bg-gradient-to-br from-gray-900 to-gray-800 w-full border border-blue-500/30 rounded-xl"
+      className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl border border-blue-500/30 p-4 sm:p-6"
       variants={containerVariants}
       initial="hidden"
       whileInView="visible"
       viewport={{ once: true, amount: 0.2 }}
     >
       <motion.div ref={indexRef} className="w-full">
-        <div className="flex justify-end space-x-4 mb-4">
+        <div className="flex justify-between items-center mb-4 sm:mb-6">
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-200">[ INDEXES ]</h2>
           <motion.button
             onClick={debouncedRefresh}
-            className="p-2 rounded-full bg-gray-800 border border-teal-500/30 hover:bg-teal-500/40"
+            className="p-2 rounded-full bg-gray-800 border border-teal-500/30 hover:bg-teal-500/40 transition-all duration-200"
             title="Refresh Data"
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.95 }}
@@ -594,83 +598,77 @@ export default function BaseAiIndex() {
           </motion.button>
         </div>
         {isMobile ? (
-          <div className="relative">
-            <style>
-              {`
-                .carousel-container {
-                  position: relative;
-                  width: 100%;
-                  overflow: hidden;
-                }
-                .carousel-slide {
-                  display: flex;
-                  justify-content: center;
-                  align-items: center;
-                  width: 100%;
-                  transition: transform 0.5s ease;
-                }
-                .carousel-button {
-                  position: absolute;
-                  top: 5px;
-                  padding: 6px;
-                  cursor: pointer;
-                  background: rgba(31, 41, 55, 0.8); /* Match bg-gray-900 */
-                  border-radius: 50%;
-                  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-                }
-                .carousel-button.left {
-                  left: 10px;
-                }
-                .carousel-button.right {
-                  right: 10px;
-                }
-                .carousel-button:hover {
-                  background: rgba(31, 41, 55, 1); /* Darker on hover */
-                }
-              `}
-            </style>
-            <div className="carousel-container">
-              <motion.div
-                className="carousel-slide"
-                drag="x"
-                dragConstraints={{ left: -window.innerWidth * currentIndex, right: 0 }}
-                onDragEnd={(_, { offset }) => {  // Removed unused 'e'
-                  if (offset.x > 100) handlePrevIndex();
-                  else if (offset.x < -100) handleNextIndex();
-                }}
-              >
-                <MemoIndexSection
-                  name={indexesData[currentIndex].name}
-                  tokens={indexesData[currentIndex].tokens}
-                  stats={
-                    aggStatsByIndex[currentIndex] || {
-                      name: indexesData[currentIndex].name,
-                      overallPriceChange: 0,
-                      totalVolume: 0,
-                      totalMarketCap: 0,
-                      totalPairs: 0,
-                      totalLiquidity: 0,
-                    }
+                      <div className="relative">
+              <style>
+                {`
+                  .carousel-container {
+                    position: relative;
+                    width: 100%;
+                    overflow: hidden;
                   }
-                  isMobile={isMobile}
-                />
-              </motion.div>
-              <button className="carousel-button left" onClick={handlePrevIndex} aria-label="Previous Index">
-                <ArrowLeftIcon />
-              </button>
-              <button className="carousel-button right" onClick={handleNextIndex} aria-label="Next Index">
-                <ArrowRightIcon />
-              </button>
+                  .carousel-slide {
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    width: 100%;
+                    transition: transform 0.5s ease;
+                  }
+                  .carousel-button {
+                    position: absolute;
+                    top: 5px;
+                    padding: 6px;
+                    cursor: pointer;
+                    background: rgba(31, 41, 55, 0.8);
+                    border-radius: 50%;
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+                    transition: all 0.2s ease;
+                  }
+                  .carousel-button.left {
+                    left: 10px;
+                  }
+                  .carousel-button.right {
+                    right: 10px;
+                  }
+                  .carousel-button:hover {
+                    background: rgba(31, 41, 55, 1);
+                    transform: scale(1.1);
+                  }
+                `}
+              </style>
+              <div className="carousel-container">
+                <div className="carousel-slide">
+                  <MemoIndexSection
+                    name={indexesData[currentIndex].name}
+                    tokens={indexesData[currentIndex].tokens}
+                    stats={
+                      aggStatsByIndex[currentIndex] || {
+                        name: indexesData[currentIndex].name,
+                        overallPriceChange: 0,
+                        totalVolume: 0,
+                        totalMarketCap: 0,
+                        totalPairs: 0,
+                        totalLiquidity: 0,
+                      }
+                    }
+                    isMobile={isMobile}
+                  />
+                </div>
+                <button className="carousel-button left" onClick={handlePrevIndex} aria-label="Previous Index">
+                  <ArrowLeftIcon />
+                </button>
+                <button className="carousel-button right" onClick={handleNextIndex} aria-label="Next Index">
+                  <ArrowRightIcon />
+                </button>
+              </div>
+              <div className="flex justify-center mt-4 space-x-2">
+                {indexesData.map((_, idx) => (
+                  <div
+                    key={idx}
+                    className={`w-3 h-3 rounded-full transition-all duration-200 ${idx === currentIndex ? 'bg-teal-400' : 'bg-gray-600'}`}
+                  />
+                ))}
+              </div>
             </div>
-            <div className="flex justify-center mt-4 space-x-2">
-              {indexesData.map((_, idx) => (
-                <div
-                  key={idx}
-                  className={`w-3 h-3 rounded-full ${idx === currentIndex ? 'bg-teal-400' : 'bg-gray-600'}`}
-                />
-              ))}
-            </div>
-          </div>
         ) : (
           <div className="w-full" style={{ maxWidth: "100%" }}>
             <table className="w-full text-left">

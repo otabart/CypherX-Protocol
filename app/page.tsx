@@ -17,7 +17,7 @@ const BaseAiIndex = dynamic(() => import("./components/Indexes"), {
 });
 const TopPerformingCoins = dynamic(() => import("./components/TopPerformingCoins"), {
   ssr: false,
-  loading: () => <div className="h-64 md:h-96 bg-gray-900 rounded-xl animate-pulse" />,
+  loading: () => <div className="h-96 bg-gray-900 rounded-xl animate-pulse" />,
 });
 
 // Custom hook for mobile detection
@@ -122,7 +122,7 @@ export default function Page() {
         setStats({ price, volume, latestBlock });
         setBlocks(fetchedBlocks);
         setErrorBlocks("");
-      } catch (error) {
+      } catch {
         const errMsg = "Failed to fetch block data.";
         setErrorBlocks(errMsg);
         toast.error(errMsg);
@@ -146,7 +146,7 @@ export default function Page() {
         );
         setLatestArticles(sortedArticles.slice(0, 3));
         setErrorNews("");
-      } catch (err) {
+      } catch {
         const errMsg = "Error fetching articles";
         setErrorNews(errMsg);
         toast.error(errMsg);
@@ -198,30 +198,29 @@ export default function Page() {
       <Header />
 
       <main className="flex flex-col min-h-screen bg-gray-950 text-gray-200 p-4 sm:p-6 lg:p-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 sm:gap-8 items-stretch">
-          <motion.div className="col-span-1" {...fadeInUp(0)}>
-            <section className="py-0 sm:py-2 w-full h-full">
+        {/* Top Row - Equal Height Cards */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 mb-8">
+          <motion.div className="flex flex-col h-full" {...fadeInUp(0)}>
+            <div className="flex-1">
               <TopPerformingCoins />
-            </section>
+            </div>
           </motion.div>
 
-          <motion.div className="col-span-1" {...fadeInUp(0.1)}>
-            <section className="py-0 sm:py-2 w-full h-full">
+          <motion.div className="flex flex-col h-full" {...fadeInUp(0.1)}>
+            <div className="flex-1">
               <LatestBlocks blocks={blocks} stats={stats} isMobile={isMobile} loading={loadingBlocks} error={errorBlocks} />
-            </section>
+            </div>
           </motion.div>
         </div>
 
-        <motion.div className="col-span-1 mt-6 sm:mt-4" {...fadeInUp(0.2)}>
-          <section className="py-0 sm:py-2 w-full">
-            <BaseAiIndex />
-          </section>
+        {/* Indexes Section */}
+        <motion.div className="mb-8" {...fadeInUp(0.2)}>
+          <BaseAiIndex />
         </motion.div>
 
-        <motion.div className="col-span-1 mt-8 sm:mt-8" {...fadeInUp(0.3)}>
-          <section className="py-1 sm:py-2 w-full">
-            <LatestNews articles={latestArticles} isMobile={isMobile} loading={loadingNews} error={errorNews} />
-          </section>
+        {/* Latest News Section */}
+        <motion.div {...fadeInUp(0.3)}>
+          <LatestNews articles={latestArticles} isMobile={isMobile} loading={loadingNews} error={errorNews} />
         </motion.div>
       </main>
 
@@ -234,7 +233,7 @@ export default function Page() {
 function LatestNews({ articles, isMobile, loading, error }: { articles: NewsArticle[]; isMobile: boolean; loading: boolean; error: string }) {
   if (loading) {
     return (
-      <div className="space-y-3 sm:space-y-4">
+      <div className="space-y-4">
         {[1, 2, 3].map((i) => (
           <div key={i} className="h-24 sm:h-32 bg-gray-900 rounded-xl animate-pulse" />
         ))}
@@ -248,7 +247,7 @@ function LatestNews({ articles, isMobile, loading, error }: { articles: NewsArti
 
   if (!articles.length) {
     return (
-      <div className="space-y-3 sm:space-y-4">
+      <div className="space-y-4">
         {[1, 2, 3].map((i) => (
           <div key={i} className="h-24 sm:h-32 bg-gray-900 rounded-xl animate-pulse" />
         ))}
@@ -276,32 +275,41 @@ function LatestNews({ articles, isMobile, loading, error }: { articles: NewsArti
 
   return (
     <motion.div
-      className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl shadow-lg p-3 sm:p-5 border border-blue-500/30 flex flex-col h-full"
+      className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl shadow-lg p-4 sm:p-6 border border-blue-500/30 flex flex-col"
       {...fadeInUp(0)}
     >
-      <div className="flex justify-between items-center mb-3 sm:mb-5">
+      <div className="flex justify-between items-center mb-4 sm:mb-6">
         <h2 className="text-xl sm:text-2xl font-bold text-gray-200">[ LATEST NEWS ]</h2>
       </div>
-      <div className="space-y-3 sm:space-y-4 flex-grow">
+      <div className="space-y-4 flex-grow">
         {articles.slice(0, 3).map((article) => (
           <motion.div
             key={article.slug}
-            className="bg-gradient-to-br from-gray-800 to-gray-700 rounded-lg shadow-md p-3 sm:p-4 border border-blue-500/30 hover:shadow-xl"
+            className="bg-gradient-to-br from-gray-800 to-gray-700 rounded-lg shadow-md p-4 border border-blue-500/30 hover:shadow-xl transition-all duration-300"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}
           >
-            <div className={`flex ${isMobile ? "flex-col gap-2" : "gap-3 sm:flex-row sm:items-center"} mb-2 sm:mb-3`}>
+            <div className={`flex ${isMobile ? "flex-col gap-3" : "gap-4 items-center"} mb-3`}>
               <div className="flex-1">
-                <h3 className="text-base sm:text-lg font-bold text-blue-400 line-clamp-1 hover:text-blue-300">
+                <h3 className="text-base sm:text-lg font-bold text-blue-400 line-clamp-1 hover:text-blue-300 transition-colors">
                   {article.title}
                 </h3>
-                <p className="text-sm sm:text-base mt-1 text-gray-400 line-clamp-2">{article.content}</p>
+                <p className="text-sm sm:text-base mt-2 text-gray-400 line-clamp-2">{article.content}</p>
               </div>
               <div className={`flex ${isMobile ? "flex-row gap-2" : "items-center gap-3"}`}>
+                <Link
+                  href={`/base-chain-news/${article.slug}`}
+                  className="flex items-center gap-1 p-2 bg-green-500/20 hover:bg-green-500/40 border border-green-500/30 rounded-md text-green-400 transition-all duration-200 hover:scale-105"
+                  aria-label="Read article"
+                >
+                  <svg className="w-4 sm:w-5 h-4 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                  </svg>
+                </Link>
                 <button
                   onClick={() => shareToX(article)}
-                  className="flex items-center gap-1 p-1 sm:p-2 bg-blue-500/20 hover:bg-blue-500/40 border border-blue-500/30 rounded-md text-blue-400"
+                  className="flex items-center gap-1 p-2 bg-blue-500/20 hover:bg-blue-500/40 border border-blue-500/30 rounded-md text-blue-400 transition-all duration-200 hover:scale-105"
                   aria-label="Share on X"
                 >
                   <svg className="w-4 sm:w-5 h-4 sm:h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -310,7 +318,7 @@ function LatestNews({ articles, isMobile, loading, error }: { articles: NewsArti
                 </button>
                 <button
                   onClick={() => shareToTelegram(article)}
-                  className="flex items-center gap-1 p-1 sm:p-2 bg-teal-500/20 hover:bg-teal-500/40 border border-teal-500/30 rounded-md text-teal-400"
+                  className="flex items-center gap-1 p-2 bg-teal-500/20 hover:bg-teal-500/40 border border-teal-500/30 rounded-md text-teal-400 transition-all duration-200 hover:scale-105"
                   aria-label="Share on Telegram"
                 >
                   <svg className="w-4 sm:w-5 h-4 sm:h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -319,7 +327,7 @@ function LatestNews({ articles, isMobile, loading, error }: { articles: NewsArti
                 </button>
                 <button
                   onClick={() => copyLink(article)}
-                  className="flex items-center gap-1 p-1 sm:p-2 bg-purple-500/20 hover:bg-purple-500/40 border border-purple-500/30 rounded-md text-purple-400"
+                  className="flex items-center gap-1 p-2 bg-purple-500/20 hover:bg-purple-500/40 border border-purple-500/30 rounded-md text-purple-400 transition-all duration-200 hover:scale-105"
                   aria-label="Copy link"
                 >
                   <svg className="w-4 sm:w-5 h-4 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -327,31 +335,34 @@ function LatestNews({ articles, isMobile, loading, error }: { articles: NewsArti
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth="2"
-                      d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-1M8 5a2 2 0 0 0 2 2h2h8a2 2 0 0 0 2-2M8 5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2m0 0h-2m0-2H6"
+                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
                     />
                   </svg>
                 </button>
               </div>
             </div>
-            <div className="text-xs text-gray-500 mt-1">
+            <div className="text-xs text-gray-500 mt-2">
               {new Date(article.publishedAt).toLocaleDateString()}
             </div>
           </motion.div>
         ))}
       </div>
-      <div className="text-center mt-3 sm:mt-5">
+      <div className="text-center mt-6">
         <Link
           href="/base-chain-news"
-          className="text-blue-400 font-semibold text-sm px-3 py-1 rounded-full hover:bg-blue-500/20"
+          className="inline-flex items-center gap-2 text-blue-400 font-semibold text-sm px-4 py-2 rounded-full hover:bg-blue-500/20 transition-all duration-200 hover:scale-105"
         >
-          View All
+          View All Articles
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+          </svg>
         </Link>
       </div>
     </motion.div>
   );
 }
 
-// Updated LatestBlocks Component with enhancements
+// Updated LatestBlocks Component with consistent height and enhanced styling
 function LatestBlocks({
   blocks,
   stats,
@@ -374,8 +385,8 @@ function LatestBlocks({
 
   if (loading) {
     return (
-      <motion.div className="bg-gray-900 rounded-lg p-3 shadow-lg border border-blue-500/20 flex flex-col">
-        <div className="flex justify-between items-center mb-3 sm:mb-5">
+      <motion.div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 sm:p-6 shadow-lg border border-blue-500/30 flex flex-col h-full min-h-[400px]">
+        <div className="flex justify-between items-center mb-4 sm:mb-6">
           <h2 className="text-xl sm:text-2xl font-bold text-gray-200">[ LATEST BLOCKS ]</h2>
           <div className={`${isMobile ? "flex flex-col items-start space-y-1 ml-auto text-right" : "flex flex-wrap items-center space-x-3"} text-sm sm:text-base`}>
             <div className="h-5 w-24 bg-gray-800 rounded animate-pulse" />
@@ -383,7 +394,7 @@ function LatestBlocks({
             <div className="h-5 w-24 bg-gray-800 rounded animate-pulse" />
           </div>
         </div>
-        <div className="space-y-3 sm:space-y-4 flex-grow">
+        <div className="space-y-4 flex-grow">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-24 bg-gray-800 rounded-lg animate-pulse" />
           ))}
@@ -393,21 +404,26 @@ function LatestBlocks({
   }
 
   if (error) {
-    return <p className="text-center text-red-400">{error}</p>;
+    return (
+      <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 sm:p-6 shadow-lg border border-blue-500/30 flex flex-col h-full min-h-[400px]">
+        <h2 className="text-xl sm:text-2xl font-bold text-gray-200 mb-4 sm:mb-6">[ LATEST BLOCKS ]</h2>
+        <p className="text-center text-red-400 flex-grow flex items-center justify-center">{error}</p>
+      </div>
+    );
   }
 
   return (
-    <motion.div
-      className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-lg p-3 shadow-lg border border-blue-500/20 flex flex-col"
-      {...fadeInUp(0.1)}
-    >
-      <div className="flex justify-between items-center mb-3 sm:mb-5">
+          <motion.div
+        className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 sm:p-6 shadow-lg border border-blue-500/30 flex flex-col h-full min-h-[400px]"
+        {...fadeInUp(0.1)}
+      >
+      <div className="flex justify-between items-center mb-4 sm:mb-6">
         <h2 className="text-xl sm:text-2xl font-bold text-gray-200">[ LATEST BLOCKS ]</h2>
         {stats ? (
           <div className={`${isMobile ? "flex flex-col items-start space-y-1 ml-auto text-right" : "flex flex-wrap items-center space-x-3"} text-sm sm:text-base`}>
-            <span>Price: <span className="text-blue-400">${stats.price.toFixed(2)}</span></span>
-            <span>Volume: <span className="text-teal-400">${abbreviateNumber(stats.volume)}</span></span>
-            <span>Block: <span className="text-purple-400">{abbreviateNumber(stats.latestBlock)}</span></span>
+            <span className="bg-blue-500/20 px-2 py-1 rounded-md border border-blue-500/30">Price: <span className="text-blue-400">${stats.price.toFixed(2)}</span></span>
+            <span className="bg-teal-500/20 px-2 py-1 rounded-md border border-teal-500/30">Volume: <span className="text-teal-400">${abbreviateNumber(stats.volume)}</span></span>
+            <span className="bg-purple-500/20 px-2 py-1 rounded-md border border-purple-500/30">Block: <span className="text-purple-400">{abbreviateNumber(stats.latestBlock)}</span></span>
           </div>
         ) : (
           <div className={`${isMobile ? "flex flex-col items-start space-y-1 ml-auto text-right" : "flex flex-wrap items-center space-x-3"} text-sm sm:text-base`}>
@@ -417,38 +433,43 @@ function LatestBlocks({
           </div>
         )}
       </div>
-      <div className="space-y-3 sm:space-y-4 flex-grow">
+      <div className="space-y-4 flex-grow">
         {blocks.length ? (
           blocks.slice(0, 3).map((block) => (
             <motion.div
               key={block.number}
-              className="bg-gradient-to-br from-gray-800 to-gray-700 rounded-lg p-3 border border-blue-500/20 hover:shadow-xl"
+              className="bg-gradient-to-br from-gray-800 to-gray-700 rounded-lg p-4 border border-blue-500/20 hover:shadow-xl transition-all duration-300"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4 }}
             >
-              <div className={`flex ${isMobile ? "flex-col gap-2" : "gap-3 items-center"} mb-2`}>
+              <div className={`flex ${isMobile ? "flex-col gap-2" : "gap-3 items-center"} mb-3`}>
                 <div className="flex items-center space-x-2 sm:space-x-3">
-                  <span className="text-base sm:text-lg font-bold text-gray-200">{block.number}</span>
+                  <span className="text-base sm:text-lg font-bold text-gray-200">#{block.number}</span>
                   <span className="px-2 py-1 bg-blue-500/20 text-blue-400 text-sm rounded-full">
                     [ {block.status} ]
                   </span>
                 </div>
                 <span className="text-sm sm:text-base text-gray-500">{block.timestamp}</span>
               </div>
-              <div className="space-y-1 sm:space-y-2">
+              <div className="space-y-2">
                 <p className="text-sm sm:text-base text-gray-600">
                   <span className="font-semibold text-gray-200">HASH:</span> {block.hash.slice(0, 10)}...
                 </p>
                 <p className="text-sm sm:text-base text-gray-600">
                   <span className="font-semibold text-gray-200">TXNS:</span> {block.transactions}
+                </p>
+                <div className="flex justify-end">
                   <Link
                     href={`/explorer/latest/block/${block.number}`}
-                    className="text-blue-400 hover:text-blue-300 ml-1 sm:ml-2 text-sm"
+                    className="text-blue-400 hover:text-blue-300 text-sm transition-colors inline-flex items-center gap-1"
                   >
-                    View
+                    View Details
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                    </svg>
                   </Link>
-                </p>
+                </div>
               </div>
             </motion.div>
           ))
@@ -458,12 +479,15 @@ function LatestBlocks({
           ))
         )}
       </div>
-      <div className="text-center mt-3 sm:mt-5">
+      <div className="text-center mt-6">
         <Link
           href="/explorer/latest/block"
-          className="text-blue-400 font-semibold text-sm px-3 py-1 rounded-full hover:bg-blue-500/20"
+          className="inline-flex items-center gap-2 text-blue-400 font-semibold text-sm px-4 py-2 rounded-full hover:bg-blue-500/20 transition-all duration-200 hover:scale-105"
         >
-          View All
+          View All Blocks
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+          </svg>
         </Link>
       </div>
     </motion.div>
