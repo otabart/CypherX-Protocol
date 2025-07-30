@@ -8,8 +8,7 @@
     "source": "dataconnect"
   },
   "hosting": {
-    "site": "homebase-dapp",
-    "public": "public",
+    "public": "out",
     "ignore": [
       "firebase.json",
       "**/.*",
