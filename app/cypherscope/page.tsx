@@ -148,6 +148,10 @@ export default function CypherscopePage() {
     createdAt?: string;
     tags: string[];
     mediaContent?: { previewImage?: string };
+    source?: string;
+    dexName?: string;
+    launchData?: any;
+    zoraData?: any;
     [key: string]: unknown;
   }>>([]);
   const [loading, setLoading] = useState(true);
@@ -165,9 +169,7 @@ export default function CypherscopePage() {
   const [minHolders, setMinHolders] = useState("");
   const [selectedTag, setSelectedTag] = useState("");
   
-  // Sorting
-  const [sortBy, setSortBy] = useState("createdAt");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
   
   // UI State
   const [selectedToken, setSelectedToken] = useState<{
@@ -185,6 +187,14 @@ export default function CypherscopePage() {
     [key: string]: unknown;
   } | null>(null);
   const [watchlist, setWatchlist] = useState<string[]>([]);
+  
+  // Trading features
+  const [showWatchlistOnly, setShowWatchlistOnly] = useState(false);
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [priceAlerts, setPriceAlerts] = useState<{[key: string]: {target: number, type: 'above' | 'below'}}>({});
   
   // Load watchlist from localStorage
   useEffect(() => {
@@ -211,7 +221,7 @@ export default function CypherscopePage() {
         const res = await fetch("/api/cypherscope-tokens");
         const data = await res.json();
         // Add tags to each token
-        const tokensWithTags = (data.tokens || []).map((token: unknown) => {
+                const tokensWithTags = (data.tokens || []).map((token: unknown) => {
           const typedToken = token as { 
             id: string; 
             name: string; 
@@ -222,8 +232,18 @@ export default function CypherscopePage() {
             uniqueHolders?: string; 
             liquidity?: { usd?: string }; 
             createdAt?: string; 
-            mediaContent?: { previewImage?: string };
+            mediaContent?: { previewImage?: string }; 
+            source?: string;
+            dexName?: string;
+            launchData?: any;
+            zoraData?: any;
           };
+          
+          // Debug: Log image URLs
+          if (typedToken.mediaContent?.previewImage?.small) {
+            console.log(`Token ${typedToken.name}: Image URL =`, typedToken.mediaContent.previewImage.small);
+          }
+          
           return {
             ...typedToken,
             tags: getTokenTags(typedToken)
@@ -240,6 +260,10 @@ export default function CypherscopePage() {
           createdAt?: string;
           tags: string[];
           mediaContent?: { previewImage?: string };
+          source?: string;
+          dexName?: string;
+          launchData?: any;
+          zoraData?: any;
           [key: string]: unknown;
         }>;
         setTokens(tokensWithTags);
@@ -255,6 +279,11 @@ export default function CypherscopePage() {
   // Filtering and sorting
   const filteredAndSortedTokens = tokens
     .filter((token) => {
+      // Watchlist filter
+      if (showWatchlistOnly && !watchlist.includes(token.address)) {
+        return false;
+      }
+      
       const matchesSearch =
         token.name?.toLowerCase().includes(search.toLowerCase()) ||
         token.symbol?.toLowerCase().includes(search.toLowerCase()) ||
@@ -388,11 +417,19 @@ export default function CypherscopePage() {
           <div className="flex justify-between items-start mb-6">
             <div className="flex items-center gap-4">
               <Image
-                src={token.mediaContent?.previewImage?.small || "https://i.imgur.com/mlPQazY.png"}
+                src={token.mediaContent?.previewImage?.small || `https://dexscreener.com/base/${token.address}/logo.png`}
                 alt={token.symbol || "Token"}
                 width={64}
                 height={64}
                 className="rounded-full bg-blue-900"
+                onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+                  console.log("Zora image failed, trying DexScreener:", token.mediaContent?.previewImage?.small);
+                  // Try DexScreener as fallback
+                  e.currentTarget.src = `https://dexscreener.com/base/${token.address}/logo.png`;
+                }}
+                onLoad={() => {
+                  console.log("Zora image loaded successfully:", token.mediaContent?.previewImage?.small);
+                }}
               />
               <div>
                 <h2 className="text-2xl font-bold text-blue-200">{token.name}</h2>
@@ -484,10 +521,12 @@ export default function CypherscopePage() {
     <div className="min-h-screen bg-gradient-to-br from-blue-950 via-gray-950 to-blue-900 text-gray-200 font-sans">
       <Header />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+
+        
         {/* Enhanced Filters */}
-        <div className="mb-8 bg-gradient-to-r from-gray-900/90 to-gray-800/90 rounded-2xl p-6 border border-blue-500/10 shadow-xl">
+        <div className="mb-6 bg-gradient-to-r from-gray-900/90 to-gray-800/90 rounded-2xl p-4 border border-blue-500/10 shadow-xl">
           {/* Main Filter Row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
             {/* Search */}
             <div className="lg:col-span-2">
               <label className="block text-sm font-semibold text-gray-300 mb-2">Search Tokens</label>
@@ -506,6 +545,8 @@ export default function CypherscopePage() {
                 </div>
               </div>
             </div>
+            
+
             
             {/* DEX Filter */}
             <div>
@@ -544,7 +585,7 @@ export default function CypherscopePage() {
           </div>
           
           {/* Secondary Filter Row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
             {/* Age Filter */}
             <div>
               <label className="block text-sm font-semibold text-gray-300 mb-2">Age</label>
@@ -570,14 +611,14 @@ export default function CypherscopePage() {
                   placeholder="Min"
                   value={minMarketCap}
                   onChange={(e) => setMinMarketCap(e.target.value)}
-                  className="flex-1 bg-gray-800/50 border border-blue-500/20 rounded px-2 py-1.5 text-xs text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200"
+                  className="w-20 bg-gray-800/50 border border-blue-500/20 rounded-xl px-3 py-3 text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
                 />
                 <input
                   type="number"
                   placeholder="Max"
                   value={maxMarketCap}
                   onChange={(e) => setMaxMarketCap(e.target.value)}
-                  className="flex-1 bg-gray-800/50 border border-blue-500/20 rounded px-2 py-1.5 text-xs text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200"
+                  className="w-20 bg-gray-800/50 border border-blue-500/20 rounded-xl px-3 py-3 text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
             </div>
@@ -591,14 +632,14 @@ export default function CypherscopePage() {
                   placeholder="Min"
                   value={minVolume}
                   onChange={(e) => setMinVolume(e.target.value)}
-                  className="flex-1 bg-gray-800/50 border border-blue-500/20 rounded px-2 py-1.5 text-xs text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200"
+                  className="w-20 bg-gray-800/50 border border-blue-500/20 rounded-xl px-3 py-3 text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
                 />
                 <input
                   type="number"
                   placeholder="Max"
                   value={maxVolume}
                   onChange={(e) => setMaxVolume(e.target.value)}
-                  className="flex-1 bg-gray-800/50 border border-blue-500/20 rounded px-2 py-1.5 text-xs text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200"
+                  className="w-20 bg-gray-800/50 border border-blue-500/20 rounded-xl px-3 py-3 text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
             </div>
@@ -611,7 +652,7 @@ export default function CypherscopePage() {
                 placeholder="Min holders"
                 value={minHolders}
                 onChange={(e) => setMinHolders(e.target.value)}
-                className="w-full bg-gray-800/50 border border-blue-500/20 rounded-xl px-4 py-3 text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
+                className="w-32 bg-gray-800/50 border border-blue-500/20 rounded-xl px-4 py-3 text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
             
@@ -631,8 +672,8 @@ export default function CypherscopePage() {
             </div>
           </div>
           
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between pt-4 border-t border-gray-700/50">
+          {/* Trader Action Buttons */}
+          <div className="flex flex-col sm:flex-row gap-3 items-center justify-between pt-3 border-t border-gray-700/50">
             <div className="flex items-center gap-4">
               <button
                 onClick={() => {
@@ -644,8 +685,8 @@ export default function CypherscopePage() {
                   setMaxMarketCap("");
                   setMinVolume("");
                   setMaxVolume("");
-
                   setMinHolders("");
+                  setShowWatchlistOnly(false);
                 }}
                 className="inline-flex items-center gap-2 px-6 py-3 bg-gray-700/50 hover:bg-gray-600/50 border border-gray-600/30 hover:border-gray-500/50 rounded-xl text-sm font-semibold transition-all duration-200"
               >
@@ -655,16 +696,52 @@ export default function CypherscopePage() {
                 Clear Filters
               </button>
               
+              <button
+                onClick={() => setShowWatchlistOnly(!showWatchlistOnly)}
+                className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                  showWatchlistOnly 
+                    ? "bg-yellow-600/20 text-yellow-300 border border-yellow-500/30" 
+                    : "bg-gray-700/50 text-gray-300 border border-gray-600/30 hover:bg-gray-600/50"
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                </svg>
+                Watchlist Only
+              </button>
+              
               <div className="flex items-center gap-2 text-sm">
                 <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
                 <span className="text-gray-400">
                   {filteredAndSortedTokens.length} of {tokens.length} tokens
                 </span>
+                <span className="text-blue-400">•</span>
+                <span className="text-gray-400">
+                  {watchlist.length} watchlisted
+                </span>
               </div>
             </div>
             
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-400">Sort Order:</span>
+              <button
+                onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
+                className="px-3 py-1.5 bg-gray-700/50 text-gray-300 border border-gray-600/30 rounded-lg text-xs font-medium transition-all duration-200 hover:bg-gray-600/50"
+              >
+                {viewMode === "grid" ? "📊 List" : "🔲 Grid"}
+              </button>
+              
+              <button
+                onClick={() => setAutoRefresh(!autoRefresh)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
+                  autoRefresh 
+                    ? "bg-green-600/20 text-green-300 border border-green-500/30" 
+                    : "bg-gray-700/50 text-gray-300 border border-gray-600/30 hover:bg-gray-600/50"
+                }`}
+              >
+                {autoRefresh ? "🔄 Auto" : "⏸️ Manual"}
+              </button>
+              
+              <span className="text-sm text-gray-400">Sort:</span>
               <button
                 onClick={() => setSortOrder(sortOrder === "desc" ? "asc" : "desc")}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
@@ -673,7 +750,7 @@ export default function CypherscopePage() {
                     : "bg-gray-700/50 text-gray-300 border border-gray-600/30 hover:bg-gray-600/50"
                 }`}
               >
-                {sortOrder === "desc" ? "↓ Descending" : "↑ Ascending"}
+                {sortOrder === "desc" ? "↓ Desc" : "↑ Asc"}
               </button>
             </div>
           </div>
@@ -694,7 +771,145 @@ export default function CypherscopePage() {
           </div>
         ) : (
           <div className="space-y-8">
-                        {/* DEX Paid Section */}
+            {/* All Tokens Section */}
+            <div>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-1 h-8 bg-blue-400 rounded-full"></div>
+                <h2 className="text-2xl font-bold text-blue-200">All Tokens ({filteredAndSortedTokens.length})</h2>
+                <div className="flex-1 h-px bg-gray-700"></div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredAndSortedTokens.map((token) => (
+                  <div
+                    key={token.address}
+                    className="bg-gray-900/90 border border-blue-500/10 rounded-2xl shadow-lg p-5 hover:border-blue-400 transition group cursor-pointer flex flex-col h-full"
+                    onClick={() => setSelectedToken(token)}
+                  >
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <Image
+                          src={token.mediaContent?.previewImage?.small || `https://dexscreener.com/base/${token.address}/logo.png`}
+                          alt={token.symbol || "Token"}
+                          width={48}
+                          height={48}
+                          className="rounded-full bg-blue-900"
+                          onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+                            console.log("Zora image failed, trying DexScreener:", token.mediaContent?.previewImage?.small);
+                            // Try DexScreener as fallback
+                            e.currentTarget.src = `https://dexscreener.com/base/${token.address}/logo.png`;
+                          }}
+                          onLoad={() => {
+                            console.log("Zora image loaded successfully:", token.mediaContent?.previewImage?.small);
+                          }}
+                        />
+                        <div>
+                          <div className="font-bold text-blue-200 group-hover:text-blue-100 transition">
+                            {token.name || "Unknown"}
+                          </div>
+                          <div className="text-sm text-gray-400">{token.symbol}</div>
+                        </div>
+                      </div>
+                      
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleWatchlist(token.address);
+                        }}
+                        className={`p-2 rounded-lg transition ${
+                          watchlist.includes(token.address)
+                            ? "text-yellow-400 hover:text-yellow-300"
+                            : "text-gray-400 hover:text-yellow-400"
+                        }`}
+                      >
+                        <StarIcon filled={watchlist.includes(token.address)} />
+                      </button>
+                    </div>
+                    
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-xs text-gray-500 font-mono">
+                        {token.address?.slice(0, 6)}...{token.address?.slice(-4)}
+                      </div>
+                      {token.source && typeof token.source === 'string' && (
+                        <div className={`px-2 py-1 rounded text-xs font-medium ${
+                          token.source === 'clanker' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' :
+                          token.source === 'zora' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :
+                          token.source === 'aerodrome' ? 'bg-green-500/20 text-green-300 border border-green-500/30' :
+                          token.source === 'baseswap' ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30' :
+                          token.source === 'uniswap' ? 'bg-pink-500/20 text-pink-300 border border-pink-500/30' :
+                          'bg-gray-500/20 text-gray-300 border border-gray-500/30'
+                        }`}>
+                          {token.source.toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="space-y-2 mb-4">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-400">Market Cap</span>
+                        <span className={`font-semibold ${getValueColor(token.marketCap, 'marketCap')}`}>{formatNumber(token.marketCap)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-400">24h Volume</span>
+                        <span className={`font-semibold ${getValueColor(token.volume24h, 'volume')}`}>{formatNumber(token.volume24h)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-400">Holders</span>
+                        <span className="text-blue-300 font-semibold">{token.uniqueHolders?.toLocaleString() || "-"}</span>
+                      </div>
+                      {token.createdAt && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">Age</span>
+                          <span className="text-blue-300 font-semibold">{getAgeFromTimestamp(token.createdAt)}</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {token.tags && token.tags.length > 0 && (
+                      <div className="flex gap-1 mb-3 flex-wrap">
+                        {token.tags.map((tag: string) => (
+                          <TagBadge key={tag} tag={tag} />
+                        ))}
+                      </div>
+                    )}
+                    
+                                          <div className="flex gap-2 mt-auto">
+                        <a
+                          href={`https://dexscreener.com/base/${token.address}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex-1 px-3 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 rounded-lg text-xs font-semibold text-center transition-all duration-200"
+                        >
+                          Chart
+                        </a>
+                        <a
+                          href={`https://baseswap.fi/swap?inputCurrency=0x4200000000000000000000000000000000000006&outputCurrency=${token.address}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex-1 px-3 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-300 border border-green-500/30 rounded-lg text-xs font-semibold text-center transition-all duration-200"
+                        >
+                          Quick Buy
+                        </a>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(token.address);
+                          }}
+                          className="px-3 py-2 bg-gray-500/20 hover:bg-gray-500/30 text-gray-300 border border-gray-500/30 rounded-lg text-xs font-semibold transition-all duration-200"
+                          title="Copy address"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                        </button>
+                      </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            {/* DEX Paid Section */}
             {getTokensByTag("DEXPAID").length > 0 && (
               <div>
                 <div className="flex items-center gap-3 mb-6">
@@ -711,13 +926,21 @@ export default function CypherscopePage() {
                     >
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex items-center gap-3">
-                          <Image
-                            src={token.mediaContent?.previewImage?.small || "https://i.imgur.com/mlPQazY.png"}
-                            alt={token.symbol || "Token"}
-                            width={48}
-                            height={48}
-                            className="rounded-full bg-yellow-900"
-                          />
+                                        <Image
+                src={token.mediaContent?.previewImage?.small || `https://dexscreener.com/base/${token.address}/logo.png`}
+                alt={token.symbol || "Token"}
+                width={48}
+                height={48}
+                className="rounded-full bg-yellow-900"
+                onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+                  console.log("Zora image failed, trying DexScreener:", token.mediaContent?.previewImage?.small);
+                  // Try DexScreener as fallback
+                  e.currentTarget.src = `https://dexscreener.com/base/${token.address}/logo.png`;
+                }}
+                onLoad={() => {
+                  console.log("Zora image loaded successfully:", token.mediaContent?.previewImage?.small);
+                }}
+              />
                           <div>
                             <div className="font-bold text-yellow-200 group-hover:text-yellow-100 transition">
                               {token.name || "Unknown"}
@@ -741,8 +964,22 @@ export default function CypherscopePage() {
                         </button>
                       </div>
                       
-                      <div className="text-xs text-gray-500 mb-3 font-mono">
-                        {token.address?.slice(0, 6)}...{token.address?.slice(-4)}
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="text-xs text-gray-500 font-mono">
+                          {token.address?.slice(0, 6)}...{token.address?.slice(-4)}
+                        </div>
+                        {token.source && typeof token.source === 'string' && (
+                          <div className={`px-2 py-1 rounded text-xs font-medium ${
+                            token.source === 'clanker' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' :
+                            token.source === 'zora' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :
+                            token.source === 'aerodrome' ? 'bg-green-500/20 text-green-300 border border-green-500/30' :
+                            token.source === 'baseswap' ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30' :
+                            token.source === 'uniswap' ? 'bg-pink-500/20 text-pink-300 border border-pink-500/30' :
+                            'bg-gray-500/20 text-gray-300 border border-gray-500/30'
+                          }`}>
+                            {token.source.toUpperCase()}
+                          </div>
+                        )}
                       </div>
                       
                       <div className="space-y-2 mb-4">
@@ -818,11 +1055,19 @@ export default function CypherscopePage() {
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex items-center gap-3">
                           <Image
-                            src={token.mediaContent?.previewImage?.small || "https://i.imgur.com/mlPQazY.png"}
+                            src={token.mediaContent?.previewImage?.small || `https://dexscreener.com/base/${token.address}/logo.png`}
                             alt={token.symbol || "Token"}
                             width={48}
                             height={48}
                             className="rounded-full bg-green-900"
+                            onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+                              console.log("Zora image failed, trying DexScreener:", token.mediaContent?.previewImage?.small);
+                              // Try DexScreener as fallback
+                              e.currentTarget.src = `https://dexscreener.com/base/${token.address}/logo.png`;
+                            }}
+                            onLoad={() => {
+                              console.log("Zora image loaded successfully:", token.mediaContent?.previewImage?.small);
+                            }}
                           />
                           <div>
                             <div className="font-bold text-green-200 group-hover:text-green-100 transition">
@@ -924,11 +1169,19 @@ export default function CypherscopePage() {
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex items-center gap-3">
                           <Image
-                            src={token.mediaContent?.previewImage?.small || "https://i.imgur.com/mlPQazY.png"}
+                            src={token.mediaContent?.previewImage?.small || `https://dexscreener.com/base/${token.address}/logo.png`}
                             alt={token.symbol || "Token"}
                             width={48}
                             height={48}
                             className="rounded-full bg-red-900"
+                            onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+                              console.log("Zora image failed, trying DexScreener:", token.mediaContent?.previewImage?.small);
+                              // Try DexScreener as fallback
+                              e.currentTarget.src = `https://dexscreener.com/base/${token.address}/logo.png`;
+                            }}
+                            onLoad={() => {
+                              console.log("Zora image loaded successfully:", token.mediaContent?.previewImage?.small);
+                            }}
                           />
                           <div>
                             <div className="font-bold text-red-200 group-hover:text-red-100 transition">

@@ -6,7 +6,7 @@
 
 body {
   font-family: 'Geist', sans-serif;
-  @apply bg-white text-black font-sans antialiased;
+  @apply bg-gray-900 text-gray-200 font-sans antialiased;
 }
 
 

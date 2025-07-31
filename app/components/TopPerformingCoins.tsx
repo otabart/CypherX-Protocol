@@ -54,14 +54,26 @@ const TopPerformingCoins = () => {
   if (loading) {
     return (
       <div className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl shadow-lg p-4 sm:p-6 border border-blue-500/30 flex flex-col h-full min-h-[400px]">
-        <h2 className="text-xl sm:text-2xl font-bold text-gray-200 mb-4 sm:mb-6 flex items-center">
-          [ TOP MOVERS ]
-          <span className="ml-2 text-green-500 text-sm bg-green-500/20 px-2 py-1 rounded-full animate-pulse-live">
-            Live
-          </span>
-        </h2>
+        <div className="flex justify-between items-center mb-4 sm:mb-6">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-green-500/30 to-green-600/30 rounded-xl flex items-center justify-center border border-green-500/30">
+              <svg className="w-5 h-5 text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-200">Top Movers</h2>
+              <p className="text-sm text-gray-400">Best performing tokens</p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <span className="text-green-500 text-sm bg-green-500/20 px-2 py-1 rounded-full animate-pulse-live">
+              Live
+            </span>
+          </div>
+        </div>
         <div className="space-y-4 flex-grow">
-          {Array.from({ length: 5 }).map((_, i) => (
+          {Array.from({ length: 10 }).map((_, i) => (
             <div key={i} className="h-16 sm:h-20 bg-gray-800 rounded-lg animate-pulse" />
           ))}
         </div>
@@ -72,12 +84,24 @@ const TopPerformingCoins = () => {
   if (error || topCoins.length === 0) {
     return (
       <div className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl shadow-lg p-4 sm:p-6 border border-blue-500/30 flex flex-col h-full min-h-[400px]">
-        <h2 className="text-xl sm:text-2xl font-bold text-gray-200 mb-4 sm:mb-6 flex items-center">
-          [ TOP MOVERS ]
-          <span className="ml-2 text-green-500 text-sm bg-green-500/20 px-2 py-1 rounded-full animate-pulse-live">
-            Live
-          </span>
-        </h2>
+        <div className="flex justify-between items-center mb-4 sm:mb-6">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-green-500/30 to-green-600/30 rounded-xl flex items-center justify-center border border-green-500/30">
+              <svg className="w-5 h-5 text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-200">Top Movers</h2>
+              <p className="text-sm text-gray-400">Best performing tokens</p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <span className="text-green-500 text-sm bg-green-500/20 px-2 py-1 rounded-full animate-pulse-live">
+              Live
+            </span>
+          </div>
+        </div>
         <p className="text-center text-red-400 text-sm sm:text-base flex-grow flex items-center justify-center">{error || "No top movers available."}</p>
       </div>
     );
@@ -90,12 +114,24 @@ const TopPerformingCoins = () => {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: "easeOut" }}
     >
-      <h2 className="text-xl sm:text-2xl font-bold text-gray-200 mb-4 sm:mb-6 flex items-center">
-        [ TOP MOVERS ]
-        <span className="ml-2 text-green-500 text-sm bg-green-500/20 px-2 py-1 rounded-full animate-pulse-live">
-          Live
-        </span>
-      </h2>
+      <div className="flex justify-between items-center mb-4 sm:mb-6">
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 bg-gradient-to-br from-green-500/30 to-green-600/30 rounded-xl flex items-center justify-center border border-green-500/30">
+            <svg className="w-5 h-5 text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-200">Top Movers</h2>
+            <p className="text-sm text-gray-400">Best performing tokens</p>
+          </div>
+        </div>
+        <div className="flex items-center space-x-2">
+          <span className="text-green-500 text-sm bg-green-500/20 px-2 py-1 rounded-full animate-pulse-live">
+            Live
+          </span>
+        </div>
+      </div>
       <div className="space-y-4 flex-grow">
         {/* Desktop Header */}
         <div className="bg-gray-800 p-3 rounded-lg mb-2 hidden sm:grid grid-cols-[3rem_1fr_8rem_6rem_6rem_4rem] items-center text-sm font-medium text-gray-400">
@@ -107,7 +143,7 @@ const TopPerformingCoins = () => {
           <span className="text-center">Action</span>
         </div>
         
-        {topCoins.slice(0, 5).map((coin, index) => (
+        {topCoins.slice(0, 10).map((coin, index) => (
           <motion.div
             key={coin.poolAddress}
             className="bg-gradient-to-br from-gray-800 to-gray-700 p-3 rounded-lg border-l-4 border-blue-400 transition-all duration-300 hover:bg-gray-700 hover:border-blue-300 hover:shadow-xl"

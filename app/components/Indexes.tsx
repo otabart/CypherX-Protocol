@@ -546,7 +546,17 @@ export default function BaseAiIndex() {
     return (
       <div className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl border border-blue-500/30 p-4 sm:p-6">
         <div className="flex justify-between items-center mb-4 sm:mb-6">
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-200">[ INDEXES ]</h2>
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500/30 to-blue-600/30 rounded-xl flex items-center justify-center border border-blue-500/30">
+              <svg className="w-5 h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-200">Indexes</h2>
+              <p className="text-sm text-gray-400">AI-powered token indices</p>
+            </div>
+          </div>
           <div className="h-8 w-8 bg-gray-800 rounded animate-pulse" />
         </div>
         <div className="space-y-4">
@@ -561,7 +571,19 @@ export default function BaseAiIndex() {
   if (error) {
     return (
       <div className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl border border-blue-500/30 p-4 sm:p-6">
-        <h2 className="text-xl sm:text-2xl font-bold text-gray-200 mb-4 sm:mb-6">[ INDEXES ]</h2>
+        <div className="flex justify-between items-center mb-4 sm:mb-6">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500/30 to-blue-600/30 rounded-xl flex items-center justify-center border border-blue-500/30">
+              <svg className="w-5 h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-200">Indexes</h2>
+              <p className="text-sm text-gray-400">AI-powered token indices</p>
+            </div>
+          </div>
+        </div>
         <div className="text-center text-red-400">
           {error}
           <button
@@ -585,7 +607,17 @@ export default function BaseAiIndex() {
     >
       <motion.div ref={indexRef} className="w-full">
         <div className="flex justify-between items-center mb-4 sm:mb-6">
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-200">[ INDEXES ]</h2>
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500/30 to-blue-600/30 rounded-xl flex items-center justify-center border border-blue-500/30">
+              <svg className="w-5 h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-200">Indexes</h2>
+              <p className="text-sm text-gray-400">AI-powered token indices</p>
+            </div>
+          </div>
           <motion.button
             onClick={debouncedRefresh}
             className="p-2 rounded-full bg-gray-800 border border-teal-500/30 hover:bg-teal-500/40 transition-all duration-200"

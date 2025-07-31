@@ -18,6 +18,27 @@ interface ArticleData {
   source: string;
 }
 
+export async function GET() {
+  try {
+    const articlesQuery = query(
+      collection(db, 'articles'),
+      // Add any filters here if needed
+    );
+    
+    const querySnapshot = await getDocs(articlesQuery);
+    const articles = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      publishedAt: doc.data().publishedAt?.toDate?.() || doc.data().publishedAt
+    }));
+
+    return NextResponse.json({ articles });
+  } catch (error) {
+    console.error('Error fetching articles:', error);
+    return NextResponse.json({ error: 'Error fetching articles' }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) { // Changed to Request type
   try {
     const body = (await request.json()) as ArticleData;

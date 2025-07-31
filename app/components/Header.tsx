@@ -460,6 +460,17 @@ const Header: React.FC = () => {
               </Link>
             </motion.div>
             
+            <motion.div whileHover={{ scale: 1.05 }} transition={{ duration: 0.2 }}>
+              <Link
+                href="/cypherscope"
+                className={`text-gray-100 text-sm font-sans font-normal hover:text-blue-300 transition-colors duration-200 ${
+                  pathname === "/cypherscope" ? "text-blue-300" : ""
+                }`}
+              >
+                Memescope
+              </Link>
+            </motion.div>
+            
             <CustomConnectWallet />
             
             <div className="relative">
@@ -918,6 +929,23 @@ const Header: React.FC = () => {
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.4 }}
+                >
+                  <Link
+                    href="/cypherscope"
+                    onClick={() => setIsMenuOpen(false)}
+                    className="flex items-center py-3 px-4 text-gray-100 text-base font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-lg transition-all duration-200"
+                  >
+                    <svg className="w-5 h-5 mr-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
+                    </svg>
+                    Memescope
+                  </Link>
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.45 }}
                   className="pt-2"
                 >
                   <CustomConnectWallet />

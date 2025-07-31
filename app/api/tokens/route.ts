@@ -1,131 +1,118 @@
-// app/api/tokens/route.ts
-import { NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
+
+const DB_FILE = path.join(process.cwd(), "data/tokens.json");
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const chainId = searchParams.get("chainId") || "base";
-  const tokenAddresses = searchParams.get("tokenAddresses")?.split(",");
-  const poolAddress = searchParams.get("poolAddress");
-  const fetchChartData = searchParams.get("fetchChartData") === "true";
-  const timeframe = searchParams.get("timeframe") || "hour"; // Default to hour
-
-  if (!chainId || (!tokenAddresses && !poolAddress && !fetchChartData)) {
-    return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
-  }
-
   try {
-    // Handle tokenAddresses with DexScreener (original logic)
-    if (tokenAddresses) {
-      const baseURL = process.env.NEXT_PUBLIC_DEXSCREENER_API_URL;
-      if (!baseURL) {
-        console.error("NEXT_PUBLIC_DEXSCREENER_API_URL is not set.");
-        return NextResponse.json(
-          { error: "Server misconfiguration: DexScreener API URL not set" },
-          { status: 500 }
-        );
-      }
+    const { searchParams } = new URL(request.url);
+    const source = searchParams.get('source'); // 'all', 'clanker', 'zora', 'aerodrome', 'baseswap', 'uniswap'
+    const limit = parseInt(searchParams.get('limit') || '100');
+    const offset = parseInt(searchParams.get('offset') || '0');
+    const search = searchParams.get('search') || '';
+    const sortBy = searchParams.get('sortBy') || 'createdAt';
+    const sortOrder = searchParams.get('sortOrder') || 'desc';
 
-      const endpoint = `${baseURL}/tokens/v1/${chainId}/${tokenAddresses.join(",")}`;
-      console.log("Fetching DexScreener tokens endpoint:", endpoint);
-
-      const res = await fetch(endpoint);
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error("DexScreener API error:", errorText);
-        return NextResponse.json(
-          { error: `DexScreener API error: ${errorText}` },
-          { status: res.status }
-        );
-      }
-      const data = await res.json();
-      console.log("Raw DexScreener token data:", data);
-
-      return NextResponse.json(data, { status: 200 });
+    // Load tokens from database
+    if (!fs.existsSync(DB_FILE)) {
+      return new Response(JSON.stringify({ 
+        tokens: [], 
+        total: 0,
+        message: "No tokens found. Run token-monitor first." 
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
-    // Handle poolAddress with GeckoTerminal (for metadata)
-    if (poolAddress && !fetchChartData) {
-      const res = await fetch(
-        `https://api.geckoterminal.com/api/v2/networks/${chainId}/pools/${poolAddress}`
+    const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    let tokens = data.tokens || [];
+
+    // Filter by source
+    if (source && source !== 'all') {
+      tokens = tokens.filter((token: any) => token.source === source);
+    }
+
+    // Search filter
+    if (search) {
+      const searchLower = search.toLowerCase();
+      tokens = tokens.filter((token: any) => 
+        token.name?.toLowerCase().includes(searchLower) ||
+        token.symbol?.toLowerCase().includes(searchLower) ||
+        token.address?.toLowerCase().includes(searchLower)
       );
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error("GeckoTerminal API error for pool:", errorText);
-        return NextResponse.json(
-          { error: `GeckoTerminal API error: ${errorText}` },
-          { status: res.status }
-        );
-      }
-      const poolData = await res.json();
-      console.log("Raw GeckoTerminal pool data:", poolData);
-
-      if (!poolData.data) {
-        console.error("No pool data returned for poolAddress:", poolAddress);
-        return NextResponse.json(
-          { error: "No pool data found for the given address" },
-          { status: 404 }
-        );
-      }
-
-      const pool = poolData.data;
-      const tokenData = [{
-        pairAddress: pool.attributes.address,
-        baseToken: {
-          name: pool.attributes.base_token_name || "Unknown",
-          symbol: pool.attributes.base_token_symbol || "UNK",
-        },
-        quoteToken: {
-          name: pool.attributes.quote_token_name || "WETH",
-          symbol: pool.attributes.quote_token_symbol || "WETH",
-        },
-        priceUsd: pool.attributes.price_usd || "0",
-        txns: pool.attributes.transactions || { h1: { buys: 0, sells: 0 }, h6: { buys: 0, sells: 0 }, h24: { buys: 0, sells: 0 } },
-        priceChange: pool.attributes.price_change || { h1: 0, h6: 0, h24: 0 },
-        volume: pool.attributes.volume || { h24: 0 },
-        liquidity: pool.attributes.liquidity || { usd: 0 },
-        marketCap: pool.attributes.market_cap || 0,
-        fdv: pool.attributes.fdv || 0,
-        pairCreatedAt: pool.attributes.created_at || Date.now(),
-      }];
-
-      return NextResponse.json(tokenData, { status: 200 });
     }
 
-    // Handle chart data fetching with GeckoTerminal
-    if (poolAddress && fetchChartData) {
-      const timeframeParam = timeframe === "minute" ? "minute" : timeframe === "day" ? "day" : "hour";
-      const aggregate = timeframe === "minute" ? "5" : "1"; // 5-minute candles for minute timeframe, 1-hour/day for others
-      const res = await fetch(
-        `https://api.geckoterminal.com/api/v2/networks/${chainId}/pools/${poolAddress}/ohlcv/${timeframeParam}?aggregate=${aggregate}`
-      );
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error("GeckoTerminal API error for chart data:", errorText);
-        return NextResponse.json(
-          { error: `GeckoTerminal API error: ${errorText}` },
-          { status: res.status }
-        );
+    // Sort tokens
+    tokens.sort((a: any, b: any) => {
+      let aVal = a[sortBy];
+      let bVal = b[sortBy];
+      
+      if (sortBy === 'createdAt') {
+        aVal = new Date(aVal).getTime();
+        bVal = new Date(bVal).getTime();
+      } else if (sortBy === 'marketCap' || sortBy === 'volume24h') {
+        aVal = parseFloat(aVal || '0');
+        bVal = parseFloat(bVal || '0');
       }
-      const data = await res.json();
-      console.log("GeckoTerminal chart data:", data);
-
-      if (!data.data || !data.data.attributes || !data.data.attributes.ohlcv_list) {
-        console.error("No chart data returned for poolAddress:", poolAddress);
-        return NextResponse.json(
-          { error: "No chart data found for the given address" },
-          { status: 404 }
-        );
+      
+      if (sortOrder === 'desc') {
+        return bVal - aVal;
+      } else {
+        return aVal - bVal;
       }
+    });
 
-      return NextResponse.json(data, { status: 200 });
-    }
+    // Pagination
+    const total = tokens.length;
+    const paginatedTokens = tokens.slice(offset, offset + limit);
 
-    return NextResponse.json({ error: "No valid parameters provided" }, { status: 400 });
+    // Add tags to tokens
+    const tokensWithTags = paginatedTokens.map((token: any) => {
+      const tags = [];
+      
+      // Add source tag
+      tags.push(token.source.toUpperCase());
+      
+      // Add market cap tags
+      const marketCap = parseFloat(token.marketCap || '0');
+      if (marketCap > 1000000) tags.push('HIGH_CAP');
+      if (marketCap > 100000) tags.push('MEDIUM_CAP');
+      if (marketCap < 100000) tags.push('LOW_CAP');
+      
+      // Add volume tags
+      const volume = parseFloat(token.volume24h || '0');
+      if (volume > 100000) tags.push('HIGH_VOLUME');
+      if (volume > 50000) tags.push('MEDIUM_VOLUME');
+      
+      // Add holder tags
+      const holders = parseInt(token.uniqueHolders || '0');
+      if (holders > 1000) tags.push('MANY_HOLDERS');
+      if (holders > 100) tags.push('SOME_HOLDERS');
+      
+      return {
+        ...token,
+        tags
+      };
+    });
+
+    return new Response(JSON.stringify({
+      tokens: tokensWithTags,
+      total,
+      offset,
+      limit,
+      source: source || 'all',
+      stats: data.stats || {}
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (error: unknown) {
-    console.error("Error in tokens API route:", error instanceof Error ? error.message : "Unknown error");
-    return NextResponse.json(
-      { error: "Server error", details: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
-    );
+    console.error("API Error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to fetch tokens";
+    return new Response(JSON.stringify({ error: errorMessage }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }

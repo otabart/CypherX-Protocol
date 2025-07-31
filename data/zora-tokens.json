@@ -1,0 +1,126 @@
+{
+  "tokens": [
+    {
+      "address": "0x445e9c0a296068dc4257767b5ed354b77cf513de",
+      "name": "up",
+      "symbol": "up",
+      "marketCap": "64996.65",
+      "volume24h": "9154.24",
+      "uniqueHolders": 19412,
+      "totalSupply": "1000000000",
+      "creatorAddress": "0x3a5df03dd1a001d7055284c2c2c147cbbc78d142",
+      "createdAt": "2025-04-04T20:40:37",
+      "mediaContent": {
+        "mimeType": "image/png",
+        "originalUri": "ipfs://bafybeiegl3k6l3blwxadb5eeo6aslojv2qxdxhm3dgzxte33tfr72itvba",
+        "previewImage": {
+          "small": "https://scontent-iad4-1.choicecdn.com/-/rs:fit:600:600/f:best/aHR0cHM6Ly9tYWdpYy5kZWNlbnRyYWxpemVkLWNvbnRlbnQuY29tL2lwZnMvYmFmeWJlaWVnbDNrNmwzYmx3eGFkYjVlZW82YXNsb2p2MnF4ZHhobTNkZ3p4dGUzM3RmcjcyaXR2YmE=",
+          "medium": "https://scontent-iad4-1.choicecdn.com/-/rs:fit:1200:1200/f:best/aHR0cHM6Ly9tYWdpYy5kZWNlbnRyYWxpemVkLWNvbnRlbnQuY29tL2lwZnMvYmFmeWJlaWVnbDNrNmwzYmx3eGFkYjVlZW82YXNsb2p2MnF4ZHhobTNkZ3p4dGUzM3RmcjcyaXR2YmE=",
+          "blurhash": "e7SsEL]uF.xJ?IP1#aJ4xbnm~XSci~WUIUIBx[s;M{t7ImnmW,oMxb"
+        }
+      },
+      "source": "zora",
+      "dexName": "Zora",
+      "pairAddress": null,
+      "description": "",
+      "website": "",
+      "telegram": "",
+      "twitter": "",
+      "totalVolume": "675569.7037498817",
+      "marketCapDelta24h": "-26930.33",
+      "tokenUri": "ipfs://bafybeiad5ftagr5wnyc3bqfhzmbdy2yna4hq4amjw642imo4yoltdigr5m"
+    },
+    {
+      "address": "0x9ac1a5840869bd73ce0a84f568c8f2b2d9ddb177",
+      "name": "faketaxi",
+      "symbol": "faketaxi",
+      "marketCap": "2207893.18",
+      "volume24h": "82451.72",
+      "uniqueHolders": 369,
+      "totalSupply": "1000000000",
+      "creatorAddress": "0x8c19b2a3fc558f2e4b9c62214f810e95d406f45b",
+      "createdAt": "2025-07-26T04:51:19",
+      "mediaContent": {
+        "mimeType": null,
+        "originalUri": "ipfs://bafybeidzgpuyfj2cn2ivejh2guvqt6rsr6kiopatg63pdyo6tjjitshcbi",
+        "previewImage": {
+          "small": "https://scontent-iad4-1.choicecdn.com/-/rs:fit:600:600/f:best/aHR0cHM6Ly9tYWdpYy5kZWNlbnRyYWxpemVkLWNvbnRlbnQuY29tL2lwZnMvYmFmeWJlaWR6Z3B1eWZqMmNuMml2ZWpoMmd1dnF0NnJzcjZraW9wYXRnNjNwZHlvNnRqaml0c2hjYmk=",
+          "medium": "https://scontent-iad4-1.choicecdn.com/-/rs:fit:1200:1200/f:best/aHR0cHM6Ly9tYWdpYy5kZWNlbnRyYWxpemVkLWNvbnRlbnQuY29tL2lwZnMvYmFmeWJlaWR6Z3B1eWZqMmNuMml2ZWpoMmd1dnF0NnJzcjZraW9wYXRnNjNwZHlvNnRqaml0c2hjYmk=",
+          "blurhash": "eBBDA?%NS%I[xb^jt7tSNe%L~Xx]xuR--o=qs:kWNIxa~U%1W=Rkt7"
+        }
+      },
+      "source": "zora",
+      "dexName": "Zora",
+      "pairAddress": null,
+      "description": "",
+      "website": "",
+      "telegram": "",
+      "twitter": "",
+      "totalVolume": "1383155.351536",
+      "marketCapDelta24h": "-708434.83",
+      "tokenUri": "ipfs://bafybeiguou5hbcxittldkvk2w6igvd7arkjj6vxzsl7m343tdgtmfp42ci"
+    },
+    {
+      "address": "0x9427e66d26e4ac8d839d21ab901d96a8221f3e94",
+      "name": "Coinbase2025Q2EarningsQA",
+      "symbol": "Coinbase2025Q2EarningsQA",
+      "marketCap": "13119.41",
+      "volume24h": "43.57",
+      "uniqueHolders": 18,
+      "totalSupply": "1000000000",
+      "creatorAddress": "0x2b886875d17c51b3cde74623d06e315f2994fa64",
+      "createdAt": "2025-07-28T22:22:05",
+      "mediaContent": {
+        "mimeType": "image/jpeg",
+        "originalUri": "https://tba-social.mypinata.cloud/ipfs/bafybeidatcmp2evgupdz75fvy4j6m6ba7rzny72uufalctn4nsgd7ynr7q",
+        "previewImage": {
+          "small": "https://scontent-iad4-1.choicecdn.com/-/rs:fit:600:600/f:best/aHR0cHM6Ly90YmEtc29jaWFsLm15cGluYXRhLmNsb3VkL2lwZnMvYmFmeWJlaWRhdGNtcDJldmd1cGR6NzVmdnk0ajZtNmJhN3J6bnk3MnV1ZmFsY3RuNG5zZ2Q3eW5yN3E=",
+          "medium": "https://scontent-iad4-1.choicecdn.com/-/rs:fit:1200:1200/f:best/aHR0cHM6Ly90YmEtc29jaWFsLm15cGluYXRhLmNsb3VkL2lwZnMvYmFmeWJlaWRhdGNtcDJldmd1cGR6NzVmdnk0ajZtNmJhN3J6bnk3MnV1ZmFsY3RuNG5zZ2Q3eW5yN3E=",
+          "blurhash": "elK1eH0uIzoc$]%LM_b_oeaJx^i^M{WCogIoj?xuj[Rjxtobj=oLj["
+        }
+      },
+      "source": "zora",
+      "dexName": "Zora",
+      "pairAddress": null,
+      "description": "",
+      "website": "",
+      "telegram": "",
+      "twitter": "",
+      "totalVolume": "19242.918497",
+      "marketCapDelta24h": "-20.55",
+      "tokenUri": "ipfs://bafkreif7pdufolrrmgqrsecyk7laqomwjs7pmxcav6dcd7eb5xiuufazmi"
+    },
+    {
+      "address": "0x1f6e1d08368fd4d8b2250ab0600dd2cb7f643287",
+      "name": "TBD",
+      "symbol": "TBD",
+      "marketCap": "356349.76",
+      "volume24h": "83873.61",
+      "uniqueHolders": 939,
+      "totalSupply": "1000000000",
+      "creatorAddress": "0x61297bce35557ebca1479d6d6162f12ba336bd67",
+      "createdAt": "2025-07-24T16:59:15",
+      "mediaContent": {
+        "mimeType": "image/jpeg",
+        "originalUri": "https://tba-social.mypinata.cloud/ipfs/bafkreig5tgkhyfkyndnkxug6sppavu4e374viye4m6yctvsgm6wp2tpkai",
+        "previewImage": {
+          "small": "https://scontent-iad4-1.choicecdn.com/-/rs:fit:600:600/f:best/aHR0cHM6Ly90YmEtc29jaWFsLm15cGluYXRhLmNsb3VkL2lwZnMvYmFma3JlaWc1dGdraHlma3luZG5reHVnNnNwcGF2dTRlMzc0dml5ZTRtNnljdHZzZ202d3AydHBrYWk=",
+          "medium": "https://scontent-iad4-1.choicecdn.com/-/rs:fit:1200:1200/f:best/aHR0cHM6Ly90YmEtc29jaWFsLm15cGluYXRhLmNsb3VkL2lwZnMvYmFma3JlaWc1dGdraHlma3luZG5reHVnNnNwcGF2dTRlMzc0dml5ZTRtNnljdHZzZ202d3AydHBrYWk=",
+          "blurhash": "eWMkW%j??yj?_Gj[fQayayj@?yfjj4fRD-axfQj[j[ay_Hj@D-fQRq"
+        }
+      },
+      "source": "zora",
+      "dexName": "Zora",
+      "pairAddress": null,
+      "description": "TBD.MARKET",
+      "website": "",
+      "telegram": "",
+      "twitter": "",
+      "totalVolume": "2462754.931767",
+      "marketCapDelta24h": "-104029.34",
+      "tokenUri": "ipfs://bafkreiao2grvxgzdf5pug2hs4oazdkxfpdqbsr4nuial2osg7yxovw6qlu"
+    }
+  ],
+  "lastUpdate": 1753977200360,
+  "source": "zora"
+}

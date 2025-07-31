@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
-import TrendingWidget from "./components/TrendingWidget";
+
 import toast from "react-hot-toast"; // Added for error toasts
 
 // Dynamically import components
@@ -156,10 +156,50 @@ export default function Page() {
         const data = await response.json();
         
         // Process tokens and add tags
-        const processedTokens = data.tokens.map((token: TrendingToken) => ({
+        let processedTokens = data.tokens.map((token: TrendingToken) => ({
           ...token,
           tags: getTokenTags(token)
         }));
+        
+        // If we have tokens, try to enhance with DexScreener data
+        if (processedTokens.length > 0) {
+          try {
+            // Fetch DexScreener data for the first few tokens
+            const dexScreenerPromises = processedTokens.slice(0, 3).map(async (token: TrendingToken) => {
+              try {
+                const dexResponse = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${token.address}`);
+                if (dexResponse.ok) {
+                  const dexData = await dexResponse.json();
+                  const pair = dexData.pairs?.[0];
+                  if (pair) {
+                    return {
+                      ...token,
+                      marketCap: pair.marketCap || token.marketCap,
+                      volume24h: pair.volume?.h24 || token.volume24h,
+                      uniqueHolders: pair.holders || token.uniqueHolders,
+                      tokenPrice: { priceInUsdc: pair.priceUsd || "0" },
+                      marketCapDelta24h: pair.priceChange?.h24 || token.marketCapDelta24h,
+                      tags: getTokenTags({
+                        ...token,
+                        marketCap: pair.marketCap || token.marketCap,
+                        volume24h: pair.volume?.h24 || token.volume24h,
+                        uniqueHolders: pair.holders || token.uniqueHolders
+                      })
+                    };
+                  }
+                }
+              } catch (error) {
+                console.log(`DexScreener fetch failed for ${token.address}:`, error);
+              }
+              return token;
+            });
+            
+            const enhancedTokens = await Promise.all(dexScreenerPromises);
+            processedTokens = enhancedTokens;
+          } catch (error) {
+            console.log('DexScreener enhancement failed:', error);
+          }
+        }
         
         setTrendingTokens(processedTokens.slice(0, 5)); // Show top 5
         setErrorTokens("");
@@ -228,10 +268,47 @@ export default function Page() {
         `}</style>
       </Head>
 
-      <TrendingWidget />
       <Header />
 
-      <main className="flex flex-col min-h-screen bg-gray-950 text-gray-200 p-4 sm:p-6 lg:p-8">
+      <main className="flex flex-col min-h-screen bg-gray-900 text-gray-200 p-4 sm:p-6 lg:p-8">
+        {/* Hero Section */}
+        <motion.div className="mb-12 text-center" {...fadeInUp(0)}>
+          <div className="relative">
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-blue-600/10 to-blue-400/10 blur-3xl"></div>
+            <div className="relative">
+              <h1 className="text-4xl sm:text-6xl font-bold text-gray-100 mb-3 tracking-tight">
+                CypherX
+              </h1>
+              <p className="text-lg sm:text-xl text-gray-300 mb-8 max-w-2xl mx-auto leading-relaxed">
+                The Intelligence Layer for Base Chain
+              </p>
+              <div className="flex flex-wrap justify-center gap-6 mb-8">
+                <div className="flex items-center space-x-3 bg-gradient-to-r from-blue-500/20 to-blue-600/20 px-6 py-3 rounded-xl border border-blue-500/30 backdrop-blur-sm">
+                  <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+                  <span className="text-sm font-semibold text-gray-200">Live Data</span>
+                </div>
+                <div className="flex items-center space-x-3 bg-gradient-to-r from-purple-500/20 to-purple-600/20 px-6 py-3 rounded-xl border border-purple-500/30 backdrop-blur-sm">
+                  <div className="w-3 h-3 bg-purple-400 rounded-full animate-pulse"></div>
+                  <span className="text-sm font-semibold text-gray-200">AI Powered</span>
+                </div>
+                <div className="flex items-center space-x-3 bg-gradient-to-r from-cyan-500/20 to-cyan-600/20 px-6 py-3 rounded-xl border border-cyan-500/30 backdrop-blur-sm">
+                  <div className="w-3 h-3 bg-cyan-400 rounded-full animate-pulse"></div>
+                  <span className="text-sm font-semibold text-gray-200">Real-time</span>
+                </div>
+              </div>
+              <div className="flex justify-center">
+                <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 p-4 rounded-2xl border border-blue-500/20 backdrop-blur-sm">
+                  <p className="text-sm text-gray-400 max-w-2xl">
+                    Discover, analyze, and trade tokens with advanced analytics, real-time data, and AI-powered insights
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+
+
         {/* Top Row - Equal Height Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 mb-8">
           <motion.div className="flex flex-col h-full" {...fadeInUp(0)}>
@@ -256,8 +333,10 @@ export default function Page() {
           <BaseAiIndex />
         </motion.div>
 
+
+
         {/* Latest News Section */}
-        <motion.div {...fadeInUp(0.3)}>
+        <motion.div {...fadeInUp(0.4)}>
           <LatestNews articles={latestArticles} isMobile={isMobile} loading={loadingNews} error={errorNews} />
         </motion.div>
       </main>
@@ -279,11 +358,21 @@ function CypherscopeTrendingTokens({
   if (loading) {
     return (
       <motion.div
-        className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 sm:p-6 shadow-lg border border-blue-500/30 flex flex-col h-full min-h-[400px]"
+        className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl shadow-lg p-4 sm:p-6 border border-blue-500/30 flex flex-col h-full min-h-[400px]"
         {...fadeInUp(0.1)}
       >
         <div className="flex justify-between items-center mb-4 sm:mb-6">
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-200">[ MEMESCOPE SCOPE ]</h2>
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500/30 to-blue-600/30 rounded-xl flex items-center justify-center border border-blue-500/30">
+              <svg className="w-5 h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-200">Memescope</h2>
+              <p className="text-sm text-gray-400">Discover trending tokens</p>
+            </div>
+          </div>
           <div className="flex space-x-2">
             <div className="h-6 w-16 bg-gray-800 rounded animate-pulse" />
             <div className="h-6 w-16 bg-gray-800 rounded animate-pulse" />
@@ -300,8 +389,20 @@ function CypherscopeTrendingTokens({
 
   if (error) {
     return (
-      <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 sm:p-6 shadow-lg border border-blue-500/30 flex flex-col h-full min-h-[400px]">
-        <h2 className="text-xl sm:text-2xl font-bold text-gray-200 mb-4 sm:mb-6">[ MEMESCOPE SCOPE ]</h2>
+      <div className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl shadow-lg p-4 sm:p-6 border border-blue-500/30 flex flex-col h-full min-h-[400px]">
+        <div className="flex justify-between items-center mb-4 sm:mb-6">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500/30 to-blue-600/30 rounded-xl flex items-center justify-center border border-blue-500/30">
+              <svg className="w-5 h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-200">Memescope</h2>
+              <p className="text-sm text-gray-400">Discover trending tokens</p>
+            </div>
+          </div>
+        </div>
         <p className="text-center text-red-400 flex-grow flex items-center justify-center">{error}</p>
       </div>
     );
@@ -309,44 +410,71 @@ function CypherscopeTrendingTokens({
 
   return (
     <motion.div
-      className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 sm:p-6 shadow-lg border border-blue-500/30 flex flex-col h-full min-h-[400px]"
+      className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl shadow-lg p-4 sm:p-6 border border-blue-500/30 flex flex-col h-full min-h-[400px]"
       {...fadeInUp(0.1)}
     >
       <div className="flex justify-between items-center mb-4 sm:mb-6">
-        <h2 className="text-xl sm:text-2xl font-bold text-gray-200">[ MEMESCOPE SCOPE ]</h2>
-        <div className="flex space-x-2">
-          <span className="bg-blue-500/20 px-2 py-1 rounded-md border border-blue-500/30 text-sm">
-            {tokens.length} Tokens
-          </span>
-          <span className="bg-green-500/20 px-2 py-1 rounded-md border border-green-500/30 text-sm">
-            Live Data
-          </span>
+                  <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500/30 to-blue-600/30 rounded-xl flex items-center justify-center border border-blue-500/30">
+              <svg className="w-5 h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
+              </svg>
+            </div>
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-200">Memescope</h2>
+            <p className="text-sm text-gray-400">Discover trending tokens</p>
+          </div>
         </div>
+                  <div className="flex items-center space-x-2">
+            <span className="bg-blue-500/20 px-2 py-1 rounded-md border border-blue-500/30 text-sm">
+              {tokens.length} Tokens
+            </span>
+            <span className="bg-green-500/20 px-2 py-1 rounded-md border border-green-500/30 text-sm">
+              Live Data
+            </span>
+            <Link href="/cypherscope" className="text-blue-400 hover:text-blue-300 text-sm font-medium transition-colors">
+              View All →
+            </Link>
+          </div>
       </div>
       <div className="space-y-3 flex-grow">
         {tokens.length ? (
           tokens.map((token) => (
             <motion.div
               key={token.id}
-              className="bg-gradient-to-br from-gray-800 to-gray-700 rounded-lg p-3 border border-blue-500/20 hover:shadow-xl transition-all duration-300"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4 }}
+              className="bg-gradient-to-br from-gray-800 to-gray-700 rounded-xl p-4 border border-blue-500/20 group cursor-pointer relative"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.3, ease: "easeOut" }}
             >
+              {/* Trending Badge */}
+              {token.tags.includes('TRENDING') && (
+                <div className="absolute -top-2 -right-2 bg-gradient-to-r from-orange-500 to-red-500 text-white text-xs font-bold px-2 py-1 rounded-full border border-orange-400/50">
+                  🔥 TRENDING
+                </div>
+              )}
               <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center space-x-2">
-                  <img 
-                    src={token.mediaContent?.previewImage?.small || "https://i.imgur.com/mlPQazY.png"}
-                    alt={token.name || "Token"}
-                    className="w-6 h-6 rounded-full object-cover"
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement;
-                      target.src = "https://i.imgur.com/mlPQazY.png";
-                    }}
-                  />
+                <div className="flex items-center space-x-3">
+                  <div className="relative">
+                    <img 
+                      src={token.mediaContent?.previewImage?.small || `https://dexscreener.com/base/${token.address || ''}/logo.png`}
+                      alt={token.name || "Token"}
+                      className="w-8 h-8 rounded-full object-cover border border-purple-500/30 transition-colors"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.src = `https://dexscreener.com/base/${token.address || ''}/logo.png`;
+                      }}
+                    />
+                    <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-gray-800"></div>
+                  </div>
                   <div>
-                    <span className="text-sm font-bold text-gray-200">{token.name}</span>
-                    <span className="text-xs text-gray-400 ml-1">({token.symbol})</span>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm font-bold text-gray-200">{token.name}</span>
+                      <span className="text-xs text-gray-400">({token.symbol})</span>
+                    </div>
+                    <div className="text-xs text-gray-500 font-mono">
+                      {token.address?.slice(0, 6)}...{token.address?.slice(-4)}
+                    </div>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-1">
@@ -355,30 +483,36 @@ function CypherscopeTrendingTokens({
                   ))}
                 </div>
               </div>
-              <div className="grid grid-cols-4 gap-2 text-xs mb-2">
-                <div>
-                  <span className="text-gray-400">MC:</span>
-                  <div className="text-gray-200 font-semibold">{formatNumber(token.marketCap)}</div>
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div className="bg-gray-800/50 rounded-lg p-2">
+                  <div className="text-xs text-gray-400 mb-1">Market Cap</div>
+                  <div className="text-sm font-bold text-gray-200">{formatNumber(token.marketCap)}</div>
                 </div>
-                <div>
-                  <span className="text-gray-400">Vol:</span>
-                  <div className="text-gray-200 font-semibold">{formatNumber(token.volume24h)}</div>
+                <div className="bg-gray-800/50 rounded-lg p-2">
+                  <div className="text-xs text-gray-400 mb-1">24h Volume</div>
+                  <div className="text-sm font-bold text-gray-200">{formatNumber(token.volume24h)}</div>
                 </div>
-                <div>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center space-x-2">
                   <span className="text-gray-400">Holders:</span>
-                  <div className="text-gray-200 font-semibold">{token.uniqueHolders || "N/A"}</div>
+                  <span className="text-gray-200 font-semibold">{token.uniqueHolders || "N/A"}</span>
                 </div>
-                <div>
+                <div className="flex items-center space-x-2">
                   <span className="text-gray-400">Price:</span>
-                  <div className="text-gray-200 font-semibold">
-                    {token.tokenPrice?.priceInUsdc ? `$${parseFloat(token.tokenPrice.priceInUsdc).toFixed(6)}` : "N/A"}
-                  </div>
+                  <span className="text-gray-200 font-semibold">
+                    {token.tokenPrice?.priceInUsdc && parseFloat(token.tokenPrice.priceInUsdc) > 0 
+                      ? `$${parseFloat(token.tokenPrice.priceInUsdc).toFixed(6)}` 
+                      : "N/A"}
+                  </span>
                 </div>
               </div>
               <div className="flex justify-between items-center">
                 <div className="flex space-x-1">
                   <Link
-                    href={`/token-scanner/${token.address}`}
+                    href={`https://dexscreener.com/base/${token.address}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="text-blue-400 hover:text-blue-300 text-xs transition-colors inline-flex items-center gap-1 bg-blue-500/10 px-2 py-1 rounded"
                   >
                     Chart
@@ -398,7 +532,7 @@ function CypherscopeTrendingTokens({
                     </svg>
                   </Link>
                 </div>
-                {token.marketCapDelta24h && parseFloat(token.marketCapDelta24h) !== 0 && (
+                {token.marketCapDelta24h && parseFloat(token.marketCapDelta24h) !== 0 && Math.abs(parseFloat(token.marketCapDelta24h)) < 100 && (
                   <div className={`text-xs font-semibold ${
                     parseFloat(token.marketCapDelta24h) > 0 ? 'text-green-400' : 'text-red-400'
                   }`}>

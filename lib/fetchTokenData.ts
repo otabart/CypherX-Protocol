@@ -162,5 +162,5 @@ export const fetchAllTokenData = async (): Promise<TokenData[]> => {
 export const getTopPerformingCoins = (tokens: TokenData[]): TokenData[] => {
   return [...tokens]
     .sort((a, b) => (b.priceChange?.h24 || 0) - (a.priceChange?.h24 || 0))
-    .slice(0, 5);
+    .slice(0, 10);
 };
