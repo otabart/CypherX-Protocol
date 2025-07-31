@@ -1,24 +1,50 @@
 import { createConfig, http } from "wagmi";
 import { base } from "wagmi/chains";
-import { metaMask, coinbaseWallet, injected, walletConnect } from "@wagmi/connectors";
+import { 
+  metaMask, 
+  coinbaseWallet, 
+  injected, 
+  walletConnect,
+  safe
+} from "@wagmi/connectors";
 
 // Configure the Base chain as the first element in the array
 const chains = [base] as const;
 
 // Configure connectors
 const connectors = [
-  metaMask({ dappMetadata: { name: "CypherX" } }),
-  coinbaseWallet({ appName: "CypherX" }),
+  metaMask({ dappMetadata: { name: "Homebase" } }),
+  coinbaseWallet({ 
+    appName: "Homebase",
+    appLogoUrl: "https://homebase.com/icon.png",
+  }),
+  injected({
+    target: "phantom",
+    shimDisconnect: true,
+  }),
+  injected({
+    target: "coinbaseWallet",
+    shimDisconnect: true,
+  }),
+  injected({
+    target: "braveWallet",
+    shimDisconnect: true,
+  }),
+  injected({
+    target: "exodus",
+    shimDisconnect: true,
+  }),
   injected(),
   walletConnect({
     projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "your_project_id",
     metadata: {
-      name: "CypherX",
-      description: "CypherX Trading Platform on Base",
-      url: "https://cypherx.com",
-      icons: ["https://cypherx.com/icon.png"],
+      name: "Homebase",
+      description: "Homebase Trading Platform on Base",
+      url: "https://homebase.com",
+      icons: ["https://homebase.com/icon.png"],
     },
   }),
+  safe(),
 ];
 
 // Create the wagmi config

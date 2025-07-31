@@ -221,7 +221,7 @@ export default function CypherscopePage() {
         const res = await fetch("/api/cypherscope-tokens");
         const data = await res.json();
         // Add tags to each token
-                const tokensWithTags = (data.tokens || []).map((token: unknown) => {
+        const tokensWithTags = (data.tokens || []).map((token: unknown) => {
           const typedToken = token as { 
             id: string; 
             name: string; 
@@ -232,7 +232,7 @@ export default function CypherscopePage() {
             uniqueHolders?: string; 
             liquidity?: { usd?: string }; 
             createdAt?: string; 
-            mediaContent?: { previewImage?: string }; 
+            mediaContent?: { previewImage?: string };
             source?: string;
             dexName?: string;
             launchData?: any;
@@ -909,7 +909,7 @@ export default function CypherscopePage() {
               </div>
             </div>
             
-            {/* DEX Paid Section */}
+                        {/* DEX Paid Section */}
             {getTokensByTag("DEXPAID").length > 0 && (
               <div>
                 <div className="flex items-center gap-3 mb-6">
@@ -926,12 +926,12 @@ export default function CypherscopePage() {
                     >
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex items-center gap-3">
-                                        <Image
+                          <Image
                 src={token.mediaContent?.previewImage?.small || `https://dexscreener.com/base/${token.address}/logo.png`}
-                alt={token.symbol || "Token"}
-                width={48}
-                height={48}
-                className="rounded-full bg-yellow-900"
+                            alt={token.symbol || "Token"}
+                            width={48}
+                            height={48}
+                            className="rounded-full bg-yellow-900"
                 onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
                   console.log("Zora image failed, trying DexScreener:", token.mediaContent?.previewImage?.small);
                   // Try DexScreener as fallback
@@ -940,7 +940,7 @@ export default function CypherscopePage() {
                 onLoad={() => {
                   console.log("Zora image loaded successfully:", token.mediaContent?.previewImage?.small);
                 }}
-              />
+                          />
                           <div>
                             <div className="font-bold text-yellow-200 group-hover:text-yellow-100 transition">
                               {token.name || "Unknown"}
@@ -966,7 +966,7 @@ export default function CypherscopePage() {
                       
                       <div className="flex items-center justify-between mb-3">
                         <div className="text-xs text-gray-500 font-mono">
-                          {token.address?.slice(0, 6)}...{token.address?.slice(-4)}
+                        {token.address?.slice(0, 6)}...{token.address?.slice(-4)}
                         </div>
                         {token.source && typeof token.source === 'string' && (
                           <div className={`px-2 py-1 rounded text-xs font-medium ${

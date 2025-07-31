@@ -16,14 +16,14 @@ export async function GET(request: Request) {
     let tokens: any[] = [];
 
     // Try Firebase first
-    try {
-      const db = adminDb();
+  try {
+    const db = adminDb();
       if (db) {
-        const snapshot = await db.collection("Cypherscope")
+    const snapshot = await db.collection("Cypherscope")
           .orderBy("createdAt", "desc")
           .limit(limit)
           .offset(offset)
-          .get();
+      .get();
 
         tokens = snapshot.docs.map(doc => {
           const data = doc.data();

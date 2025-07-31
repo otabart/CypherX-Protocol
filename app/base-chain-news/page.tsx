@@ -19,17 +19,15 @@ import { db } from "@/lib/firebase";
 import {
   collection,
   getDocs,
-  addDoc,
-  serverTimestamp,
   query,
-  where,
-  doc,
-  updateDoc,
-  increment,
-  arrayUnion,
   orderBy,
-  limit,
 } from "firebase/firestore";
+import { 
+  fetchUserStats, 
+  fetchLeaderboard, 
+  interactWithArticle, 
+  POINTS_SYSTEM 
+} from "@/lib/news-api";
 import { useAuth } from "@/app/providers";
 import { useAccount } from "wagmi";
 import Image from 'next/image';
@@ -65,16 +63,7 @@ interface NewsArticle {
 interface UserActivity {
   userId: string;
   walletAddress: string;
-  action:
-    | "read_article"
-    | "share_x"
-    | "share_telegram"
-    | "author_application"
-    | "like_article"
-    | "comment_article"
-    | "dislike_article"
-    | "referral"
-    | "nft_minted";
+  action: string;
   points: number;
   articleSlug?: string;
   createdAt: string;
@@ -213,55 +202,16 @@ export default function NewsPage() {
       if (!user || !walletAddress) return;
 
       try {
-        // Fetch user points and activities
-        const userDoc = await getDocs(query(collection(db, 'users'), where('walletAddress', '==', walletAddress)));
-        
-        if (!userDoc.empty) {
-          const userData = userDoc.docs[0].data();
-          setUserPoints(userData.points || 0);
-          setLikedArticles(userData.likedArticles || []);
-          setDislikedArticles(userData.dislikedArticles || []);
-        }
-
-        // Fetch recent activities
-        const activitiesRef = collection(db, 'user_activities');
-        const activitiesQuery = query(
-          activitiesRef, 
-          where('walletAddress', '==', walletAddress),
-          orderBy('createdAt', 'desc'),
-          limit(5)
-        );
-        const activitiesSnapshot = await getDocs(activitiesQuery);
-        
-        const activities: UserActivity[] = [];
-        activitiesSnapshot.forEach((doc) => {
-          const data = doc.data();
-          activities.push({
-            userId: data.userId,
-            walletAddress: data.walletAddress,
-            action: data.action,
-            points: data.points || 0,
-            articleSlug: data.articleSlug,
-            createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString()
-          });
-        });
-        setRecentActivities(activities);
+        // Fetch user stats
+        const userStats = await fetchUserStats(walletAddress);
+        setUserPoints(userStats.stats.points);
+        setLikedArticles(userStats.user?.likedArticles || []);
+        setDislikedArticles(userStats.user?.dislikedArticles || []);
+        setRecentActivities(userStats.activities);
 
         // Fetch leaderboard
-        const leaderboardRef = collection(db, 'leaderboard');
-        const leaderboardQuery = query(leaderboardRef, orderBy('points', 'desc'), limit(10));
-        const leaderboardSnapshot = await getDocs(leaderboardQuery);
-        
-        const leaderboardData: LeaderboardEntry[] = [];
-        leaderboardSnapshot.docs.forEach((doc, index) => {
-          const data = doc.data();
-          leaderboardData.push({
-            walletAddress: data.walletAddress,
-            points: data.points || 0,
-            rank: index + 1
-          });
-        });
-        setLeaderboard(leaderboardData);
+        const leaderboardData = await fetchLeaderboard(10);
+        setLeaderboard(leaderboardData.leaderboard);
       } catch (error) {
         console.error('Error fetching user data:', error);
       }
@@ -275,31 +225,8 @@ export default function NewsPage() {
     try {
       // Track activity and increment views
       if (user && walletAddress) {
-        // Find the article
-        const article = articles.find(a => a.slug === slug);
-        if (article) {
-          // Increment views in Firebase
-          const articleRef = doc(db, 'articles', article.id!);
-          await updateDoc(articleRef, {
-            views: increment(1)
-          });
-
-          // Track user activity
-          await addDoc(collection(db, 'user_activities'), {
-            userId: user.uid,
-            walletAddress,
-            action: 'read_article',
-            points: 10,
-            articleSlug: slug,
-            createdAt: serverTimestamp()
-          });
-
-          // Update user points
-          const userRef = doc(db, 'users', user.uid);
-          await updateDoc(userRef, {
-            points: increment(10)
-          });
-        }
+        await interactWithArticle(slug, 'view', user.uid, walletAddress);
+        addToast(`Article viewed! +${POINTS_SYSTEM.READ_ARTICLE} points`, 'success');
       }
       router.push(`/base-chain-news/${slug}`);
     } catch (error) {
@@ -315,43 +242,41 @@ export default function NewsPage() {
 
     try {
       const isLiked = likedArticles.includes(article.slug);
-      const articleRef = doc(db, 'articles', article.id!);
-      const userRef = doc(db, 'users', user.uid);
-
+      const isDisliked = dislikedArticles.includes(article.slug);
+      
       if (isLiked) {
         // Unlike
-        await updateDoc(articleRef, {
-          upvotes: increment(-1)
-        });
+        await interactWithArticle(article.slug, 'like', user.uid, walletAddress);
         setLikedArticles(prev => prev.filter(slug => slug !== article.slug));
-        
-        // Remove from user's liked articles
-        await updateDoc(userRef, {
-          likedArticles: arrayUnion(article.slug)
-        });
+        // Update article upvotes locally
+        setArticles(prev => prev.map(a => 
+          a.slug === article.slug 
+            ? { ...a, upvotes: (a.upvotes || 0) - 1 }
+            : a
+        ));
       } else {
-        // Like
-        await updateDoc(articleRef, {
-          upvotes: increment(1)
-        });
-        setLikedArticles(prev => [...prev, article.slug]);
+        // Like - remove dislike if exists
+        if (isDisliked) {
+          setDislikedArticles(prev => prev.filter(slug => slug !== article.slug));
+          setArticles(prev => prev.map(a => 
+            a.slug === article.slug 
+              ? { ...a, downvotes: (a.downvotes || 0) - 1 }
+              : a
+          ));
+        }
         
-        // Add to user's liked articles
-        await updateDoc(userRef, {
-          likedArticles: arrayUnion(article.slug)
-        });
-
-        // Track activity
-        await addDoc(collection(db, 'user_activities'), {
-          userId: user.uid,
-          walletAddress,
-          action: 'like_article',
-          points: 5,
-          articleSlug: article.slug,
-          createdAt: serverTimestamp()
-        });
-
-        addToast('Article liked! +5 points', 'success');
+        const result = await interactWithArticle(article.slug, 'like', user.uid, walletAddress);
+        setLikedArticles(prev => [...prev, article.slug]);
+        // Update article upvotes locally
+        setArticles(prev => prev.map(a => 
+          a.slug === article.slug 
+            ? { ...a, upvotes: (a.upvotes || 0) + 1 }
+            : a
+        ));
+        
+        if (result.pointsEarned > 0) {
+          addToast(`Article liked! +${result.pointsEarned} points`, 'success');
+        }
       }
     } catch (error) {
       console.error('Error toggling like:', error);
@@ -367,26 +292,36 @@ export default function NewsPage() {
 
     try {
       const isDisliked = dislikedArticles.includes(article.slug);
-      const articleRef = doc(db, 'articles', article.id!);
-      const userRef = doc(db, 'users', user.uid);
-
+      const isLiked = likedArticles.includes(article.slug);
+      
       if (isDisliked) {
         // Remove dislike
-        await updateDoc(articleRef, {
-          downvotes: increment(-1)
-        });
         setDislikedArticles(prev => prev.filter(slug => slug !== article.slug));
+        // Update article downvotes locally
+        setArticles(prev => prev.map(a => 
+          a.slug === article.slug 
+            ? { ...a, downvotes: (a.downvotes || 0) - 1 }
+            : a
+        ));
       } else {
-        // Add dislike
-        await updateDoc(articleRef, {
-          downvotes: increment(1)
-        });
-        setDislikedArticles(prev => [...prev, article.slug]);
+        // Add dislike - remove like if exists
+        if (isLiked) {
+          setLikedArticles(prev => prev.filter(slug => slug !== article.slug));
+          setArticles(prev => prev.map(a => 
+            a.slug === article.slug 
+              ? { ...a, upvotes: (a.upvotes || 0) - 1 }
+              : a
+          ));
+        }
         
-        // Add to user's disliked articles
-        await updateDoc(userRef, {
-          dislikedArticles: arrayUnion(article.slug)
-        });
+        await interactWithArticle(article.slug, 'dislike', user.uid, walletAddress);
+        setDislikedArticles(prev => [...prev, article.slug]);
+        // Update article downvotes locally
+        setArticles(prev => prev.map(a => 
+          a.slug === article.slug 
+            ? { ...a, downvotes: (a.downvotes || 0) + 1 }
+            : a
+        ));
       }
     } catch (error) {
       console.error('Error toggling dislike:', error);
@@ -406,22 +341,8 @@ export default function NewsPage() {
     // Track sharing activity
     if (user && walletAddress) {
       try {
-        await addDoc(collection(db, 'user_activities'), {
-          userId: user.uid,
-          walletAddress,
-          action: platform === 'x' ? 'share_x' : 'share_telegram',
-          points: 10,
-          articleSlug: article.slug,
-          createdAt: serverTimestamp()
-        });
-
-        // Update user points
-        const userRef = doc(db, 'users', user.uid);
-        await updateDoc(userRef, {
-          points: increment(10)
-        });
-
-        addToast(`Shared to ${platform === 'x' ? 'X' : 'Telegram'}! +10 points`, 'success');
+        const result = await interactWithArticle(article.slug, 'share', user.uid, walletAddress, platform);
+        addToast(`Shared to ${platform === 'x' ? 'X' : 'Telegram'}! +${result.pointsEarned} points`, 'success');
       } catch (error) {
         console.error('Error tracking share:', error);
       }
@@ -438,34 +359,17 @@ export default function NewsPage() {
     if (!comment?.trim()) return;
 
     try {
-      // Find the article
-      const article = articles.find(a => a.slug === slug);
-      if (article) {
-        // Add comment to article
-        const articleRef = doc(db, 'articles', article.id!);
-        await updateDoc(articleRef, {
-          comments: arrayUnion(comment)
-        });
-
-        // Track activity
-        await addDoc(collection(db, 'user_activities'), {
-          userId: user.uid,
-          walletAddress,
-          action: 'comment_article',
-          points: 15,
-          articleSlug: slug,
-          createdAt: serverTimestamp()
-        });
-
-        // Update user points
-        const userRef = doc(db, 'users', user.uid);
-        await updateDoc(userRef, {
-          points: increment(15)
-        });
-
-        setNewComments(prev => ({ ...prev, [slug]: '' }));
-        addToast('Comment sent! +15 points', 'success');
-      }
+      const result = await interactWithArticle(slug, 'comment', user.uid, walletAddress, undefined, comment);
+      
+      // Update article comments locally
+      setArticles(prev => prev.map(a => 
+        a.slug === slug 
+          ? { ...a, comments: [...(a.comments || []), comment] }
+          : a
+      ));
+      
+      setNewComments(prev => ({ ...prev, [slug]: '' }));
+      addToast(`Comment sent! +${result.pointsEarned} points`, 'success');
     } catch (error) {
       console.error('Error sending comment:', error);
       addToast('Error sending comment', 'error');
@@ -711,9 +615,9 @@ export default function NewsPage() {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => handleArticleClick(featuredArticle.slug)}
-                            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                            className="px-6 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 transform hover:scale-105 font-medium shadow-lg hover:shadow-xl"
                           >
-                            Read More
+                            Read Article →
                           </button>
                         </div>
                       </div>
@@ -723,25 +627,29 @@ export default function NewsPage() {
                         <div className="flex items-center gap-4">
                           <button
                             onClick={() => toggleLike(featuredArticle)}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 transform hover:scale-105 ${
                               likedArticles.includes(featuredArticle.slug)
-                                ? 'bg-red-500/20 text-red-400'
-                                : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50'
+                                ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                                : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 border border-transparent'
                             }`}
                           >
-                            <HeartIcon className="w-4 h-4" />
+                            <HeartIcon className={`w-4 h-4 transition-all duration-200 ${
+                              likedArticles.includes(featuredArticle.slug) ? 'fill-current' : ''
+                            }`} />
                             <span>{featuredArticle.upvotes || 0}</span>
                           </button>
                           
                           <button
                             onClick={() => toggleDislike(featuredArticle)}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 transform hover:scale-105 ${
                               dislikedArticles.includes(featuredArticle.slug)
-                                ? 'bg-red-500/20 text-red-400'
-                                : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50'
+                                ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 border border-transparent'
                             }`}
                           >
-                            <HandThumbDownIcon className="w-4 h-4" />
+                            <HandThumbDownIcon className={`w-4 h-4 transition-all duration-200 ${
+                              dislikedArticles.includes(featuredArticle.slug) ? 'fill-current' : ''
+                            }`} />
                             <span>{featuredArticle.downvotes || 0}</span>
                           </button>
                         </div>
@@ -749,13 +657,13 @@ export default function NewsPage() {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => shareArticle(featuredArticle, 'x')}
-                            className="px-3 py-2 bg-gray-700/50 text-gray-300 rounded-lg hover:bg-gray-600/50 transition-colors"
+                            className="px-3 py-2 bg-gray-700/50 text-gray-300 rounded-lg hover:bg-gray-600/50 transition-all duration-200 transform hover:scale-105"
                           >
                             Share X
                           </button>
                           <button
                             onClick={() => shareArticle(featuredArticle, 'telegram')}
-                            className="px-3 py-2 bg-gray-700/50 text-gray-300 rounded-lg hover:bg-gray-600/50 transition-colors"
+                            className="px-3 py-2 bg-gray-700/50 text-gray-300 rounded-lg hover:bg-gray-600/50 transition-all duration-200 transform hover:scale-105"
                           >
                             Share TG
                           </button>
@@ -764,17 +672,17 @@ export default function NewsPage() {
 
                       {/* Comments Section */}
                       <div className="mt-4 pt-4 border-t border-gray-700">
-                        <div className="flex items-center gap-2 mb-3">
+                        <div className="relative mb-3">
                           <textarea
                             placeholder="Add a comment..."
                             value={newComments[featuredArticle.slug] || ""}
                             onChange={(e) => setNewComments(prev => ({ ...prev, [featuredArticle.slug]: e.target.value }))}
-                            className="flex-1 px-3 py-2 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                            className="w-full px-3 py-2 pr-12 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                             rows={2}
                           />
                           <button
                             onClick={() => sendComment(featuredArticle.slug)}
-                            className="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                            className="absolute right-2 top-1/2 transform -translate-y-1/2 p-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-md hover:from-blue-600 hover:to-blue-700 transition-all duration-200 transform hover:scale-105"
                           >
                             <PaperAirplaneIcon className="w-4 h-4" />
                           </button>
@@ -851,9 +759,9 @@ export default function NewsPage() {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => handleArticleClick(article.slug)}
-                            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                            className="px-6 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 transform hover:scale-105 font-medium shadow-lg hover:shadow-xl"
                           >
-                            Read More
+                            Read Article →
                           </button>
                         </div>
                       </div>
@@ -863,25 +771,29 @@ export default function NewsPage() {
                         <div className="flex items-center gap-4">
                           <button
                             onClick={() => toggleLike(article)}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 transform hover:scale-105 ${
                               likedArticles.includes(article.slug)
-                                ? 'bg-red-500/20 text-red-400'
-                                : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50'
+                                ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                                : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 border border-transparent'
                             }`}
                           >
-                            <HeartIcon className="w-4 h-4" />
+                            <HeartIcon className={`w-4 h-4 transition-all duration-200 ${
+                              likedArticles.includes(article.slug) ? 'fill-current' : ''
+                            }`} />
                             <span>{article.upvotes || 0}</span>
                           </button>
                           
                           <button
                             onClick={() => toggleDislike(article)}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 transform hover:scale-105 ${
                               dislikedArticles.includes(article.slug)
-                                ? 'bg-red-500/20 text-red-400'
-                                : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50'
+                                ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 border border-transparent'
                             }`}
                           >
-                            <HandThumbDownIcon className="w-4 h-4" />
+                            <HandThumbDownIcon className={`w-4 h-4 transition-all duration-200 ${
+                              dislikedArticles.includes(article.slug) ? 'fill-current' : ''
+                            }`} />
                             <span>{article.downvotes || 0}</span>
                           </button>
                         </div>
@@ -889,17 +801,46 @@ export default function NewsPage() {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => shareArticle(article, 'x')}
-                            className="px-3 py-2 bg-gray-700/50 text-gray-300 rounded-lg hover:bg-gray-600/50 transition-colors"
+                            className="px-3 py-2 bg-gray-700/50 text-gray-300 rounded-lg hover:bg-gray-600/50 transition-all duration-200 transform hover:scale-105"
                           >
                             Share X
                           </button>
                           <button
                             onClick={() => shareArticle(article, 'telegram')}
-                            className="px-3 py-2 bg-gray-700/50 text-gray-300 rounded-lg hover:bg-gray-600/50 transition-colors"
+                            className="px-3 py-2 bg-gray-700/50 text-gray-300 rounded-lg hover:bg-gray-600/50 transition-all duration-200 transform hover:scale-105"
                           >
                             Share TG
                           </button>
                         </div>
+                      </div>
+
+                      {/* Comments Section */}
+                      <div className="mt-4 pt-4 border-t border-gray-700">
+                        <div className="relative mb-3">
+                          <textarea
+                            placeholder="Add a comment..."
+                            value={newComments[article.slug] || ""}
+                            onChange={(e) => setNewComments(prev => ({ ...prev, [article.slug]: e.target.value }))}
+                            className="w-full px-3 py-2 pr-12 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                            rows={2}
+                          />
+                          <button
+                            onClick={() => sendComment(article.slug)}
+                            className="absolute right-2 top-1/2 transform -translate-y-1/2 p-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-md hover:from-blue-600 hover:to-blue-700 transition-all duration-200 transform hover:scale-105"
+                          >
+                            <PaperAirplaneIcon className="w-4 h-4" />
+                          </button>
+                        </div>
+                        
+                        {article.comments && article.comments.length > 0 && (
+                          <div className="space-y-2">
+                            {article.comments.map((comment, index) => (
+                              <div key={index} className="p-3 bg-gray-700/30 rounded-lg">
+                                <p className="text-gray-300 text-sm">{comment}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </motion.div>
@@ -910,6 +851,41 @@ export default function NewsPage() {
             {/* Sidebar */}
             <div className="lg:col-span-1">
               <div className="space-y-6">
+                {/* Become an Author CTA */}
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.3 }}
+                  className="bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-xl p-6 border border-purple-500/30"
+                >
+                  <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
+                    <UserIcon className="w-5 h-5 text-purple-400" />
+                    Become an Author
+                  </h3>
+                  <p className="text-gray-300 text-sm mb-4">
+                    Share your insights about Base Chain and earn rewards. Join our community of writers!
+                  </p>
+                  <button className="w-full px-4 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg hover:from-purple-600 hover:to-blue-600 transition-all duration-200 transform hover:scale-105 font-medium">
+                    Apply Now
+                  </button>
+                </motion.div>
+
+                {/* Ad Placement */}
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.35 }}
+                  className="bg-gray-800/30 rounded-xl p-6 border border-gray-700 min-h-[200px] flex items-center justify-center"
+                >
+                  <div className="text-center">
+                    <div className="w-16 h-16 bg-gray-700/50 rounded-lg flex items-center justify-center mx-auto mb-3">
+                      <span className="text-gray-400 text-2xl">📢</span>
+                    </div>
+                    <p className="text-gray-400 text-sm">Advertisement Space</p>
+                    <p className="text-gray-500 text-xs mt-1">300x250</p>
+                  </div>
+                </motion.div>
+
                 {/* User Stats */}
                 {user && walletAddress && (
                   <motion.div

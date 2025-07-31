@@ -34,7 +34,7 @@ import {
 import { format, parseISO } from "date-fns";
 import toast, { Toaster } from "react-hot-toast";
 import { useAuth } from "@/app/providers";
-import { useAccount } from "wagmi";
+import { useAccount, useSignMessage } from "wagmi";
 import Header from "../components/Header";
 import Footer from "../components/Footer";
 
@@ -114,7 +114,6 @@ function getWeekDates(weekOffset: number = 0): { day: string; date: string; full
 
 export default function CalendarPage() {
   const { user } = useAuth();
-  const { address: walletAddress } = useAccount();
   
   // State management
   const [events, setEvents] = useState<Event[]>([]);
@@ -156,6 +155,20 @@ export default function CalendarPage() {
     website: "",
     proofOfOwnership: "",
   });
+
+  // Wallet signing state
+  const { address: walletAddress } = useAccount();
+  const { signMessage, isPending: isSigning, data: signatureData } = useSignMessage();
+  const [signature, setSignature] = useState("");
+  const [isVerifyingOwnership, setIsVerifyingOwnership] = useState(false);
+
+  // Handle signature result
+  useEffect(() => {
+    if (signatureData) {
+      setSignature(signatureData);
+      toast.success("Ownership verified! Signature generated.");
+    }
+  }, [signatureData]);
 
   // ────────── Data Fetching ──────────
 
@@ -231,9 +244,38 @@ export default function CalendarPage() {
 
   // ────────── Event Handlers ──────────
 
+  const handleVerifyOwnership = async () => {
+    if (!walletAddress) {
+      toast.error("Please connect your wallet first");
+      return;
+    }
+
+    if (!newProject.contractAddress.trim()) {
+      toast.error("Please enter a contract address first");
+      return;
+    }
+
+    try {
+      setIsVerifyingOwnership(true);
+      
+      // Create a message to sign that includes the contract address and timestamp
+      const message = `I verify ownership of contract ${newProject.contractAddress} for project submission on Homebase. Timestamp: ${Date.now()}`;
+      
+      // Use the signMessage function
+      signMessage({ message });
+      
+      toast.success("Please approve the signature request in your wallet to verify ownership.");
+    } catch (error) {
+      console.error("Error signing message:", error);
+      toast.error("Failed to verify ownership. Please try again.");
+    } finally {
+      setIsVerifyingOwnership(false);
+    }
+  };
+
   const handleAddEvent = async () => {
-    if (!user || !walletAddress) {
-      toast.error("Please connect your wallet");
+    if (!user) {
+      toast.error("Please log in to add events");
       return;
     }
 
@@ -283,25 +325,55 @@ export default function CalendarPage() {
   };
 
   const handleSubmitProject = async () => {
-    if (!user || !walletAddress) {
-      toast.error("Please connect your wallet");
+    console.log("Submit project clicked");
+    console.log("User:", user);
+    console.log("New project data:", newProject);
+    console.log("Field values:", {
+      name: `"${newProject.name}"`,
+      ticker: `"${newProject.ticker}"`,
+      description: `"${newProject.description}"`,
+      contractAddress: `"${newProject.contractAddress}"`,
+      website: `"${newProject.website}"`,
+      proofOfOwnership: `"${newProject.proofOfOwnership}"`
+    });
+    
+    if (!user) {
+      toast.error("Please log in to submit projects");
       return;
     }
 
-    if (!newProject.name || !newProject.ticker || !newProject.description) {
-      toast.error("Please fill in all required fields");
+    // Check for empty or whitespace-only fields
+    if (!newProject.name.trim() || !newProject.ticker.trim() || !newProject.description.trim() || !newProject.contractAddress.trim() || !newProject.website.trim()) {
+      toast.error("Please fill in all required fields including contract address and website");
+      return;
+    }
+
+    // Check if ownership has been verified with signature
+    if (!signature) {
+      toast.error("Please verify ownership by signing a message with your wallet");
+      return;
+    }
+
+    // Validate Ethereum address format
+    if (!newProject.contractAddress.trim().match(/^0x[a-fA-F0-9]{40}$/)) {
+      toast.error("Please enter a valid Ethereum contract address (0x followed by 40 hex characters)");
       return;
     }
 
     try {
       const projectData = {
         ...newProject,
-        createdBy: user.uid,
+        proofOfOwnership: signature, // Use the signature as proof of ownership
+        submitterId: user.uid,
+        submittedAt: Timestamp.now(),
         status: "pending",
-        createdAt: Timestamp.now(),
+        adminNotes: "",
       };
 
-      await addDoc(collection(db, "projects"), projectData);
+      console.log("Project data to submit:", projectData);
+      console.log("User UID:", user.uid);
+
+      await addDoc(collection(db, "pendingProjects"), projectData);
       toast.success("Project submitted for approval!");
       setShowSubmitProjectModal(false);
       setNewProject({
@@ -314,13 +386,18 @@ export default function CalendarPage() {
       });
     } catch (error) {
       console.error("Error submitting project:", error);
+      console.error("Error details:", {
+        message: error instanceof Error ? error.message : "Unknown error",
+        code: error instanceof Error ? (error as any).code : "Unknown",
+        stack: error instanceof Error ? error.stack : "No stack trace"
+      });
       toast.error("Failed to submit project");
     }
   };
 
   const handleEngagement = async (event: Event, action: "like" | "dislike") => {
     if (!user) {
-      toast.error("Please connect your wallet");
+      toast.error("Please log in to interact with events");
       return;
     }
 
@@ -398,7 +475,7 @@ export default function CalendarPage() {
 
   const handleCommentSubmit = async (event: Event) => {
     if (!user) {
-      toast.error("Please connect your wallet");
+      toast.error("Please log in to comment");
       return;
     }
 
@@ -469,7 +546,7 @@ export default function CalendarPage() {
 
   const handleRSVP = async (event: Event) => {
     if (!user) {
-      toast.error("Please connect your wallet");
+      toast.error("Please log in to RSVP");
       return;
     }
 
@@ -924,6 +1001,22 @@ export default function CalendarPage() {
             className="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto"
           >
             <h3 className="text-xl font-bold text-white mb-4">Submit New Project</h3>
+            
+            {/* Wallet Connection Status */}
+            <div className={`p-3 rounded-lg mb-4 ${
+              walletAddress ? 'bg-green-900/20 border border-green-600' : 'bg-red-900/20 border border-red-600'
+            }`}>
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${walletAddress ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                <span className="text-sm">
+                  {walletAddress 
+                    ? `Wallet Connected: ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
+                    : 'Please connect your wallet to submit a project'
+                  }
+                </span>
+              </div>
+            </div>
+            
             <div className="space-y-4">
               <input
                 type="text"
@@ -963,6 +1056,39 @@ export default function CalendarPage() {
                 onChange={(e) => setNewProject({ ...newProject, website: e.target.value })}
                 className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
               />
+              
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={handleVerifyOwnership}
+                  disabled={isVerifyingOwnership || !walletAddress || !newProject.contractAddress.trim()}
+                  className={`w-full px-4 py-3 rounded-lg font-medium transition-colors ${
+                    signature 
+                      ? 'bg-green-600 text-white cursor-default' 
+                      : isVerifyingOwnership 
+                        ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                        : !walletAddress || !newProject.contractAddress.trim()
+                          ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                          : 'bg-purple-600 text-white hover:bg-purple-700'
+                  }`}
+                >
+                  {signature 
+                    ? '✅ Ownership Verified' 
+                    : isVerifyingOwnership 
+                      ? 'Verifying...' 
+                      : !walletAddress 
+                        ? 'Connect Wallet First'
+                        : !newProject.contractAddress.trim()
+                          ? 'Enter Contract Address First'
+                          : '🔐 Verify Ownership with Wallet'
+                  }
+                </button>
+                {signature && (
+                  <div className="text-xs text-gray-400 bg-gray-700 p-2 rounded">
+                    Signature: {signature.slice(0, 20)}...{signature.slice(-20)}
+                  </div>
+                )}
+              </div>
               
               <div className="flex gap-4">
                 <button

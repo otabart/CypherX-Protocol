@@ -5,7 +5,7 @@ const DB_FILE = path.join(process.cwd(), "data/tokens.json");
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
+  const { searchParams } = new URL(request.url);
     const source = searchParams.get('source'); // 'all', 'clanker', 'zora', 'aerodrome', 'baseswap', 'uniswap'
     const limit = parseInt(searchParams.get('limit') || '100');
     const offset = parseInt(searchParams.get('offset') || '0');
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
-    }
+      }
 
     const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
     let tokens = data.tokens || [];

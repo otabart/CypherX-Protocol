@@ -1,14 +1,7 @@
 // app/base-chain-news/[slug]/page.tsx
 import { notFound } from 'next/navigation';
 import React from 'react';
-import { db } from '../../../lib/firebase'; // adjust path as needed
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-} from 'firebase/firestore';
-import type { DocumentData } from 'firebase/firestore';
+import { adminDb } from '@/lib/firebase-admin';
 import ArticleDetail from './ArticleDetail';
 
 interface ServerProps {
@@ -19,9 +12,14 @@ export default async function ArticleDetailPage({ params }: ServerProps) {
   const { slug } = await params;
 
   // ─── Fetch the single article from Firestore on the server ───
-  const articlesCol = collection(db, 'articles');
-  const q = query(articlesCol, where('slug', '==', slug));
-  const querySnapshot = await getDocs(q);
+  const db = adminDb();
+  if (!db) {
+    notFound();
+  }
+
+  const articlesCol = db!.collection('articles');
+  const q = articlesCol.where('slug', '==', slug);
+  const querySnapshot = await q.get();
 
   if (querySnapshot.empty) {
     // If no matching article, render 404
@@ -30,7 +28,7 @@ export default async function ArticleDetailPage({ params }: ServerProps) {
 
   // Take the first matching document
   const docSnap = querySnapshot.docs[0];
-  const data = docSnap.data() as DocumentData;
+  const data = docSnap.data();
 
   // Transform Firestore timestamps into ISO strings (if needed)
   const publishedAtISO =
@@ -46,6 +44,12 @@ export default async function ArticleDetailPage({ params }: ServerProps) {
     slug: data.slug as string,
     thumbnailUrl: (data.thumbnailUrl as string | undefined) || '',
     publishedAt: publishedAtISO,
+    views: data.views || 0,
+    upvotes: data.upvotes || 0,
+    downvotes: data.downvotes || 0,
+    comments: data.comments || [],
+    category: data.category || 'General',
+    excerpt: data.excerpt || '',
   };
 
   // ─── Return the Client component, passing the article’s fields as props ───
