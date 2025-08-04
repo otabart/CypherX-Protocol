@@ -7,7 +7,7 @@ export interface UserActivity {
   points: number;
   articleSlug?: string;
   articleId?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   createdAt: string;
 }
 
@@ -20,7 +20,11 @@ export interface LeaderboardEntry {
 }
 
 export interface UserStats {
-  user: any;
+  user: {
+    likedArticles?: string[];
+    dislikedArticles?: string[];
+    [key: string]: unknown;
+  } | null;
   rank: number | null;
   activities: UserActivity[];
   activitySummary: Record<string, number>;

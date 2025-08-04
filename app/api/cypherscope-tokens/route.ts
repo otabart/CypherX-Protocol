@@ -4,6 +4,33 @@ import path from "path";
 
 const DB_FILE = path.join(process.cwd(), "data/zora-tokens.json");
 
+// Define proper types
+interface TokenData {
+  id?: string;
+  address: string;
+  name: string;
+  symbol: string;
+  marketCap: number;
+  volume24h: number;
+  uniqueHolders: number;
+  totalSupply: number;
+  creatorAddress: string;
+  createdAt: string | Date;
+  mediaContent?: string;
+  source: string;
+  dexName: string;
+  pairAddress?: string;
+  description: string;
+  website: string;
+  telegram: string;
+  twitter: string;
+  totalVolume?: number;
+  marketCapDelta24h?: number;
+  tokenUri?: string;
+  lastUpdated?: Date | string;
+  tags?: string[];
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -13,17 +40,17 @@ export async function GET(request: Request) {
     const sortBy = searchParams.get('sortBy') || 'createdAt';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
 
-    let tokens: any[] = [];
+    let tokens: TokenData[] = [];
 
     // Try Firebase first
-  try {
-    const db = adminDb();
+    try {
+      const db = adminDb();
       if (db) {
-    const snapshot = await db.collection("Cypherscope")
+        const snapshot = await db.collection("Cypherscope")
           .orderBy("createdAt", "desc")
           .limit(limit)
           .offset(offset)
-      .get();
+          .get();
 
         tokens = snapshot.docs.map(doc => {
           const data = doc.data();
@@ -53,7 +80,7 @@ export async function GET(request: Request) {
           };
         });
       }
-    } catch (error) {
+    } catch {
       console.log("Firebase failed, trying local file...");
     }
 
@@ -61,22 +88,22 @@ export async function GET(request: Request) {
     if (fs.existsSync(DB_FILE)) {
       try {
         const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-        const localTokens = data.tokens || [];
+        const localTokens: TokenData[] = data.tokens || [];
         console.log(`Loaded ${localTokens.length} tokens from local file`);
         
         // Merge Firebase and local tokens, prioritizing local data
-        const localTokenAddresses = new Set(localTokens.map((t: any) => t.address));
-        const firebaseTokensNotInLocal = tokens.filter((t: any) => !localTokenAddresses.has(t.address));
+        const localTokenAddresses = new Set(localTokens.map((t: TokenData) => t.address));
+        const firebaseTokensNotInLocal = tokens.filter((t: TokenData) => !localTokenAddresses.has(t.address));
         tokens = [...localTokens, ...firebaseTokensNotInLocal];
-      } catch (error) {
-        console.error("Error reading local file:", error);
+      } catch (fileError) {
+        console.error("Error reading local file:", fileError);
       }
     }
 
     // Search filter
     if (search) {
       const searchLower = search.toLowerCase();
-      tokens = tokens.filter((token: any) => 
+      tokens = tokens.filter((token: TokenData) => 
         token.name?.toLowerCase().includes(searchLower) ||
         token.symbol?.toLowerCase().includes(searchLower) ||
         token.address?.toLowerCase().includes(searchLower)
@@ -84,45 +111,45 @@ export async function GET(request: Request) {
     }
 
     // Sort tokens
-    tokens.sort((a: any, b: any) => {
-      let aVal = a[sortBy];
-      let bVal = b[sortBy];
+    tokens.sort((a: TokenData, b: TokenData) => {
+      let aVal: number | string = a[sortBy as keyof TokenData] as number | string;
+      let bVal: number | string = b[sortBy as keyof TokenData] as number | string;
       
       if (sortBy === 'createdAt') {
-        aVal = new Date(aVal).getTime();
-        bVal = new Date(bVal).getTime();
+        aVal = new Date(aVal as string).getTime();
+        bVal = new Date(bVal as string).getTime();
       } else if (sortBy === 'marketCap' || sortBy === 'volume24h') {
-        aVal = parseFloat(aVal || '0');
-        bVal = parseFloat(bVal || '0');
+        aVal = parseFloat(String(aVal) || '0');
+        bVal = parseFloat(String(bVal) || '0');
       }
       
       if (sortOrder === 'desc') {
-        return bVal - aVal;
+        return (bVal as number) - (aVal as number);
       } else {
-        return aVal - bVal;
+        return (aVal as number) - (bVal as number);
       }
     });
 
     // Add tags to tokens
-    const tokensWithTags = tokens.map((token: any) => {
-      const tags = [];
+    const tokensWithTags = tokens.map((token: TokenData) => {
+      const tags: string[] = [];
       
       // Add source tag
       tags.push(token.source.toUpperCase());
       
       // Add market cap tags
-      const marketCap = parseFloat(token.marketCap || '0');
+      const marketCap = parseFloat(String(token.marketCap) || '0');
       if (marketCap > 1000000) tags.push('HIGH_CAP');
       if (marketCap > 100000) tags.push('MEDIUM_CAP');
       if (marketCap < 100000) tags.push('LOW_CAP');
       
       // Add volume tags
-      const volume = parseFloat(token.volume24h || '0');
+      const volume = parseFloat(String(token.volume24h) || '0');
       if (volume > 100000) tags.push('HIGH_VOLUME');
       if (volume > 50000) tags.push('MEDIUM_VOLUME');
       
       // Add holder tags
-      const holders = parseInt(token.uniqueHolders || '0');
+      const holders = parseInt(String(token.uniqueHolders) || '0');
       if (holders > 1000) tags.push('MANY_HOLDERS');
       if (holders > 100) tags.push('SOME_HOLDERS');
       

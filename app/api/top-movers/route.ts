@@ -81,7 +81,7 @@ export async function GET() {
       const tokenAddress = screenerData.tokenAddress;
       
       // Find matching DexScreener data
-      const dexPair = Array.isArray(dexData) ? dexData.find((pair: any) => 
+      const dexPair = Array.isArray(dexData) ? dexData.find((pair: { baseToken?: { address?: string } }) => 
         pair.baseToken?.address?.toLowerCase() === tokenAddress?.toLowerCase()
       ) : null;
 

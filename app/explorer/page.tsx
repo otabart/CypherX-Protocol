@@ -794,7 +794,7 @@ export default function ExplorerPage() {
 
             {/* Enhanced Search Input + Button */}
             <motion.div 
-              className="grid grid-cols-1 md:grid-cols-[3fr,1fr] gap-3 mx-auto max-w-2xl relative"
+              className="mx-auto max-w-2xl relative"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.2 }}
@@ -812,9 +812,19 @@ export default function ExplorerPage() {
                   onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                   placeholder="Search address, tx hash, or block number"
                   aria-label="Search blockchain data"
-                  className={`w-full py-3 sm:py-4 pl-10 sm:pl-12 pr-4 text-sm sm:text-base rounded-xl ${themeClasses.containerBg} ${themeClasses.text} border-2 ${themeClasses.border} placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-blue-400 transition-all duration-300 shadow-lg`}
+                  className={`w-full py-4 pl-12 pr-16 text-base rounded-xl ${themeClasses.containerBg} ${themeClasses.text} border-2 ${themeClasses.border} placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-blue-400 transition-all duration-300 shadow-lg`}
                 />
-                <SearchIcon className="w-5 h-5 sm:w-6 sm:h-6 absolute left-3 sm:left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                <SearchIcon className="w-6 h-6 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                
+                <button
+                  onClick={handleSearch}
+                  disabled={!searchQuery.trim()}
+                  className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-2 rounded-lg ${themeClasses.buttonBg} hover:${themeClasses.buttonHover} disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300`}
+                >
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  </svg>
+                </button>
                 
                 {/* Enhanced Search Suggestions */}
                 <AnimatePresence>
@@ -841,7 +851,7 @@ export default function ExplorerPage() {
                               }
                               setShowSuggestions(false);
                             }}
-                            className={`w-full px-4 py-3 text-left text-sm hover:bg-blue-500/20 transition-colors duration-200 border-b border-blue-500/20 last:border-b-0 ${
+                            className={`w-full px-4 py-4 text-left text-sm hover:bg-blue-500/20 transition-colors duration-200 border-b border-blue-500/20 last:border-b-0 ${
                               isHistory ? 'text-gray-300' : 'text-gray-200'
                             }`}
                           >
@@ -862,7 +872,7 @@ export default function ExplorerPage() {
                             clearSearchHistory();
                             setShowSuggestions(false);
                           }}
-                          className="w-full px-4 py-2 text-left text-xs text-red-400 hover:bg-red-500/20 transition-colors duration-200 border-t border-blue-500/20"
+                          className="w-full px-4 py-3 text-left text-sm text-red-400 hover:bg-red-500/20 transition-colors duration-200 border-t border-blue-500/20"
                         >
                           Clear Search History
                         </button>
@@ -871,14 +881,6 @@ export default function ExplorerPage() {
                   )}
                 </AnimatePresence>
               </div>
-              
-              <button
-                onClick={handleSearch}
-                disabled={!searchQuery.trim()}
-                className={`py-3 sm:py-4 px-6 text-sm sm:text-base font-semibold rounded-xl border-2 ${themeClasses.border} ${themeClasses.buttonBg} hover:${themeClasses.buttonHover} disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:scale-105 shadow-lg`}
-              >
-                Search
-              </button>
             </motion.div>
 
             {/* Enhanced Latest Block and Gas Price Display */}
@@ -888,13 +890,13 @@ export default function ExplorerPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.4 }}
             >
-              <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 sm:p-4 backdrop-blur-sm">
-                <p className="text-xs sm:text-sm text-blue-400 uppercase font-medium">Latest Block</p>
-                <p className="text-lg sm:text-xl font-bold text-gray-200">{latestBlock.toLocaleString()}</p>
+              <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 backdrop-blur-sm">
+                <p className="text-sm text-blue-400 uppercase font-medium">Latest Block</p>
+                <p className="text-xl font-bold text-gray-200">{latestBlock.toLocaleString()}</p>
               </div>
-              <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 sm:p-4 backdrop-blur-sm">
-                <p className="text-xs sm:text-sm text-green-400 uppercase font-medium">Gas Price</p>
-                <p className="text-lg sm:text-xl font-bold text-gray-200">{gasPrice}</p>
+              <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 backdrop-blur-sm">
+                <p className="text-sm text-green-400 uppercase font-medium">Gas Price</p>
+                <p className="text-xl font-bold text-gray-200">{gasPrice}</p>
               </div>
             </motion.div>
           </div>
@@ -923,20 +925,18 @@ export default function ExplorerPage() {
             ].map((metric, idx) => (
               <motion.div
                 key={idx}
-                className={`flex flex-col items-center p-3 sm:p-4 border border-blue-500/30 rounded-xl bg-gradient-to-br from-gray-800 to-gray-700 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 ${
+                className={`flex flex-col items-center p-4 border border-blue-500/30 rounded-xl bg-gradient-to-br from-gray-800 to-gray-700 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 ${
                   loading.blocks && loading.transactions ? 'animate-pulse' : ''
                 }`}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: idx * 0.1 }}
               >
-                <p className="text-xs text-blue-400 uppercase text-center font-medium leading-tight">{metric.title}</p>
-                <p className="text-sm sm:text-lg font-bold mt-1 sm:mt-2 text-center">
-                  {loading.blocks && loading.transactions ? (
-                    <div className="w-16 h-6 bg-gray-600 rounded animate-pulse"></div>
-                  ) : (
-                    metric.value
-                  )}
+                <p className={`text-xs sm:text-sm text-${metric.color}-400 uppercase font-medium mb-2 text-center`}>
+                  {metric.title}
+                </p>
+                <p className="text-sm sm:text-base lg:text-lg font-bold text-gray-200 text-center">
+                  {metric.value}
                 </p>
               </motion.div>
             ))}

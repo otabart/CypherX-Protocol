@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { FaWallet, FaExchangeAlt, FaInfoCircle } from "react-icons/fa";
+import { FaWallet, FaExchangeAlt, FaInfoCircle, FaPercentage } from "react-icons/fa";
+import { SiEthereum } from "react-icons/si";
 import { ethers } from "ethers";
 import { toast } from "react-toastify";
 import { useAccount, useConnect } from "wagmi";
@@ -560,7 +561,7 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
               onClick={() => setActiveTab("buy")}
               className={`flex-1 py-2 px-3 rounded-md font-bold transition text-sm ${
                 activeTab === "buy"
-                  ? "bg-blue-600 text-white"
+                  ? "bg-green-500/20 text-green-400 border border-green-500/30"
                   : "text-gray-400 hover:text-gray-200"
               }`}
             >
@@ -570,7 +571,7 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
               onClick={() => setActiveTab("sell")}
               className={`flex-1 py-2 px-3 rounded-md font-bold transition text-sm ${
                 activeTab === "sell"
-                  ? "bg-blue-600 text-white"
+                  ? "bg-red-500/20 text-red-400 border border-red-500/30"
                   : "text-gray-400 hover:text-gray-200"
               }`}
             >
@@ -708,7 +709,9 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
               onClick={executeSwap}
               className={`w-full py-2 rounded-lg font-bold transition text-sm ${
                 isSwapReady && isApproved
-                  ? "bg-gradient-to-r from-blue-600 to-blue-400 hover:from-blue-700 hover:to-blue-500 text-white"
+                  ? activeTab === "buy"
+                    ? "bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30"
+                    : "bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30"
                   : "bg-gray-700 text-gray-400 cursor-not-allowed"
               }`}
               disabled={!isSwapReady || !isApproved || isSwapLoading}
@@ -727,56 +730,54 @@ const Swap: React.FC<SwapProps> = ({ token, ethPrice }) => {
                 </button>
           </div>
 
-          {/* P&L Section */}
-          <div className="bg-gray-800 rounded-lg p-3 border border-blue-500/20">
-            <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-semibold text-gray-200">Portfolio P&L</span>
-                    <span className={`text-xs px-2 py-1 rounded ${profitLoss >= 0 ? "bg-green-900/20 text-green-400" : "bg-red-900/20 text-red-400"}`}>
-                      {profitLoss >= 0 ? "+" : ""}{((profitLoss / (boughtAmount || 1)) * 100).toFixed(2)}%
-                    </span>
-                  </div>
-                  
-            <div className="grid grid-cols-2 gap-2 text-xs mb-2">
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Bought:</span>
-                <span className="text-gray-200 font-bold">{boughtAmount.toFixed(2)} {token?.baseToken.symbol}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Sold:</span>
-                <span className="text-gray-200 font-bold">{soldAmount.toFixed(2)} {token?.baseToken.symbol}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Unrealized:</span>
-                      <span className={`font-bold ${profitLoss >= 0 ? "text-green-400" : "text-red-400"}`}>
-                        <span className="mr-1">Ξ</span>
-                        {profitLoss >= 0 ? "+" : ""}{profitLoss.toFixed(4)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">ROI:</span>
-                      <span className={`font-bold ${profitLoss >= 0 ? "text-green-400" : "text-red-400"}`}>
-                        {((profitLoss / (boughtAmount || 1)) * 100).toFixed(2)}%
-                      </span>
-                    </div>
-                  </div>
-                  
-                  {/* Mini P&L Chart */}
-            <div className="h-12 bg-gray-900 rounded border border-gray-700 flex items-center justify-center mb-2">
-                    <div className="text-xs text-gray-500">P&L Chart</div>
-                  </div>
-                  
-                  {/* Position Info */}
-            <div className="pt-2 border-t border-gray-700">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-gray-400">Position Size:</span>
-                <span className="text-gray-200 font-bold">{boughtAmount.toFixed(2)} {token?.baseToken.symbol}</span>
-                    </div>
-                    <div className="flex justify-between text-xs mt-1">
-                      <span className="text-gray-400">Avg Price:</span>
-                <span className="text-gray-200 font-bold">${token?.priceUsd ? parseFloat(token.priceUsd).toFixed(6) : "0.000000"}</span>
-                    </div>
-                  </div>
+          {/* Simplified P&L Section */}
+          <div className="grid grid-cols-2 gap-3 text-xs mb-0">
+            {/* Bought */}
+            <div className="bg-gray-800 rounded-lg p-3 border border-blue-500/20 h-20 flex flex-col justify-center">
+              <div className="text-gray-400 mb-2">Bought:</div>
+              <div className="flex items-center">
+                <div className="w-5 h-5 mr-2 bg-gray-700 rounded-full flex items-center justify-center">
+                  <SiEthereum className="w-4 h-4 text-gray-300" />
                 </div>
+                <span className="text-green-400 font-bold text-sm">{boughtAmount.toFixed(2)}</span>
+              </div>
+            </div>
+            
+            {/* Sold */}
+            <div className="bg-gray-800 rounded-lg p-3 border border-blue-500/20 h-20 flex flex-col justify-center">
+              <div className="text-gray-400 mb-2">Sold:</div>
+              <div className="flex items-center">
+                <div className="w-5 h-5 mr-2 bg-gray-700 rounded-full flex items-center justify-center">
+                  <SiEthereum className="w-4 h-4 text-gray-300" />
+                </div>
+                <span className="text-red-400 font-bold text-sm">{soldAmount.toFixed(2)}</span>
+              </div>
+            </div>
+            
+            {/* Entry */}
+            <div className="bg-gray-800 rounded-lg p-3 border border-blue-500/20 h-20 flex flex-col justify-center">
+              <div className="text-gray-400 mb-2">Entry:</div>
+              <div className="flex items-center">
+                <div className="w-5 h-5 mr-2 bg-gray-700 rounded-full flex items-center justify-center">
+                  <SiEthereum className="w-4 h-4 text-gray-300" />
+                </div>
+                <span className="text-gray-200 font-bold text-sm">${token?.priceUsd ? parseFloat(token.priceUsd).toFixed(6) : "0.000000"}</span>
+              </div>
+            </div>
+            
+            {/* P&L */}
+            <div className="bg-gray-800 rounded-lg p-3 border border-blue-500/20 h-20 flex flex-col justify-center">
+              <div className="text-gray-400 mb-2">P&L %</div>
+              <div className="flex items-center">
+                <div className="w-5 h-5 mr-2 bg-gray-700 rounded-full flex items-center justify-center">
+                  <FaPercentage className="w-3 h-3 text-gray-300" />
+                </div>
+                <span className={`font-bold text-sm ${profitLoss >= 0 ? "text-green-400" : "text-red-400"}`}>
+                  {profitLoss >= 0 ? "+" : ""}{((profitLoss / (boughtAmount || 1)) * 100).toFixed(2)}%
+                </span>
+              </div>
+            </div>
+          </div>
               </>
             )}
 

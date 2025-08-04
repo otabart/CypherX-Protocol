@@ -9,8 +9,8 @@ interface UserActivity {
   points: number;
   articleSlug?: string;
   articleId?: string;
-  metadata?: Record<string, any>;
-  createdAt: any;
+  metadata?: Record<string, unknown>;
+  createdAt: Date | string;
 }
 
 // GET - Fetch user activities

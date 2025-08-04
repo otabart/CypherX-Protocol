@@ -38,6 +38,23 @@ import { useAccount, useSignMessage } from "wagmi";
 import Header from "../components/Header";
 import Footer from "../components/Footer";
 
+// Mobile detection hook
+const useIsMobile = () => {
+  const [isMobile, setIsMobile] = useState(false);
+  
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+  
+  return isMobile;
+};
+
 // ────────── Types ──────────
 
 interface Event {
@@ -114,6 +131,7 @@ function getWeekDates(weekOffset: number = 0): { day: string; date: string; full
 
 export default function CalendarPage() {
   const { user } = useAuth();
+  const isMobile = useIsMobile();
   
   // State management
   const [events, setEvents] = useState<Event[]>([]);
@@ -158,7 +176,7 @@ export default function CalendarPage() {
 
   // Wallet signing state
   const { address: walletAddress } = useAccount();
-  const { signMessage, isPending: isSigning, data: signatureData } = useSignMessage();
+  const { signMessage, data: signatureData } = useSignMessage();
   const [signature, setSignature] = useState("");
   const [isVerifyingOwnership, setIsVerifyingOwnership] = useState(false);
 
@@ -233,6 +251,7 @@ export default function CalendarPage() {
 
       } catch (error) {
         console.error("Error fetching data:", error);
+        // Only show error toast for actual network/database errors
         toast.error("Failed to load calendar data");
       } finally {
         setLoading(false);
@@ -388,7 +407,7 @@ export default function CalendarPage() {
       console.error("Error submitting project:", error);
       console.error("Error details:", {
         message: error instanceof Error ? error.message : "Unknown error",
-        code: error instanceof Error ? (error as any).code : "Unknown",
+        code: error instanceof Error ? (error as { code?: string }).code : "Unknown",
         stack: error instanceof Error ? error.stack : "No stack trace"
       });
       toast.error("Failed to submit project");
@@ -667,168 +686,178 @@ export default function CalendarPage() {
       <Header />
       <Toaster position="top-right" />
       
-      <main className="flex-1 container mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-white mb-4">📅 Event Calendar</h1>
-          <p className="text-gray-400">Stay updated with the latest events in the Base ecosystem</p>
+      <main className="flex-1 container mx-auto px-4 py-4 sm:py-8">
+        <div className="mb-6 sm:mb-8">
+          <h1 className="text-2xl sm:text-4xl font-bold text-white mb-2 sm:mb-4">📅 Event Calendar</h1>
+          <p className="text-sm sm:text-base text-gray-400">Stay updated with the latest events in the Base ecosystem</p>
         </div>
 
         {/* User Stats */}
         {user && (
-          <div className="flex items-center gap-4 mb-6 p-4 bg-gray-800/30 rounded-lg">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 mb-6 p-3 sm:p-4 bg-gray-800/30 rounded-lg">
             <div className="flex items-center gap-2">
-              <FiAward className="w-5 h-5 text-yellow-400" />
-              <span className="text-white font-medium">Points: {userPoints}</span>
+              <FiAward className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-400" />
+              <span className="text-sm sm:text-base text-white font-medium">Points: {userPoints}</span>
             </div>
             <div className="flex items-center gap-2">
-              <FiUser className="w-5 h-5 text-blue-400" />
-              <span className="text-white font-medium">RSVPs: {userRsvpedEvents.length}</span>
+              <FiUser className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" />
+              <span className="text-sm sm:text-base text-white font-medium">RSVPs: {userRsvpedEvents.length}</span>
             </div>
             {userBadges.length > 0 && (
               <div className="flex items-center gap-2">
-                <FiShield className="w-5 h-5 text-purple-400" />
-                <span className="text-white font-medium">Badges: {userBadges.join(", ")}</span>
+                <FiShield className="w-4 h-4 sm:w-5 sm:h-5 text-purple-400" />
+                <span className="text-sm sm:text-base text-white font-medium">Badges: {userBadges.join(", ")}</span>
               </div>
             )}
           </div>
         )}
 
-        {/* Controls */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-8">
-          <div className="flex gap-2">
-            <button
-              onClick={() => setCurrentWeek(prev => prev - 1)}
-              className="p-2 bg-gray-800 rounded-lg text-gray-300 hover:bg-gray-700 transition-colors"
-            >
-              <FiChevronLeft className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => setCurrentWeek(prev => prev + 1)}
-              className="p-2 bg-gray-800 rounded-lg text-gray-300 hover:bg-gray-700 transition-colors"
-            >
-              <FiChevronRight className="w-5 h-5" />
-            </button>
+                  {/* Controls */}
+          <div className="flex flex-col gap-3 sm:gap-4 mb-6 sm:mb-8">
+            {/* Navigation and Search Row */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setCurrentWeek(prev => prev - 1)}
+                  className="p-2 bg-gray-800 rounded-lg text-gray-300 hover:bg-gray-700 transition-colors"
+                >
+                  <FiChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+                <button
+                  onClick={() => setCurrentWeek(prev => prev + 1)}
+                  className="p-2 bg-gray-800 rounded-lg text-gray-300 hover:bg-gray-700 transition-colors"
+                >
+                  <FiChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 flex-1">
+                <select
+                  value={filterType}
+                  onChange={(e) => setFilterType(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-300 text-sm sm:text-base"
+                >
+                  <option value="all">All Events</option>
+                  <option value="followed">Followed Projects</option>
+                  <option value="featured">Featured Events</option>
+                </select>
+
+                <input
+                  type="text"
+                  placeholder="Search events..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-300 placeholder-gray-500 text-sm sm:text-base"
+                />
+              </div>
+            </div>
+
+            {/* Action Buttons Row */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setShowAddEventModal(true)}
+                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base"
+              >
+                <FiPlus className="w-4 h-4 inline mr-2" />
+                {isMobile ? "Add Event" : "Add Event"}
+              </button>
+
+              <button
+                onClick={() => setShowSubmitProjectModal(true)}
+                className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm sm:text-base"
+              >
+                <FiPlus className="w-4 h-4 inline mr-2" />
+                {isMobile ? "Submit Project" : "Submit Project"}
+              </button>
+            </div>
           </div>
 
-          <select
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value)}
-            className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-300"
-          >
-            <option value="all">All Events</option>
-            <option value="followed">Followed Projects</option>
-            <option value="featured">Featured Events</option>
-          </select>
-
-          <input
-            type="text"
-            placeholder="Search events..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-300 placeholder-gray-500"
-          />
-
-          <button
-            onClick={() => setShowAddEventModal(true)}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <FiPlus className="w-4 h-4 inline mr-2" />
-            Add Event
-          </button>
-
-          <button
-            onClick={() => setShowSubmitProjectModal(true)}
-            className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-          >
-            <FiPlus className="w-4 h-4 inline mr-2" />
-            Submit Project
-          </button>
-        </div>
-
         {/* Calendar Grid */}
-        <div className="grid grid-cols-7 gap-4 mb-8">
+        <div className="grid grid-cols-7 gap-2 sm:gap-4 mb-6 sm:mb-8">
           {weekDates.map((day) => (
             <div
               key={day.fullDate}
               onClick={() => setSelectedDate(day.fullDate)}
-              className={`p-4 rounded-lg cursor-pointer transition-colors ${
+              className={`p-3 sm:p-4 rounded-lg cursor-pointer transition-colors min-h-[80px] sm:min-h-[100px] flex flex-col justify-between ${
                 selectedDate === day.fullDate
                   ? "bg-blue-600 text-white"
                   : "bg-gray-800 text-gray-300 hover:bg-gray-700"
               }`}
             >
-              <div className="text-sm font-medium">{day.day}</div>
-              <div className="text-2xl font-bold">{day.date}</div>
-              <div className="text-xs mt-2">
-                {filteredEvents.filter(event => event.date === day.fullDate).length} events
-              </div>
+              <div className="text-xs sm:text-sm font-medium">{day.day}</div>
+              <div className="text-xl sm:text-2xl font-bold text-center">{day.date}</div>
+              
             </div>
           ))}
         </div>
 
         {/* Selected Date Events */}
-        <div className="bg-gray-800 rounded-lg p-6">
-          <h2 className="text-2xl font-bold text-white mb-6">
+        <div className="bg-gray-800 rounded-lg p-4 sm:p-6">
+          <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6">
             Events for {format(parseISO(selectedDate), "EEEE, MMMM d, yyyy")}
           </h2>
           
           {selectedDateEvents.length === 0 ? (
-            <p className="text-gray-400 text-center py-8">No events scheduled for this date</p>
+            <p className="text-gray-400 text-center py-6 sm:py-8">No events scheduled for this date</p>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               {selectedDateEvents.map((event) => (
-                <div key={event.id} className="bg-gray-700 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-lg font-semibold text-white">{event.title}</h3>
-                    <span className="text-sm text-gray-400">{event.time}</span>
+                <div key={event.id} className="bg-gray-700 rounded-lg p-3 sm:p-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2">
+                    <h3 className="text-base sm:text-lg font-semibold text-white">{event.title}</h3>
+                    <span className="text-sm text-gray-400 mt-1 sm:mt-0">{event.time}</span>
                   </div>
-                  <p className="text-gray-300 mb-2">{event.description}</p>
-                  <div className="flex items-center gap-4 text-sm text-gray-400 mb-3">
+                  <p className="text-sm sm:text-base text-gray-300 mb-2">{event.description}</p>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-gray-400 mb-3">
                     <span>{event.projectName}</span>
+                    <span className="hidden sm:inline">•</span>
                     <span>{event.eventType}</span>
                     {event.link && (
-                      <a href={event.link} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">
-                        <FiLink className="w-4 h-4 inline mr-1" />
-                        Link
-                      </a>
+                      <>
+                        <span className="hidden sm:inline">•</span>
+                        <a href={event.link} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">
+                          <FiLink className="w-4 h-4 inline mr-1" />
+                          Link
+                        </a>
+                      </>
                     )}
                   </div>
                   
                   {/* Event Actions */}
-                  <div className="flex items-center gap-4">
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-4">
                     <button
                       onClick={() => handleEngagement(event, "like")}
-                      className={`flex items-center gap-1 px-3 py-1 rounded ${
+                      className={`flex items-center gap-1 px-2 sm:px-3 py-1 rounded text-sm ${
                         event.reactions.likes.includes(user?.uid || "")
                           ? "bg-blue-600 text-white"
                           : "bg-gray-600 text-gray-300 hover:bg-gray-500"
                       }`}
                     >
-                      <FiThumbsUp className="w-4 h-4" />
+                      <FiThumbsUp className="w-3 h-3 sm:w-4 sm:h-4" />
                       {event.reactions.likes.length}
                     </button>
                     
                     <button
                       onClick={() => handleEngagement(event, "dislike")}
-                      className={`flex items-center gap-1 px-3 py-1 rounded ${
+                      className={`flex items-center gap-1 px-2 sm:px-3 py-1 rounded text-sm ${
                         event.reactions.dislikes.includes(user?.uid || "")
                           ? "bg-red-600 text-white"
                           : "bg-gray-600 text-gray-300 hover:bg-gray-500"
                       }`}
                     >
-                      <FiThumbsDown className="w-4 h-4" />
+                      <FiThumbsDown className="w-3 h-3 sm:w-4 sm:h-4" />
                       {event.reactions.dislikes.length}
                     </button>
                     
                     <button
                       onClick={() => handleRSVP(event)}
-                      className={`flex items-center gap-1 px-3 py-1 rounded ${
+                      className={`flex items-center gap-1 px-2 sm:px-3 py-1 rounded text-sm ${
                         event.reactions.rsvps.includes(user?.uid || "")
                           ? "bg-green-600 text-white"
                           : "bg-gray-600 text-gray-300 hover:bg-gray-500"
                       }`}
                     >
-                      <FiBell className="w-4 h-4" />
+                      <FiBell className="w-3 h-3 sm:w-4 sm:h-4" />
                       RSVP ({event.reactions.rsvps.length})
                     </button>
                     
@@ -837,9 +866,9 @@ export default function CalendarPage() {
                         setDiscussionEvent(event);
                         setShowDiscussionPanel(true);
                       }}
-                      className="flex items-center gap-1 px-3 py-1 bg-gray-600 text-gray-300 rounded hover:bg-gray-500"
+                      className="flex items-center gap-1 px-2 sm:px-3 py-1 bg-gray-600 text-gray-300 rounded text-sm hover:bg-gray-500"
                     >
-                      <FiMessageSquare className="w-4 h-4" />
+                      <FiMessageSquare className="w-3 h-3 sm:w-4 sm:h-4" />
                       Comments ({event.reactions.comments.length})
                     </button>
                   </div>
@@ -857,23 +886,25 @@ export default function CalendarPage() {
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
-            className="fixed top-0 right-0 h-full w-96 bg-gray-900 border-l border-gray-700 p-6 overflow-y-auto z-50"
+            className={`fixed top-0 right-0 h-full bg-gray-900 border-l border-gray-700 p-4 sm:p-6 overflow-y-auto z-50 ${
+              isMobile ? 'w-full' : 'w-96'
+            }`}
           >
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold text-white">Discussion</h3>
+              <h3 className="text-lg sm:text-xl font-bold text-white">Discussion</h3>
               <button
                 onClick={() => setShowDiscussionPanel(false)}
                 className="text-gray-400 hover:text-white"
               >
-                <FiX className="w-6 h-6" />
+                <FiX className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
             </div>
             
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               {discussionEvent.reactions.comments.map((comment, index) => (
                 <div key={index} className="bg-gray-800 p-3 rounded-lg">
-                  <p className="text-gray-300 text-sm">{comment.text}</p>
-                  <p className="text-gray-500 text-xs mt-1">
+                  <p className="text-sm text-gray-300">{comment.text}</p>
+                  <p className="text-xs text-gray-500 mt-1">
                     {format(comment.timestamp.toDate(), "MMM d, yyyy h:mm a")}
                   </p>
                 </div>
@@ -885,12 +916,12 @@ export default function CalendarPage() {
                     value={commentText}
                     onChange={(e) => setCommentText(e.target.value)}
                     placeholder="Add a comment..."
-                    className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400"
+                    className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 text-sm"
                     rows={3}
                   />
                   <button
                     onClick={() => handleCommentSubmit(discussionEvent)}
-                    className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
                   >
                     Post Comment
                   </button>
@@ -903,18 +934,18 @@ export default function CalendarPage() {
 
       {/* Add Event Modal */}
       {showAddEventModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto"
+            className="bg-gray-800 rounded-lg p-4 sm:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
           >
-            <h3 className="text-xl font-bold text-white mb-4">Add New Event</h3>
-            <div className="space-y-4">
+            <h3 className="text-lg sm:text-xl font-bold text-white mb-4">Add New Event</h3>
+            <div className="space-y-3 sm:space-y-4">
               <select
                 value={newEvent.projectId}
                 onChange={(e) => setNewEvent({ ...newEvent, projectId: e.target.value })}
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base"
               >
                 <option value="">Select Project</option>
                 {projects.map((project) => (
@@ -929,34 +960,34 @@ export default function CalendarPage() {
                 placeholder="Event Title"
                 value={newEvent.title}
                 onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base"
               />
               
               <textarea
                 placeholder="Event Description"
                 value={newEvent.description}
                 onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white h-24"
+                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white h-20 sm:h-24 text-sm sm:text-base"
               />
               
               <input
                 type="date"
                 value={newEvent.date}
                 onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })}
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base"
               />
               
               <input
                 type="time"
                 value={newEvent.time}
                 onChange={(e) => setNewEvent({ ...newEvent, time: e.target.value })}
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base"
               />
               
               <select
                 value={newEvent.eventType}
                 onChange={(e) => setNewEvent({ ...newEvent, eventType: e.target.value })}
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base"
               >
                 <option value="general">General</option>
                 <option value="ama">AMA</option>
@@ -970,19 +1001,19 @@ export default function CalendarPage() {
                 placeholder="Event Link (optional)"
                 value={newEvent.link}
                 onChange={(e) => setNewEvent({ ...newEvent, link: e.target.value })}
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base"
               />
               
-              <div className="flex gap-4">
+              <div className="flex gap-3 sm:gap-4">
                 <button
                   onClick={handleAddEvent}
-                  className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700"
+                  className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 text-sm sm:text-base"
                 >
                   Add Event
                 </button>
                 <button
                   onClick={() => setShowAddEventModal(false)}
-                  className="flex-1 bg-gray-600 text-white py-2 rounded-lg hover:bg-gray-700"
+                  className="flex-1 bg-gray-600 text-white py-2 rounded-lg hover:bg-gray-700 text-sm sm:text-base"
                 >
                   Cancel
                 </button>
@@ -994,13 +1025,13 @@ export default function CalendarPage() {
 
       {/* Submit Project Modal */}
       {showSubmitProjectModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto"
+            className="bg-gray-800 rounded-lg p-4 sm:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
           >
-            <h3 className="text-xl font-bold text-white mb-4">Submit New Project</h3>
+            <h3 className="text-lg sm:text-xl font-bold text-white mb-4">Submit New Project</h3>
             
             {/* Wallet Connection Status */}
             <div className={`p-3 rounded-lg mb-4 ${
@@ -1017,13 +1048,13 @@ export default function CalendarPage() {
               </div>
             </div>
             
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               <input
                 type="text"
                 placeholder="Project Name"
                 value={newProject.name}
                 onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base"
               />
               
               <input
@@ -1031,14 +1062,14 @@ export default function CalendarPage() {
                 placeholder="Ticker"
                 value={newProject.ticker}
                 onChange={(e) => setNewProject({ ...newProject, ticker: e.target.value })}
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base"
               />
               
               <textarea
                 placeholder="Project Description"
                 value={newProject.description}
                 onChange={(e) => setNewProject({ ...newProject, description: e.target.value })}
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white h-24"
+                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white h-20 sm:h-24 text-sm sm:text-base"
               />
               
               <input
@@ -1046,7 +1077,7 @@ export default function CalendarPage() {
                 placeholder="Contract Address"
                 value={newProject.contractAddress}
                 onChange={(e) => setNewProject({ ...newProject, contractAddress: e.target.value })}
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base"
               />
               
               <input
@@ -1054,7 +1085,7 @@ export default function CalendarPage() {
                 placeholder="Website"
                 value={newProject.website}
                 onChange={(e) => setNewProject({ ...newProject, website: e.target.value })}
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base"
               />
               
               <div className="space-y-2">
@@ -1062,7 +1093,7 @@ export default function CalendarPage() {
                   type="button"
                   onClick={handleVerifyOwnership}
                   disabled={isVerifyingOwnership || !walletAddress || !newProject.contractAddress.trim()}
-                  className={`w-full px-4 py-3 rounded-lg font-medium transition-colors ${
+                  className={`w-full px-3 sm:px-4 py-3 rounded-lg font-medium transition-colors text-sm sm:text-base ${
                     signature 
                       ? 'bg-green-600 text-white cursor-default' 
                       : isVerifyingOwnership 
@@ -1090,16 +1121,16 @@ export default function CalendarPage() {
                 )}
               </div>
               
-              <div className="flex gap-4">
+              <div className="flex gap-3 sm:gap-4">
                 <button
                   onClick={handleSubmitProject}
-                  className="flex-1 bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700"
+                  className="flex-1 bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 text-sm sm:text-base"
                 >
                   Submit Project
                 </button>
                 <button
                   onClick={() => setShowSubmitProjectModal(false)}
-                  className="flex-1 bg-gray-600 text-white py-2 rounded-lg hover:bg-gray-700"
+                  className="flex-1 bg-gray-600 text-white py-2 rounded-lg hover:bg-gray-700 text-sm sm:text-base"
                 >
                   Cancel
                 </button>

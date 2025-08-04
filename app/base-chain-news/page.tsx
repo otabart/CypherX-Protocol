@@ -138,6 +138,16 @@ export default function NewsPage() {
   const [newComments, setNewComments] = useState<Record<string, string>>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [showFilters, setShowFilters] = useState(false);
+  const [showAuthorModal, setShowAuthorModal] = useState(false);
+  const [authorApplication, setAuthorApplication] = useState({
+    name: '',
+    email: '',
+    bio: '',
+    writingExperience: '',
+    topics: '',
+    portfolio: '',
+    motivation: ''
+  });
 
   // ────────── Refs ──────────
   const searchRef = useRef<HTMLInputElement>(null);
@@ -205,8 +215,8 @@ export default function NewsPage() {
         // Fetch user stats
         const userStats = await fetchUserStats(walletAddress);
         setUserPoints(userStats.stats.points);
-        setLikedArticles(userStats.user?.likedArticles || []);
-        setDislikedArticles(userStats.user?.dislikedArticles || []);
+        setLikedArticles(userStats.user?.likedArticles || [] as string[]);
+        setDislikedArticles(userStats.user?.dislikedArticles || [] as string[]);
         setRecentActivities(userStats.activities);
 
         // Fetch leaderboard
@@ -219,6 +229,15 @@ export default function NewsPage() {
 
     fetchUserData();
   }, [user, walletAddress]);
+
+  // Auto-refresh comments every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refreshComments();
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
+  }, []);
 
   // ────────── Event Handlers ──────────
   const handleArticleClick = async (slug: string) => {
@@ -254,6 +273,10 @@ export default function NewsPage() {
             ? { ...a, upvotes: (a.upvotes || 0) - 1 }
             : a
         ));
+        // Update featured article if it's the same article
+        if (featuredArticle && featuredArticle.slug === article.slug) {
+          setFeaturedArticle(prev => prev ? { ...prev, upvotes: (prev.upvotes || 0) - 1 } : null);
+        }
       } else {
         // Like - remove dislike if exists
         if (isDisliked) {
@@ -263,6 +286,10 @@ export default function NewsPage() {
               ? { ...a, downvotes: (a.downvotes || 0) - 1 }
               : a
           ));
+          // Update featured article if it's the same article
+          if (featuredArticle && featuredArticle.slug === article.slug) {
+            setFeaturedArticle(prev => prev ? { ...prev, downvotes: (prev.downvotes || 0) - 1 } : null);
+          }
         }
         
         const result = await interactWithArticle(article.slug, 'like', user.uid, walletAddress);
@@ -273,6 +300,10 @@ export default function NewsPage() {
             ? { ...a, upvotes: (a.upvotes || 0) + 1 }
             : a
         ));
+        // Update featured article if it's the same article
+        if (featuredArticle && featuredArticle.slug === article.slug) {
+          setFeaturedArticle(prev => prev ? { ...prev, upvotes: (prev.upvotes || 0) + 1 } : null);
+        }
         
         if (result.pointsEarned > 0) {
           addToast(`Article liked! +${result.pointsEarned} points`, 'success');
@@ -303,6 +334,10 @@ export default function NewsPage() {
             ? { ...a, downvotes: (a.downvotes || 0) - 1 }
             : a
         ));
+        // Update featured article if it's the same article
+        if (featuredArticle && featuredArticle.slug === article.slug) {
+          setFeaturedArticle(prev => prev ? { ...prev, downvotes: (prev.downvotes || 0) - 1 } : null);
+        }
       } else {
         // Add dislike - remove like if exists
         if (isLiked) {
@@ -312,6 +347,10 @@ export default function NewsPage() {
               ? { ...a, upvotes: (a.upvotes || 0) - 1 }
               : a
           ));
+          // Update featured article if it's the same article
+          if (featuredArticle && featuredArticle.slug === article.slug) {
+            setFeaturedArticle(prev => prev ? { ...prev, upvotes: (prev.upvotes || 0) - 1 } : null);
+          }
         }
         
         await interactWithArticle(article.slug, 'dislike', user.uid, walletAddress);
@@ -322,6 +361,10 @@ export default function NewsPage() {
             ? { ...a, downvotes: (a.downvotes || 0) + 1 }
             : a
         ));
+        // Update featured article if it's the same article
+        if (featuredArticle && featuredArticle.slug === article.slug) {
+          setFeaturedArticle(prev => prev ? { ...prev, downvotes: (prev.downvotes || 0) + 1 } : null);
+        }
       }
     } catch (error) {
       console.error('Error toggling dislike:', error);
@@ -368,6 +411,11 @@ export default function NewsPage() {
           : a
       ));
       
+      // Update featured article if it's the same article
+      if (featuredArticle && featuredArticle.slug === slug) {
+        setFeaturedArticle(prev => prev ? { ...prev, comments: [...(prev.comments || []), comment] } : null);
+      }
+      
       setNewComments(prev => ({ ...prev, [slug]: '' }));
       addToast(`Comment sent! +${result.pointsEarned} points`, 'success');
     } catch (error) {
@@ -382,6 +430,81 @@ export default function NewsPage() {
     setTimeout(() => {
       setToasts(prev => prev.filter(toast => toast.id !== id));
     }, 5000);
+  };
+
+  const handleAuthorApplication = async () => {
+    if (!user) {
+      addToast('Please log in to apply', 'error');
+      return;
+    }
+
+    // Validate required fields
+    if (!authorApplication.name.trim() || !authorApplication.email.trim() || !authorApplication.bio.trim()) {
+      addToast('Please fill in all required fields', 'error');
+      return;
+    }
+
+    try {
+      // Here you would typically send the application to your backend
+      // For now, we'll just show a success message
+      addToast('Application submitted successfully! We\'ll review and get back to you soon.', 'success');
+      setShowAuthorModal(false);
+      setAuthorApplication({
+        name: '',
+        email: '',
+        bio: '',
+        writingExperience: '',
+        topics: '',
+        portfolio: '',
+        motivation: ''
+      });
+    } catch (error) {
+      console.error('Error submitting application:', error);
+      addToast('Failed to submit application. Please try again.', 'error');
+    }
+  };
+
+  const refreshComments = async () => {
+    try {
+      // Fetch updated articles to get latest comments
+      const articlesRef = collection(db, 'articles');
+      const q = query(articlesRef, orderBy('publishedAt', 'desc'));
+      const querySnapshot = await getDocs(q);
+      
+      const updatedArticles: NewsArticle[] = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        updatedArticles.push({
+          id: doc.id,
+          title: data.title || '',
+          content: data.content || '',
+          author: data.author || '',
+          source: data.source || '',
+          publishedAt: data.publishedAt,
+          slug: data.slug || '',
+          category: data.category || 'General',
+          views: data.views || 0,
+          upvotes: data.upvotes || 0,
+          downvotes: data.downvotes || 0,
+          comments: data.comments || [],
+          updatedAt: data.updatedAt || '',
+          thumbnail: data.thumbnail || '',
+          excerpt: data.excerpt || truncateAtWord(data.content || '', 200)
+        });
+      });
+
+      setArticles(updatedArticles);
+      
+      // Update featured article
+      if (updatedArticles.length > 0) {
+        const featured = updatedArticles.reduce((prev, current) => 
+          (current.views || 0) > (prev.views || 0) ? current : prev
+        );
+        setFeaturedArticle(featured);
+      }
+    } catch (error) {
+      console.error('Error refreshing comments:', error);
+    }
   };
 
   // ────────── Filtered Articles ──────────
@@ -450,12 +573,12 @@ export default function NewsPage() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-12"
+          className="text-center mb-8 sm:mb-12"
         >
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white mb-4">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold text-white mb-3 sm:mb-4">
             Base Chain News
           </h1>
-          <p className="text-xl text-gray-300 max-w-2xl mx-auto">
+          <p className="text-lg sm:text-xl text-gray-300 max-w-2xl mx-auto px-4">
             Stay updated with the latest developments, protocols, and insights from the Base ecosystem
           </p>
         </motion.div>
@@ -465,29 +588,29 @@ export default function NewsPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="mb-8"
+          className="mb-6 sm:mb-8"
         >
-          <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
+          <div className="flex flex-col sm:flex-row gap-4 items-stretch justify-between">
             {/* Search Bar */}
-            <div className="relative flex-1 max-w-md">
-              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <div className="relative flex-1">
+              <MagnifyingGlassIcon className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
                 ref={searchRef}
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search articles..."
-                className="w-full pl-10 pr-4 py-3 bg-gray-800/50 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-12 pr-4 py-4 bg-gray-800/50 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base min-h-[56px]"
               />
             </div>
 
             {/* Filter Toggle */}
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center gap-2 px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-lg text-white hover:bg-gray-700/50 transition-colors"
+              className="flex items-center justify-center gap-2 px-6 py-4 bg-gray-800/50 border border-gray-700 rounded-lg text-white hover:bg-gray-700/50 transition-colors min-h-[56px]"
             >
               <FunnelIcon className="w-5 h-5" />
-              Filters
+              <span className="text-base">Filters</span>
             </button>
           </div>
 
@@ -498,13 +621,13 @@ export default function NewsPage() {
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
-                className="mt-4 p-4 bg-gray-800/30 rounded-lg border border-gray-700"
+                className="mt-4 p-4 sm:p-6 bg-gray-800/30 rounded-lg border border-gray-700"
               >
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   <select
                     value={filterCategory}
                     onChange={(e) => setFilterCategory(e.target.value)}
-                    className="px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base min-h-[48px]"
                   >
                     <option value="">All Categories</option>
                     {categories.map(category => (
@@ -515,7 +638,7 @@ export default function NewsPage() {
                   <select
                     value={filterAuthor}
                     onChange={(e) => setFilterAuthor(e.target.value)}
-                    className="px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base min-h-[48px]"
                   >
                     <option value="">All Authors</option>
                     {authors.map(author => (
@@ -526,7 +649,7 @@ export default function NewsPage() {
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as 'date' | 'views' | 'upvotes')}
-                    className="px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base min-h-[48px]"
                   >
                     <option value="date">Sort by Date</option>
                     <option value="views">Sort by Views</option>
@@ -552,7 +675,7 @@ export default function NewsPage() {
 
         {/* Content */}
         {!loading && (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 sm:gap-8">
             {/* Main Content */}
             <div className="lg:col-span-3">
               {/* Featured Article */}
@@ -561,11 +684,11 @@ export default function NewsPage() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.2 }}
-                  className="mb-8"
+                  className="mb-6 sm:mb-8"
                 >
                   <div className="bg-gray-800/30 rounded-xl overflow-hidden border border-gray-700 hover:border-gray-600 transition-colors">
                     {featuredArticle.thumbnail && (
-                      <div className="relative h-64 sm:h-80">
+                      <div className="relative h-48 sm:h-64 lg:h-80">
                         <Image
                           src={featuredArticle.thumbnail}
                           alt={featuredArticle.title}
@@ -582,7 +705,7 @@ export default function NewsPage() {
                       </div>
                     )}
                     
-                    <div className="p-6">
+                    <div className="p-4 sm:p-6">
                       <div className="flex items-center gap-2 mb-3">
                         <span className="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs rounded">
                           {featuredArticle.category}
@@ -592,15 +715,15 @@ export default function NewsPage() {
                         </span>
                       </div>
                       
-                      <h2 className="text-2xl font-bold text-white mb-3">
+                      <h2 className="text-xl sm:text-2xl font-bold text-white mb-3">
                         {featuredArticle.title}
                       </h2>
                       
-                      <p className="text-gray-300 mb-4">
+                      <p className="text-gray-300 mb-4 text-sm sm:text-base">
                         {featuredArticle.excerpt || truncateAtWord(featuredArticle.content, 200)}
                       </p>
                       
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div className="flex items-center gap-4">
                           <div className="flex items-center gap-2">
                             <UserIcon className="w-4 h-4 text-gray-400" />
@@ -612,22 +735,20 @@ export default function NewsPage() {
                           </div>
                         </div>
                         
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleArticleClick(featuredArticle.slug)}
-                            className="px-6 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 transform hover:scale-105 font-medium shadow-lg hover:shadow-xl"
-                          >
-                            Read Article →
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => handleArticleClick(featuredArticle.slug)}
+                          className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 transform hover:scale-105 font-medium shadow-lg hover:shadow-xl text-base"
+                        >
+                          Read Article →
+                        </button>
                       </div>
 
                       {/* Article Actions */}
-                      <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-700">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mt-4 pt-4 border-t border-gray-700">
                         <div className="flex items-center gap-4">
                           <button
                             onClick={() => toggleLike(featuredArticle)}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 transform hover:scale-105 ${
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 transform hover:scale-105 ${
                               likedArticles.includes(featuredArticle.slug)
                                 ? 'bg-green-500/20 text-green-400 border border-green-500/30'
                                 : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 border border-transparent'
@@ -636,12 +757,12 @@ export default function NewsPage() {
                             <HeartIcon className={`w-4 h-4 transition-all duration-200 ${
                               likedArticles.includes(featuredArticle.slug) ? 'fill-current' : ''
                             }`} />
-                            <span>{featuredArticle.upvotes || 0}</span>
+                            <span className="text-sm">{featuredArticle.upvotes || 0}</span>
                           </button>
                           
                           <button
                             onClick={() => toggleDislike(featuredArticle)}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 transform hover:scale-105 ${
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 transform hover:scale-105 ${
                               dislikedArticles.includes(featuredArticle.slug)
                                 ? 'bg-red-500/20 text-red-400 border border-red-500/30'
                                 : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 border border-transparent'
@@ -650,20 +771,20 @@ export default function NewsPage() {
                             <HandThumbDownIcon className={`w-4 h-4 transition-all duration-200 ${
                               dislikedArticles.includes(featuredArticle.slug) ? 'fill-current' : ''
                             }`} />
-                            <span>{featuredArticle.downvotes || 0}</span>
+                            <span className="text-sm">{featuredArticle.downvotes || 0}</span>
                           </button>
                         </div>
                         
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => shareArticle(featuredArticle, 'x')}
-                            className="px-3 py-2 bg-gray-700/50 text-gray-300 rounded-lg hover:bg-gray-600/50 transition-all duration-200 transform hover:scale-105"
+                            className="px-4 py-2 bg-gray-700/50 text-gray-300 rounded-lg hover:bg-gray-600/50 transition-all duration-200 transform hover:scale-105 text-sm"
                           >
                             Share X
                           </button>
                           <button
                             onClick={() => shareArticle(featuredArticle, 'telegram')}
-                            className="px-3 py-2 bg-gray-700/50 text-gray-300 rounded-lg hover:bg-gray-600/50 transition-all duration-200 transform hover:scale-105"
+                            className="px-4 py-2 bg-gray-700/50 text-gray-300 rounded-lg hover:bg-gray-600/50 transition-all duration-200 transform hover:scale-105 text-sm"
                           >
                             Share TG
                           </button>
@@ -677,7 +798,7 @@ export default function NewsPage() {
                             placeholder="Add a comment..."
                             value={newComments[featuredArticle.slug] || ""}
                             onChange={(e) => setNewComments(prev => ({ ...prev, [featuredArticle.slug]: e.target.value }))}
-                            className="w-full px-3 py-2 pr-12 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                            className="w-full px-4 py-3 pr-12 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
                             rows={2}
                           />
                           <button
@@ -704,7 +825,7 @@ export default function NewsPage() {
               )}
 
               {/* Articles Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                 {sortedArticles.slice(1).map((article, index) => (
                   <motion.div
                     key={article.slug}
@@ -714,7 +835,7 @@ export default function NewsPage() {
                     className="bg-gray-800/30 rounded-xl overflow-hidden border border-gray-700 hover:border-gray-600 transition-colors"
                   >
                     {article.thumbnail && (
-                      <div className="relative h-48">
+                      <div className="relative h-40 sm:h-48">
                         <Image
                           src={article.thumbnail}
                           alt={article.title}
@@ -726,7 +847,7 @@ export default function NewsPage() {
                       </div>
                     )}
                     
-                    <div className="p-6">
+                    <div className="p-4 sm:p-6">
                       <div className="flex items-center gap-2 mb-3">
                         <span className="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs rounded">
                           {article.category}
@@ -736,15 +857,15 @@ export default function NewsPage() {
                         </span>
                       </div>
                       
-                      <h3 className="text-xl font-bold text-white mb-3 line-clamp-2">
+                      <h3 className="text-lg sm:text-xl font-bold text-white mb-3 line-clamp-2">
                         {article.title}
                       </h3>
                       
-                      <p className="text-gray-300 mb-4 line-clamp-3">
+                      <p className="text-gray-300 mb-4 line-clamp-3 text-sm sm:text-base">
                         {article.excerpt || truncateAtWord(article.content, 150)}
                       </p>
                       
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div className="flex items-center gap-4">
                           <div className="flex items-center gap-2">
                             <UserIcon className="w-4 h-4 text-gray-400" />
@@ -756,22 +877,20 @@ export default function NewsPage() {
                           </div>
                         </div>
                         
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleArticleClick(article.slug)}
-                            className="px-6 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 transform hover:scale-105 font-medium shadow-lg hover:shadow-xl"
-                          >
-                            Read Article →
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => handleArticleClick(article.slug)}
+                          className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 transform hover:scale-105 font-medium shadow-lg hover:shadow-xl text-base"
+                        >
+                          Read Article →
+                        </button>
                       </div>
 
                       {/* Article Actions */}
-                      <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-700">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mt-4 pt-4 border-t border-gray-700">
                         <div className="flex items-center gap-4">
                           <button
                             onClick={() => toggleLike(article)}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 transform hover:scale-105 ${
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 transform hover:scale-105 ${
                               likedArticles.includes(article.slug)
                                 ? 'bg-green-500/20 text-green-400 border border-green-500/30'
                                 : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 border border-transparent'
@@ -780,12 +899,12 @@ export default function NewsPage() {
                             <HeartIcon className={`w-4 h-4 transition-all duration-200 ${
                               likedArticles.includes(article.slug) ? 'fill-current' : ''
                             }`} />
-                            <span>{article.upvotes || 0}</span>
+                            <span className="text-sm">{article.upvotes || 0}</span>
                           </button>
                           
                           <button
                             onClick={() => toggleDislike(article)}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 transform hover:scale-105 ${
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 transform hover:scale-105 ${
                               dislikedArticles.includes(article.slug)
                                 ? 'bg-red-500/20 text-red-400 border border-red-500/30'
                                 : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 border border-transparent'
@@ -794,20 +913,20 @@ export default function NewsPage() {
                             <HandThumbDownIcon className={`w-4 h-4 transition-all duration-200 ${
                               dislikedArticles.includes(article.slug) ? 'fill-current' : ''
                             }`} />
-                            <span>{article.downvotes || 0}</span>
+                            <span className="text-sm">{article.downvotes || 0}</span>
                           </button>
                         </div>
                         
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => shareArticle(article, 'x')}
-                            className="px-3 py-2 bg-gray-700/50 text-gray-300 rounded-lg hover:bg-gray-600/50 transition-all duration-200 transform hover:scale-105"
+                            className="px-4 py-2 bg-gray-700/50 text-gray-300 rounded-lg hover:bg-gray-600/50 transition-all duration-200 transform hover:scale-105 text-sm"
                           >
                             Share X
                           </button>
                           <button
                             onClick={() => shareArticle(article, 'telegram')}
-                            className="px-3 py-2 bg-gray-700/50 text-gray-300 rounded-lg hover:bg-gray-600/50 transition-all duration-200 transform hover:scale-105"
+                            className="px-4 py-2 bg-gray-700/50 text-gray-300 rounded-lg hover:bg-gray-600/50 transition-all duration-200 transform hover:scale-105 text-sm"
                           >
                             Share TG
                           </button>
@@ -821,7 +940,7 @@ export default function NewsPage() {
                             placeholder="Add a comment..."
                             value={newComments[article.slug] || ""}
                             onChange={(e) => setNewComments(prev => ({ ...prev, [article.slug]: e.target.value }))}
-                            className="w-full px-3 py-2 pr-12 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                            className="w-full px-4 py-3 pr-12 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
                             rows={2}
                           />
                           <button
@@ -856,7 +975,7 @@ export default function NewsPage() {
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.3 }}
-                  className="bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-xl p-6 border border-purple-500/30"
+                  className="bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-xl p-4 sm:p-6 border border-purple-500/30"
                 >
                   <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
                     <UserIcon className="w-5 h-5 text-purple-400" />
@@ -865,7 +984,10 @@ export default function NewsPage() {
                   <p className="text-gray-300 text-sm mb-4">
                     Share your insights about Base Chain and earn rewards. Join our community of writers!
                   </p>
-                  <button className="w-full px-4 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg hover:from-purple-600 hover:to-blue-600 transition-all duration-200 transform hover:scale-105 font-medium">
+                  <button 
+                    onClick={() => setShowAuthorModal(true)}
+                    className="w-full px-4 py-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg hover:from-purple-600 hover:to-blue-600 transition-all duration-200 transform hover:scale-105 font-medium text-base"
+                  >
                     Apply Now
                   </button>
                 </motion.div>
@@ -875,7 +997,7 @@ export default function NewsPage() {
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.35 }}
-                  className="bg-gray-800/30 rounded-xl p-6 border border-gray-700 min-h-[200px] flex items-center justify-center"
+                  className="bg-gray-800/30 rounded-xl p-4 sm:p-6 border border-gray-700 min-h-[200px] flex items-center justify-center"
                 >
                   <div className="text-center">
                     <div className="w-16 h-16 bg-gray-700/50 rounded-lg flex items-center justify-center mx-auto mb-3">
@@ -892,7 +1014,7 @@ export default function NewsPage() {
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.4 }}
-                    className="bg-gray-800/30 rounded-xl p-6 border border-gray-700"
+                    className="bg-gray-800/30 rounded-xl p-4 sm:p-6 border border-gray-700"
                   >
                     <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                       <TrophyIcon className="w-5 h-5 text-yellow-400" />
@@ -901,15 +1023,15 @@ export default function NewsPage() {
                     
                     <div className="space-y-3">
                       <div className="flex justify-between items-center">
-                        <span className="text-gray-300">Points</span>
+                        <span className="text-gray-300 text-sm">Points</span>
                         <span className="text-white font-bold">{userPoints.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-gray-300">Liked Articles</span>
+                        <span className="text-gray-300 text-sm">Liked Articles</span>
                         <span className="text-white">{likedArticles.length}</span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-gray-300">Rank</span>
+                        <span className="text-gray-300 text-sm">Rank</span>
                         <span className="text-white">#{leaderboard.find(entry => entry.walletAddress === walletAddress)?.rank || 'N/A'}</span>
                       </div>
                     </div>
@@ -921,7 +1043,7 @@ export default function NewsPage() {
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.5 }}
-                  className="bg-gray-800/30 rounded-xl p-6 border border-gray-700"
+                  className="bg-gray-800/30 rounded-xl p-4 sm:p-6 border border-gray-700"
                 >
                   <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                     <FireIcon className="w-5 h-5 text-orange-400" />
@@ -956,7 +1078,7 @@ export default function NewsPage() {
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.6 }}
-                    className="bg-gray-800/30 rounded-xl p-6 border border-gray-700"
+                    className="bg-gray-800/30 rounded-xl p-4 sm:p-6 border border-gray-700"
                   >
                     <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                       <ClockIcon className="w-5 h-5 text-blue-400" />
@@ -982,6 +1104,133 @@ export default function NewsPage() {
           </div>
         )}
       </main>
+
+      {/* Author Application Modal */}
+      <AnimatePresence>
+        {showAuthorModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-gray-800 rounded-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-white">Apply to be an Author</h2>
+                <button
+                  onClick={() => setShowAuthorModal(false)}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-gray-300 text-sm font-medium mb-2">Full Name *</label>
+                    <input
+                      type="text"
+                      value={authorApplication.name}
+                      onChange={(e) => setAuthorApplication(prev => ({ ...prev, name: e.target.value }))}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Your full name"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-gray-300 text-sm font-medium mb-2">Email *</label>
+                    <input
+                      type="email"
+                      value={authorApplication.email}
+                      onChange={(e) => setAuthorApplication(prev => ({ ...prev, email: e.target.value }))}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="your.email@example.com"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-gray-300 text-sm font-medium mb-2">Bio *</label>
+                  <textarea
+                    value={authorApplication.bio}
+                    onChange={(e) => setAuthorApplication(prev => ({ ...prev, bio: e.target.value }))}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows={3}
+                    placeholder="Tell us about yourself and your background"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-gray-300 text-sm font-medium mb-2">Writing Experience</label>
+                  <textarea
+                    value={authorApplication.writingExperience}
+                    onChange={(e) => setAuthorApplication(prev => ({ ...prev, writingExperience: e.target.value }))}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows={3}
+                    placeholder="Describe your writing experience and any published work"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-gray-300 text-sm font-medium mb-2">Topics of Interest</label>
+                  <textarea
+                    value={authorApplication.topics}
+                    onChange={(e) => setAuthorApplication(prev => ({ ...prev, topics: e.target.value }))}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows={2}
+                    placeholder="What topics would you like to write about? (e.g., DeFi, NFTs, Layer 2, etc.)"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-gray-300 text-sm font-medium mb-2">Portfolio/Previous Work</label>
+                  <textarea
+                    value={authorApplication.portfolio}
+                    onChange={(e) => setAuthorApplication(prev => ({ ...prev, portfolio: e.target.value }))}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows={2}
+                    placeholder="Links to your previous articles, blog, or writing samples"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-gray-300 text-sm font-medium mb-2">Why do you want to write for Base Chain News?</label>
+                  <textarea
+                    value={authorApplication.motivation}
+                    onChange={(e) => setAuthorApplication(prev => ({ ...prev, motivation: e.target.value }))}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows={3}
+                    placeholder="Tell us why you're interested in contributing to our platform"
+                  />
+                </div>
+
+                <div className="flex gap-4 pt-4">
+                  <button
+                    onClick={handleAuthorApplication}
+                    className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg hover:from-purple-600 hover:to-blue-600 transition-all duration-200 font-medium"
+                  >
+                    Submit Application
+                  </button>
+                  <button
+                    onClick={() => setShowAuthorModal(false)}
+                    className="flex-1 px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all duration-200 font-medium"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <Footer />
     </div>

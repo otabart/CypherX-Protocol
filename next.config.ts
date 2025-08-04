@@ -39,11 +39,13 @@ const nextConfig = {
             key: "Content-Security-Policy",
             value: `
               default-src 'self';
-              script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googleapis.com https://*.gstatic.com;
-              connect-src 'self' https://*.googleapis.com https://*.dexscreener.com https://*.geckoterminal.com https://base-mainnet.g.alchemy.com wss://base-mainnet.g.alchemy.com https://api.coingecko.com http://localhost:3000 https://metamask-sdk.api.cx.metamask.io wss://metamask-sdk.api.cx.metamask.io;
-              img-src 'self' data: https://i.imgur.com https://images.typeform.com https://landing.coingecko.com https://upload.wikimedia.org https://res.cloudinary.com https://www.google.com https://img.icons8.com https://www.alchemy.com https://lh7-us.googleusercontent.com https://elitecity.io https://images.mirror-media.xyz https://www.datocms-assets.com https://www.apple.com https://assets.coingecko.com https://www.coingecko.com https://dd.dexscreener.com https://images.seeklogo.com https://firebasestorage.googleapis.com https://cdn.dexscreener.com https://scontent-iad4-1.choicecdn.com https://dexscreener.com https://tba-social.mypinata.cloud;
-              style-src 'self' 'unsafe-inline' https://use.typekit.net https://fonts.googleapis.com;
-              font-src 'self' data: https://fonts.gstatic.com;
+              script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googleapis.com https://*.gstatic.com https://*.tradingview.com;
+              connect-src 'self' https://*.googleapis.com https://*.dexscreener.com https://*.geckoterminal.com https://base-mainnet.g.alchemy.com wss://base-mainnet.g.alchemy.com https://api.coingecko.com http://localhost:3000 https://metamask-sdk.api.cx.metamask.io wss://metamask-sdk.api.cx.metamask.io https://*.tradingview.com;
+              img-src 'self' data: https://i.imgur.com https://images.typeform.com https://landing.coingecko.com https://upload.wikimedia.org https://res.cloudinary.com https://www.google.com https://img.icons8.com https://www.alchemy.com https://lh7-us.googleusercontent.com https://elitecity.io https://images.mirror-media.xyz https://www.datocms-assets.com https://www.apple.com https://assets.coingecko.com https://www.coingecko.com https://dd.dexscreener.com https://images.seeklogo.com https://firebasestorage.googleapis.com https://cdn.dexscreener.com https://scontent-iad4-1.choicecdn.com https://dexscreener.com https://tba-social.mypinata.cloud https://*.tradingview.com;
+              style-src 'self' 'unsafe-inline' https://use.typekit.net https://fonts.googleapis.com https://*.tradingview.com;
+              font-src 'self' data: https://fonts.gstatic.com https://*.tradingview.com;
+              frame-src 'self' https://*.tradingview.com;
+              child-src 'self' https://*.tradingview.com;
             `.replace(/\s+/g, " ").trim(),
           },
         ],

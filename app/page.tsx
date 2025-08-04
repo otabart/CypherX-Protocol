@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import Head from "next/head";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import Image from "next/image";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
 
@@ -81,6 +82,17 @@ function formatNumber(num: string | number | undefined) {
   return `$${n.toLocaleString()}`;
 }
 
+function truncateName(name: string, isMobile: boolean) {
+  if (!name) return "";
+  if (isMobile && name.length > 12) {
+    return name.substring(0, 12) + "...";
+  }
+  if (!isMobile && name.length > 20) {
+    return name.substring(0, 20) + "...";
+  }
+  return name;
+}
+
 function getTokenTags(token: TrendingToken) {
   const tags: string[] = [];
   
@@ -132,7 +144,7 @@ const TagBadge = ({ tag }: { tag: string }) => {
   };
 
   return (
-    <span className={`px-1.5 py-0.5 text-xs rounded-full border ${getTagColor(tag)}`}>
+    <span className={`px-1.5 py-0.5 text-xs rounded-full border ${getTagColor(tag)} whitespace-nowrap overflow-hidden text-ellipsis max-w-[60px] sm:max-w-[80px]`}>
       {tag}
     </span>
   );
@@ -201,7 +213,7 @@ export default function Page() {
           }
         }
         
-        setTrendingTokens(processedTokens.slice(0, 5)); // Show top 5
+        setTrendingTokens(processedTokens.slice(0, 7)); // Show top 7
         setErrorTokens("");
       } catch (err) {
         console.error('Error fetching trending tokens:', err);
@@ -250,98 +262,87 @@ export default function Page() {
         <meta property="og:image" content="https://i.imgur.com/mlPQazY.png" />
         <style>{`
           @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono&display=swap');
-          .fog {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: radial-gradient(circle, rgba(27, 33, 45, 0.2) 0%, rgba(15, 23, 42, 0.4) 70%);
-            animation: fogFlow 10s infinite linear alternate;
-            pointer-events: none;
-          }
-          @keyframes fogFlow {
-            0% { transform: translate(0, 0) scale(1); opacity: 0.3; }
-            50% { transform: translate(-5%, -5%) scale(1.1); opacity: 0.5; }
-            100% { transform: translate(5%, 5%) scale(1); opacity: 0.3; }
-          }
         `}</style>
       </Head>
 
-      <Header />
+      <div className="min-h-screen flex flex-col bg-gray-950">
+        <Header />
 
-      <main className="flex flex-col min-h-screen bg-gray-900 text-gray-200 p-4 sm:p-6 lg:p-8">
-        {/* Hero Section */}
-        <motion.div className="mb-12 text-center" {...fadeInUp(0)}>
-          <div className="relative">
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-blue-600/10 to-blue-400/10 blur-3xl"></div>
-            <div className="relative">
-              <h1 className="text-4xl sm:text-6xl font-bold text-gray-100 mb-3 tracking-tight">
-                CypherX
-              </h1>
-              <p className="text-lg sm:text-xl text-gray-300 mb-8 max-w-2xl mx-auto leading-relaxed">
-                The Intelligence Layer for Base Chain
-              </p>
-              <div className="flex flex-wrap justify-center gap-6 mb-8">
-                <div className="flex items-center space-x-3 bg-gradient-to-r from-blue-500/20 to-blue-600/20 px-6 py-3 rounded-xl border border-blue-500/30 backdrop-blur-sm">
-                  <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-                  <span className="text-sm font-semibold text-gray-200">Live Data</span>
-                </div>
-                <div className="flex items-center space-x-3 bg-gradient-to-r from-purple-500/20 to-purple-600/20 px-6 py-3 rounded-xl border border-purple-500/30 backdrop-blur-sm">
-                  <div className="w-3 h-3 bg-purple-400 rounded-full animate-pulse"></div>
-                  <span className="text-sm font-semibold text-gray-200">AI Powered</span>
-                </div>
-                <div className="flex items-center space-x-3 bg-gradient-to-r from-cyan-500/20 to-cyan-600/20 px-6 py-3 rounded-xl border border-cyan-500/30 backdrop-blur-sm">
-                  <div className="w-3 h-3 bg-cyan-400 rounded-full animate-pulse"></div>
-                  <span className="text-sm font-semibold text-gray-200">Real-time</span>
-                </div>
-              </div>
-              <div className="flex justify-center">
-                <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 p-4 rounded-2xl border border-blue-500/20 backdrop-blur-sm">
-                  <p className="text-sm text-gray-400 max-w-2xl">
-                    Discover, analyze, and trade tokens with advanced analytics, real-time data, and AI-powered insights
+        <main className="flex-1 text-gray-200 p-4 sm:p-6 lg:p-8 relative">
+          {/* Smooth background gradient */}
+          <div className="fixed inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 -z-10"></div>
+          <div className="fixed inset-0 bg-gradient-to-tr from-blue-950/40 via-transparent to-blue-900/20 -z-10"></div>
+          <div className="fixed inset-0 bg-gradient-to-bl from-slate-950/30 via-transparent to-blue-950/30 -z-10"></div>
+          <div className="relative z-10">
+            {/* Hero Section */}
+            <motion.div className="mb-12 text-center" {...fadeInUp(0)}>
+              <div className="relative">
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-blue-600/10 to-blue-400/10 blur-3xl"></div>
+                <div className="relative">
+                  <h1 className="text-4xl sm:text-6xl font-bold text-gray-100 mb-3 tracking-tight">
+                    CypherX
+                  </h1>
+                  <p className="text-lg sm:text-xl text-gray-300 mb-8 max-w-2xl mx-auto leading-relaxed">
+                    The Intelligence Layer for Base Chain
                   </p>
+                  <div className="flex flex-wrap justify-center gap-6 mb-8">
+                    <div className="flex items-center space-x-3 bg-gradient-to-r from-blue-500/20 to-blue-600/20 px-6 py-3 rounded-xl border border-blue-500/30 backdrop-blur-sm">
+                      <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+                      <span className="text-sm font-semibold text-gray-200">Live Data</span>
+                    </div>
+                    <div className="flex items-center space-x-3 bg-gradient-to-r from-purple-500/20 to-purple-600/20 px-6 py-3 rounded-xl border border-purple-500/30 backdrop-blur-sm">
+                      <div className="w-3 h-3 bg-purple-400 rounded-full animate-pulse"></div>
+                      <span className="text-sm font-semibold text-gray-200">AI Powered</span>
+                    </div>
+                    <div className="flex items-center space-x-3 bg-gradient-to-r from-cyan-500/20 to-cyan-600/20 px-6 py-3 rounded-xl border border-cyan-500/30 backdrop-blur-sm">
+                      <div className="w-3 h-3 bg-cyan-400 rounded-full animate-pulse"></div>
+                      <span className="text-sm font-semibold text-gray-200">Real-time</span>
+                    </div>
+                  </div>
+                  <div className="flex justify-center">
+                    <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 p-4 rounded-2xl border border-blue-500/20 backdrop-blur-sm">
+                      <p className="text-sm text-gray-400 max-w-2xl">
+                        Discover, analyze, and trade tokens with advanced analytics, real-time data, and AI-powered insights
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
+            </motion.div>
+
+            {/* Top Row - Equal Height Cards */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 mb-8">
+              <motion.div className="flex flex-col h-full" {...fadeInUp(0)}>
+                <div className="flex-1">
+                  <TopPerformingCoins />
+                </div>
+              </motion.div>
+
+              <motion.div className="flex flex-col h-full" {...fadeInUp(0.1)}>
+                <div className="flex-1">
+                  <CypherscopeTrendingTokens
+                    tokens={trendingTokens}
+                    loading={loadingTokens}
+                    error={errorTokens}
+                  />
+                </div>
+              </motion.div>
             </div>
+
+            {/* Indexes Section */}
+            <motion.div className="mb-8" {...fadeInUp(0.2)}>
+              <BaseAiIndex />
+            </motion.div>
+
+            {/* Latest News Section */}
+            <motion.div className="mb-8" {...fadeInUp(0.4)}>
+              <LatestNews articles={latestArticles} isMobile={isMobile} loading={loadingNews} error={errorNews} />
+            </motion.div>
           </div>
-        </motion.div>
+        </main>
 
-
-
-        {/* Top Row - Equal Height Cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 mb-8">
-          <motion.div className="flex flex-col h-full" {...fadeInUp(0)}>
-            <div className="flex-1">
-              <TopPerformingCoins />
-            </div>
-          </motion.div>
-
-          <motion.div className="flex flex-col h-full" {...fadeInUp(0.1)}>
-            <div className="flex-1">
-              <CypherscopeTrendingTokens
-                tokens={trendingTokens}
-                loading={loadingTokens}
-                error={errorTokens}
-              />
-            </div>
-          </motion.div>
-        </div>
-
-        {/* Indexes Section */}
-        <motion.div className="mb-8" {...fadeInUp(0.2)}>
-          <BaseAiIndex />
-        </motion.div>
-
-
-
-        {/* Latest News Section */}
-        <motion.div {...fadeInUp(0.4)}>
-          <LatestNews articles={latestArticles} isMobile={isMobile} loading={loadingNews} error={errorNews} />
-        </motion.div>
-      </main>
-
-      <Footer />
+        <Footer />
+      </div>
     </>
   );
 }
@@ -355,31 +356,32 @@ function CypherscopeTrendingTokens({
   loading: boolean;
   error: string;
 }) {
+  const isMobile = useIsMobile();
   if (loading) {
     return (
       <motion.div
         className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl shadow-lg p-4 sm:p-6 border border-blue-500/30 flex flex-col h-full min-h-[400px]"
         {...fadeInUp(0.1)}
       >
-        <div className="flex justify-between items-center mb-4 sm:mb-6">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500/30 to-blue-600/30 rounded-xl flex items-center justify-center border border-blue-500/30">
-              <svg className="w-5 h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="flex justify-between items-center mb-3 sm:mb-6">
+          <div className="flex items-center space-x-2 sm:space-x-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500/30 to-blue-600/30 rounded-xl flex items-center justify-center border border-blue-500/30">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
               </svg>
             </div>
             <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-gray-200">Memescope</h2>
-              <p className="text-sm text-gray-400">Discover trending tokens</p>
+              <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-200">Memescope</h2>
+              <p className="text-xs sm:text-sm text-gray-400">Discover trending tokens</p>
             </div>
           </div>
-          <div className="flex space-x-2">
-            <div className="h-6 w-16 bg-gray-800 rounded animate-pulse" />
-            <div className="h-6 w-16 bg-gray-800 rounded animate-pulse" />
+          <div className="flex space-x-1 sm:space-x-2">
+            <div className="h-5 sm:h-6 w-12 sm:w-16 bg-gray-800 rounded animate-pulse" />
+            <div className="h-5 sm:h-6 w-12 sm:w-16 bg-gray-800 rounded animate-pulse" />
           </div>
         </div>
         <div className="space-y-3 flex-grow">
-          {[1, 2, 3, 4, 5].map((i) => (
+          {[1, 2, 3, 4, 5, 6, 7].map((i) => (
             <div key={i} className="h-16 bg-gray-800 rounded-lg animate-pulse" />
           ))}
         </div>
@@ -413,36 +415,36 @@ function CypherscopeTrendingTokens({
       className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl shadow-lg p-4 sm:p-6 border border-blue-500/30 flex flex-col h-full min-h-[400px]"
       {...fadeInUp(0.1)}
     >
-      <div className="flex justify-between items-center mb-4 sm:mb-6">
-                  <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500/30 to-blue-600/30 rounded-xl flex items-center justify-center border border-blue-500/30">
-              <svg className="w-5 h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
-              </svg>
-            </div>
+      <div className="flex justify-between items-center mb-3 sm:mb-6">
+        <div className="flex items-center space-x-2 sm:space-x-3">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500/30 to-blue-600/30 rounded-xl flex items-center justify-center border border-blue-500/30">
+            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
+            </svg>
+          </div>
           <div>
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-200">Memescope</h2>
-            <p className="text-sm text-gray-400">Discover trending tokens</p>
+            <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-200">Memescope</h2>
+            <p className="text-xs sm:text-sm text-gray-400">Discover trending tokens</p>
           </div>
         </div>
-                  <div className="flex items-center space-x-2">
-            <span className="bg-blue-500/20 px-2 py-1 rounded-md border border-blue-500/30 text-sm">
-              {tokens.length} Tokens
-            </span>
-            <span className="bg-green-500/20 px-2 py-1 rounded-md border border-green-500/30 text-sm">
-              Live Data
-            </span>
-            <Link href="/cypherscope" className="text-blue-400 hover:text-blue-300 text-sm font-medium transition-colors">
-              View All →
-            </Link>
-          </div>
+        <div className="flex items-center space-x-1 sm:space-x-2">
+          <span className="bg-blue-500/20 px-1.5 sm:px-2 py-1 rounded-md border border-blue-500/30 text-xs sm:text-sm">
+            {tokens.length} Tokens
+          </span>
+          <span className="bg-green-500/20 px-1.5 sm:px-2 py-1 rounded-md border border-green-500/30 text-xs sm:text-sm">
+            Live Data
+          </span>
+          <Link href="/cypherscope" className="text-blue-400 hover:text-blue-300 text-xs sm:text-sm font-medium transition-colors">
+            {isMobile ? "View All" : "View All →"}
+          </Link>
+        </div>
       </div>
       <div className="space-y-3 flex-grow">
         {tokens.length ? (
-          tokens.map((token) => (
+          tokens.slice(0, isMobile ? 5 : 7).map((token) => (
             <motion.div
               key={token.id}
-              className="bg-gradient-to-br from-gray-800 to-gray-700 rounded-xl p-4 border border-blue-500/20 group cursor-pointer relative"
+              className="bg-gradient-to-br from-gray-800 to-gray-700 rounded-xl p-3 sm:p-4 border border-blue-500/20 group cursor-pointer relative"
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3, ease: "easeOut" }}
@@ -454,53 +456,51 @@ function CypherscopeTrendingTokens({
                 </div>
               )}
               <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center space-x-3">
-                  <div className="relative">
-                    <img 
+                <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
+                  <div className="relative flex-shrink-0">
+                    <Image 
                       src={token.mediaContent?.previewImage?.small || `https://dexscreener.com/base/${token.address || ''}/logo.png`}
                       alt={token.name || "Token"}
-                      className="w-8 h-8 rounded-full object-cover border border-purple-500/30 transition-colors"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.src = `https://dexscreener.com/base/${token.address || ''}/logo.png`;
-                      }}
+                      width={32}
+                      height={32}
+                      className="w-6 h-6 sm:w-8 sm:h-8 rounded-full object-cover border border-purple-500/30 transition-colors"
                     />
-                    <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-gray-800"></div>
+                    <div className="absolute -bottom-1 -right-1 w-2 h-2 sm:w-3 sm:h-3 bg-green-400 rounded-full border-2 border-gray-800"></div>
                   </div>
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-sm font-bold text-gray-200">{token.name}</span>
-                      <span className="text-xs text-gray-400">({token.symbol})</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center space-x-1 sm:space-x-2">
+                      <span className="text-xs sm:text-sm font-bold text-gray-200 truncate">{truncateName(token.name, isMobile)}</span>
+                      <span className="text-xs text-gray-400 flex-shrink-0">({token.symbol})</span>
                     </div>
-                    <div className="text-xs text-gray-500 font-mono">
+                    <div className="text-xs text-gray-500 font-mono truncate">
                       {token.address?.slice(0, 6)}...{token.address?.slice(-4)}
                     </div>
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-1">
-                  {token.tags.slice(0, 2).map((tag) => (
+                <div className="flex flex-wrap gap-1 flex-shrink-0 ml-2">
+                  {token.tags.slice(0, isMobile ? 1 : 2).map((tag) => (
                     <TagBadge key={tag} tag={tag} />
                   ))}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3 mb-3">
-                <div className="bg-gray-800/50 rounded-lg p-2">
+              <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-2 sm:mb-3">
+                <div className="bg-gray-800/50 rounded-lg p-1.5 sm:p-2">
                   <div className="text-xs text-gray-400 mb-1">Market Cap</div>
-                  <div className="text-sm font-bold text-gray-200">{formatNumber(token.marketCap)}</div>
+                  <div className="text-xs sm:text-sm font-bold text-gray-200 truncate">{formatNumber(token.marketCap)}</div>
                 </div>
-                <div className="bg-gray-800/50 rounded-lg p-2">
+                <div className="bg-gray-800/50 rounded-lg p-1.5 sm:p-2">
                   <div className="text-xs text-gray-400 mb-1">24h Volume</div>
-                  <div className="text-sm font-bold text-gray-200">{formatNumber(token.volume24h)}</div>
+                  <div className="text-xs sm:text-sm font-bold text-gray-200 truncate">{formatNumber(token.volume24h)}</div>
                 </div>
               </div>
               <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-1 sm:space-x-2">
                   <span className="text-gray-400">Holders:</span>
-                  <span className="text-gray-200 font-semibold">{token.uniqueHolders || "N/A"}</span>
+                  <span className="text-gray-200 font-semibold truncate">{token.uniqueHolders || "N/A"}</span>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-1 sm:space-x-2">
                   <span className="text-gray-400">Price:</span>
-                  <span className="text-gray-200 font-semibold">
+                  <span className="text-gray-200 font-semibold truncate">
                     {token.tokenPrice?.priceInUsdc && parseFloat(token.tokenPrice.priceInUsdc) > 0 
                       ? `$${parseFloat(token.tokenPrice.priceInUsdc).toFixed(6)}` 
                       : "N/A"}
@@ -513,9 +513,9 @@ function CypherscopeTrendingTokens({
                     href={`https://dexscreener.com/base/${token.address}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-blue-400 hover:text-blue-300 text-xs transition-colors inline-flex items-center gap-1 bg-blue-500/10 px-2 py-1 rounded"
+                    className="text-blue-400 hover:text-blue-300 text-xs transition-colors inline-flex items-center gap-1 bg-blue-500/10 px-1.5 sm:px-2 py-1 rounded"
                   >
-                    Chart
+                    {isMobile ? "Chart" : "Chart"}
                     <svg className="w-2 h-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
                     </svg>
@@ -524,9 +524,9 @@ function CypherscopeTrendingTokens({
                     href={`https://baseswap.fi/swap?inputCurrency=0x4200000000000000000000000000000000000006&outputCurrency=${token.address}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-green-400 hover:text-green-300 text-xs transition-colors inline-flex items-center gap-1 bg-green-500/10 px-2 py-1 rounded"
+                    className="text-green-400 hover:text-green-300 text-xs transition-colors inline-flex items-center gap-1 bg-green-500/10 px-1.5 sm:px-2 py-1 rounded"
                   >
-                    Quick Buy
+                    {isMobile ? "Buy" : "Quick Buy"}
                     <svg className="w-2 h-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                     </svg>
@@ -543,7 +543,7 @@ function CypherscopeTrendingTokens({
             </motion.div>
           ))
         ) : (
-          [1, 2, 3, 4, 5].map((i) => (
+          [1, 2, 3, 4, 5, 6, 7].map((i) => (
             <div key={i} className="h-16 bg-gray-800 rounded-lg animate-pulse" />
           ))
         )}

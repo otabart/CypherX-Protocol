@@ -5,8 +5,12 @@ interface LeaderboardEntry {
   walletAddress: string;
   points: number;
   rank?: number;
-  lastUpdated?: any;
-  createdAt?: any;
+  lastUpdated?: Date | string;
+  createdAt?: Date | string;
+}
+
+interface FirestoreTimestamp {
+  toDate: () => Date;
 }
 
 // GET - Fetch leaderboard
@@ -49,8 +53,12 @@ export async function GET(request: Request) {
         user: {
           ...userData,
           rank: userRank,
-          lastUpdated: userData.lastUpdated?.toDate?.()?.toISOString() || userData.lastUpdated,
-          createdAt: userData.createdAt?.toDate?.()?.toISOString() || userData.createdAt,
+          lastUpdated: typeof userData.lastUpdated === 'object' && userData.lastUpdated !== null && 'toDate' in userData.lastUpdated 
+            ? (userData.lastUpdated as FirestoreTimestamp).toDate().toISOString() 
+            : userData.lastUpdated,
+          createdAt: typeof userData.createdAt === 'object' && userData.createdAt !== null && 'toDate' in userData.createdAt 
+            ? (userData.createdAt as FirestoreTimestamp).toDate().toISOString() 
+            : userData.createdAt,
         }
       });
     }
@@ -63,13 +71,17 @@ export async function GET(request: Request) {
     const querySnapshot = await leaderboardQuery.get();
     const leaderboard: LeaderboardEntry[] = [];
     
-    querySnapshot.docs.forEach((doc: any, index: number) => {
+    querySnapshot.docs.forEach((doc, index: number) => {
       const data = doc.data() as LeaderboardEntry;
       leaderboard.push({
         ...data,
         rank: index + 1,
-        lastUpdated: data.lastUpdated?.toDate?.()?.toISOString() || data.lastUpdated,
-        createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt,
+        lastUpdated: typeof data.lastUpdated === 'object' && data.lastUpdated !== null && 'toDate' in data.lastUpdated 
+          ? (data.lastUpdated as FirestoreTimestamp).toDate().toISOString() 
+          : data.lastUpdated,
+        createdAt: typeof data.createdAt === 'object' && data.createdAt !== null && 'toDate' in data.createdAt 
+          ? (data.createdAt as FirestoreTimestamp).toDate().toISOString() 
+          : data.createdAt,
       });
     });
 

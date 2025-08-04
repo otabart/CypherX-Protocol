@@ -8,6 +8,18 @@ import { useState, useEffect } from "react";
 import { fetchAllTokenData, getTopPerformingCoins, type TokenData } from "@/lib/fetchTokenData";
 import toast from "react-hot-toast"; // Added for error toasts
 
+// Custom hook for mobile detection
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+  return isMobile;
+}
+
 
 // ====== HELPER FUNCTION ======
 const abbreviateNumber = (number: number | undefined) => {
@@ -24,6 +36,7 @@ const TopPerformingCoins = () => {
   const [topCoins, setTopCoins] = useState<TokenData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     const loadTokens = async () => {
@@ -73,7 +86,7 @@ const TopPerformingCoins = () => {
           </div>
         </div>
         <div className="space-y-4 flex-grow">
-          {Array.from({ length: 10 }).map((_, i) => (
+          {Array.from({ length: isMobile ? 5 : 10 }).map((_, i) => (
             <div key={i} className="h-16 sm:h-20 bg-gray-800 rounded-lg animate-pulse" />
           ))}
         </div>
@@ -143,7 +156,7 @@ const TopPerformingCoins = () => {
           <span className="text-center">Action</span>
         </div>
         
-        {topCoins.slice(0, 10).map((coin, index) => (
+        {topCoins.slice(0, isMobile ? 5 : 10).map((coin, index) => (
           <motion.div
             key={coin.poolAddress}
             className="bg-gradient-to-br from-gray-800 to-gray-700 p-3 rounded-lg border-l-4 border-blue-400 transition-all duration-300 hover:bg-gray-700 hover:border-blue-300 hover:shadow-xl"
@@ -269,12 +282,28 @@ export default TopPerformingCoins;
 // Add CSS for pulsing animation
 const styles = `
   @keyframes pulse-live {
-    0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
-    70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+    0% { 
+      transform: scale(1);
+      opacity: 1;
+    }
+    50% { 
+      transform: scale(1.02);
+      opacity: 0.8;
+    }
+    100% { 
+      transform: scale(1);
+      opacity: 1;
+    }
   }
   .animate-pulse-live {
-    animation: pulse-live 1.5s infinite;
+    animation: pulse-live 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    will-change: transform, opacity;
+  }
+  
+  @media (max-width: 768px) {
+    .animate-pulse-live {
+      animation: none;
+    }
   }
 `;
 

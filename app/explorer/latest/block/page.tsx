@@ -234,26 +234,26 @@ export default function CypherScanPage() {
         >
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-4xl font-bold text-white mb-2 flex items-center">
-                <FiDatabase className="w-8 h-8 mr-3 text-blue-400" />
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-2 flex items-center">
+                <FiDatabase className="w-6 h-6 sm:w-8 sm:h-8 mr-2 sm:mr-3 text-blue-400" />
                 Block Explorer
               </h1>
-              <p className="text-gray-400">Real-time blockchain data from Base network</p>
+              <p className="text-gray-400 text-sm sm:text-base">Real-time blockchain data from Base network</p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               <button
                 onClick={() => setShowStats(!showStats)}
                 className="p-2 bg-gray-800 rounded-lg text-gray-300 hover:bg-gray-700 transition-colors"
                 title="Toggle Statistics"
               >
-                <FiBarChart className="w-5 h-5" />
+                <FiBarChart className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
               <button
                 onClick={() => setViewMode(viewMode === "list" ? "grid" : "list")}
                 className="p-2 bg-gray-800 rounded-lg text-gray-300 hover:bg-gray-700 transition-colors"
                 title={`Switch to ${viewMode === "list" ? "Grid" : "List"} View`}
               >
-                {viewMode === "list" ? <FiGrid className="w-5 h-5" /> : <FiList className="w-5 h-5" />}
+                {viewMode === "list" ? <FiGrid className="w-4 h-4 sm:w-5 sm:h-5" /> : <FiList className="w-4 h-4 sm:w-5 sm:h-5" />}
               </button>
             </div>
           </div>
@@ -266,20 +266,20 @@ export default function CypherScanPage() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8"
+              className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8"
             >
               <motion.div
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.1 }}
-                className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg p-6 text-white"
+                className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg p-4 sm:p-6 text-white"
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-blue-200 text-sm font-medium">Latest Block</p>
-                    <p className="text-2xl font-bold">{latestBlockNumber.toLocaleString()}</p>
+                    <p className="text-blue-200 text-xs sm:text-sm font-medium">Latest Block</p>
+                    <p className="text-lg sm:text-xl lg:text-2xl font-bold">{latestBlockNumber.toLocaleString()}</p>
                   </div>
-                  <FiHash className="w-8 h-8 text-blue-200" />
+                  <FiHash className="w-6 h-6 sm:w-8 sm:h-8 text-blue-200" />
                 </div>
               </motion.div>
 
@@ -287,14 +287,14 @@ export default function CypherScanPage() {
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.2 }}
-                className="bg-gradient-to-r from-green-600 to-green-700 rounded-lg p-6 text-white"
+                className="bg-gradient-to-r from-green-600 to-green-700 rounded-lg p-4 sm:p-6 text-white"
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-green-200 text-sm font-medium">Total Transactions</p>
-                    <p className="text-2xl font-bold">{totalTransactions.toLocaleString()}</p>
+                    <p className="text-green-200 text-xs sm:text-sm font-medium">Total Transactions</p>
+                    <p className="text-lg sm:text-xl lg:text-2xl font-bold">{totalTransactions.toLocaleString()}</p>
                   </div>
-                  <FiActivity className="w-8 h-8 text-green-200" />
+                  <FiActivity className="w-6 h-6 sm:w-8 sm:h-8 text-green-200" />
                 </div>
               </motion.div>
 
@@ -302,14 +302,14 @@ export default function CypherScanPage() {
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.3 }}
-                className="bg-gradient-to-r from-purple-600 to-purple-700 rounded-lg p-6 text-white"
+                className="bg-gradient-to-r from-purple-600 to-purple-700 rounded-lg p-4 sm:p-6 text-white"
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-purple-200 text-sm font-medium">Avg Transactions</p>
-                    <p className="text-2xl font-bold">{averageTransactions}</p>
+                    <p className="text-purple-200 text-xs sm:text-sm font-medium">Avg Transactions</p>
+                    <p className="text-lg sm:text-xl lg:text-2xl font-bold">{averageTransactions}</p>
                   </div>
-                  <FiActivity className="w-8 h-8 text-purple-200" />
+                  <FiActivity className="w-6 h-6 sm:w-8 sm:h-8 text-purple-200" />
                 </div>
               </motion.div>
 
@@ -317,14 +317,14 @@ export default function CypherScanPage() {
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.4 }}
-                className="bg-gradient-to-r from-orange-600 to-orange-700 rounded-lg p-6 text-white"
+                className="bg-gradient-to-r from-orange-600 to-orange-700 rounded-lg p-4 sm:p-6 text-white"
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-orange-200 text-sm font-medium">Blocks Loaded</p>
-                    <p className="text-2xl font-bold">{blocks.length}</p>
+                    <p className="text-orange-200 text-xs sm:text-sm font-medium">Blocks Loaded</p>
+                    <p className="text-lg sm:text-xl lg:text-2xl font-bold">{blocks.length}</p>
                   </div>
-                  <FiZap className="w-8 h-8 text-orange-200" />
+                  <FiZap className="w-6 h-6 sm:w-8 sm:h-8 text-orange-200" />
                 </div>
               </motion.div>
             </motion.div>

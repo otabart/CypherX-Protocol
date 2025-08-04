@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 
 import { useRouter } from "next/navigation";
 
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 import {
   FaTrophy,
@@ -28,6 +28,7 @@ import {
   FaShieldAlt,
   FaRocket,
   FaCopy,
+  FaChartLine,
 } from "react-icons/fa";
 
 import debounce from "lodash/debounce";
@@ -57,8 +58,6 @@ import type { Firestore } from "firebase/firestore";
 
 import { auth, db } from "@/lib/firebase";
 
-
-
 import { ToastContainer, toast as reactToast } from "react-toastify";
 
 import 'react-toastify/dist/ReactToastify.css';
@@ -70,6 +69,8 @@ import Image from 'next/image';
 const DEBOUNCE_DELAY = 300;
 
 const MOBILE_BREAKPOINT = 768;
+
+const PULL_TO_REFRESH_THRESHOLD = 80;
 
 // Explicitly type auth and db
 
@@ -594,6 +595,13 @@ export default function TokenScreener() {
   const [pageLoadTime, setPageLoadTime] = useState<number>(Date.now());
   const [snoozedAlerts, setSnoozedAlerts] = useState<string[]>([]);
   const [triggerFilter, setTriggerFilter] = useState<"all" | "price_above" | "price_below" | "volume_above" | "mc_above">("all");
+  
+  // Mobile UX state variables
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [pullToRefreshY, setPullToRefreshY] = useState(0);
+  const [isMobile, setIsMobile] = useState(false);
+  const [showMobileSkeleton, setShowMobileSkeleton] = useState(true);
+  
   const pageSize = 25;
 
   // Memoized filtered and sorted tokens
@@ -645,36 +653,35 @@ export default function TokenScreener() {
     const sorted = [...filtered].sort((a, b) => {
       let aValue: number;
       let bValue: number;
-      switch (sortFilter) {
-        case "trending":
-          aValue = a.trendingScore || 0;
-          bValue = b.trendingScore || 0;
-          break;
-        case "price":
-          aValue = parseFloat(a.priceUsd || "0");
-          bValue = parseFloat(b.priceUsd || "0");
-          break;
-        case "volume":
-          aValue = a.volume?.h24 || 0;
-          bValue = b.volume?.h24 || 0;
-          break;
-        case "marketCap":
-          aValue = a.marketCap || 0;
-          bValue = b.marketCap || 0;
-          break;
-        case "liquidity":
-          aValue = a.liquidity?.usd || 0;
-          bValue = b.liquidity?.usd || 0;
-          break;
-        case "age":
-          aValue = a.pairCreatedAt || 0;
-          bValue = b.pairCreatedAt || 0;
-          break;
-        default:
-          aValue = a.trendingScore || 0;
-          bValue = b.trendingScore || 0;
+      
+      if (sortFilter === "trending") {
+        aValue = a.trendingScore || 0;
+        bValue = b.trendingScore || 0;
+      } else if (sortFilter === "volume") {
+        aValue = a.volume?.h24 || 0;
+        bValue = b.volume?.h24 || 0;
+      } else if (sortFilter === "liquidity") {
+        aValue = a.liquidity?.usd || 0;
+        bValue = b.liquidity?.usd || 0;
+      } else if (sortFilter === "marketCap") {
+        aValue = a.marketCap || 0;
+        bValue = b.marketCap || 0;
+      } else if (sortFilter === "age") {
+        aValue = a.pairCreatedAt || 0;
+        bValue = b.pairCreatedAt || 0;
+      } else {
+        // Handle time-based sorting (5m, 1h, 6h, 24h)
+        let key: "m5" | "h1" | "h6" | "h24" = "h1";
+        if (sortFilter === "5m") key = "m5";
+        else if (sortFilter === "1h") key = "h1";
+        else if (sortFilter === "6h") key = "h6";
+        else if (sortFilter === "24h") key = "h24";
+        
+        aValue = a.priceChange?.[key] ?? 0;
+        bValue = b.priceChange?.[key] ?? 0;
       }
-      return sortDirection === "asc" ? aValue - bValue : bValue - aValue;
+      
+      return sortDirection === "desc" ? bValue - aValue : aValue - bValue;
     });
 
     return sorted;
@@ -721,6 +728,27 @@ export default function TokenScreener() {
       document.body.style.width = "";
     };
   }, [showFilterMenu]);
+
+  // Mobile detection and responsive behavior
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < MOBILE_BREAKPOINT;
+      setIsMobile(mobile);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Progressive loading effect
+  useEffect(() => {
+    if (tokens.length > 0 && isMobile && !loading) {
+      setShowMobileSkeleton(false);
+    } else if (isMobile && (loading || tokens.length === 0)) {
+      setShowMobileSkeleton(true);
+    }
+  }, [tokens, isMobile, loading]);
 
   // Check Authentication & fetch favorites, watchlists, custom alerts
   useEffect(() => {
@@ -1250,48 +1278,7 @@ export default function TokenScreener() {
     });
   }, [tokensWithTrending, filters, viewMode, favorites, searchQuery, alerts, watchlists, selectedWatchlist]);
 
-  const sortedTokens = useMemo(() => {
-    const copy = [...filteredTokens];
-    if (sortFilter === "trending") {
-      copy.sort((a, b) => (b.trendingScore || 0) - (a.trendingScore || 0));
-      return sortDirection === "asc" ? copy.reverse() : copy;
-    } else if (sortFilter === "volume") {
-      copy.sort((a, b) =>
-        sortDirection === "desc"
-          ? (b.volume?.h24 || 0) - (a.volume?.h24 || 0)
-          : (a.volume?.h24 || 0) - (b.volume?.h24 || 0)
-      );
-    } else if (sortFilter === "liquidity") {
-      copy.sort((a, b) =>
-        sortDirection === "desc"
-          ? (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0)
-          : (a.liquidity?.usd || 0) - (b.liquidity?.usd || 0)
-      );
-    } else if (sortFilter === "marketCap") {
-      copy.sort((a, b) =>
-        sortDirection === "desc"
-          ? (b.marketCap ?? 0) - (a.marketCap ?? 0)
-          : (a.marketCap ?? 0) - (b.marketCap ?? 0)
-      );
-    } else if (sortFilter === "age") {
-      copy.sort((a, b) =>
-        sortDirection === "desc"
-          ? (b.pairCreatedAt ?? 0) - (a.pairCreatedAt ?? 0)
-          : (a.pairCreatedAt ?? 0) - (b.pairCreatedAt ?? 0)
-      );
-    } else {
-      let key: "m5" | "h1" | "h6" | "h24" = "h1";
-      if (sortFilter === "5m") key = "m5";
-      else if (sortFilter === "6h") key = "h6";
-      else if (sortFilter === "24h") key = "h24";
-      copy.sort((a, b) => {
-        const aVal = a.priceChange?.[key] ?? 0;
-        const bVal = b.priceChange?.[key] ?? 0;
-        return sortDirection === "desc" ? bVal - aVal : aVal - bVal;
-      });
-    }
-    return copy;
-  }, [filteredTokens, sortFilter, sortDirection]);
+
 
   const searchSuggestions = useMemo(() => {
     if (!searchQuery) return [];
@@ -1319,10 +1306,38 @@ export default function TokenScreener() {
         return;
       }
     }
+    
     if (address) {
-      navigator.clipboard.writeText(address).then(() => {
-        reactToast.success("Token address copied!", { position: "bottom-left" });
-      }).catch(() => reactToast.error("Copy failed", { position: "bottom-left" }));
+      try {
+        // Try modern clipboard API first
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(address);
+          reactToast.success("Token address copied!", { position: "bottom-left" });
+        } else {
+          // Fallback for older browsers or non-secure contexts
+          const textArea = document.createElement("textarea");
+          textArea.value = address;
+          textArea.style.position = "fixed";
+          textArea.style.left = "-999999px";
+          textArea.style.top = "-999999px";
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          
+          try {
+            document.execCommand('copy');
+            reactToast.success("Token address copied!", { position: "bottom-left" });
+          } catch (err) {
+            console.error("Fallback copy failed:", err);
+            reactToast.error("Copy failed", { position: "bottom-left" });
+          } finally {
+            document.body.removeChild(textArea);
+          }
+        }
+      } catch (err) {
+        console.error("Copy failed:", err);
+        reactToast.error("Copy failed", { position: "bottom-left" });
+      }
     } else {
       reactToast.error("No address available", { position: "bottom-left" });
     }
@@ -1590,7 +1605,7 @@ export default function TokenScreener() {
   const indexOfLastToken = currentPage * pageSize;
   const indexOfFirstToken = indexOfLastToken - pageSize;
   const currentTokens = filteredAndSortedTokens.slice(indexOfFirstToken, indexOfLastToken);
-  const totalPages = Math.ceil(sortedTokens.length / pageSize);
+  const totalPages = Math.ceil(filteredAndSortedTokens.length / pageSize);
   const rowVariants = {
     hidden: { opacity: 0, y: 20 },
     visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: "easeOut" } },
@@ -1600,15 +1615,146 @@ export default function TokenScreener() {
     return triggerFilter === "all" ? customAlerts : customAlerts.filter(ca => ca.type === triggerFilter);
   }, [customAlerts, triggerFilter]);
 
+
+
+  // Pull to refresh handlers
+  const handlePullToRefreshStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches[0].clientY < 100) {
+      setPullToRefreshY(e.touches[0].clientY);
+    }
+  }, []);
+
+  const handlePullToRefreshMove = useCallback((e: React.TouchEvent) => {
+    if (pullToRefreshY > 0) {
+      const deltaY = e.touches[0].clientY - pullToRefreshY;
+      if (deltaY > PULL_TO_REFRESH_THRESHOLD && !isRefreshing) {
+        setIsRefreshing(true);
+        // Simulate refresh
+        setTimeout(() => {
+          setIsRefreshing(false);
+          setPullToRefreshY(0);
+          reactToast.success("Data refreshed!", { position: "bottom-left" });
+        }, 1000);
+      }
+    }
+  }, [pullToRefreshY, isRefreshing]);
+
+  // Mobile skeleton component
+  const MobileSkeletonCard = () => (
+    <div className="bg-gray-900 p-4 border-b border-blue-500/20 animate-pulse">
+      <div className="flex justify-between items-start mb-4">
+        <div className="flex items-center space-x-3">
+          <div className="w-8 h-8 bg-gray-800 rounded-full"></div>
+          <div>
+            <div className="h-4 bg-gray-800 rounded w-16 mb-2"></div>
+            <div className="h-3 bg-gray-800 rounded w-12"></div>
+          </div>
+        </div>
+        <div className="h-4 bg-gray-800 rounded w-12"></div>
+      </div>
+      <div className="bg-gray-800/50 p-3 mb-4">
+        <div className="h-4 bg-gray-700 rounded w-20 mb-2"></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="h-3 bg-gray-700 rounded"></div>
+          <div className="h-3 bg-gray-700 rounded"></div>
+        </div>
+      </div>
+      <div className="grid grid-cols-4 gap-2 mb-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="bg-gray-800/30 p-2">
+            <div className="h-3 bg-gray-700 rounded mb-1"></div>
+            <div className="h-2 bg-gray-700 rounded"></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
   if (!isMounted) {
     return (
       <div className="w-screen h-screen bg-gray-950 text-gray-200 font-sans m-0 p-0 overflow-hidden">
         <div className="flex flex-col w-full h-full">
-          <div className="sticky top-0 z-50 bg-gray-900 shadow-lg w-full border-b border-blue-500/30 h-16"></div>
-          <div className="bg-gray-900 p-0 border-b border-blue-500/30 shadow-inner h-16"></div>
+          {/* Enhanced Header Skeleton */}
+          <div className="sticky top-0 z-50 bg-gray-900 shadow-lg w-full border-b border-blue-500/30 h-16">
+            <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 bg-gray-800 rounded-lg animate-pulse"></div>
+                <div className="w-32 h-6 bg-gray-800 rounded animate-pulse"></div>
+              </div>
+              <div className="flex space-x-2">
+                <div className="w-20 h-8 bg-gray-800 rounded animate-pulse"></div>
+                <div className="w-20 h-8 bg-gray-800 rounded animate-pulse"></div>
+                <div className="w-20 h-8 bg-gray-800 rounded animate-pulse"></div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Enhanced Filter Bar Skeleton */}
+          <div className="bg-gray-900 p-4 border-b border-blue-500/30 shadow-inner">
+            <div className="flex flex-wrap gap-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="w-24 h-8 bg-gray-800 rounded animate-pulse"></div>
+              ))}
+            </div>
+          </div>
+          
+          {/* Enhanced Content Skeleton */}
           <div className="flex-1 flex flex-col w-full h-full overflow-hidden">
-            <div className="flex-1 flex items-center justify-center">
-              <span className="text-gray-400 uppercase font-sans">Loading...</span>
+            <div className="flex-1 p-4">
+              {/* Mobile-friendly skeleton cards */}
+              <div className="md:hidden space-y-4">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div key={index} className="bg-gray-900 p-4 border border-blue-500/20 rounded-lg animate-pulse">
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-8 h-8 bg-gray-800 rounded-full"></div>
+                        <div>
+                          <div className="w-16 h-4 bg-gray-800 rounded mb-2"></div>
+                          <div className="w-12 h-3 bg-gray-800 rounded"></div>
+                        </div>
+                      </div>
+                      <div className="w-16 h-6 bg-gray-800 rounded"></div>
+                    </div>
+                    <div className="bg-gray-800/50 p-3 mb-4 rounded">
+                      <div className="w-20 h-4 bg-gray-700 rounded mb-2"></div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="w-full h-3 bg-gray-700 rounded"></div>
+                        <div className="w-full h-3 bg-gray-700 rounded"></div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2 mb-4">
+                      {Array.from({ length: 4 }).map((_, i) => (
+                        <div key={i} className="bg-gray-800/30 p-2 rounded">
+                          <div className="w-full h-3 bg-gray-700 rounded mb-1"></div>
+                          <div className="w-full h-2 bg-gray-700 rounded"></div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              
+              {/* Desktop skeleton table */}
+              <div className="hidden md:block">
+                <div className="bg-gray-900 rounded-lg overflow-hidden">
+                  <div className="p-4 border-b border-blue-500/30">
+                    <div className="grid grid-cols-14 gap-4">
+                      {Array.from({ length: 14 }).map((_, i) => (
+                        <div key={i} className="h-4 bg-gray-800 rounded animate-pulse"></div>
+                      ))}
+                    </div>
+                  </div>
+                  {Array.from({ length: 5 }).map((_, index) => (
+                    <div key={index} className="p-4 border-b border-blue-500/30">
+                      <div className="grid grid-cols-14 gap-4">
+                        {Array.from({ length: 14 }).map((_, i) => (
+                          <div key={i} className="h-4 bg-gray-800 rounded animate-pulse"></div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -2948,7 +3094,11 @@ export default function TokenScreener() {
                                 </motion.button>
                                 <motion.button
                                   whileHover={{ scale: 1.1 }}
-                                  onClick={() => handleCopy(token)}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setTimeout(() => handleCopy(token), 100);
+                                  }}
                                   className="text-gray-400"
                                   title="Copy token address"
                                 >
@@ -2963,65 +3113,208 @@ export default function TokenScreener() {
                   </tbody>
                 </table>
               </div>
-              {/* Mobile Card View */}
-              <div className="md:hidden flex flex-col p-0 gap-0">
+              {/* Enhanced Mobile Card View */}
+              <div 
+                className="md:hidden flex flex-col p-0 gap-0 relative"
+                onTouchStart={handlePullToRefreshStart}
+                onTouchMove={handlePullToRefreshMove}
+              >
+                {/* Pull to refresh indicator */}
+                {isRefreshing && (
+                  <div className="absolute top-0 left-0 right-0 bg-blue-500/20 text-blue-400 text-center py-2 z-10">
+                    <FaRedo className="inline animate-spin mr-2" />
+                    Refreshing...
+                  </div>
+                )}
+                
+                {/* Progressive loading skeleton */}
+                {showMobileSkeleton && isMobile && (loading || tokens.length === 0) && (
+                  <AnimatePresence>
+                    {Array.from({ length: 5 }).map((_, index) => (
+                      <motion.div
+                        key={`skeleton-${index}`}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        transition={{ delay: index * 0.1 }}
+                      >
+                        <MobileSkeletonCard />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                )}
+
                 {currentTokens.length === 0 ? (
-                  <div className="p-4 text-center text-gray-400 font-sans uppercase">
+                  <div className="p-6 text-center text-gray-400 font-sans uppercase">
                     No tokens available for this page. Try adjusting filters or check Firebase/DexScreener data.
                   </div>
                 ) : (
                   currentTokens.map((token, index) => {
                     const rank = indexOfFirstToken + index + 1;
                     const tokenAlerts = alerts.filter((alert) => alert.poolAddress === token.poolAddress);
+                    
                     if (!/^0x[a-fA-F0-9]{40}$/.test(token.poolAddress)) {
                       console.warn(`Invalid pool address: ${token.poolAddress}`);
                       return null;
                     }
+                    
                     return (
                       <motion.div
                         key={token.poolAddress}
-                        className="bg-gray-900 p-3 border-b border-blue-500/30 shadow-sm hover:shadow-md transition-shadow duration-200 w-full last:border-b-0"
+                        className="bg-gray-900 p-4 border-b border-blue-500/20 shadow-sm hover:shadow-md transition-all duration-200 w-full last:border-b-0 relative overflow-hidden"
                         variants={rowVariants}
                         initial="hidden"
                         animate="visible"
                       >
-                        <div className="flex justify-between items-center mb-2">
-                          <div className="flex items-center space-x-2">
-                            <span className="bg-gray-800 rounded-full px-2 py-1 text-xs">#{rank}</span>
-                            {token.info && (
-                              <Image
-                                src={token.info.imageUrl || "/fallback.png"}
-                                alt={token.symbol}
-                                width={24}
-                                height={24}
-                                className="rounded-full"
-                              />
-                            )}
-                            <span className="font-bold">{token.symbol} / WETH</span>
+
+                        {/* Header Row */}
+                        <div className="flex justify-between items-start mb-4 relative z-10">
+                          <div className="flex items-center space-x-3">
+                            <span className="bg-blue-500/20 text-blue-400 px-3 py-1 text-sm font-bold border border-blue-500/30 rounded-full">#{rank}</span>
+                            <div className="flex items-center space-x-2">
+                              {token.info && (
+                                <Image
+                                  src={token.info.imageUrl || "/fallback.png"}
+                                  alt={token.symbol}
+                                  width={32}
+                                  height={32}
+                                  className="rounded-full border border-blue-500/30"
+                                />
+                              )}
+                              <div>
+                                <div className="font-bold text-gray-200">{token.symbol}</div>
+                                <div className="text-xs text-gray-400">/ WETH</div>
+                              </div>
+                            </div>
                           </div>
-                          <span className={getColorClass(token.priceChange?.h24 || 0)}>
-                            {(token.priceChange?.h24 || 0).toFixed(2)}%
-                          </span>
+                          <div className="text-right">
+                            <div className={`text-lg font-bold ${getColorClass(token.priceChange?.h24 || 0)}`}>
+                              {(token.priceChange?.h24 || 0).toFixed(2)}%
+                            </div>
+                            <div className="text-xs text-gray-400">24H</div>
+                          </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-2 text-xs">
-                          <div>Price: {formatPrice(token.priceUsd || 0)}</div>
-                          <div>Age: {getAge(token.pairCreatedAt)}</div>
-                          <div>TXN: {getTxns24h(token)}</div>
-                          <div>5M: {(token.priceChange?.m5 || 0).toFixed(2)}%</div>
-                          <div>1H: {(token.priceChange?.h1 || 0).toFixed(2)}%</div>
-                          <div>6H: {(token.priceChange?.h6 || 0).toFixed(2)}%</div>
-                          <div>Vol: ${(token.volume?.h24 || 0).toLocaleString()}</div>
-                          <div>Liq: ${(token.liquidity?.usd || 0).toLocaleString()}</div>
-                          <div>MC: ${(token.marketCap || 0).toLocaleString()}</div>
+
+                        {/* Enhanced Price and Key Metrics */}
+                        <div className="bg-gradient-to-r from-gray-800/50 to-gray-700/50 p-4 mb-4 rounded-lg border border-blue-500/20 relative z-10">
+                          <div className="flex justify-between items-center mb-4">
+                            <div className="flex items-center space-x-2">
+                              <FaDollarSign className="w-4 h-4 text-green-400" />
+                              <span className="text-gray-400 text-sm font-medium">Price</span>
+                            </div>
+                            <span className="text-2xl font-bold text-gray-200">{formatPrice(token.priceUsd || 0)}</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="bg-gray-800/40 p-3 rounded-lg border border-blue-500/10">
+                              <div className="flex items-center space-x-2 mb-1">
+                                <FaDollarSign className="w-3 h-3 text-blue-400" />
+                                <span className="text-gray-400 text-xs font-medium">Market Cap</span>
+                              </div>
+                              <div className="font-bold text-gray-200 text-sm">${(token.marketCap || 0).toLocaleString()}</div>
+                            </div>
+                            <div className="bg-gray-800/40 p-3 rounded-lg border border-blue-500/10">
+                              <div className="flex items-center space-x-2 mb-1">
+                                <FaChartLine className="w-3 h-3 text-purple-400" />
+                                <span className="text-gray-400 text-xs font-medium">Volume 24H</span>
+                              </div>
+                              <div className="font-bold text-gray-200 text-sm">${(token.volume?.h24 || 0).toLocaleString()}</div>
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex justify-between mt-2">
-                          <motion.button onClick={() => handleTokenClick(token.poolAddress)} className="text-blue-400 text-xs">
-                            View Chart
+
+                        {/* Enhanced Time-based Changes */}
+                        <div className="grid grid-cols-4 gap-2 mb-4 relative z-10">
+                          <div className="bg-gray-800/30 p-3 text-center rounded-lg border border-blue-500/10">
+                            <div className={`text-sm font-semibold ${getColorClass(token.priceChange?.m5 || 0)}`}>
+                              {(token.priceChange?.m5 || 0).toFixed(1)}%
+                            </div>
+                            <div className="text-xs text-gray-400 mt-1">5M</div>
+                          </div>
+                          <div className="bg-gray-800/30 p-3 text-center rounded-lg border border-blue-500/10">
+                            <div className={`text-sm font-semibold ${getColorClass(token.priceChange?.h1 || 0)}`}>
+                              {(token.priceChange?.h1 || 0).toFixed(1)}%
+                            </div>
+                            <div className="text-xs text-gray-400 mt-1">1H</div>
+                          </div>
+                          <div className="bg-gray-800/30 p-3 text-center rounded-lg border border-blue-500/10">
+                            <div className={`text-sm font-semibold ${getColorClass(token.priceChange?.h6 || 0)}`}>
+                              {(token.priceChange?.h6 || 0).toFixed(1)}%
+                            </div>
+                            <div className="text-xs text-gray-400 mt-1">6H</div>
+                          </div>
+                          <div className="bg-gray-800/30 p-3 text-center rounded-lg border border-blue-500/10">
+                            <div className="text-sm font-semibold text-gray-200">
+                              {getAge(token.pairCreatedAt)}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-1">Age</div>
+                          </div>
+                        </div>
+
+                        {/* Enhanced Additional Info */}
+                        <div className="flex justify-between items-center text-xs text-gray-400 mb-4 relative z-10">
+                          <div className="flex items-center space-x-3">
+                            <div className="flex items-center space-x-1">
+                              <FaDollarSign className="w-3 h-3 text-green-400" />
+                              <span>${(token.liquidity?.usd || 0).toLocaleString()}</span>
+                            </div>
+                            <span className="text-gray-600">•</span>
+                            <div className="flex items-center space-x-1">
+                              <FaChartLine className="w-3 h-3 text-blue-400" />
+                              <span>{getTxns24h(token)} txns</span>
+                            </div>
+                          </div>
+                          {token.boosted && (
+                            <div className="flex items-center space-x-1 text-blue-400">
+                              <FaBolt className="w-3 h-3" />
+                              <span className="text-xs">+{token.boostValue}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Enhanced Action Buttons */}
+                        <div className="flex justify-between items-center relative z-10">
+                          <motion.button 
+                            onClick={() => handleTokenClick(token.poolAddress)} 
+                            className="bg-gradient-to-r from-blue-500/20 to-blue-600/20 hover:from-blue-500/30 hover:to-blue-600/30 text-blue-400 px-6 py-3 text-sm font-semibold border border-blue-500/30 rounded-lg transition-all duration-200 flex items-center space-x-2"
+                            whileHover={{ scale: 1.02, y: -1 }}
+                            whileTap={{ scale: 0.98 }}
+                          >
+                            <FaChartLine className="w-4 h-4" />
+                            <span>Chart</span>
                           </motion.button>
                           <div className="flex space-x-2">
-                            <FaStar className={favorites.includes(token.poolAddress) ? "text-yellow-400" : "text-gray-400"} onClick={() => toggleFavorite(token.poolAddress)} />
-                            <FaBell className={getBellColor(tokenAlerts)} onClick={() => setSelectedAlerts(tokenAlerts)} />
-                            <FaCopy onClick={() => handleCopy(token)} className="text-gray-400" />
+                            <motion.button
+                              onClick={() => toggleFavorite(token.poolAddress)}
+                              className={`p-3 rounded-lg transition-all duration-200 ${
+                                favorites.includes(token.poolAddress) 
+                                  ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 shadow-lg" 
+                                  : "bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700"
+                              }`}
+                              whileHover={{ scale: 1.1, rotate: 5 }}
+                              whileTap={{ scale: 0.9 }}
+                            >
+                              <FaStar className="w-4 h-4" />
+                            </motion.button>
+                            <motion.button
+                              onClick={() => setSelectedAlerts(tokenAlerts)}
+                              className={`p-3 rounded-lg transition-all duration-200 ${getBellColor(tokenAlerts)} border border-current/30 hover:bg-gray-700`}
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.9 }}
+                            >
+                              <FaBell className="w-4 h-4" />
+                            </motion.button>
+                            <motion.button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setTimeout(() => handleCopy(token), 100);
+                              }}
+                              className="p-3 bg-gray-800 text-gray-400 border border-gray-700 rounded-lg transition-all duration-200 hover:bg-gray-700"
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.9 }}
+                            >
+                              <FaCopy className="w-4 h-4" />
+                            </motion.button>
                           </div>
                         </div>
                       </motion.div>

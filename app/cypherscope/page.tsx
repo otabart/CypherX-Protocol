@@ -129,7 +129,7 @@ const TagBadge = ({ tag }: { tag: string }) => {
   };
   
   return (
-    <span className={`inline-block px-3 py-1 text-xs font-medium rounded-full border min-w-[80px] text-center ${tagColors[tag] || "bg-gray-500/20 text-gray-300 border-gray-500/30"}`}>
+    <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full border max-w-[80px] text-center truncate ${tagColors[tag] || "bg-gray-500/20 text-gray-300 border-gray-500/30"}`}>
       {tag}
     </span>
   );
@@ -150,8 +150,8 @@ export default function CypherscopePage() {
     mediaContent?: { previewImage?: string };
     source?: string;
     dexName?: string;
-    launchData?: any;
-    zoraData?: any;
+    launchData?: Record<string, unknown>;
+    zoraData?: Record<string, unknown>;
     [key: string]: unknown;
   }>>([]);
   const [loading, setLoading] = useState(true);
@@ -191,10 +191,9 @@ export default function CypherscopePage() {
   // Trading features
   const [showWatchlistOnly, setShowWatchlistOnly] = useState(false);
   const [sortBy, setSortBy] = useState("createdAt");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [autoRefresh, setAutoRefresh] = useState(false);
-  const [priceAlerts, setPriceAlerts] = useState<{[key: string]: {target: number, type: 'above' | 'below'}}>({});
+  const [sortOrder] = useState<"asc" | "desc">("desc");
+  const [showFilters, setShowFilters] = useState(true);
+  // const [priceAlerts, setPriceAlerts] = useState<{[key: string]: {target: number, type: 'above' | 'below'}}>({});
   
   // Load watchlist from localStorage
   useEffect(() => {
@@ -235,8 +234,8 @@ export default function CypherscopePage() {
             mediaContent?: { previewImage?: string };
             source?: string;
             dexName?: string;
-            launchData?: any;
-            zoraData?: any;
+            launchData?: Record<string, unknown>;
+            zoraData?: Record<string, unknown>;
           };
           
           // Debug: Log image URLs
@@ -262,8 +261,8 @@ export default function CypherscopePage() {
           mediaContent?: { previewImage?: string };
           source?: string;
           dexName?: string;
-          launchData?: any;
-          zoraData?: any;
+          launchData?: Record<string, unknown>;
+          zoraData?: Record<string, unknown>;
           [key: string]: unknown;
         }>;
         setTokens(tokensWithTags);
@@ -524,234 +523,222 @@ export default function CypherscopePage() {
 
         
         {/* Enhanced Filters */}
-        <div className="mb-6 bg-gradient-to-r from-gray-900/90 to-gray-800/90 rounded-2xl p-4 border border-blue-500/10 shadow-xl">
-          {/* Main Filter Row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-            {/* Search */}
-            <div className="lg:col-span-2">
-              <label className="block text-sm font-semibold text-gray-300 mb-2">Search Tokens</label>
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Search by name, symbol, or address..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full bg-gray-800/50 border border-blue-500/20 rounded-xl px-4 py-3 text-gray-200 placeholder-gray-400 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
-                />
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
+        <div className="mb-6">
+          {/* Filter Toggle Button */}
+          <div className="flex items-center justify-between mb-4">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-800/50 hover:bg-gray-700/50 border border-blue-500/20 rounded-lg text-gray-300 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+              <span className="text-sm font-medium">Filters</span>
+              <svg className={`w-4 h-4 transition-transform duration-200 ${showFilters ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            
+            {/* Results Count */}
+            <div className="flex items-center gap-2 text-sm">
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+              <span className="text-gray-400">
+                {filteredAndSortedTokens.length} of {tokens.length} tokens
+              </span>
+              <span className="text-blue-400">•</span>
+              <span className="text-gray-400">
+                {watchlist.length} watchlisted
+              </span>
+            </div>
+          </div>
+
+          {/* Collapsible Filters Panel */}
+          <div className={`bg-gradient-to-r from-gray-900/90 to-gray-800/90 rounded-2xl border border-blue-500/10 shadow-xl overflow-hidden transition-all duration-300 ${showFilters ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'}`}>
+            <div className="p-4">
+              {/* Main Filter Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+                {/* Search */}
+                <div className="sm:col-span-2 lg:col-span-2">
+                  <label className="block text-sm font-semibold text-gray-300 mb-2">Search Tokens</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Search by name, symbol, or address..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="w-full bg-gray-800/50 border border-blue-500/20 rounded-xl px-4 py-3 text-gray-200 placeholder-gray-400 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
+                    />
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* DEX Filter */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-300 mb-2">DEX</label>
+                  <select
+                    value={selectedDex}
+                    onChange={(e) => setSelectedDex(e.target.value)}
+                    className="w-full bg-gray-800/50 border border-blue-500/20 rounded-xl px-4 py-3 text-gray-200 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    <option value="">All DEXes</option>
+                    <option value="Aerodrome">Aerodrome</option>
+                    <option value="BaseSwap">BaseSwap</option>
+                    <option value="UniswapV2">Uniswap V2</option>
+                  </select>
+                </div>
+                
+                {/* Tag Filter */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-300 mb-2">Tag</label>
+                  <select
+                    value={selectedTag}
+                    onChange={(e) => setSelectedTag(e.target.value)}
+                    className="w-full bg-gray-800/50 border border-blue-500/20 rounded-xl px-4 py-3 text-gray-200 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    <option value="">All Tags</option>
+                    <option value="DEXPAID">DEX Paid</option>
+                    <option value="RUNNER">Runner</option>
+                    <option value="HIGH_CAP">High Cap</option>
+                    <option value="TRENDING">Trending</option>
+                    <option value="LIQUIDITY">Liquidity</option>
+                    <option value="MOONSHOT">Moonshot</option>
+                    <option value="ESTABLISHED">Established</option>
+                    <option value="VOLUME_SPIKE">Volume Spike</option>
+                  </select>
                 </div>
               </div>
-            </div>
-            
-
-            
-            {/* DEX Filter */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-2">DEX</label>
-              <select
-                value={selectedDex}
-                onChange={(e) => setSelectedDex(e.target.value)}
-                className="w-full bg-gray-800/50 border border-blue-500/20 rounded-xl px-4 py-3 text-gray-200 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
-              >
-                <option value="">All DEXes</option>
-                <option value="Aerodrome">Aerodrome</option>
-                <option value="BaseSwap">BaseSwap</option>
-                <option value="UniswapV2">Uniswap V2</option>
-              </select>
-            </div>
-            
-            {/* Tag Filter */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-2">Tag</label>
-              <select
-                value={selectedTag}
-                onChange={(e) => setSelectedTag(e.target.value)}
-                className="w-full bg-gray-800/50 border border-blue-500/20 rounded-xl px-4 py-3 text-gray-200 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
-              >
-                <option value="">All Tags</option>
-                <option value="DEXPAID">DEX Paid</option>
-                <option value="RUNNER">Runner</option>
-                <option value="HIGH_CAP">High Cap</option>
-                <option value="TRENDING">Trending</option>
-                <option value="LIQUIDITY">Liquidity</option>
-                <option value="MOONSHOT">Moonshot</option>
-                <option value="ESTABLISHED">Established</option>
-                <option value="VOLUME_SPIKE">Volume Spike</option>
-              </select>
-            </div>
-          </div>
-          
-          {/* Secondary Filter Row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
-            {/* Age Filter */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-2">Age</label>
-              <select
-                value={ageFilter}
-                onChange={(e) => setAgeFilter(e.target.value)}
-                className="w-full bg-gray-800/50 border border-blue-500/20 rounded-xl px-4 py-3 text-gray-200 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
-              >
-                <option value="">Any time</option>
-                <option value="1h">Last hour</option>
-                <option value="6h">Last 6 hours</option>
-                <option value="24h">Last 24 hours</option>
-                <option value="3d">Last 3 days</option>
-              </select>
-            </div>
-            
-            {/* Market Cap Range */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-2">Market Cap ($)</label>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  placeholder="Min"
-                  value={minMarketCap}
-                  onChange={(e) => setMinMarketCap(e.target.value)}
-                  className="w-20 bg-gray-800/50 border border-blue-500/20 rounded-xl px-3 py-3 text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
-                />
-                <input
-                  type="number"
-                  placeholder="Max"
-                  value={maxMarketCap}
-                  onChange={(e) => setMaxMarketCap(e.target.value)}
-                  className="w-20 bg-gray-800/50 border border-blue-500/20 rounded-xl px-3 py-3 text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
-                />
+              
+              {/* Secondary Filter Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+                {/* Age Filter */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-300 mb-2">Age</label>
+                  <select
+                    value={ageFilter}
+                    onChange={(e) => setAgeFilter(e.target.value)}
+                    className="w-full bg-gray-800/50 border border-blue-500/20 rounded-xl px-4 py-3 text-gray-200 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    <option value="">Any time</option>
+                    <option value="1h">Last hour</option>
+                    <option value="6h">Last 6 hours</option>
+                    <option value="24h">Last 24 hours</option>
+                    <option value="3d">Last 3 days</option>
+                  </select>
+                </div>
+                
+                {/* Market Cap Range */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-300 mb-2">Market Cap ($)</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      placeholder="Min"
+                      value={minMarketCap}
+                      onChange={(e) => setMinMarketCap(e.target.value)}
+                      className="flex-1 bg-gray-800/50 border border-blue-500/20 rounded-xl px-3 py-3 text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Max"
+                      value={maxMarketCap}
+                      onChange={(e) => setMaxMarketCap(e.target.value)}
+                      className="flex-1 bg-gray-800/50 border border-blue-500/20 rounded-xl px-3 py-3 text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+                </div>
+                
+                {/* Volume Range */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-300 mb-2">Volume ($)</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      placeholder="Min"
+                      value={minVolume}
+                      onChange={(e) => setMinVolume(e.target.value)}
+                      className="flex-1 bg-gray-800/50 border border-blue-500/20 rounded-xl px-3 py-3 text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Max"
+                      value={maxVolume}
+                      onChange={(e) => setMaxVolume(e.target.value)}
+                      className="flex-1 bg-gray-800/50 border border-blue-500/20 rounded-xl px-3 py-3 text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+                </div>
+                
+                {/* Min Holders */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-300 mb-2">Min Holders</label>
+                  <input
+                    type="number"
+                    placeholder="Min holders"
+                    value={minHolders}
+                    onChange={(e) => setMinHolders(e.target.value)}
+                    className="w-full bg-gray-800/50 border border-blue-500/20 rounded-xl px-4 py-3 text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                
+                {/* Sort By */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-300 mb-2">Sort By</label>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="w-full bg-gray-800/50 border border-blue-500/20 rounded-xl px-4 py-3 text-gray-200 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    <option value="createdAt">Age</option>
+                    <option value="marketCap">Market Cap</option>
+                    <option value="volume24h">Volume</option>
+                    <option value="uniqueHolders">Holders</option>
+                  </select>
+                </div>
               </div>
-            </div>
-            
-            {/* Volume Range */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-2">Volume ($)</label>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  placeholder="Min"
-                  value={minVolume}
-                  onChange={(e) => setMinVolume(e.target.value)}
-                  className="w-20 bg-gray-800/50 border border-blue-500/20 rounded-xl px-3 py-3 text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
-                />
-                <input
-                  type="number"
-                  placeholder="Max"
-                  value={maxVolume}
-                  onChange={(e) => setMaxVolume(e.target.value)}
-                  className="w-20 bg-gray-800/50 border border-blue-500/20 rounded-xl px-3 py-3 text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
-                />
+              
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row gap-3 items-center justify-between pt-3 border-t border-gray-700/50">
+                <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                  <button
+                    onClick={() => {
+                      setSearch("");
+                      setSelectedDex("");
+                      setAgeFilter("");
+                      setSelectedTag("");
+                      setMinMarketCap("");
+                      setMaxMarketCap("");
+                      setMinVolume("");
+                      setMaxVolume("");
+                      setMinHolders("");
+                      setShowWatchlistOnly(false);
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-gray-700/50 hover:bg-gray-600/50 border border-gray-600/30 hover:border-gray-500/50 rounded-lg text-sm font-semibold transition-all duration-200 w-full sm:w-auto justify-center"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Clear Filters
+                  </button>
+                  
+                  <button
+                    onClick={() => setShowWatchlistOnly(!showWatchlistOnly)}
+                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 w-full sm:w-auto justify-center ${
+                      showWatchlistOnly 
+                        ? "bg-yellow-600/20 text-yellow-300 border border-yellow-500/30" 
+                        : "bg-gray-700/50 text-gray-300 border border-gray-600/30 hover:bg-gray-600/50"
+                    }`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                    </svg>
+                    Watchlist Only
+                  </button>
+                </div>
               </div>
-            </div>
-            
-            {/* Min Holders */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-2">Min Holders</label>
-              <input
-                type="number"
-                placeholder="Min holders"
-                value={minHolders}
-                onChange={(e) => setMinHolders(e.target.value)}
-                className="w-32 bg-gray-800/50 border border-blue-500/20 rounded-xl px-4 py-3 text-gray-200 placeholder-gray-500 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
-              />
-            </div>
-            
-            {/* Sort By */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-2">Sort By</label>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="w-full bg-gray-800/50 border border-blue-500/20 rounded-xl px-4 py-3 text-gray-200 focus:border-blue-400 focus:outline-none transition-all duration-200 focus:ring-2 focus:ring-blue-500/20"
-              >
-                <option value="createdAt">Age</option>
-                <option value="marketCap">Market Cap</option>
-                <option value="volume24h">Volume</option>
-                <option value="uniqueHolders">Holders</option>
-              </select>
-            </div>
-          </div>
-          
-          {/* Trader Action Buttons */}
-          <div className="flex flex-col sm:flex-row gap-3 items-center justify-between pt-3 border-t border-gray-700/50">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => {
-                  setSearch("");
-                  setSelectedDex("");
-                  setAgeFilter("");
-                  setSelectedTag("");
-                  setMinMarketCap("");
-                  setMaxMarketCap("");
-                  setMinVolume("");
-                  setMaxVolume("");
-                  setMinHolders("");
-                  setShowWatchlistOnly(false);
-                }}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-gray-700/50 hover:bg-gray-600/50 border border-gray-600/30 hover:border-gray-500/50 rounded-xl text-sm font-semibold transition-all duration-200"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Clear Filters
-              </button>
-              
-              <button
-                onClick={() => setShowWatchlistOnly(!showWatchlistOnly)}
-                className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                  showWatchlistOnly 
-                    ? "bg-yellow-600/20 text-yellow-300 border border-yellow-500/30" 
-                    : "bg-gray-700/50 text-gray-300 border border-gray-600/30 hover:bg-gray-600/50"
-                }`}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                </svg>
-                Watchlist Only
-              </button>
-              
-              <div className="flex items-center gap-2 text-sm">
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                <span className="text-gray-400">
-                  {filteredAndSortedTokens.length} of {tokens.length} tokens
-                </span>
-                <span className="text-blue-400">•</span>
-                <span className="text-gray-400">
-                  {watchlist.length} watchlisted
-                </span>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
-                className="px-3 py-1.5 bg-gray-700/50 text-gray-300 border border-gray-600/30 rounded-lg text-xs font-medium transition-all duration-200 hover:bg-gray-600/50"
-              >
-                {viewMode === "grid" ? "📊 List" : "🔲 Grid"}
-              </button>
-              
-              <button
-                onClick={() => setAutoRefresh(!autoRefresh)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
-                  autoRefresh 
-                    ? "bg-green-600/20 text-green-300 border border-green-500/30" 
-                    : "bg-gray-700/50 text-gray-300 border border-gray-600/30 hover:bg-gray-600/50"
-                }`}
-              >
-                {autoRefresh ? "🔄 Auto" : "⏸️ Manual"}
-              </button>
-              
-              <span className="text-sm text-gray-400">Sort:</span>
-              <button
-                onClick={() => setSortOrder(sortOrder === "desc" ? "asc" : "desc")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
-                  sortOrder === "desc" 
-                    ? "bg-blue-600/20 text-blue-300 border border-blue-500/30" 
-                    : "bg-gray-700/50 text-gray-300 border border-gray-600/30 hover:bg-gray-600/50"
-                }`}
-              >
-                {sortOrder === "desc" ? "↓ Desc" : "↑ Asc"}
-              </button>
             </div>
           </div>
         </div>
@@ -802,11 +789,11 @@ export default function CypherscopePage() {
                             console.log("Zora image loaded successfully:", token.mediaContent?.previewImage?.small);
                           }}
                         />
-                        <div>
-                          <div className="font-bold text-blue-200 group-hover:text-blue-100 transition">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-bold text-blue-200 group-hover:text-blue-100 transition truncate">
                             {token.name || "Unknown"}
                           </div>
-                          <div className="text-sm text-gray-400">{token.symbol}</div>
+                          <div className="text-sm text-gray-400 truncate">{token.symbol}</div>
                         </div>
                       </div>
                       
@@ -941,11 +928,11 @@ export default function CypherscopePage() {
                   console.log("Zora image loaded successfully:", token.mediaContent?.previewImage?.small);
                 }}
                           />
-                          <div>
-                            <div className="font-bold text-yellow-200 group-hover:text-yellow-100 transition">
+                          <div className="min-w-0 flex-1">
+                            <div className="font-bold text-yellow-200 group-hover:text-yellow-100 transition truncate">
                               {token.name || "Unknown"}
                             </div>
-                            <div className="text-sm text-gray-400">{token.symbol}</div>
+                            <div className="text-sm text-gray-400 truncate">{token.symbol}</div>
                           </div>
                         </div>
                         
@@ -1069,11 +1056,11 @@ export default function CypherscopePage() {
                               console.log("Zora image loaded successfully:", token.mediaContent?.previewImage?.small);
                             }}
                           />
-                          <div>
-                            <div className="font-bold text-green-200 group-hover:text-green-100 transition">
+                          <div className="min-w-0 flex-1">
+                            <div className="font-bold text-green-200 group-hover:text-green-100 transition truncate">
                               {token.name || "Unknown"}
                             </div>
-                            <div className="text-sm text-gray-400">{token.symbol}</div>
+                            <div className="text-sm text-gray-400 truncate">{token.symbol}</div>
                           </div>
                         </div>
                         
@@ -1183,11 +1170,11 @@ export default function CypherscopePage() {
                               console.log("Zora image loaded successfully:", token.mediaContent?.previewImage?.small);
                             }}
                           />
-                          <div>
-                            <div className="font-bold text-red-200 group-hover:text-red-100 transition">
+                          <div className="min-w-0 flex-1">
+                            <div className="font-bold text-red-200 group-hover:text-red-100 transition truncate">
                               {token.name || "Unknown"}
                             </div>
-                            <div className="text-sm text-gray-400">{token.symbol}</div>
+                            <div className="text-sm text-gray-400 truncate">{token.symbol}</div>
                           </div>
                         </div>
                         

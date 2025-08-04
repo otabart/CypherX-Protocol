@@ -440,21 +440,21 @@ export default function MarketplacePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-8 justify-center px-4"
+          className="flex flex-col sm:flex-row gap-4 mb-8 justify-center px-4"
         >
           <button
             onClick={() => setShowApplicationModal(true)}
-            className="flex items-center justify-center gap-2 px-4 sm:px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all duration-300 font-medium text-sm sm:text-base"
+            className="flex items-center justify-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all duration-300 font-medium text-base min-h-[56px] flex-1 sm:flex-none"
           >
-            <FiPlus className="w-4 h-4 sm:w-5 sm:h-5" />
+            <FiPlus className="w-6 h-6" />
             Submit Product
           </button>
           
           <button
             onClick={() => setShowMyApplicationsModal(true)}
-            className="flex items-center justify-center gap-2 px-4 sm:px-6 py-3 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-all duration-300 font-medium text-sm sm:text-base border border-gray-600"
+            className="flex items-center justify-center gap-3 px-8 py-4 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-all duration-300 font-medium text-base border border-gray-600 min-h-[56px] flex-1 sm:flex-none"
           >
-            <FiFileText className="w-4 h-4 sm:w-5 sm:h-5" />
+            <FiFileText className="w-6 h-6" />
             My Applications
           </button>
         </motion.div>
@@ -464,29 +464,29 @@ export default function MarketplacePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="bg-gray-800/30 backdrop-blur-sm rounded-lg border border-gray-700 p-4 sm:p-6 mb-8"
+          className="bg-gray-800/30 backdrop-blur-sm rounded-lg border border-gray-700 p-6 mb-8"
         >
-          <div className="flex flex-col lg:flex-row gap-4 items-center">
-            <div className="flex-1 w-full">
+          <div className="flex flex-col lg:flex-row gap-4 items-stretch">
+            <div className="flex-1">
               <div className="relative">
-                <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5" />
+                <FiSearch className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-6 h-6" />
                 <input
                   type="text"
                   placeholder="Search marketplace items..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 sm:py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                  className="w-full pl-12 pr-4 py-4 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base min-h-[56px]"
                 />
               </div>
             </div>
 
-            <div className="flex items-center gap-2 sm:gap-3 w-full lg:w-auto">
-              <div className="relative flex-1 lg:flex-none">
-                <FiFilter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5" />
+            <div className="flex items-stretch gap-4 flex-1 lg:flex-none">
+              <div className="relative flex-1">
+                <FiFilter className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-6 h-6" />
                 <select
                   value={selectedCategory}
                   onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="w-full lg:w-auto pl-10 pr-8 py-2 sm:py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none text-sm sm:text-base"
+                  className="w-full pl-12 pr-8 py-4 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none text-base min-h-[56px]"
                 >
                   {categories.map((category) => (
                     <option key={category.id} value={category.id}>
@@ -499,10 +499,11 @@ export default function MarketplacePage() {
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="px-3 sm:px-4 py-2 sm:py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                className="px-6 py-4 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none text-base min-h-[56px] flex-1 lg:flex-none"
               >
                 <option value="name">Sort by Name</option>
                 <option value="price">Sort by Price</option>
+                <option value="category">Sort by Category</option>
               </select>
             </div>
           </div>
@@ -513,19 +514,19 @@ export default function MarketplacePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="flex flex-wrap gap-2 sm:gap-3 mb-8 px-4"
+          className="flex flex-wrap gap-3 mb-8 px-4"
         >
           {categories.map((category) => (
             <button
               key={category.id}
               onClick={() => setSelectedCategory(category.id)}
-              className={`flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 rounded-lg border transition-colors text-xs sm:text-sm font-medium ${
+              className={`flex items-center gap-2 px-4 py-3 rounded-lg border transition-colors text-sm font-medium min-h-[48px] ${
                 selectedCategory === category.id
                   ? "bg-blue-500/20 border-blue-500/30 text-blue-400"
                   : "bg-gray-800/30 border-gray-600 text-gray-400 hover:bg-gray-700/30"
               }`}
             >
-              <category.icon className="w-3 h-3 sm:w-4 sm:h-4" />
+              <category.icon className="w-4 h-4" />
               <span>{category.name}</span>
             </button>
           ))}

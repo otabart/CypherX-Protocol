@@ -55,7 +55,7 @@ const Footer = () => {
   }, []);
 
   return (
-    <footer className="bg-gradient-to-br from-gray-950 to-gray-900 text-gray-100 py-4 sm:py-6 border-t border-blue-500/30 w-full backdrop-blur-sm">
+    <footer className="bg-gradient-to-br from-gray-950 to-gray-900 text-gray-100 py-4 sm:py-6 border-t border-blue-500/30 w-full backdrop-blur-sm relative z-20">
       <div className="container mx-auto px-4 sm:px-6">
         {/* Main Footer Content */}
         <div className="flex flex-col lg:flex-row justify-between items-center gap-6 lg:gap-8">

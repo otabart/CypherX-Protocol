@@ -1,6 +1,28 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 
+interface UserData {
+  id: string;
+  walletAddress?: string;
+  points?: number;
+  lastActivity?: string;
+  createdAt?: string;
+  likedArticles?: string[];
+  [key: string]: unknown;
+}
+
+interface UserActivity {
+  id: string;
+  action?: string;
+  points?: number;
+  createdAt?: string;
+  [key: string]: unknown;
+}
+
+interface FirestoreTimestamp {
+  toDate: () => Date;
+}
+
 // GET - Fetch user stats
 export async function GET(request: Request) {
   try {
@@ -20,14 +42,19 @@ export async function GET(request: Request) {
     const userQuery = db.collection('users').where('walletAddress', '==', walletAddress);
     const userSnapshot = await userQuery.get();
     
-    let userData: any = null;
+    let userData: UserData | null = null;
     if (!userSnapshot.empty) {
       const userDoc = userSnapshot.docs[0];
+      const docData = userDoc.data();
       userData = {
         id: userDoc.id,
-        ...userDoc.data(),
-        lastActivity: userDoc.data().lastActivity?.toDate?.()?.toISOString() || userDoc.data().lastActivity,
-        createdAt: userDoc.data().createdAt?.toDate?.()?.toISOString() || userDoc.data().createdAt,
+        ...docData,
+        lastActivity: typeof docData.lastActivity === 'object' && docData.lastActivity !== null && 'toDate' in docData.lastActivity 
+          ? (docData.lastActivity as FirestoreTimestamp).toDate().toISOString() 
+          : docData.lastActivity,
+        createdAt: typeof docData.createdAt === 'object' && docData.createdAt !== null && 'toDate' in docData.createdAt 
+          ? (docData.createdAt as FirestoreTimestamp).toDate().toISOString() 
+          : docData.createdAt,
       };
     }
 
@@ -48,15 +75,22 @@ export async function GET(request: Request) {
       .limit(10);
     const activitiesSnapshot = await activitiesQuery.get();
     
-    const activities = activitiesSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || doc.data().createdAt,
-    })) as any[];
+    const activities: UserActivity[] = activitiesSnapshot.docs.map(doc => {
+      const docData = doc.data();
+      return {
+        id: doc.id,
+        ...docData,
+        createdAt: typeof docData.createdAt === 'object' && docData.createdAt !== null && 'toDate' in docData.createdAt 
+          ? (docData.createdAt as FirestoreTimestamp).toDate().toISOString() 
+          : docData.createdAt,
+      };
+    });
 
     // Get activity summary
     const activitySummary = activities.reduce((acc, activity) => {
-      acc[activity.action] = (acc[activity.action] || 0) + 1;
+      if (activity.action) {
+        acc[activity.action] = (acc[activity.action] || 0) + 1;
+      }
       return acc;
     }, {} as Record<string, number>);
 
