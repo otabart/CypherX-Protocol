@@ -367,7 +367,7 @@ export default function TransactionDetails() {
                         #{transaction.blockNumber.toLocaleString()}
                       </Link>
                       <a
-                        href={`https://basescan.org/block/${transaction.blockNumber}`}
+                        href={`/explorer/latest/block/${transaction.blockNumber}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-400 hover:text-blue-300"
@@ -406,7 +406,7 @@ export default function TransactionDetails() {
                         {copiedField === "from" ? <FiCheck className="w-4 h-4" /> : <FiCopy className="w-4 h-4" />}
                       </button>
                       <a
-                        href={`https://basescan.org/address/${transaction.from}`}
+                        href={`/explorer/address/${transaction.from}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-400 hover:text-blue-300"
@@ -427,7 +427,7 @@ export default function TransactionDetails() {
                         {copiedField === "to" ? <FiCheck className="w-4 h-4" /> : <FiCopy className="w-4 h-4" />}
                       </button>
                       <a
-                        href={`https://basescan.org/address/${transaction.to}`}
+                        href={`/explorer/address/${transaction.to}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-400 hover:text-blue-300"
@@ -552,7 +552,7 @@ export default function TransactionDetails() {
                               {copiedField === "contract" ? <FiCheck className="w-4 h-4" /> : <FiCopy className="w-4 h-4" />}
                             </button>
                             <a
-                              href={`https://basescan.org/address/${transaction.receipt.contractAddress}`}
+                              href={`/explorer/address/${transaction.receipt.contractAddress}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-blue-400 hover:text-blue-300"
@@ -625,7 +625,7 @@ export default function TransactionDetails() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <a
-                  href={`https://basescan.org/tx/${transaction.hash}`}
+                  href={`/explorer/tx/${transaction.hash}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center justify-between p-4 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors"
@@ -633,15 +633,15 @@ export default function TransactionDetails() {
                   <div className="flex items-center gap-3">
                     <FiExternalLink className="w-5 h-5 text-blue-400" />
                     <div>
-                      <p className="text-white font-medium">View on BaseScan</p>
-                      <p className="text-gray-400 text-sm">Official Base blockchain explorer</p>
+                      <p className="text-white font-medium">View Transaction</p>
+                      <p className="text-gray-400 text-sm">Our blockchain explorer</p>
                     </div>
                   </div>
                   <FiArrowUpRight className="w-5 h-5 text-gray-400" />
                 </a>
 
                 <a
-                  href={`https://basescan.org/block/${transaction.blockNumber}`}
+                  href={`/explorer/latest/block/${transaction.blockNumber}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center justify-between p-4 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors"

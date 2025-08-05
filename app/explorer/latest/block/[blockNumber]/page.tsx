@@ -274,7 +274,7 @@ export default function BlockDetails() {
                     <div className="flex items-center gap-2">
                       <span className="text-white font-mono font-medium">#{block.number.toLocaleString()}</span>
                       <a
-                        href={`https://basescan.org/block/${block.number}`}
+                        href={`/explorer/latest/block/${block.number}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-400 hover:text-blue-300"
@@ -333,7 +333,7 @@ export default function BlockDetails() {
                     <div className="flex items-center gap-2 max-w-xs">
                       <span className="text-white font-mono text-sm truncate">{block.miner}</span>
                       <a
-                        href={`https://basescan.org/address/${block.miner}`}
+                        href={`/explorer/address/${block.miner}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-400 hover:text-blue-300"
@@ -501,13 +501,13 @@ export default function BlockDetails() {
                                   View
                                 </Link>
                                 <a
-                                  href={`https://basescan.org/tx/${tx.hash}`}
+                                  href={`/explorer/tx/${tx.hash}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="inline-flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs text-white transition-colors"
                                 >
                                   <FiExternalLink className="w-3 h-3" />
-                                  BaseScan
+                                  Explorer
                                 </a>
                               </div>
                             </td>

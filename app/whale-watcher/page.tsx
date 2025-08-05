@@ -431,7 +431,7 @@ export default function WhaleWatcherPage() {
 
   const handleShare = (transaction: WhaleTransaction) => {
     const shareText = `🐋 Whale Alert: ${transaction.transactionType} ${formatNumber(transaction.amountToken)} ${transaction.tokenSymbol} ($${formatNumber(transaction.amountUSD)})`;
-    const shareUrl = `https://basescan.org/tx/${transaction.hash}`;
+    const shareUrl = `/explorer/tx/${transaction.hash}`;
     
     if (navigator.share) {
       navigator.share({
@@ -833,7 +833,7 @@ export default function WhaleWatcherPage() {
                           <FaCopy size={14} />
                         </motion.button>
                         <motion.a
-                          href={`https://basescan.org/address/${selectedTransaction.fromAddress}`}
+                          href={`/explorer/address/${selectedTransaction.fromAddress}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-gray-400 hover:text-blue-400 transition-colors"
@@ -860,7 +860,7 @@ export default function WhaleWatcherPage() {
                           <FaCopy size={14} />
                         </motion.button>
                         <motion.a
-                          href={`https://basescan.org/address/${selectedTransaction.toAddress}`}
+                          href={`/explorer/address/${selectedTransaction.toAddress}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-gray-400 hover:text-blue-400 transition-colors"
@@ -903,7 +903,7 @@ export default function WhaleWatcherPage() {
                           <FaCopy size={14} />
                         </motion.button>
                         <motion.a
-                          href={`https://basescan.org/tx/${selectedTransaction.hash}`}
+                          href={`/explorer/tx/${selectedTransaction.hash}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-gray-400 hover:text-blue-400 transition-colors"
@@ -928,7 +928,7 @@ export default function WhaleWatcherPage() {
                       Share
                     </motion.button>
                     <motion.a
-                      href={`https://basescan.org/tx/${selectedTransaction.hash}`}
+                                              href={`/explorer/tx/${selectedTransaction.hash}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors flex items-center justify-center gap-2"

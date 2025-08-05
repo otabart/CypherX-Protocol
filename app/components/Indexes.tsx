@@ -307,11 +307,9 @@ const MemoIndexSection = React.memo(function IndexSection({
                       className="text-gray-200 font-medium hover:text-blue-400 truncate max-w-[100px] md:max-w-[150px]"
                     >
                       <a
-                        href={`https://basescan.org/address/${token.address}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                        href={`/explorer/address/${token.address}`}
                         title={token.symbol}
-                        aria-label={`View ${token.symbol} on BaseScan`}
+                        aria-label={`View ${token.symbol} on our explorer`}
                       >
                         {token.symbol}
                       </a>

@@ -6,12 +6,14 @@ import Link from "next/link";
 import Image from "next/image";
 import { ChevronDownIcon, UserCircleIcon } from "@heroicons/react/24/solid";
 import { signOut, type Auth } from "firebase/auth";
-import { doc, getDoc, query, collection, where, getDocs } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { auth as firebaseAuth, db } from "@/lib/firebase";
 import { useAuth } from "@/app/providers";
 import CustomConnectWallet from "./CustomConnectWallet";
 import toast from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
+import { FiAward, FiTrendingUp } from "react-icons/fi";
+import { useAccount } from "wagmi";
 
 const auth: Auth = firebaseAuth as Auth;
 
@@ -19,61 +21,81 @@ const Header: React.FC = () => {
   const router = useRouter();
   const pathname = usePathname();
   const { user } = useAuth();
+  const { address: walletAddress } = useAccount();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [showToolsDropdown, setShowToolsDropdown] = useState(false);
   const [showExplorerDropdown, setShowExplorerDropdown] = useState(false);
   const [points, setPoints] = useState<number | null>(null);
-  const [referralCode] = useState<string>("");
+  const [tier, setTier] = useState<string>('bronze');
+  const [badges, setBadges] = useState<string[]>([]);
+  const [progress, setProgress] = useState<number>(0);
+  const [nextTier, setNextTier] = useState<string | null>(null);
+  const [pointsToNextTier, setPointsToNextTier] = useState<number>(0);
+  const [referralCode, setReferralCode] = useState<string>("");
+  const [referralEarnings, setReferralEarnings] = useState<number>(0);
+  const [referralCount, setReferralCount] = useState<number>(0);
   const modalRef = useRef<HTMLDivElement>(null);
   const toolsDropdownRef = useRef<HTMLDivElement>(null);
   const explorerDropdownRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
 
-  // Fetch user points from Firestore
+  // Fetch user stats from API
   useEffect(() => {
-    const fetchPoints = async () => {
-      if (!user) {
+    const fetchUserStats = async () => {
+      if (!user || !walletAddress) {
         setPoints(null);
+        setTier('bronze');
+        setBadges([]);
+        setReferralCode("");
+        setReferralEarnings(0);
+        setReferralCount(0);
         return;
       }
 
       try {
-        // Primary: Fetch by UID
-        const userDocRef = doc(db, "users", user.uid);
-        const userDoc = await getDoc(userDocRef);
-
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
-          console.log("Points fetched by UID:", userData.points);
-          setPoints(userData.points ?? 0);
-          return;
-        }
-
-        // Fallback: Fetch by email if UID-based document doesn't exist
-        if (user.email) {
-          const q = query(collection(db, "users"), where("email", "==", user.email));
-          const querySnapshot = await getDocs(q);
-          if (!querySnapshot.empty) {
-            const userData = querySnapshot.docs[0].data();
-            console.log("Points fetched by email:", userData.points);
-            setPoints(userData.points ?? 0);
-          } else {
-            console.log("No user document found for UID or email, setting points to 0");
-            setPoints(0);
-          }
+        // Fetch user stats from our new API
+        const statsResponse = await fetch(`/api/tiers?walletAddress=${walletAddress}`);
+        if (statsResponse.ok) {
+          const statsData = await statsResponse.json();
+          setPoints(statsData.points || 0);
+          setTier(statsData.tier || 'bronze');
+          setBadges(statsData.badges || []);
+          setProgress(statsData.progress || 0);
+          setNextTier(statsData.nextTier);
+          setPointsToNextTier(statsData.pointsToNextTier || 0);
         } else {
-          console.log("No email available for fallback, setting points to 0");
-          setPoints(0);
+          // Fallback to old method
+          const userDocRef = doc(db, "users", user.uid);
+          const userDoc = await getDoc(userDocRef);
+
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            setPoints(userData.points ?? 0);
+            setTier(userData.tier ?? 'bronze');
+            setBadges(userData.badges ?? []);
+            setReferralCode(userData.referralCode ?? "");
+            setReferralEarnings(userData.referralEarnings ?? 0);
+            setReferralCount(userData.referralCount ?? 0);
+          } else {
+            setPoints(0);
+            setTier('bronze');
+            setBadges([]);
+            setReferralCode("");
+            setReferralEarnings(0);
+            setReferralCount(0);
+          }
         }
       } catch (error) {
-        console.error("Error fetching user points:", error);
+        console.error("Error fetching user stats:", error);
         setPoints(0);
+        setTier('bronze');
+        setBadges([]);
       }
     };
 
-    fetchPoints();
-  }, [user]);
+    fetchUserStats();
+  }, [user, walletAddress]);
 
   // Reset modals and menus on route change
   useEffect(() => {
@@ -145,9 +167,45 @@ const Header: React.FC = () => {
     }
   };
 
+  const handleGenerateReferral = async () => {
+    if (!walletAddress) {
+      toast.error("Please connect your wallet first!");
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/referral?walletAddress=${walletAddress}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setReferralCode(data.referralCode);
+        toast.success("Referral code generated successfully!");
+      } else {
+        toast.error("Failed to generate referral code");
+      }
+    } catch (error) {
+      console.error("Error generating referral code:", error);
+      toast.error("Failed to generate referral code");
+    }
+  };
+
+  const getTierColor = (tier: string) => {
+    const colors = {
+      bronze: '#cd7f32',
+      silver: '#c0c0c0',
+      gold: '#ffd700',
+      platinum: '#e5e4e2',
+      diamond: '#b9f2ff'
+    };
+    return colors[tier as keyof typeof colors] || '#cd7f32';
+  };
+
   return (
     <>
-      <header className="sticky top-0 z-50 bg-gradient-to-br from-gray-950 to-gray-900 text-gray-200 border-b border-blue-500/20 backdrop-blur-sm">
+      <header className="sticky top-0 z-50 bg-gray-900 text-gray-200 border-b border-blue-500/20 backdrop-blur-sm">
         <div className="container mx-auto flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4">
           {/* Logo / Brand */}
           <Link href="/" className="flex items-center group">
@@ -209,7 +267,7 @@ const Header: React.FC = () => {
                 {showExplorerDropdown && (
                   <motion.div
                     ref={explorerDropdownRef}
-                    className="absolute left-0 mt-3 w-64 bg-gradient-to-br from-gray-900 to-gray-800 backdrop-blur-sm rounded-xl p-4 shadow-xl border border-blue-500/30"
+                    className="absolute left-0 mt-3 w-64 bg-gray-800 backdrop-blur-sm rounded-xl p-4 shadow-xl border border-blue-500/30"
                     initial={{ opacity: 0, y: -10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -10, scale: 0.95 }}
@@ -315,7 +373,7 @@ const Header: React.FC = () => {
                 {showToolsDropdown && (
                   <motion.div
                     ref={toolsDropdownRef}
-                    className="absolute left-0 mt-3 w-64 bg-gradient-to-br from-gray-900 to-gray-800 backdrop-blur-sm rounded-xl p-4 shadow-xl border border-blue-500/30"
+                    className="absolute left-0 mt-3 w-64 bg-gray-800 backdrop-blur-sm rounded-xl p-4 shadow-xl border border-blue-500/30"
                     initial={{ opacity: 0, y: -10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -10, scale: 0.95 }}
@@ -491,7 +549,7 @@ const Header: React.FC = () => {
                 {showAccountModal && (
                   <motion.div
                     ref={modalRef}
-                    className="absolute right-0 mt-3 w-64 bg-gradient-to-br from-gray-900 to-gray-800 backdrop-blur-sm rounded-xl p-4 shadow-xl border border-blue-500/30"
+                    className="absolute right-0 mt-3 w-80 bg-gray-800 backdrop-blur-sm rounded-xl p-4 shadow-xl border border-blue-500/30"
                     initial={{ opacity: 0, y: -10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -10, scale: 0.95 }}
@@ -501,20 +559,80 @@ const Header: React.FC = () => {
                       <div className="flex items-center justify-between">
                         <CustomConnectWallet />
                       </div>
-                      <div className="bg-gradient-to-br from-gray-800 to-gray-700 p-3 rounded-lg border border-blue-500/50">
-                        <div className="flex items-center justify-between mb-2">
+                      
+                      {/* Enhanced Profile Section */}
+                      <div className="bg-gray-700 p-4 rounded-lg border border-blue-500/50">
+                        <div className="flex items-center justify-between mb-3">
                           <span className="text-xs uppercase font-medium text-blue-300">
                             Profile
                           </span>
-                          <ChevronDownIcon className="w-4 h-4 text-gray-400" />
+                          <div className="flex items-center gap-1">
+                            <div 
+                              className="w-4 h-4 rounded-full"
+                              style={{ backgroundColor: getTierColor(tier) }}
+                            ></div>
+                            <span className="text-xs text-gray-400 capitalize">{tier}</span>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-semibold text-gray-100">Points</span>
+                        
+                        {/* Points Display */}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <FiTrendingUp className="w-4 h-4 text-blue-400" />
+                            <span className="text-sm font-semibold text-gray-100">Points</span>
+                          </div>
                           <span className="text-sm font-semibold text-blue-300">
-                            {points !== null ? `${points} pts` : "—"}
+                            {points !== null ? `${points.toLocaleString()} pts` : "—"}
                           </span>
                         </div>
-                        <div className="flex items-center justify-between mt-2">
+
+                        {/* Progress Bar */}
+                        {nextTier && (
+                          <div className="mb-3">
+                            <div className="flex justify-between text-xs text-gray-400 mb-1">
+                              <span>Progress to {nextTier}</span>
+                              <span>{progress}%</span>
+                            </div>
+                            <div className="w-full bg-gray-600 rounded-full h-1.5">
+                              <div
+                                className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+                                style={{ width: `${progress}%` }}
+                              ></div>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {pointsToNextTier} points to next tier
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Badges Display */}
+                        {badges.length > 0 && (
+                          <div className="mb-3">
+                            <div className="flex items-center gap-2 mb-2">
+                              <FiAward className="w-4 h-4 text-yellow-400" />
+                              <span className="text-sm font-semibold text-gray-100">Badges</span>
+                              <span className="text-xs text-gray-400">({badges.length})</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {badges.slice(0, 3).map((badge, index) => (
+                                <div
+                                  key={index}
+                                  className="px-2 py-1 bg-yellow-500/20 text-yellow-300 text-xs rounded-full border border-yellow-500/30"
+                                >
+                                  {badge.replace(/_/g, ' ')}
+                                </div>
+                              ))}
+                              {badges.length > 3 && (
+                                <div className="px-2 py-1 bg-gray-600/50 text-gray-300 text-xs rounded-full">
+                                  +{badges.length - 3} more
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Referral Code */}
+                        <div className="flex items-center justify-between">
                           <span className="text-sm font-semibold text-gray-100">
                             Referral Code
                           </span>
@@ -522,7 +640,7 @@ const Header: React.FC = () => {
                             <span className="text-sm font-semibold text-gray-100 mr-2">
                               {referralCode || "—"}
                             </span>
-                            {referralCode && (
+                            {referralCode ? (
                               <motion.button
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}
@@ -531,13 +649,33 @@ const Header: React.FC = () => {
                               >
                                 Copy
                               </motion.button>
+                            ) : (
+                              <motion.button
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={handleGenerateReferral}
+                                className="px-2 py-0.5 bg-green-500/20 text-green-300 text-xs rounded hover:bg-green-500/40 transition-colors duration-150"
+                              >
+                                Generate
+                              </motion.button>
                             )}
                           </div>
                         </div>
-                        <div className="mt-2 flex items-center justify-between text-gray-400 text-xs">
-                          <span>Rewards</span>
-                          <span>0 ⬢</span>
-                        </div>
+                        
+                        {/* Referral Stats */}
+                        {referralCount > 0 && (
+                          <div className="flex items-center justify-between mt-2">
+                            <span className="text-xs text-gray-400">Referrals</span>
+                            <span className="text-xs text-gray-400">{referralCount} users</span>
+                          </div>
+                        )}
+                        
+                        {referralEarnings > 0 && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-400">Referral Earnings</span>
+                            <span className="text-xs text-green-400">{referralEarnings} pts</span>
+                          </div>
+                        )}
                       </div>
                       <hr className="border-blue-500/30" />
                       <ul className="space-y-2">
@@ -657,7 +795,7 @@ const Header: React.FC = () => {
             />
             <motion.div
               ref={mobileMenuRef}
-              className="fixed top-0 left-0 z-50 h-full w-80 max-w-[85vw] bg-gradient-to-br from-gray-900 to-gray-800 p-6 flex flex-col shadow-2xl border-r border-blue-500/30 md:hidden overflow-y-auto"
+              className="fixed top-0 left-0 z-50 h-full w-80 max-w-[85vw] bg-gray-800 p-6 flex flex-col shadow-2xl border-r border-blue-500/30 md:hidden overflow-y-auto"
               initial={{ x: "-100%" }}
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
@@ -959,20 +1097,77 @@ const Header: React.FC = () => {
                 transition={{ delay: 0.5 }}
                 className="mt-6"
               >
-                <div className="bg-gradient-to-br from-gray-800 to-gray-700 p-4 rounded-lg border border-blue-500/50">
+                <div className="bg-gray-700 p-4 rounded-lg border border-blue-500/50">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-xs uppercase font-medium text-blue-300">
                       Profile
                     </span>
-                    <ChevronDownIcon className="w-4 h-4 text-gray-400" />
+                    <div className="flex items-center gap-1">
+                      <div 
+                        className="w-4 h-4 rounded-full"
+                        style={{ backgroundColor: getTierColor(tier) }}
+                      ></div>
+                      <span className="text-xs text-gray-400 capitalize">{tier}</span>
+                    </div>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-3">
+                    {/* Points Display */}
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-semibold text-gray-100">Points</span>
+                      <div className="flex items-center gap-2">
+                        <FiTrendingUp className="w-4 h-4 text-blue-400" />
+                        <span className="text-sm font-semibold text-gray-100">Points</span>
+                      </div>
                       <span className="text-sm font-semibold text-blue-300">
-                        {points !== null ? `${points} pts` : "—"}
+                        {points !== null ? `${points.toLocaleString()} pts` : "—"}
                       </span>
                     </div>
+
+                    {/* Progress Bar */}
+                    {nextTier && (
+                      <div>
+                        <div className="flex justify-between text-xs text-gray-400 mb-1">
+                          <span>Progress to {nextTier}</span>
+                          <span>{progress}%</span>
+                        </div>
+                        <div className="w-full bg-gray-600 rounded-full h-1.5">
+                          <div
+                            className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+                            style={{ width: `${progress}%` }}
+                          ></div>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {pointsToNextTier} points to next tier
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Badges Display */}
+                    {badges.length > 0 && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <FiAward className="w-4 h-4 text-yellow-400" />
+                          <span className="text-sm font-semibold text-gray-100">Badges</span>
+                          <span className="text-xs text-gray-400">({badges.length})</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {badges.slice(0, 3).map((badge, index) => (
+                            <div
+                              key={index}
+                              className="px-2 py-1 bg-yellow-500/20 text-yellow-300 text-xs rounded-full border border-yellow-500/30"
+                            >
+                              {badge.replace(/_/g, ' ')}
+                            </div>
+                          ))}
+                          {badges.length > 3 && (
+                            <div className="px-2 py-1 bg-gray-600/50 text-gray-300 text-xs rounded-full">
+                              +{badges.length - 3} more
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Referral Code */}
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-semibold text-gray-100">
                         Referral Code
@@ -981,7 +1176,7 @@ const Header: React.FC = () => {
                         <span className="text-sm font-semibold text-gray-100 mr-2">
                           {referralCode || "—"}
                         </span>
-                        {referralCode && (
+                        {referralCode ? (
                           <motion.button
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
@@ -990,13 +1185,33 @@ const Header: React.FC = () => {
                           >
                             Copy
                           </motion.button>
+                        ) : (
+                          <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={handleGenerateReferral}
+                            className="px-2 py-0.5 bg-green-500/20 text-green-300 text-xs rounded hover:bg-green-500/40 transition-colors duration-150"
+                          >
+                            Generate
+                          </motion.button>
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center justify-between text-gray-400 text-xs">
-                      <span>Rewards</span>
-                      <span>0 ⬢</span>
-                    </div>
+                    
+                    {/* Referral Stats */}
+                    {referralCount > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-400">Referrals</span>
+                        <span className="text-xs text-gray-400">{referralCount} users</span>
+                      </div>
+                    )}
+                    
+                    {referralEarnings > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-400">Referral Earnings</span>
+                        <span className="text-xs text-green-400">{referralEarnings} pts</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 

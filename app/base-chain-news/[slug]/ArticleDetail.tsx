@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -14,7 +14,10 @@ import {
   ClockIcon,
   PaperAirplaneIcon,
   HeartIcon,
-  ShareIcon
+  ShareIcon,
+  ChatBubbleLeftRightIcon,
+  ChatBubbleOvalLeftIcon,
+  BookmarkIcon
 } from '@heroicons/react/24/outline';
 import { db } from '@/lib/firebase';
 import { 
@@ -64,12 +67,26 @@ interface Comment {
   createdAt: string;
   likes: string[];
   dislikes: string[];
+  replies: string[];
+  parentCommentId?: string;
+  annotation?: {
+    startOffset: number;
+    endOffset: number;
+    selectedText: string;
+  };
 }
 
 interface Toast {
   id: string;
   message: string;
   type: 'success' | 'error' | 'info';
+}
+
+interface Annotation {
+  startOffset: number;
+  endOffset: number;
+  selectedText: string;
+  commentId?: string;
 }
 
 export default function ArticleDetail({ article }: ArticleProps) {
@@ -107,6 +124,17 @@ export default function ArticleDetail({ article }: ArticleProps) {
     comments?: string[];
   }>>([]);
 
+  // Section annotation state
+  const [selectedText, setSelectedText] = useState<string>('');
+  const [showAnnotationBox, setShowAnnotationBox] = useState(false);
+  const [annotationPosition, setAnnotationPosition] = useState({ x: 0, y: 0 });
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [annotationComment, setAnnotationComment] = useState<string>('');
+  const [isAnnotationMode, setIsAnnotationMode] = useState(false);
+  const [currentSelection, setCurrentSelection] = useState<{ start: number; end: number; text: string } | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const annotationBoxRef = useRef<HTMLDivElement>(null);
+
   // ─── Utility Functions ───
   const addToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = Date.now().toString();
@@ -132,6 +160,234 @@ export default function ArticleDetail({ article }: ArticleProps) {
       minute: '2-digit'
     });
   };
+
+  // ─── Enhanced Text Selection Handler ───
+  const handleDoubleClick = () => {
+    setIsAnnotationMode(true);
+    addToast('Annotation mode activated! Select text to annotate.', 'info');
+  };
+
+  const handleTextSelection = () => {
+    if (!isAnnotationMode) return;
+
+    const selection = window.getSelection();
+    if (!selection || selection.toString().length === 0) {
+      setShowAnnotationBox(false);
+      setCurrentSelection(null);
+      return;
+    }
+
+    const selectedText = selection.toString().trim();
+    if (selectedText.length < 3) return; // Minimum 3 characters
+
+    const range = selection.getRangeAt(0);
+    
+    // Calculate position relative to viewport
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const boxWidth = 380; // Increased box width
+    const boxHeight = 400; // Approximate box height
+    
+    // Force position in center-right area with proper spacing
+    let x = Math.max(20, viewportWidth * 0.65); // 65% from left
+    let y = Math.max(50, (viewportHeight - boxHeight) / 2 + window.scrollY);
+
+    // Ensure box doesn't go off-screen
+    if (x + boxWidth > viewportWidth - 20) {
+      x = viewportWidth - boxWidth - 20;
+    }
+    
+    // Ensure box stays in upper portion of screen
+    const maxY = viewportHeight * 0.7 + window.scrollY; // 70% of viewport height
+    if (y + boxHeight > maxY) {
+      y = maxY - boxHeight - 20;
+    }
+
+    // Ensure minimum position from top
+    if (y < window.scrollY + 50) {
+      y = window.scrollY + 50;
+    }
+    
+    setSelectedText(selectedText);
+    setCurrentSelection({
+      start: range.startOffset,
+      end: range.endOffset,
+      text: selectedText
+    });
+    setAnnotationPosition({ x, y });
+    setShowAnnotationBox(true);
+
+    // Add visual feedback for selection
+    addToast(`Text selected: "${selectedText.substring(0, 50)}${selectedText.length > 50 ? '...' : ''}"`, 'info');
+  };
+
+  // ─── Highlight Selected Text ───
+  const highlightSelectedText = () => {
+    if (!currentSelection || !contentRef.current) return;
+
+    const content = contentRef.current;
+    const textNodes = [];
+    
+    // Get all text nodes
+    const walker = document.createTreeWalker(
+      content,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+    
+    let node;
+    while (node = walker.nextNode()) {
+      textNodes.push(node);
+    }
+
+    // Find the text node containing our selection
+    let currentOffset = 0;
+    let targetNode = null;
+    let nodeStartOffset = 0;
+
+    for (const textNode of textNodes) {
+      const nodeLength = textNode.textContent?.length || 0;
+      if (currentOffset <= currentSelection.start && 
+          currentOffset + nodeLength >= currentSelection.end) {
+        targetNode = textNode;
+        nodeStartOffset = currentOffset;
+        break;
+      }
+      currentOffset += nodeLength;
+    }
+
+    if (targetNode && targetNode.parentNode) {
+      // Create highlight span
+      const range = document.createRange();
+      const startOffset = currentSelection.start - nodeStartOffset;
+      const endOffset = currentSelection.end - nodeStartOffset;
+      
+      range.setStart(targetNode, startOffset);
+      range.setEnd(targetNode, endOffset);
+
+      // Create highlight element
+      const highlight = document.createElement('span');
+      highlight.className = 'bg-yellow-400/30 border-b-2 border-yellow-400/50 animate-pulse';
+      highlight.style.animationDuration = '1s';
+      
+      try {
+        range.surroundContents(highlight);
+      } catch (e) {
+        console.log('Could not highlight selection');
+      }
+    }
+  };
+
+  // ─── Remove Highlights ───
+  const removeHighlights = () => {
+    const highlights = document.querySelectorAll('.bg-yellow-400\\/30');
+    highlights.forEach(highlight => {
+      const parent = highlight.parentNode;
+      if (parent) {
+        parent.replaceChild(document.createTextNode(highlight.textContent || ''), highlight);
+        parent.normalize();
+      }
+    });
+  };
+
+  // ─── Create Section Annotation ───
+  const createAnnotation = async () => {
+    if (!user || !walletAddress || !annotationComment.trim()) {
+      addToast('Please connect your wallet and provide a comment', 'error');
+      return;
+    }
+
+    if (!currentSelection) {
+      addToast('No text selected for annotation', 'error');
+      return;
+    }
+
+    try {
+      // Create comment with annotation
+      const response = await fetch(`/api/articles/${article.slug}/comments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.uid,
+          walletAddress,
+          content: annotationComment.trim(),
+          annotation: {
+            startOffset: currentSelection.start,
+            endOffset: currentSelection.end,
+            selectedText: currentSelection.text,
+          },
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Add annotation to local state
+        const newAnnotation: Annotation = {
+          startOffset: currentSelection.start,
+          endOffset: currentSelection.end,
+          selectedText: currentSelection.text,
+          commentId: data.comment.id,
+        };
+        setAnnotations(prev => [...prev, newAnnotation]);
+
+        // Add comment to comments list
+        setComments(prev => [data.comment, ...prev]);
+
+        addToast(`Annotation created! +${data.pointsEarned} points`, 'success');
+        setAnnotationComment('');
+        setShowAnnotationBox(false);
+        setCurrentSelection(null);
+        setIsAnnotationMode(false);
+        removeHighlights();
+        window.getSelection()?.removeAllRanges();
+      } else {
+        const errorData = await response.json();
+        addToast(errorData.error || 'Failed to create annotation', 'error');
+      }
+    } catch (error) {
+      console.error('Error creating annotation:', error);
+      addToast('Error creating annotation', 'error');
+    }
+  };
+
+  // ─── Cancel Annotation ───
+  const cancelAnnotation = () => {
+    setShowAnnotationBox(false);
+    setAnnotationComment('');
+    setCurrentSelection(null);
+    setIsAnnotationMode(false);
+    removeHighlights();
+    window.getSelection()?.removeAllRanges();
+  };
+
+  // ─── Handle Click Outside ───
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (annotationBoxRef.current && !annotationBoxRef.current.contains(event.target as Node)) {
+        if (showAnnotationBox) {
+          cancelAnnotation();
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showAnnotationBox]);
+
+  // ─── Highlight Selected Text When Annotation Box Appears ───
+  useEffect(() => {
+    if (showAnnotationBox && currentSelection) {
+      // Small delay to ensure DOM is ready
+      setTimeout(() => {
+        highlightSelectedText();
+      }, 100);
+    }
+  }, [showAnnotationBox, currentSelection]);
 
   // ─── Increment views on mount ───
   useEffect(() => {
@@ -175,17 +431,24 @@ export default function ArticleDetail({ article }: ArticleProps) {
   useEffect(() => {
     async function fetchComments() {
       try {
-        const q = query(
-          collection(db, 'comments'), 
-          where('articleSlug', '==', article.slug),
-          orderBy('createdAt', 'desc')
-        );
-        const snap = await getDocs(q);
-        const data = snap.docs.map((doc) => ({ 
-          id: doc.id, 
-          ...doc.data() 
-        } as Comment));
-        setComments(data);
+        const response = await fetch(`/api/articles/${article.slug}/comments`);
+        if (response.ok) {
+          const data = await response.json();
+          setComments(data.comments || []);
+        } else {
+          // Fallback to old method
+          const q = query(
+            collection(db, 'comments'), 
+            where('articleSlug', '==', article.slug),
+            orderBy('createdAt', 'desc')
+          );
+          const snap = await getDocs(q);
+          const data = snap.docs.map((doc) => ({ 
+            id: doc.id, 
+            ...doc.data() 
+          } as Comment));
+          setComments(data);
+        }
       } catch (err) {
         console.error('Error fetching comments:', err);
         setErrorComments('Failed to load comments');
@@ -274,38 +537,27 @@ export default function ArticleDetail({ article }: ArticleProps) {
     }
     
     try {
-      const commentData = {
-        articleSlug: article.slug,
-        userId: user.uid,
-        userAddress: walletAddress,
-        content: newComment.trim(),
-        createdAt: new Date().toISOString(),
-        likes: [],
-        dislikes: []
-      };
-
-      const docRef = await addDoc(collection(db, 'comments'), commentData);
-      const newCommentObj = { id: docRef.id, ...commentData };
-      setComments(prev => [newCommentObj, ...prev]);
-      setNewComment('');
-
-      // Track activity
-      await addDoc(collection(db, 'user_activities'), {
-        userId: user.uid,
-        walletAddress,
-        action: 'comment_article',
-        points: 15,
-        articleSlug: article.slug,
-        createdAt: serverTimestamp()
+      const response = await fetch(`/api/articles/${article.slug}/comments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.uid,
+          walletAddress,
+          content: newComment.trim(),
+        }),
       });
 
-      // Update user points
-      const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, {
-        points: increment(15)
-      });
-
-      addToast('Comment posted! +15 points', 'success');
+      if (response.ok) {
+        const data = await response.json();
+        setComments(prev => [data.comment, ...prev]);
+        setNewComment('');
+        addToast(`Comment posted! +${data.pointsEarned} points`, 'success');
+      } else {
+        const errorData = await response.json();
+        addToast(errorData.error || 'Failed to post comment', 'error');
+      }
     } catch (error) {
       console.error('Error posting comment:', error);
       addToast('Failed to post comment.', 'error');
@@ -458,8 +710,8 @@ export default function ArticleDetail({ article }: ArticleProps) {
       {/* Animated Background Elements */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-green-500/5 rounded-full blur-3xl animate-pulse delay-500"></div>
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl animate-pulse delay-500"></div>
       </div>
 
       <Header />
@@ -481,6 +733,86 @@ export default function ArticleDetail({ article }: ArticleProps) {
             {toast.message}
           </motion.div>
         ))}
+      </AnimatePresence>
+
+      {/* Annotation Box */}
+      <AnimatePresence>
+        {showAnnotationBox && (
+          <motion.div
+            ref={annotationBoxRef}
+            initial={{ opacity: 0, scale: 0.9, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 10 }}
+            className="fixed z-50 bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-600 rounded-xl p-6 shadow-2xl backdrop-blur-sm"
+            style={{
+              left: annotationPosition.x,
+              top: annotationPosition.y,
+              width: '380px',
+              maxHeight: '500px',
+              overflow: 'hidden'
+            }}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+                <h3 className="text-lg font-semibold text-white">Create Annotation</h3>
+              </div>
+              <button
+                onClick={cancelAnnotation}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Selected Text Display */}
+            <div className="mb-4 p-3 bg-blue-500/10 rounded-lg border border-blue-500/20 max-h-24 overflow-y-auto">
+              <p className="text-xs text-blue-300 mb-2 font-medium">Selected text:</p>
+              <p className="text-sm text-blue-200 italic leading-relaxed">
+                "{selectedText}"
+              </p>
+            </div>
+
+            {/* Comment Input */}
+            <div className="mb-4">
+              <label className="block text-sm text-gray-300 mb-2 font-medium">
+                Your annotation:
+              </label>
+              <textarea
+                value={annotationComment}
+                onChange={(e) => setAnnotationComment(e.target.value)}
+                placeholder="Add your thoughts about this text..."
+                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-all duration-200"
+                rows={4}
+                autoFocus
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={createAnnotation}
+                disabled={!annotationComment.trim()}
+                className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <span>💬</span>
+                Annotate
+              </button>
+              <button
+                onClick={cancelAnnotation}
+                className="px-4 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all duration-200 font-medium"
+              >
+                Cancel
+              </button>
+            </div>
+
+            {/* Help Text */}
+            <p className="text-xs text-gray-500 mt-3 text-center">
+              Earn +25 points for section annotations! 🎉
+            </p>
+          </motion.div>
+        )}
       </AnimatePresence>
 
       <main className="container mx-auto px-4 py-8 relative z-10">
@@ -516,7 +848,7 @@ export default function ArticleDetail({ article }: ArticleProps) {
                     <motion.span
                       initial={{ scale: 0 }}
                       animate={{ scale: 1 }}
-                      className="px-4 py-2 bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-blue-400 text-sm rounded-full border border-blue-500/30 font-medium"
+                      className="px-4 py-2 bg-blue-500/20 text-blue-400 text-sm rounded-full border border-blue-500/30 font-medium"
                     >
                       {article.category}
                     </motion.span>
@@ -556,7 +888,7 @@ export default function ArticleDetail({ article }: ArticleProps) {
                     <span className="font-medium">{articleStats.views.toLocaleString()} views</span>
                   </div>
                   <div className="flex items-center gap-2 p-3 bg-gray-700/30 rounded-lg">
-                    <ClockIcon className="w-5 h-5 text-purple-400" />
+                    <ClockIcon className="w-5 h-5 text-blue-400" />
                     <span className="font-medium">{article.source}</span>
                   </div>
                 </motion.div>
@@ -602,8 +934,55 @@ export default function ArticleDetail({ article }: ArticleProps) {
                   transition={{ delay: 0.5 }}
                   className="prose prose-invert max-w-none"
                 >
-                  <div className="text-gray-300 leading-relaxed whitespace-pre-wrap text-lg sm:text-xl font-light">
+                  {/* Annotation Mode Indicator */}
+                  {isAnnotationMode && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="mb-6 p-4 bg-gradient-to-r from-blue-500/20 to-blue-600/20 rounded-xl border border-blue-500/30"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-3 h-3 bg-blue-400 rounded-full animate-pulse"></div>
+                        <p className="text-blue-300 font-medium">
+                          ✨ Annotation Mode Active - Double-click to activate, then select text to annotate
+                        </p>
+                        <button
+                          onClick={() => setIsAnnotationMode(false)}
+                          className="ml-auto px-3 py-1 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors text-sm"
+                        >
+                          Exit Mode
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  <div 
+                    ref={contentRef}
+                    className={`text-gray-300 leading-relaxed whitespace-pre-wrap text-lg sm:text-xl font-light select-text transition-all duration-300 ${
+                      isAnnotationMode ? 'cursor-crosshair' : 'cursor-text'
+                    }`}
+                    onMouseUp={handleTextSelection}
+                    onDoubleClick={handleDoubleClick}
+                    style={{ position: 'relative' }}
+                  >
                     {article.content}
+                    {/* Annotation indicators */}
+                    {annotations.map((annotation, index) => (
+                      <span
+                        key={index}
+                        className="inline-block bg-blue-500/20 border border-blue-500/30 rounded px-1 mx-1 cursor-pointer hover:bg-blue-500/30 transition-colors"
+                        title={`Annotation: ${annotation.selectedText}`}
+                        onClick={() => {
+                          // Scroll to comment
+                          const commentElement = document.getElementById(`comment-${annotation.commentId}`);
+                          if (commentElement) {
+                            commentElement.scrollIntoView({ behavior: 'smooth' });
+                          }
+                        }}
+                      >
+                        💬
+                      </span>
+                    ))}
                   </div>
                 </motion.div>
 
@@ -649,7 +1028,7 @@ export default function ArticleDetail({ article }: ArticleProps) {
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                       onClick={copyLink}
-                      className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-blue-400 rounded-xl hover:from-blue-500/30 hover:to-purple-500/30 transition-all duration-300 border border-blue-500/30"
+                      className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500/20 to-blue-600/20 text-blue-400 rounded-xl hover:from-blue-500/30 hover:to-blue-600/30 transition-all duration-300 border border-blue-500/30"
                     >
                       <ClipboardIcon className="w-5 h-5" />
                       Copy Link
@@ -658,7 +1037,7 @@ export default function ArticleDetail({ article }: ArticleProps) {
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                       onClick={shareToX}
-                      className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-blue-400 rounded-xl hover:from-blue-500/30 hover:to-purple-500/30 transition-all duration-300 border border-blue-500/30"
+                      className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500/20 to-blue-600/20 text-blue-400 rounded-xl hover:from-blue-500/30 hover:to-blue-600/30 transition-all duration-300 border border-blue-500/30"
                     >
                       <ShareIcon className="w-5 h-5" />
                       Share X
@@ -667,7 +1046,7 @@ export default function ArticleDetail({ article }: ArticleProps) {
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                       onClick={shareToTelegram}
-                      className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-blue-400 rounded-xl hover:from-blue-500/30 hover:to-purple-500/30 transition-all duration-300 border border-blue-500/30"
+                      className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500/20 to-blue-600/20 text-blue-400 rounded-xl hover:from-blue-500/30 hover:to-blue-600/30 transition-all duration-300 border border-blue-500/30"
                     >
                       <ShareIcon className="w-5 h-5" />
                       Share TG
@@ -688,9 +1067,10 @@ export default function ArticleDetail({ article }: ArticleProps) {
                 <motion.h2
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
-                  className="text-3xl font-bold text-white mb-8 bg-gradient-to-r from-white to-gray-300 bg-clip-text"
+                  className="text-3xl font-bold text-white mb-8 bg-gradient-to-r from-white to-gray-300 bg-clip-text flex items-center gap-3"
                 >
-                  💬 Comments & Discussion
+                  <ChatBubbleLeftRightIcon className="w-8 h-8 text-blue-400" />
+                  Comments & Discussions
                 </motion.h2>
 
                 {/* Enhanced Comment Form */}
@@ -716,7 +1096,7 @@ export default function ArticleDetail({ article }: ArticleProps) {
                           whileHover={{ scale: 1.05 }}
                           whileTap={{ scale: 0.95 }}
                           type="submit"
-                          className="flex items-center gap-3 px-8 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl hover:from-blue-600 hover:to-purple-700 transition-all duration-300 font-medium shadow-lg"
+                          className="flex items-center gap-3 px-8 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 transition-all duration-300 font-medium shadow-lg"
                         >
                           <PaperAirplaneIcon className="w-5 h-5" />
                           Post Comment
@@ -730,7 +1110,7 @@ export default function ArticleDetail({ article }: ArticleProps) {
                   <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="mb-8 p-6 bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-xl border border-blue-500/20"
+                    className="mb-8 p-6 bg-gradient-to-r from-blue-500/10 to-blue-600/10 rounded-xl border border-blue-500/20"
                   >
                     <p className="text-gray-300 text-center text-lg">
                       🔗 Connect your wallet to comment and earn points! 💰
@@ -757,14 +1137,17 @@ export default function ArticleDetail({ article }: ArticleProps) {
                     {comments.map((comment, index) => (
                       <motion.div
                         key={comment.id}
+                        id={`comment-${comment.id}`}
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: index * 0.1 }}
-                        className="p-6 bg-gradient-to-r from-gray-700/30 to-gray-600/30 rounded-xl border border-gray-600/30 hover:border-gray-500/50 transition-all duration-300"
+                        className={`p-6 bg-gradient-to-r from-gray-700/30 to-gray-600/30 rounded-xl border border-gray-600/30 hover:border-gray-500/50 transition-all duration-300 ${
+                          comment.annotation ? 'border-blue-500/30 bg-blue-500/5' : ''
+                        }`}
                       >
                         <div className="flex items-center justify-between mb-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-gradient-to-r from-blue-500/20 to-purple-500/20 rounded-full flex items-center justify-center border border-blue-500/30">
+                            <div className="w-10 h-10 bg-gradient-to-r from-blue-500/20 to-blue-600/20 rounded-full flex items-center justify-center border border-blue-500/30">
                               <UserIcon className="w-5 h-5 text-blue-400" />
                             </div>
                             <div>
@@ -779,7 +1162,19 @@ export default function ArticleDetail({ article }: ArticleProps) {
                               </p>
                             </div>
                           </div>
+                          {comment.annotation && (
+                            <div className="flex items-center gap-2 px-3 py-1 bg-blue-500/20 text-blue-400 text-xs rounded-full border border-blue-500/30">
+                              <BookmarkIcon className="w-3 h-3" />
+                              Section Annotation
+                            </div>
+                          )}
                         </div>
+                        {comment.annotation && (
+                          <div className="mb-3 p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
+                            <p className="text-xs text-blue-300 mb-1">Annotated text:</p>
+                            <p className="text-sm text-blue-200 italic">"{comment.annotation.selectedText}"</p>
+                          </div>
+                        )}
                         <p className="text-gray-200 mb-4 text-lg leading-relaxed">{comment.content}</p>
                         <div className="flex items-center gap-6">
                           <button className="flex items-center gap-2 text-gray-400 hover:text-blue-400 transition-colors">
@@ -789,6 +1184,10 @@ export default function ArticleDetail({ article }: ArticleProps) {
                           <button className="flex items-center gap-2 text-gray-400 hover:text-red-400 transition-colors">
                             <HandThumbDownIcon className="w-5 h-5" />
                             <span className="text-sm font-medium">{comment.dislikes.length}</span>
+                          </button>
+                          <button className="flex items-center gap-2 text-gray-400 hover:text-green-400 transition-colors">
+                            <ChatBubbleOvalLeftIcon className="w-5 h-5" />
+                            <span className="text-sm font-medium">{comment.replies.length}</span>
                           </button>
                         </div>
                       </motion.div>
@@ -861,6 +1260,10 @@ export default function ArticleDetail({ article }: ArticleProps) {
                   <div className="flex justify-between items-center p-3 bg-gray-700/20 rounded-lg">
                     <span className="text-gray-300">💬 Comments</span>
                     <span className="text-blue-400 font-bold text-lg">{comments.length}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 bg-gray-700/20 rounded-lg">
+                    <span className="text-gray-300">📝 Annotations</span>
+                    <span className="text-purple-400 font-bold text-lg">{annotations.length}</span>
                   </div>
                 </div>
               </motion.div>

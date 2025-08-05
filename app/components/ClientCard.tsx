@@ -213,7 +213,7 @@ const ClientCard = ({ item, isComingSoon = false }: { item: MarketplaceItem; isC
               <p className="text-gray-400Australian Dollar mb-4 break-all">
                 Transaction Hash:{' '}
                 <a
-                  href={`https://basescan.org/tx/${txHash}`}
+                  href={`/explorer/tx/${txHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-400 hover:text-blue-300"

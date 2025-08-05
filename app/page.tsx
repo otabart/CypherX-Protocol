@@ -269,15 +269,12 @@ export default function Page() {
         <Header />
 
         <main className="flex-1 text-gray-200 p-4 sm:p-6 lg:p-8 relative">
-          {/* Smooth background gradient */}
-          <div className="fixed inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 -z-10"></div>
-          <div className="fixed inset-0 bg-gradient-to-tr from-blue-950/40 via-transparent to-blue-900/20 -z-10"></div>
-          <div className="fixed inset-0 bg-gradient-to-bl from-slate-950/30 via-transparent to-blue-950/30 -z-10"></div>
+          {/* Solid background */}
+          <div className="fixed inset-0 bg-gray-950 -z-10"></div>
           <div className="relative z-10">
             {/* Hero Section */}
             <motion.div className="mb-12 text-center" {...fadeInUp(0)}>
               <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-blue-600/10 to-blue-400/10 blur-3xl"></div>
                 <div className="relative">
                   <h1 className="text-4xl sm:text-6xl font-bold text-gray-100 mb-3 tracking-tight">
                     CypherX
@@ -286,21 +283,21 @@ export default function Page() {
                     The Intelligence Layer for Base Chain
                   </p>
                   <div className="flex flex-wrap justify-center gap-6 mb-8">
-                    <div className="flex items-center space-x-3 bg-gradient-to-r from-blue-500/20 to-blue-600/20 px-6 py-3 rounded-xl border border-blue-500/30 backdrop-blur-sm">
+                    <div className="flex items-center space-x-3 bg-blue-500/20 px-6 py-3 rounded-xl border border-blue-500/30">
                       <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
                       <span className="text-sm font-semibold text-gray-200">Live Data</span>
                     </div>
-                    <div className="flex items-center space-x-3 bg-gradient-to-r from-purple-500/20 to-purple-600/20 px-6 py-3 rounded-xl border border-purple-500/30 backdrop-blur-sm">
+                    <div className="flex items-center space-x-3 bg-purple-500/20 px-6 py-3 rounded-xl border border-purple-500/30">
                       <div className="w-3 h-3 bg-purple-400 rounded-full animate-pulse"></div>
                       <span className="text-sm font-semibold text-gray-200">AI Powered</span>
                     </div>
-                    <div className="flex items-center space-x-3 bg-gradient-to-r from-cyan-500/20 to-cyan-600/20 px-6 py-3 rounded-xl border border-cyan-500/30 backdrop-blur-sm">
+                    <div className="flex items-center space-x-3 bg-cyan-500/20 px-6 py-3 rounded-xl border border-cyan-500/30">
                       <div className="w-3 h-3 bg-cyan-400 rounded-full animate-pulse"></div>
                       <span className="text-sm font-semibold text-gray-200">Real-time</span>
                     </div>
                   </div>
                   <div className="flex justify-center">
-                    <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 p-4 rounded-2xl border border-blue-500/20 backdrop-blur-sm">
+                    <div className="bg-blue-500/10 p-4 rounded-2xl border border-blue-500/20">
                       <p className="text-sm text-gray-400 max-w-2xl">
                         Discover, analyze, and trade tokens with advanced analytics, real-time data, and AI-powered insights
                       </p>
@@ -360,12 +357,12 @@ function CypherscopeTrendingTokens({
   if (loading) {
     return (
       <motion.div
-        className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl shadow-lg p-4 sm:p-6 border border-blue-500/30 flex flex-col h-full min-h-[400px]"
+        className="w-full bg-gray-900 rounded-xl shadow-lg p-4 sm:p-6 border border-blue-500/30 flex flex-col h-full min-h-[400px]"
         {...fadeInUp(0.1)}
       >
         <div className="flex justify-between items-center mb-3 sm:mb-6">
           <div className="flex items-center space-x-2 sm:space-x-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500/30 to-blue-600/30 rounded-xl flex items-center justify-center border border-blue-500/30">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-500/30 rounded-xl flex items-center justify-center border border-blue-500/30">
               <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
               </svg>
@@ -391,10 +388,10 @@ function CypherscopeTrendingTokens({
 
   if (error) {
     return (
-      <div className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl shadow-lg p-4 sm:p-6 border border-blue-500/30 flex flex-col h-full min-h-[400px]">
+      <div className="w-full bg-gray-900 rounded-xl shadow-lg p-4 sm:p-6 border border-blue-500/30 flex flex-col h-full min-h-[400px]">
         <div className="flex justify-between items-center mb-4 sm:mb-6">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500/30 to-blue-600/30 rounded-xl flex items-center justify-center border border-blue-500/30">
+            <div className="w-10 h-10 bg-blue-500/30 rounded-xl flex items-center justify-center border border-blue-500/30">
               <svg className="w-5 h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
               </svg>
@@ -412,12 +409,12 @@ function CypherscopeTrendingTokens({
 
   return (
     <motion.div
-      className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl shadow-lg p-4 sm:p-6 border border-blue-500/30 flex flex-col h-full min-h-[400px]"
+      className="w-full bg-gray-900 rounded-xl shadow-lg p-4 sm:p-6 border border-blue-500/30 flex flex-col h-full min-h-[400px]"
       {...fadeInUp(0.1)}
     >
       <div className="flex justify-between items-center mb-3 sm:mb-6">
         <div className="flex items-center space-x-2 sm:space-x-3">
-          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500/30 to-blue-600/30 rounded-xl flex items-center justify-center border border-blue-500/30">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-500/30 rounded-xl flex items-center justify-center border border-blue-500/30">
             <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
             </svg>
@@ -444,14 +441,14 @@ function CypherscopeTrendingTokens({
           tokens.slice(0, isMobile ? 5 : 7).map((token) => (
             <motion.div
               key={token.id}
-              className="bg-gradient-to-br from-gray-800 to-gray-700 rounded-xl p-3 sm:p-4 border border-blue-500/20 group cursor-pointer relative"
+              className="bg-gray-800 rounded-xl p-3 sm:p-4 border border-blue-500/20 group cursor-pointer relative"
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3, ease: "easeOut" }}
             >
               {/* Trending Badge */}
               {token.tags.includes('TRENDING') && (
-                <div className="absolute -top-2 -right-2 bg-gradient-to-r from-orange-500 to-red-500 text-white text-xs font-bold px-2 py-1 rounded-full border border-orange-400/50">
+                <div className="absolute -top-2 -right-2 bg-orange-500 text-white text-xs font-bold px-2 py-1 rounded-full border border-orange-400/50">
                   🔥 TRENDING
                 </div>
               )}
@@ -609,7 +606,7 @@ function LatestNews({ articles, isMobile, loading, error }: { articles: NewsArti
 
   return (
     <motion.div
-      className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl shadow-lg p-4 sm:p-6 border border-blue-500/30 flex flex-col"
+      className="w-full bg-gray-900 rounded-xl shadow-lg p-4 sm:p-6 border border-blue-500/30 flex flex-col"
       {...fadeInUp(0)}
     >
       <div className="flex justify-between items-center mb-4 sm:mb-6">
@@ -619,7 +616,7 @@ function LatestNews({ articles, isMobile, loading, error }: { articles: NewsArti
         {articles.slice(0, 3).map((article) => (
           <motion.div
             key={article.slug}
-            className="bg-gradient-to-br from-gray-800 to-gray-700 rounded-lg shadow-md p-4 border border-blue-500/30 hover:shadow-xl transition-all duration-300"
+            className="bg-gray-800 rounded-lg shadow-md p-4 border border-blue-500/30 hover:shadow-xl transition-all duration-300"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}

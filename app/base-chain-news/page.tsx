@@ -24,15 +24,57 @@ import {
 } from "firebase/firestore";
 import { 
   fetchUserStats, 
-  fetchLeaderboard, 
-  interactWithArticle, 
-  POINTS_SYSTEM 
+  fetchLeaderboard
 } from "@/lib/news-api";
 import { useAuth } from "@/app/providers";
 import { useAccount } from "wagmi";
 import Image from 'next/image';
 import Header from "@/app/components/Header";
 import Footer from "@/app/components/Footer";
+
+// News points API functions
+const handleNewsPoints = async (
+  action: 'read_article' | 'like_article' | 'unlike_article' | 'dislike_article' | 'share_article' | 'comment_article',
+  userId: string,
+  walletAddress: string,
+  articleSlug: string,
+  platform?: 'x' | 'telegram' | 'discord',
+  comment?: string
+) => {
+  try {
+    const response = await fetch('/api/points/news', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action,
+        userId,
+        walletAddress,
+        articleSlug,
+        platform,
+        comment,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      if (data.alreadyPerformed) {
+        throw new Error('You have already performed this action today');
+      } else if (data.alreadyLiked) {
+        throw new Error('You have already liked this article');
+      } else {
+        throw new Error(data.error || 'Failed to process action');
+      }
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error handling news points:', error);
+    throw error;
+  }
+};
 
 // ────────── Types ──────────
 // Firebase timestamp type
@@ -212,12 +254,22 @@ export default function NewsPage() {
       if (!user || !walletAddress) return;
 
       try {
-        // Fetch user stats
-        const userStats = await fetchUserStats(walletAddress);
-        setUserPoints(userStats.stats.points);
-        setLikedArticles(userStats.user?.likedArticles || [] as string[]);
-        setDislikedArticles(userStats.user?.dislikedArticles || [] as string[]);
-        setRecentActivities(userStats.activities);
+        // Fetch user stats from news points API
+        const response = await fetch(`/api/points/news?walletAddress=${walletAddress}`);
+        if (response.ok) {
+          const newsData = await response.json();
+          setUserPoints(newsData.user?.points || 0);
+          setLikedArticles(newsData.user?.likedArticles || [] as string[]);
+          setDislikedArticles(newsData.user?.dislikedArticles || [] as string[]);
+          setRecentActivities(newsData.activities || []);
+        } else {
+          // Fallback to old API
+          const userStats = await fetchUserStats(walletAddress);
+          setUserPoints(userStats.stats.points);
+          setLikedArticles(userStats.user?.likedArticles || [] as string[]);
+          setDislikedArticles(userStats.user?.dislikedArticles || [] as string[]);
+          setRecentActivities(userStats.activities);
+        }
 
         // Fetch leaderboard
         const leaderboardData = await fetchLeaderboard(10);
@@ -244,12 +296,22 @@ export default function NewsPage() {
     try {
       // Track activity and increment views
       if (user && walletAddress) {
-        await interactWithArticle(slug, 'view', user.uid, walletAddress);
-        addToast(`Article viewed! +${POINTS_SYSTEM.READ_ARTICLE} points`, 'success');
+        try {
+          const result = await handleNewsPoints('read_article', user.uid, walletAddress, slug);
+          addToast(`Article viewed! +${result.pointsEarned} points`, 'success');
+          refreshUserPoints(); // Refresh points after successful interaction
+        } catch (error: any) {
+          if (error.message.includes('already performed')) {
+            addToast('Article already viewed today', 'info');
+          } else {
+            addToast(error.message || 'Error tracking article view', 'error');
+          }
+        }
       }
       router.push(`/base-chain-news/${slug}`);
     } catch (error) {
       console.error('Error handling article click:', error);
+      addToast('Error navigating to article', 'error');
     }
   };
 
@@ -265,17 +327,26 @@ export default function NewsPage() {
       
       if (isLiked) {
         // Unlike
-        await interactWithArticle(article.slug, 'like', user.uid, walletAddress);
-        setLikedArticles(prev => prev.filter(slug => slug !== article.slug));
-        // Update article upvotes locally
-        setArticles(prev => prev.map(a => 
-          a.slug === article.slug 
-            ? { ...a, upvotes: (a.upvotes || 0) - 1 }
-            : a
-        ));
-        // Update featured article if it's the same article
-        if (featuredArticle && featuredArticle.slug === article.slug) {
-          setFeaturedArticle(prev => prev ? { ...prev, upvotes: (prev.upvotes || 0) - 1 } : null);
+        try {
+          const result = await handleNewsPoints('unlike_article', user.uid, walletAddress, article.slug);
+          setLikedArticles(prev => prev.filter(slug => slug !== article.slug));
+          // Update article upvotes locally
+          setArticles(prev => prev.map(a => 
+            a.slug === article.slug 
+              ? { ...a, upvotes: (a.upvotes || 0) - 1 }
+              : a
+          ));
+          // Update featured article if it's the same article
+          if (featuredArticle && featuredArticle.slug === article.slug) {
+            setFeaturedArticle(prev => prev ? { ...prev, upvotes: (prev.upvotes || 0) - 1 } : null);
+          }
+          addToast('Article unliked', 'info');
+        } catch (error: any) {
+          if (error.message.includes('already performed')) {
+            addToast('Already unliked today', 'info');
+          } else {
+            addToast(error.message || 'Error unliking article', 'error');
+          }
         }
       } else {
         // Like - remove dislike if exists
@@ -292,21 +363,30 @@ export default function NewsPage() {
           }
         }
         
-        const result = await interactWithArticle(article.slug, 'like', user.uid, walletAddress);
-        setLikedArticles(prev => [...prev, article.slug]);
-        // Update article upvotes locally
-        setArticles(prev => prev.map(a => 
-          a.slug === article.slug 
-            ? { ...a, upvotes: (a.upvotes || 0) + 1 }
-            : a
-        ));
-        // Update featured article if it's the same article
-        if (featuredArticle && featuredArticle.slug === article.slug) {
-          setFeaturedArticle(prev => prev ? { ...prev, upvotes: (prev.upvotes || 0) + 1 } : null);
-        }
-        
-        if (result.pointsEarned > 0) {
+        try {
+          const result = await handleNewsPoints('like_article', user.uid, walletAddress, article.slug);
+          setLikedArticles(prev => [...prev, article.slug]);
+          // Update article upvotes locally
+          setArticles(prev => prev.map(a => 
+            a.slug === article.slug 
+              ? { ...a, upvotes: (a.upvotes || 0) + 1 }
+              : a
+          ));
+          // Update featured article if it's the same article
+          if (featuredArticle && featuredArticle.slug === article.slug) {
+            setFeaturedArticle(prev => prev ? { ...prev, upvotes: (prev.upvotes || 0) + 1 } : null);
+          }
+          
           addToast(`Article liked! +${result.pointsEarned} points`, 'success');
+          refreshUserPoints(); // Refresh points after successful interaction
+        } catch (error: any) {
+          if (error.message.includes('already liked')) {
+            addToast('You have already liked this article', 'info');
+          } else if (error.message.includes('already performed')) {
+            addToast('Already liked today', 'info');
+          } else {
+            addToast(error.message || 'Error liking article', 'error');
+          }
         }
       }
     } catch (error) {
@@ -353,17 +433,27 @@ export default function NewsPage() {
           }
         }
         
-        await interactWithArticle(article.slug, 'dislike', user.uid, walletAddress);
-        setDislikedArticles(prev => [...prev, article.slug]);
-        // Update article downvotes locally
-        setArticles(prev => prev.map(a => 
-          a.slug === article.slug 
-            ? { ...a, downvotes: (a.downvotes || 0) + 1 }
-            : a
-        ));
-        // Update featured article if it's the same article
-        if (featuredArticle && featuredArticle.slug === article.slug) {
-          setFeaturedArticle(prev => prev ? { ...prev, downvotes: (prev.downvotes || 0) + 1 } : null);
+        try {
+          await handleNewsPoints('dislike_article', user.uid, walletAddress, article.slug);
+          setDislikedArticles(prev => [...prev, article.slug]);
+          // Update article downvotes locally
+          setArticles(prev => prev.map(a => 
+            a.slug === article.slug 
+              ? { ...a, downvotes: (a.downvotes || 0) + 1 }
+              : a
+          ));
+          // Update featured article if it's the same article
+          if (featuredArticle && featuredArticle.slug === article.slug) {
+            setFeaturedArticle(prev => prev ? { ...prev, downvotes: (prev.downvotes || 0) + 1 } : null);
+          }
+          addToast('Article disliked', 'info');
+          refreshUserPoints(); // Refresh points after successful interaction
+        } catch (error: any) {
+          if (error.message.includes('already performed')) {
+            addToast('Already disliked today', 'info');
+          } else {
+            addToast(error.message || 'Error disliking article', 'error');
+          }
         }
       }
     } catch (error) {
@@ -384,10 +474,15 @@ export default function NewsPage() {
     // Track sharing activity
     if (user && walletAddress) {
       try {
-        const result = await interactWithArticle(article.slug, 'share', user.uid, walletAddress, platform);
+        const result = await handleNewsPoints('share_article', user.uid, walletAddress, article.slug, platform);
         addToast(`Shared to ${platform === 'x' ? 'X' : 'Telegram'}! +${result.pointsEarned} points`, 'success');
-      } catch (error) {
-        console.error('Error tracking share:', error);
+        refreshUserPoints(); // Refresh points after successful interaction
+      } catch (error: any) {
+        if (error.message.includes('already performed')) {
+          addToast('Already shared today', 'info');
+        } else {
+          addToast(error.message || 'Error tracking share', 'error');
+        }
       }
     }
   };
@@ -402,7 +497,7 @@ export default function NewsPage() {
     if (!comment?.trim()) return;
 
     try {
-      const result = await interactWithArticle(slug, 'comment', user.uid, walletAddress, undefined, comment);
+      const result = await handleNewsPoints('comment_article', user.uid, walletAddress, slug, undefined, comment);
       
       // Update article comments locally
       setArticles(prev => prev.map(a => 
@@ -418,9 +513,13 @@ export default function NewsPage() {
       
       setNewComments(prev => ({ ...prev, [slug]: '' }));
       addToast(`Comment sent! +${result.pointsEarned} points`, 'success');
-    } catch (error) {
-      console.error('Error sending comment:', error);
-      addToast('Error sending comment', 'error');
+      refreshUserPoints(); // Refresh points after successful interaction
+    } catch (error: any) {
+      if (error.message.includes('already performed')) {
+        addToast('Already commented today', 'info');
+      } else {
+        addToast(error.message || 'Error sending comment', 'error');
+      }
     }
   };
 
@@ -430,6 +529,21 @@ export default function NewsPage() {
     setTimeout(() => {
       setToasts(prev => prev.filter(toast => toast.id !== id));
     }, 5000);
+  };
+
+  // Function to refresh user points
+  const refreshUserPoints = async () => {
+    if (!user || !walletAddress) return;
+
+    try {
+      const response = await fetch(`/api/points/news?walletAddress=${walletAddress}`);
+      if (response.ok) {
+        const newsData = await response.json();
+        setUserPoints(newsData.user?.points || 0);
+      }
+    } catch (error) {
+      console.error('Error refreshing user points:', error);
+    }
   };
 
   const handleAuthorApplication = async () => {
