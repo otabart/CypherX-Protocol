@@ -217,43 +217,58 @@ const TopPerformingCoins = () => {
             </div>
 
             {/* Mobile Layout */}
-            <div className="sm:hidden space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm font-bold text-gray-200">#{index + 1}</span>
+            <div className="sm:hidden space-y-3">
+              <div className="flex items-center space-x-3 p-3 bg-gray-800/50 rounded-lg">
+                <div className="flex items-center space-x-3 flex-1 min-w-0">
+                  <div className="relative flex-shrink-0">
+                    <span className="text-lg font-bold text-gray-200">#{index + 1}</span>
+                  </div>
                   {coin.info?.imageUrl && (
                     <Image
                       src={coin.info.imageUrl}
                       alt={`${coin.symbol} logo`}
-                      width={20}
-                      height={20}
-                      className="w-5 h-5 rounded-full border border-blue-500/30"
+                      width={32}
+                      height={32}
+                      className="w-8 h-8 rounded-full border border-blue-500/30"
                       onError={(e: React.SyntheticEvent<HTMLImageElement>) => (e.currentTarget.src = "/fallback-token-icon.png")}
                       placeholder="blur"
                       blurDataURL="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
                     />
                   )}
-                  <span className="text-sm font-semibold text-gray-200">{coin.symbol}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-base font-bold text-gray-200 truncate">{coin.symbol}</span>
+                      <span className="text-xs text-gray-400">({coin.name})</span>
+                    </div>
+                    <div className="text-xs text-gray-400 truncate">
+                      MC: ${abbreviateNumber(coin.marketCap) ?? "N/A"}
+                    </div>
+                  </div>
                 </div>
-                <span
-                  className={`text-sm ${
-                    (coin.priceChange?.h24 ?? 0) >= 0 ? "text-green-500" : "text-red-500"
-                  } font-medium`}
-                >
-                  {(coin.priceChange?.h24 ?? 0).toFixed(2)}%
-                </span>
+                <div className="flex flex-col items-end space-y-1">
+                  <span
+                    className={`text-lg font-bold ${
+                      (coin.priceChange?.h24 ?? 0) >= 0 ? "text-green-500" : "text-red-500"
+                    }`}
+                  >
+                    {(coin.priceChange?.h24 ?? 0).toFixed(2)}%
+                  </span>
+                  <span className="text-sm text-gray-300">
+                    ${parseFloat(coin.priceUsd ?? "0").toFixed(6)}
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center justify-between text-xs text-gray-400">
-                <span>Price: ${parseFloat(coin.priceUsd ?? "0").toFixed(4)}</span>
-                <span>MC: ${abbreviateNumber(coin.marketCap) ?? "N/A"}</span>
-              </div>
-              <div className="flex justify-end">
+              <div className="flex justify-between items-center px-3">
+                <div className="flex items-center space-x-4 text-xs text-gray-400">
+                  <span>Vol: ${abbreviateNumber(coin.volume?.h24 ?? 0)}</span>
+                  <span>24h</span>
+                </div>
                 <Link
                   href={`/token-scanner/${coin.poolAddress}/chart`}
-                  className="text-xs text-blue-400 hover:text-blue-300 underline transition-colors"
+                  className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 active:scale-95"
                   aria-label={`Trade ${coin.symbol}`}
                 >
-                  Trade →
+                  Trade
                 </Link>
               </div>
             </div>

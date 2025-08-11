@@ -8,6 +8,7 @@ import Link from "next/link";
 import Image from "next/image";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
+import GlobalSearch from "./components/GlobalSearch";
 
 import toast from "react-hot-toast"; // Added for error toasts
 
@@ -41,6 +42,32 @@ function fadeInUp(delay = 0) {
     transition: { duration: 0.5, delay, ease: "easeOut" },
   };
 }
+
+// Enhanced animation variants
+const heroVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      duration: 0.8,
+      staggerChildren: 0.2,
+    },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 30 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.6,
+      ease: "easeOut",
+    },
+  },
+};
+
+
 
 type NewsArticle = {
   title: string;
@@ -157,6 +184,7 @@ export default function Page() {
   const [loadingNews, setLoadingNews] = useState(true);
   const [errorTokens, setErrorTokens] = useState("");
   const [errorNews, setErrorNews] = useState("");
+  const [showTopMovers, setShowTopMovers] = useState(false);
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -241,6 +269,13 @@ export default function Page() {
 
     fetchTrendingTokens();
     fetchArticles();
+    
+    // Show top movers after a delay for better UX
+    const timer = setTimeout(() => {
+      setShowTopMovers(true);
+    }, 2000); // 2 second delay
+    
+    return () => clearTimeout(timer);
   }, []);
 
   return (
@@ -265,57 +300,229 @@ export default function Page() {
         `}</style>
       </Head>
 
-      <div className="min-h-screen flex flex-col bg-gray-950">
+      <div className="min-h-screen flex flex-col bg-gray-950 overflow-x-hidden">
         <Header />
 
-        <main className="flex-1 text-gray-200 p-4 sm:p-6 lg:p-8 relative">
-          {/* Solid background */}
+        <main className="flex-1 text-gray-200 relative overflow-x-hidden">
+          {/* Enhanced Background with Multiple Layers */}
           <div className="fixed inset-0 bg-gray-950 -z-10"></div>
-          <div className="relative z-10">
-            {/* Hero Section */}
-            <motion.div className="mb-12 text-center" {...fadeInUp(0)}>
-              <div className="relative">
-                <div className="relative">
-                  <h1 className="text-4xl sm:text-6xl font-bold text-gray-100 mb-3 tracking-tight">
-                    CypherX
-                  </h1>
-                  <p className="text-lg sm:text-xl text-gray-300 mb-8 max-w-2xl mx-auto leading-relaxed">
-                    The Intelligence Layer for Base Chain
-                  </p>
-                  <div className="flex flex-wrap justify-center gap-6 mb-8">
-                    <div className="flex items-center space-x-3 bg-blue-500/20 px-6 py-3 rounded-xl border border-blue-500/30">
-                      <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-                      <span className="text-sm font-semibold text-gray-200">Live Data</span>
-                    </div>
-                    <div className="flex items-center space-x-3 bg-purple-500/20 px-6 py-3 rounded-xl border border-purple-500/30">
-                      <div className="w-3 h-3 bg-purple-400 rounded-full animate-pulse"></div>
-                      <span className="text-sm font-semibold text-gray-200">AI Powered</span>
-                    </div>
-                    <div className="flex items-center space-x-3 bg-cyan-500/20 px-6 py-3 rounded-xl border border-cyan-500/30">
-                      <div className="w-3 h-3 bg-cyan-400 rounded-full animate-pulse"></div>
-                      <span className="text-sm font-semibold text-gray-200">Real-time</span>
-                    </div>
-                  </div>
-                  <div className="flex justify-center">
-                    <div className="bg-blue-500/10 p-4 rounded-2xl border border-blue-500/20">
-                      <p className="text-sm text-gray-400 max-w-2xl">
-                        Discover, analyze, and trade tokens with advanced analytics, real-time data, and AI-powered insights
-                      </p>
-                    </div>
-                  </div>
-                </div>
+          
+          {/* Simple Background */}
+          <div className="fixed inset-0 -z-10 overflow-hidden">
+            {/* Primary Background */}
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-900/10 via-gray-900/10 to-cyan-900/10"></div>
+            
+            {/* Grid Pattern */}
+            <div className="absolute inset-0 opacity-10" style={{
+              backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Ccircle cx='30' cy='30' r='1'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`
+            }}></div>
+          </div>
+          
+          {/* Enhanced Hero Section */}
+          <motion.div 
+            className="relative w-full min-h-[60vh] sm:min-h-[60vh] flex items-center justify-center overflow-hidden pt-8 sm:pt-0"
+            variants={heroVariants}
+            initial="hidden"
+            animate="visible"
+          >
+            {/* Background Elements */}
+            <div className="absolute inset-0 overflow-hidden">
+              {/* Animated Grid Pattern */}
+              <div className="absolute inset-0 opacity-[0.02]">
+                <div className="absolute inset-0" style={{
+                  backgroundImage: `radial-gradient(circle at 1px 1px, rgba(59, 130, 246, 0.3) 1px, transparent 0)`,
+                  backgroundSize: '40px 40px'
+                }}></div>
               </div>
-            </motion.div>
+              
+              {/* Floating Orbs */}
+              <motion.div
+                className="absolute top-1/4 left-1/4 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl"
+                animate={{
+                  x: [0, 20, 0],
+                  y: [0, -20, 0],
+                }}
+                transition={{
+                  duration: 8,
+                  repeat: Infinity,
+                  ease: "easeInOut"
+                }}
+              />
+              <motion.div
+                className="absolute top-1/3 right-1/4 w-24 h-24 bg-purple-500/10 rounded-full blur-3xl"
+                animate={{
+                  x: [0, -15, 0],
+                  y: [0, 15, 0],
+                }}
+                transition={{
+                  duration: 6,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                  delay: 2
+                }}
+              />
+              <motion.div
+                className="absolute bottom-1/4 left-1/3 w-20 h-20 bg-cyan-500/10 rounded-full blur-3xl"
+                animate={{
+                  x: [0, 25, 0],
+                  y: [0, -10, 0],
+                }}
+                transition={{
+                  duration: 10,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                  delay: 4
+                }}
+              />
+              
+              {/* Subtle Gradient Overlays */}
+              <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-blue-500/5 via-transparent to-purple-500/5"></div>
+              <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-bl from-cyan-500/5 via-transparent to-blue-500/5"></div>
+            </div>
+            
+            {/* Gradient Fade to Content */}
+            <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-gray-950 to-transparent z-10"></div>
+            
+            <div className="relative z-20 text-center px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+              {/* Enhanced Main Heading */}
+              <motion.div
+                variants={itemVariants}
+                className="mb-8 sm:mb-6 pt-8 sm:pt-6 lg:pt-2"
+              >
+                {/* Small Badge */}
+                <motion.div
+                  variants={itemVariants}
+                  className="flex justify-center mb-4"
+                >
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                    <span className="w-2 h-2 bg-blue-400 rounded-full mr-2 animate-pulse"></span>
+                    LIGHTNING FAST SWAP-EXECUTIONS
+                  </span>
+                </motion.div>
+                
 
-            {/* Top Row - Equal Height Cards */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 mb-8">
-              <motion.div className="flex flex-col h-full" {...fadeInUp(0)}>
-                <div className="flex-1">
-                  <TopPerformingCoins />
+                
+                {/* Enhanced Subtitle */}
+                <motion.p 
+                  className="text-xl sm:text-2xl lg:text-3xl text-gray-300 max-w-3xl mx-auto leading-relaxed font-light mb-8 sm:mb-6"
+                  variants={itemVariants}
+                >
+                  Advanced analytics, real-time insights, and{" "}
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400 font-semibold">
+                    AI-powered intelligence
+                  </span>{" "}
+                  for the next generation of decentralized trading
+                </motion.p>
+              </motion.div>
+
+              {/* Enhanced Global Search Bar */}
+              <motion.div
+                variants={itemVariants}
+                className="mb-8 sm:mb-6 max-w-2xl mx-auto"
+              >
+                <GlobalSearch 
+                  placeholder="Search for tokens, symbols, addresses, transactions, blocks..."
+                  variant="homepage"
+                />
+                {/* Small status text */}
+                <div className="flex justify-center mt-2">
+                  <span className="text-xs text-gray-500 flex items-center">
+                    <span className="w-1.5 h-1.5 bg-green-400 rounded-full mr-1.5 animate-pulse"></span>
+                    Real-time data • 1,247 tokens indexed
+                  </span>
                 </div>
               </motion.div>
 
-              <motion.div className="flex flex-col h-full" {...fadeInUp(0.1)}>
+              {/* CTA Buttons */}
+              <motion.div
+                variants={itemVariants}
+                className="flex flex-col sm:flex-row gap-4 sm:gap-6 justify-center items-center mb-8 sm:mb-6 max-w-2xl mx-auto"
+              >
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => window.location.href = '/token-scanner'}
+                  className="group relative px-6 sm:px-8 py-3 sm:py-4 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 border border-blue-500/30 hover:border-blue-400/50 w-full sm:w-auto min-w-[160px]"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-blue-400/20 to-blue-600/20 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <span className="relative flex items-center justify-center">
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    Explore Tokens
+                  </span>
+                </motion.button>
+
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => window.location.href = '/docs'}
+                  className="group relative px-6 sm:px-8 py-3 sm:py-4 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 border border-purple-500/30 hover:border-purple-400/50 w-full sm:w-auto min-w-[160px]"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-purple-400/20 to-purple-600/20 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <span className="relative flex items-center justify-center">
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Documentation
+                  </span>
+                </motion.button>
+              </motion.div>
+
+              {/* Enhanced Stats Section */}
+              <motion.div
+                variants={itemVariants}
+                className="flex flex-wrap justify-center gap-6 sm:gap-8 mb-8 sm:mb-0"
+              >
+                <motion.div 
+                  className="text-center group"
+                  whileHover={{ scale: 1.05 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <div className="text-2xl sm:text-3xl lg:text-4xl font-bold text-blue-400 mb-1 sm:mb-2 group-hover:text-blue-300 transition-colors">0</div>
+                  <div className="text-xs sm:text-sm text-gray-400 group-hover:text-gray-300 transition-colors">Active Users</div>
+                </motion.div>
+                <motion.div 
+                  className="text-center group"
+                  whileHover={{ scale: 1.05 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <div className="text-2xl sm:text-3xl lg:text-4xl font-bold text-purple-400 mb-1 sm:mb-2 group-hover:text-purple-300 transition-colors">$2B+</div>
+                  <div className="text-xs sm:text-sm text-gray-400 group-hover:text-gray-300 transition-colors">Volume Tracked</div>
+                </motion.div>
+                <motion.div 
+                  className="text-center group"
+                  whileHover={{ scale: 1.05 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <div className="text-2xl sm:text-3xl lg:text-4xl font-bold text-cyan-400 mb-1 sm:mb-2 group-hover:text-cyan-300 transition-colors">99.9%</div>
+                  <div className="text-xs sm:text-sm text-gray-400 group-hover:text-gray-300 transition-colors">Uptime</div>
+                </motion.div>
+              </motion.div>
+
+
+            </div>
+          </motion.div>
+
+          {/* Content Section with Enhanced Padding */}
+          <div className="relative z-10 p-4 sm:p-6 lg:p-8 pt-8 sm:pt-6 lg:pt-8">
+            {/* Top Row - Equal Height Cards */}
+            <div className={`grid gap-6 lg:gap-8 mb-8 ${showTopMovers ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
+              {showTopMovers && (
+                <motion.div 
+                  className="flex flex-col h-full" 
+                  {...fadeInUp(0)}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5 }}
+                >
+                  <div className="flex-1">
+                    <TopPerformingCoins />
+                  </div>
+                </motion.div>
+              )}
+
+              <motion.div className={`flex flex-col h-full ${!showTopMovers ? 'lg:col-span-1' : ''}`} {...fadeInUp(0.1)}>
                 <div className="flex-1">
                   <CypherscopeTrendingTokens
                     tokens={trendingTokens}
@@ -424,17 +631,12 @@ function CypherscopeTrendingTokens({
             <p className="text-xs sm:text-sm text-gray-400">Discover trending tokens</p>
           </div>
         </div>
-        <div className="flex items-center space-x-1 sm:space-x-2">
-          <span className="bg-blue-500/20 px-1.5 sm:px-2 py-1 rounded-md border border-blue-500/30 text-xs sm:text-sm">
-            {tokens.length} Tokens
-          </span>
-          <span className="bg-green-500/20 px-1.5 sm:px-2 py-1 rounded-md border border-green-500/30 text-xs sm:text-sm">
-            Live Data
-          </span>
-          <Link href="/cypherscope" className="text-blue-400 hover:text-blue-300 text-xs sm:text-sm font-medium transition-colors">
-            {isMobile ? "View All" : "View All →"}
-          </Link>
-        </div>
+        <Link 
+          href="/cypherscope" 
+          className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 active:scale-95"
+        >
+          {isMobile ? "View All" : "View All →"}
+        </Link>
       </div>
       <div className="space-y-3 flex-grow">
         {tokens.length ? (
@@ -452,91 +654,188 @@ function CypherscopeTrendingTokens({
                   🔥 TRENDING
                 </div>
               )}
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
-                  <div className="relative flex-shrink-0">
-                    <Image 
-                      src={token.mediaContent?.previewImage?.small || `https://dexscreener.com/base/${token.address || ''}/logo.png`}
-                      alt={token.name || "Token"}
-                      width={32}
-                      height={32}
-                      className="w-6 h-6 sm:w-8 sm:h-8 rounded-full object-cover border border-purple-500/30 transition-colors"
-                    />
-                    <div className="absolute -bottom-1 -right-1 w-2 h-2 sm:w-3 sm:h-3 bg-green-400 rounded-full border-2 border-gray-800"></div>
+              
+              {/* Mobile Layout */}
+              {isMobile ? (
+                <div className="space-y-3">
+                  {/* Header with token info */}
+                  <div className="flex items-center space-x-3">
+                    <div className="relative flex-shrink-0">
+                      <Image 
+                        src={token.mediaContent?.previewImage?.small || `https://dexscreener.com/base/${token.address || ''}/logo.png`}
+                        alt={token.name || "Token"}
+                        width={40}
+                        height={40}
+                        className="w-10 h-10 rounded-full object-cover border border-purple-500/30"
+                      />
+                      <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-gray-800"></div>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-base font-bold text-gray-200 truncate">{truncateName(token.name, isMobile)}</span>
+                        <span className="text-sm text-gray-400">({token.symbol})</span>
+                      </div>
+                      <div className="flex items-center space-x-2 mt-1">
+                        {token.tags.slice(0, 2).map((tag) => (
+                          <TagBadge key={tag} tag={tag} />
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                  <div className="min-w-0 flex-1">
+                  
+                  {/* Key metrics */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-gray-800/50 rounded-lg p-3">
+                      <div className="text-xs text-gray-400 mb-1">Market Cap</div>
+                      <div className="text-sm font-bold text-gray-200 truncate">{formatNumber(token.marketCap)}</div>
+                    </div>
+                    <div className="bg-gray-800/50 rounded-lg p-3">
+                      <div className="text-xs text-gray-400 mb-1">24h Volume</div>
+                      <div className="text-sm font-bold text-gray-200 truncate">{formatNumber(token.volume24h)}</div>
+                    </div>
+                  </div>
+                  
+                  {/* Price and holders */}
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-gray-400">Price:</span>
+                      <span className="text-gray-200 font-semibold">
+                        {token.tokenPrice?.priceInUsdc && parseFloat(token.tokenPrice.priceInUsdc) > 0 
+                          ? `$${parseFloat(token.tokenPrice.priceInUsdc).toFixed(6)}` 
+                          : "N/A"}
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-gray-400">Holders:</span>
+                      <span className="text-gray-200 font-semibold">{token.uniqueHolders || "N/A"}</span>
+                    </div>
+                  </div>
+                  
+                  {/* Action buttons */}
+                  <div className="flex space-x-2">
+                    <Link
+                      href={`https://dexscreener.com/base/${token.address}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 active:scale-95 flex items-center justify-center space-x-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                      </svg>
+                      <span>Chart</span>
+                    </Link>
+                    <Link
+                      href={`https://baseswap.fi/swap?inputCurrency=0x4200000000000000000000000000000000000006&outputCurrency=${token.address}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 bg-green-500/20 hover:bg-green-500/30 text-green-400 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 active:scale-95 flex items-center justify-center space-x-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      </svg>
+                      <span>Buy</span>
+                    </Link>
+                  </div>
+                  
+                  {/* Market cap change indicator */}
+                  {token.marketCapDelta24h && parseFloat(token.marketCapDelta24h) !== 0 && Math.abs(parseFloat(token.marketCapDelta24h)) < 100 && (
+                    <div className={`text-center text-sm font-semibold ${
+                      parseFloat(token.marketCapDelta24h) > 0 ? 'text-green-400' : 'text-red-400'
+                    }`}>
+                      {parseFloat(token.marketCapDelta24h) > 0 ? '+' : ''}{parseFloat(token.marketCapDelta24h).toFixed(1)}% MC change
+                    </div>
+                  )}
+                </div>
+              ) : (
+                // Desktop Layout (unchanged)
+                <>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
+                      <div className="relative flex-shrink-0">
+                        <Image 
+                          src={token.mediaContent?.previewImage?.small || `https://dexscreener.com/base/${token.address || ''}/logo.png`}
+                          alt={token.name || "Token"}
+                          width={32}
+                          height={32}
+                          className="w-6 h-6 sm:w-8 sm:h-8 rounded-full object-cover border border-purple-500/30 transition-colors"
+                        />
+                        <div className="absolute -bottom-1 -right-1 w-2 h-2 sm:w-3 sm:h-3 bg-green-400 rounded-full border-2 border-gray-800"></div>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center space-x-1 sm:space-x-2">
+                          <span className="text-xs sm:text-sm font-bold text-gray-200 truncate">{truncateName(token.name, isMobile)}</span>
+                          <span className="text-xs text-gray-400 flex-shrink-0">({token.symbol})</span>
+                        </div>
+                        <div className="text-xs text-gray-500 font-mono truncate">
+                          {token.address?.slice(0, 6)}...{token.address?.slice(-4)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1 flex-shrink-0 ml-2">
+                      {token.tags.slice(0, isMobile ? 1 : 2).map((tag) => (
+                        <TagBadge key={tag} tag={tag} />
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-2 sm:mb-3">
+                    <div className="bg-gray-800/50 rounded-lg p-1.5 sm:p-2">
+                      <div className="text-xs text-gray-400 mb-1">Market Cap</div>
+                      <div className="text-xs sm:text-sm font-bold text-gray-200 truncate">{formatNumber(token.marketCap)}</div>
+                    </div>
+                    <div className="bg-gray-800/50 rounded-lg p-1.5 sm:p-2">
+                      <div className="text-xs text-gray-400 mb-1">24h Volume</div>
+                      <div className="text-xs sm:text-sm font-bold text-gray-200 truncate">{formatNumber(token.volume24h)}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
                     <div className="flex items-center space-x-1 sm:space-x-2">
-                      <span className="text-xs sm:text-sm font-bold text-gray-200 truncate">{truncateName(token.name, isMobile)}</span>
-                      <span className="text-xs text-gray-400 flex-shrink-0">({token.symbol})</span>
+                      <span className="text-gray-400">Holders:</span>
+                      <span className="text-gray-200 font-semibold truncate">{token.uniqueHolders || "N/A"}</span>
                     </div>
-                    <div className="text-xs text-gray-500 font-mono truncate">
-                      {token.address?.slice(0, 6)}...{token.address?.slice(-4)}
+                    <div className="flex items-center space-x-1 sm:space-x-2">
+                      <span className="text-gray-400">Price:</span>
+                      <span className="text-gray-200 font-semibold truncate">
+                        {token.tokenPrice?.priceInUsdc && parseFloat(token.tokenPrice.priceInUsdc) > 0 
+                          ? `$${parseFloat(token.tokenPrice.priceInUsdc).toFixed(6)}` 
+                          : "N/A"}
+                      </span>
                     </div>
                   </div>
-                </div>
-                <div className="flex flex-wrap gap-1 flex-shrink-0 ml-2">
-                  {token.tags.slice(0, isMobile ? 1 : 2).map((tag) => (
-                    <TagBadge key={tag} tag={tag} />
-                  ))}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-2 sm:mb-3">
-                <div className="bg-gray-800/50 rounded-lg p-1.5 sm:p-2">
-                  <div className="text-xs text-gray-400 mb-1">Market Cap</div>
-                  <div className="text-xs sm:text-sm font-bold text-gray-200 truncate">{formatNumber(token.marketCap)}</div>
-                </div>
-                <div className="bg-gray-800/50 rounded-lg p-1.5 sm:p-2">
-                  <div className="text-xs text-gray-400 mb-1">24h Volume</div>
-                  <div className="text-xs sm:text-sm font-bold text-gray-200 truncate">{formatNumber(token.volume24h)}</div>
-                </div>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center space-x-1 sm:space-x-2">
-                  <span className="text-gray-400">Holders:</span>
-                  <span className="text-gray-200 font-semibold truncate">{token.uniqueHolders || "N/A"}</span>
-                </div>
-                <div className="flex items-center space-x-1 sm:space-x-2">
-                  <span className="text-gray-400">Price:</span>
-                  <span className="text-gray-200 font-semibold truncate">
-                    {token.tokenPrice?.priceInUsdc && parseFloat(token.tokenPrice.priceInUsdc) > 0 
-                      ? `$${parseFloat(token.tokenPrice.priceInUsdc).toFixed(6)}` 
-                      : "N/A"}
-                  </span>
-                </div>
-              </div>
-              <div className="flex justify-between items-center">
-                <div className="flex space-x-1">
-                  <Link
-                    href={`https://dexscreener.com/base/${token.address}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-400 hover:text-blue-300 text-xs transition-colors inline-flex items-center gap-1 bg-blue-500/10 px-1.5 sm:px-2 py-1 rounded"
-                  >
-                    {isMobile ? "Chart" : "Chart"}
-                    <svg className="w-2 h-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                    </svg>
-                  </Link>
-                  <Link
-                    href={`https://baseswap.fi/swap?inputCurrency=0x4200000000000000000000000000000000000006&outputCurrency=${token.address}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-green-400 hover:text-green-300 text-xs transition-colors inline-flex items-center gap-1 bg-green-500/10 px-1.5 sm:px-2 py-1 rounded"
-                  >
-                    {isMobile ? "Buy" : "Quick Buy"}
-                    <svg className="w-2 h-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                    </svg>
-                  </Link>
-                </div>
-                {token.marketCapDelta24h && parseFloat(token.marketCapDelta24h) !== 0 && Math.abs(parseFloat(token.marketCapDelta24h)) < 100 && (
-                  <div className={`text-xs font-semibold ${
-                    parseFloat(token.marketCapDelta24h) > 0 ? 'text-green-400' : 'text-red-400'
-                  }`}>
-                    {parseFloat(token.marketCapDelta24h) > 0 ? '+' : ''}{parseFloat(token.marketCapDelta24h).toFixed(1)}%
+                  <div className="flex justify-between items-center">
+                    <div className="flex space-x-1">
+                      <Link
+                        href={`https://dexscreener.com/base/${token.address}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:text-blue-300 text-xs transition-colors inline-flex items-center gap-1 bg-blue-500/10 px-1.5 sm:px-2 py-1 rounded"
+                      >
+                        {isMobile ? "Chart" : "Chart"}
+                        <svg className="w-2 h-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </Link>
+                      <Link
+                        href={`https://baseswap.fi/swap?inputCurrency=0x4200000000000000000000000000000000000006&outputCurrency=${token.address}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-green-400 hover:text-green-300 text-xs transition-colors inline-flex items-center gap-1 bg-green-500/10 px-1.5 sm:px-2 py-1 rounded"
+                      >
+                        {isMobile ? "Buy" : "Quick Buy"}
+                        <svg className="w-2 h-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                        </svg>
+                      </Link>
+                    </div>
+                    {token.marketCapDelta24h && parseFloat(token.marketCapDelta24h) !== 0 && Math.abs(parseFloat(token.marketCapDelta24h)) < 100 && (
+                      <div className={`text-xs font-semibold ${
+                        parseFloat(token.marketCapDelta24h) > 0 ? 'text-green-400' : 'text-red-400'
+                      }`}>
+                        {parseFloat(token.marketCapDelta24h) > 0 ? '+' : ''}{parseFloat(token.marketCapDelta24h).toFixed(1)}%
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                </>
+              )}
             </motion.div>
           ))
         ) : (
