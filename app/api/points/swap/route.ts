@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Firestore } from 'firebase-admin/firestore';
 
 interface SwapPointsRequest {
   walletAddress: string;
@@ -14,7 +14,18 @@ interface SwapPointsRequest {
 
 export async function POST(request: Request) {
   try {
-    const body: SwapPointsRequest = await request.json();
+    // Validate request body
+    let body: SwapPointsRequest;
+    try {
+      body = await request.json();
+    } catch (parseError) {
+      console.error('Failed to parse request body:', parseError);
+      return NextResponse.json({ 
+        error: 'Invalid JSON in request body',
+        details: 'Please check your request format'
+      }, { status: 400 });
+    }
+
     const { 
       walletAddress, 
       userId, 
@@ -25,13 +36,50 @@ export async function POST(request: Request) {
       value 
     } = body;
 
-    if (!walletAddress || !userId || !tokenAddress || !action) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    if (!walletAddress?.trim() || !userId?.trim() || !tokenAddress?.trim() || !action) {
+      return NextResponse.json({ 
+        error: 'Missing required fields',
+        details: 'walletAddress, userId, tokenAddress, and action are required'
+      }, { status: 400 });
     }
 
-    const db = adminDb();
+    // Validate wallet address format
+    if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+      return NextResponse.json({ 
+        error: 'Invalid wallet address format',
+        details: 'Wallet address must be a valid Ethereum address'
+      }, { status: 400 });
+    }
+
+    // Get database connection with retry logic
+    let db: Firestore | null = null;
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        const dbConnection = adminDb();
+        if (dbConnection) {
+          // Test the connection by making a simple query
+          await dbConnection.collection('users').limit(1).get();
+          db = dbConnection; // If we get here, connection is working
+          break;
+        }
+      } catch (dbError) {
+        console.error(`Database connection attempt ${retryCount + 1} failed:`, dbError);
+        retryCount++;
+        if (retryCount < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        }
+      }
+    }
+
     if (!db) {
-      return NextResponse.json({ error: 'Database connection failed' }, { status: 500 });
+      console.error('All database connection attempts failed');
+      return NextResponse.json({ 
+        error: 'Database connection failed',
+        details: 'Unable to connect to database after multiple attempts'
+      }, { status: 500 });
     }
 
     // Calculate points based on action and value
@@ -81,97 +129,137 @@ export async function POST(request: Request) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    const userQuery = db.collection('users').where('walletAddress', '==', walletAddress);
-    const userSnapshot = await userQuery.get();
+    // Use a batch write for better consistency
+    const batch = db.batch();
     
-    if (!userSnapshot.empty) {
-      const userData = userSnapshot.docs[0].data();
-      const todayActivities = userData.dailyActivities?.[today.toISOString().split('T')[0]] || {};
-      const actionCount = todayActivities[action] || 0;
+    try {
+      const userQuery = db.collection('users').where('walletAddress', '==', walletAddress);
+      const userSnapshot = await userQuery.get();
       
-      // Daily limits to prevent farming
-      const dailyLimits = {
-        swap: 20,
-        liquidity_add: 5,
-        liquidity_remove: 5,
-        stake: 10,
-        unstake: 10
-      };
-      
-      if (actionCount >= dailyLimits[action]) {
-        return NextResponse.json({ 
-          error: `Daily limit reached for ${action}`,
-          limit: dailyLimits[action]
-        }, { status: 429 });
+      if (!userSnapshot.empty) {
+        const userData = userSnapshot.docs[0].data();
+        const todayActivities = userData.dailyActivities?.[today.toISOString().split('T')[0]] || {};
+        const actionCount = todayActivities[action] || 0;
+        
+        // Daily limits to prevent farming
+        const dailyLimits = {
+          swap: 20,
+          liquidity_add: 5,
+          liquidity_remove: 5,
+          stake: 10,
+          unstake: 10
+        };
+        
+        if (actionCount >= dailyLimits[action]) {
+          return NextResponse.json({ 
+            error: `Daily limit reached for ${action}`,
+            limit: dailyLimits[action],
+            details: `You can only perform this action ${dailyLimits[action]} times per day`
+          }, { status: 429 });
+        }
+        
+        // Update daily activity count
+        const dailyKey = today.toISOString().split('T')[0];
+        batch.update(userSnapshot.docs[0].ref, {
+          [`dailyActivities.${dailyKey}.${action}`]: FieldValue.increment(1),
+          points: FieldValue.increment(points),
+          lastActivity: FieldValue.serverTimestamp(),
+        });
+      } else {
+        // Create new user
+        const dailyKey = today.toISOString().split('T')[0];
+        const newUserRef = db.collection('users').doc();
+        batch.set(newUserRef, {
+          walletAddress,
+          points,
+          dailyActivities: {
+            [dailyKey]: {
+              [action]: 1
+            }
+          },
+          createdAt: FieldValue.serverTimestamp(),
+          lastActivity: FieldValue.serverTimestamp(),
+        });
       }
-      
-      // Update daily activity count
-      const dailyKey = today.toISOString().split('T')[0];
-      await db.collection('users').doc(userSnapshot.docs[0].id).update({
-        [`dailyActivities.${dailyKey}.${action}`]: FieldValue.increment(1),
-        points: FieldValue.increment(points),
-        lastActivity: FieldValue.serverTimestamp(),
-      });
-    } else {
-      // Create new user
-      const dailyKey = today.toISOString().split('T')[0];
-      await db.collection('users').add({
+
+      // Record the activity
+      const activityRef = db.collection('user_activities').doc();
+      const activityData = {
+        userId,
         walletAddress,
+        action: activityAction,
         points,
-        dailyActivities: {
-          [dailyKey]: {
-            [action]: 1
-          }
+        tokenAddress,
+        metadata: {
+          tokenSymbol,
+          amount,
+          value,
         },
         createdAt: FieldValue.serverTimestamp(),
-        lastActivity: FieldValue.serverTimestamp(),
+      };
+      
+      batch.set(activityRef, activityData);
+
+      // Update leaderboard
+      const leaderboardQuery = db.collection('leaderboard').where('walletAddress', '==', walletAddress);
+      const leaderboardSnapshot = await leaderboardQuery.get();
+      
+      if (!leaderboardSnapshot.empty) {
+        const leaderboardDoc = leaderboardSnapshot.docs[0];
+        batch.update(leaderboardDoc.ref, {
+          points: FieldValue.increment(points),
+          lastUpdated: FieldValue.serverTimestamp(),
+        });
+      } else {
+        const leaderboardRef = db.collection('leaderboard').doc();
+        batch.set(leaderboardRef, {
+          walletAddress,
+          points,
+          createdAt: FieldValue.serverTimestamp(),
+          lastUpdated: FieldValue.serverTimestamp(),
+        });
+      }
+
+            // Commit all changes atomically
+      await batch.commit();
+
+      return NextResponse.json({
+        success: true,
+        pointsEarned: points,
+        action,
+        message: points > 0 ? `+${points} points earned!` : 'Action completed successfully'
       });
+
+    } catch (batchError) {
+      console.error('Error in batch operation:', batchError);
+      return NextResponse.json({ 
+        error: 'Failed to process request',
+        details: 'Database operation failed'
+      }, { status: 500 });
     }
-
-    // Record the activity
-    const activityData = {
-      userId,
-      walletAddress,
-      action: activityAction,
-      points,
-      tokenAddress,
-      metadata: {
-        tokenSymbol,
-        amount,
-        value,
-      },
-      createdAt: FieldValue.serverTimestamp(),
-    };
-
-    await db.collection('user_activities').add(activityData);
-
-    // Update leaderboard
-    const leaderboardQuery = db.collection('leaderboard').where('walletAddress', '==', walletAddress);
-    const leaderboardSnapshot = await leaderboardQuery.get();
-    
-    if (!leaderboardSnapshot.empty) {
-      const leaderboardDoc = leaderboardSnapshot.docs[0];
-      await db.collection('leaderboard').doc(leaderboardDoc.id).update({
-        points: FieldValue.increment(points),
-        lastUpdated: FieldValue.serverTimestamp(),
-      });
-    } else {
-      await db.collection('leaderboard').add({
-        walletAddress,
-        points,
-        createdAt: FieldValue.serverTimestamp(),
-        lastUpdated: FieldValue.serverTimestamp(),
-      });
-    }
-
-    return NextResponse.json({
-      success: true,
-      pointsEarned: points,
-      action,
-    });
 
   } catch (error) {
     console.error('Error processing swap points:', error);
-    return NextResponse.json({ error: 'Failed to process swap points' }, { status: 500 });
+    
+    // Provide more specific error messages
+    if (error instanceof Error) {
+      if (error.message.includes('permission-denied')) {
+        return NextResponse.json({ 
+          error: 'Permission denied',
+          details: 'You do not have permission to perform this action'
+        }, { status: 403 });
+      }
+      if (error.message.includes('unavailable')) {
+        return NextResponse.json({ 
+          error: 'Service temporarily unavailable',
+          details: 'Please try again in a few moments'
+        }, { status: 503 });
+      }
+    }
+    
+    return NextResponse.json({ 
+      error: 'Internal server error',
+      details: 'An unexpected error occurred while processing your request'
+    }, { status: 500 });
   }
 } 

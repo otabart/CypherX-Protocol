@@ -15,6 +15,16 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 import { EyeIcon, EyeSlashIcon, ExclamationCircleIcon, CheckCircleIcon, EnvelopeIcon, UserCircleIcon, KeyIcon, ArrowPathIcon } from "@heroicons/react/24/outline";
 import Image from "next/image";
 
+// Custom CypherX text component with styled X
+const CypherXText: React.FC<{ className?: string }> = ({ className = "" }) => {
+  return (
+    <span className={className}>
+      <span className="text-blue-400">Cypher</span>
+      <span className="text-blue-300 font-bold">X</span>
+    </span>
+  );
+};
+
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -321,15 +331,17 @@ function LoginContent() {
           <div className="flex flex-col items-center mb-8">
             <div className="mb-2 shadow-lg">
               <Image
-                src="https://i.imgur.com/mlPQazY.png"
+                src="/cypherx-logo.svg"
                 alt="CypherX Logo"
                 width={48}
                 height={48}
-                className="w-12 h-12 sm:w-14 sm:h-14 object-contain rounded-full bg-blue-900"
+                className="w-12 h-12 sm:w-14 sm:h-14 object-contain"
                 priority
               />
             </div>
-            <h1 className="text-2xl font-extrabold text-blue-400 tracking-tight ">CypherX</h1>
+            <h1 className="text-2xl font-extrabold tracking-tight italic leading-none">
+              <CypherXText />
+            </h1>
             <span className="text-xs text-gray-400 tracking-wide mt-1">Welcome! Please log in or sign up</span>
           </div>
           {/* Tab Navigation */}

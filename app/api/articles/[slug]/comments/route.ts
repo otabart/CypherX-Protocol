@@ -15,24 +15,7 @@ interface CommentRequest {
   };
 }
 
-interface CommentResponse {
-  id: string;
-  userId: string;
-  walletAddress: string;
-  content: string;
-  sectionId?: string;
-  parentCommentId?: string;
-  annotation?: {
-    startOffset: number;
-    endOffset: number;
-    selectedText: string;
-  };
-  likes: string[];
-  dislikes: string[];
-  replies: string[];
-  createdAt: string;
-  points: number;
-}
+
 
 // POST - Create a new comment
 export async function POST(

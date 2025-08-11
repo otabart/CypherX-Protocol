@@ -26,8 +26,7 @@ import {
   fetchUserStats, 
   fetchLeaderboard
 } from "@/lib/news-api";
-import { useAuth } from "@/app/providers";
-import { useAccount } from "wagmi";
+import { useAuth, useWalletSystem } from "@/app/providers";
 import Image from 'next/image';
 import Header from "@/app/components/Header";
 import Footer from "@/app/components/Footer";
@@ -162,7 +161,8 @@ const formatDate = (timestamp: unknown): string => {
 export default function NewsPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { address: walletAddress } = useAccount();
+  const { selfCustodialWallet } = useWalletSystem();
+  const walletAddress = selfCustodialWallet?.address;
 
   // ────────── State Management ──────────
   const [articles, setArticles] = useState<NewsArticle[]>([]);
@@ -300,11 +300,11 @@ export default function NewsPage() {
           const result = await handleNewsPoints('read_article', user.uid, walletAddress, slug);
           addToast(`Article viewed! +${result.pointsEarned} points`, 'success');
           refreshUserPoints(); // Refresh points after successful interaction
-        } catch (error: any) {
-          if (error.message.includes('already performed')) {
+        } catch (error) {
+          if (error instanceof Error && error.message.includes('already performed')) {
             addToast('Article already viewed today', 'info');
           } else {
-            addToast(error.message || 'Error tracking article view', 'error');
+            addToast(error instanceof Error ? error.message : 'Error tracking article view', 'error');
           }
         }
       }
@@ -317,7 +317,7 @@ export default function NewsPage() {
 
   const toggleLike = async (article: NewsArticle) => {
     if (!user || !walletAddress) {
-      addToast('Please connect your wallet to like articles', 'error');
+      addToast('Please create or connect your XWallet to like articles', 'error');
       return;
     }
 
@@ -328,7 +328,7 @@ export default function NewsPage() {
       if (isLiked) {
         // Unlike
         try {
-          const result = await handleNewsPoints('unlike_article', user.uid, walletAddress, article.slug);
+          await handleNewsPoints('unlike_article', user.uid, walletAddress, article.slug);
           setLikedArticles(prev => prev.filter(slug => slug !== article.slug));
           // Update article upvotes locally
           setArticles(prev => prev.map(a => 
@@ -341,11 +341,11 @@ export default function NewsPage() {
             setFeaturedArticle(prev => prev ? { ...prev, upvotes: (prev.upvotes || 0) - 1 } : null);
           }
           addToast('Article unliked', 'info');
-        } catch (error: any) {
-          if (error.message.includes('already performed')) {
+        } catch (error) {
+          if (error instanceof Error && error.message.includes('already performed')) {
             addToast('Already unliked today', 'info');
           } else {
-            addToast(error.message || 'Error unliking article', 'error');
+            addToast(error instanceof Error ? error.message : 'Error unliking article', 'error');
           }
         }
       } else {
@@ -379,13 +379,13 @@ export default function NewsPage() {
           
           addToast(`Article liked! +${result.pointsEarned} points`, 'success');
           refreshUserPoints(); // Refresh points after successful interaction
-        } catch (error: any) {
-          if (error.message.includes('already liked')) {
+        } catch (error) {
+          if (error instanceof Error && error.message.includes('already liked')) {
             addToast('You have already liked this article', 'info');
-          } else if (error.message.includes('already performed')) {
+          } else if (error instanceof Error && error.message.includes('already performed')) {
             addToast('Already liked today', 'info');
           } else {
-            addToast(error.message || 'Error liking article', 'error');
+            addToast(error instanceof Error ? error.message : 'Error liking article', 'error');
           }
         }
       }
@@ -397,7 +397,7 @@ export default function NewsPage() {
 
   const toggleDislike = async (article: NewsArticle) => {
     if (!user || !walletAddress) {
-      addToast('Please connect your wallet to dislike articles', 'error');
+      addToast('Please create or connect your XWallet to dislike articles', 'error');
       return;
     }
 
@@ -448,11 +448,11 @@ export default function NewsPage() {
           }
           addToast('Article disliked', 'info');
           refreshUserPoints(); // Refresh points after successful interaction
-        } catch (error: any) {
-          if (error.message.includes('already performed')) {
+        } catch (error) {
+          if (error instanceof Error && error.message.includes('already performed')) {
             addToast('Already disliked today', 'info');
           } else {
-            addToast(error.message || 'Error disliking article', 'error');
+            addToast(error instanceof Error ? error.message : 'Error disliking article', 'error');
           }
         }
       }
@@ -477,11 +477,11 @@ export default function NewsPage() {
         const result = await handleNewsPoints('share_article', user.uid, walletAddress, article.slug, platform);
         addToast(`Shared to ${platform === 'x' ? 'X' : 'Telegram'}! +${result.pointsEarned} points`, 'success');
         refreshUserPoints(); // Refresh points after successful interaction
-      } catch (error: any) {
-        if (error.message.includes('already performed')) {
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('already performed')) {
           addToast('Already shared today', 'info');
         } else {
-          addToast(error.message || 'Error tracking share', 'error');
+          addToast(error instanceof Error ? error.message : 'Error tracking share', 'error');
         }
       }
     }
@@ -489,7 +489,7 @@ export default function NewsPage() {
 
   const sendComment = async (slug: string) => {
     if (!user || !walletAddress) {
-      addToast('Please connect your wallet to comment', 'error');
+      addToast('Please create or connect your XWallet to comment', 'error');
       return;
     }
 
@@ -514,11 +514,11 @@ export default function NewsPage() {
       setNewComments(prev => ({ ...prev, [slug]: '' }));
       addToast(`Comment sent! +${result.pointsEarned} points`, 'success');
       refreshUserPoints(); // Refresh points after successful interaction
-    } catch (error: any) {
-      if (error.message.includes('already performed')) {
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('already performed')) {
         addToast('Already commented today', 'info');
       } else {
-        addToast(error.message || 'Error sending comment', 'error');
+        addToast(error instanceof Error ? error.message : 'Error sending comment', 'error');
       }
     }
   };

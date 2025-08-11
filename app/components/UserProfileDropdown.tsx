@@ -5,22 +5,21 @@ import { useRouter } from "next/navigation";
 import { signOut, type Auth } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth as firebaseAuth, db } from "@/lib/firebase";
-import { useAuth } from "@/app/providers";
+import { useAuth, useWalletSystem } from "@/app/providers";
 import { UserCircleIcon } from "@heroicons/react/24/solid";
 import { FiAward, FiTrendingUp } from "react-icons/fi";
-import CustomConnectWallet from "./CustomConnectWallet";
 import Link from "next/link";
-import { useAccount } from "wagmi";
 
 const auth: Auth = firebaseAuth as Auth;
 
 const UserProfileDropdown: React.FC = () => {
   const router = useRouter();
   const { user } = useAuth();
-  const { address: walletAddress } = useAccount();
+  const { selfCustodialWallet } = useWalletSystem();
+  const walletAddress = selfCustodialWallet?.address;
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [points, setPoints] = useState<number | null>(null);
-  const [tier, setTier] = useState<string>('bronze');
+  const [tier, setTier] = useState<string>('normie');
   const [badges, setBadges] = useState<string[]>([]);
   const [progress, setProgress] = useState<number>(0);
   const [nextTier, setNextTier] = useState<string | null>(null);
@@ -35,7 +34,7 @@ const UserProfileDropdown: React.FC = () => {
     const fetchUserStats = async () => {
       if (!user || !walletAddress) {
         setPoints(null);
-        setTier('bronze');
+        setTier('normie');
         setBadges([]);
         setReferralCode("");
         setReferralEarnings(0);
@@ -49,7 +48,7 @@ const UserProfileDropdown: React.FC = () => {
         if (statsResponse.ok) {
           const statsData = await statsResponse.json();
           setPoints(statsData.points || 0);
-          setTier(statsData.tier || 'bronze');
+                       setTier(statsData.tier || 'normie');
           setBadges(statsData.badges || []);
           setProgress(statsData.progress || 0);
           setNextTier(statsData.nextTier);
@@ -62,14 +61,14 @@ const UserProfileDropdown: React.FC = () => {
            if (userDoc.exists()) {
              const userData = userDoc.data();
              setPoints(userData.points ?? 0);
-             setTier(userData.tier ?? 'bronze');
+             setTier(userData.tier ?? 'normie');
              setBadges(userData.badges ?? []);
              setReferralCode(userData.referralCode ?? "");
              setReferralEarnings(userData.referralEarnings ?? 0);
              setReferralCount(userData.referralCount ?? 0);
            } else {
              setPoints(0);
-             setTier('bronze');
+             setTier('normie');
              setBadges([]);
              setReferralCode("");
              setReferralEarnings(0);
@@ -79,7 +78,7 @@ const UserProfileDropdown: React.FC = () => {
       } catch (error) {
         console.error("Error fetching user stats:", error);
         setPoints(0);
-        setTier('bronze');
+                 setTier('normie');
         setBadges([]);
       }
     };
@@ -110,13 +109,13 @@ const UserProfileDropdown: React.FC = () => {
 
   const getTierColor = (tier: string) => {
     const colors = {
-      bronze: '#cd7f32',
-      silver: '#c0c0c0',
-      gold: '#ffd700',
-      platinum: '#e5e4e2',
-      diamond: '#b9f2ff'
+      normie: '#6B7280',
+      degen: '#EF4444',
+      alpha: '#10B981',
+      mogul: '#F59E0B',
+      titan: '#8B5CF6'
     };
-    return colors[tier as keyof typeof colors] || '#cd7f32';
+    return colors[tier as keyof typeof colors] || '#6B7280';
   };
 
   return (
@@ -141,7 +140,7 @@ const UserProfileDropdown: React.FC = () => {
         >
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <CustomConnectWallet />
+              {/* Wallet connection handled by XWallet in header */}
             </div>
             
             {/* Enhanced Profile Section */}

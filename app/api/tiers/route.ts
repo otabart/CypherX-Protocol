@@ -3,11 +3,11 @@ import { adminDb } from '@/lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 
 const TIER_SYSTEM = {
-  bronze: { minPoints: 0, maxPoints: 499, name: 'Bronze', color: '#CD7F32' },
-  silver: { minPoints: 500, maxPoints: 1999, name: 'Silver', color: '#C0C0C0' },
-  gold: { minPoints: 2000, maxPoints: 4999, name: 'Gold', color: '#FFD700' },
-  platinum: { minPoints: 5000, maxPoints: 9999, name: 'Platinum', color: '#E5E4E2' },
-  diamond: { minPoints: 10000, maxPoints: Infinity, name: 'Diamond', color: '#B9F2FF' },
+  normie: { minPoints: 0, maxPoints: 1999, name: 'Normie', color: '#6B7280', description: 'Just getting started in crypto' },
+  degen: { minPoints: 2000, maxPoints: 7999, name: 'Degen', color: '#EF4444', description: 'Degenerate trader, living on the edge' },
+  alpha: { minPoints: 8000, maxPoints: 19999, name: 'Alpha', color: '#10B981', description: 'Got the alpha, making moves' },
+  mogul: { minPoints: 20000, maxPoints: 49999, name: 'Mogul', color: '#F59E0B', description: 'Crypto mogul, building empire' },
+  titan: { minPoints: 50000, maxPoints: Infinity, name: 'Titan', color: '#8B5CF6', description: 'Crypto titan, legendary status' },
 };
 
 interface TierRequest {
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
         const currentPoints = userData.points || 0;
         
         // Calculate current tier
-        let currentTier = 'bronze';
+        let currentTier = 'normie';
         for (const [tier, data] of Object.entries(TIER_SYSTEM)) {
           if (currentPoints >= data.minPoints && currentPoints <= data.maxPoints) {
             currentTier = tier;
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: 'Points required for tier calculation' }, { status: 400 });
         }
 
-        let calculatedTier = 'bronze';
+        let calculatedTier = 'normie';
         for (const [tier, data] of Object.entries(TIER_SYSTEM)) {
           if (points >= data.minPoints && points <= data.maxPoints) {
             calculatedTier = tier;
@@ -98,7 +98,7 @@ export async function POST(request: Request) {
         const userPoints = userData2.points || 0;
         
         // Calculate new tier
-        let newTier = 'bronze';
+        let newTier = 'normie';
         for (const [tier, data] of Object.entries(TIER_SYSTEM)) {
           if (userPoints >= data.minPoints && userPoints <= data.maxPoints) {
             newTier = tier;
@@ -119,7 +119,7 @@ export async function POST(request: Request) {
           action: 'tier_update',
           points: 0,
           metadata: {
-            oldTier: userData2.tier || 'bronze',
+            oldTier: userData2.tier || 'normie',
             newTier,
             points: userPoints,
           },
@@ -168,7 +168,7 @@ export async function GET(request: Request) {
     const points = userData.points || 0;
     
     // Calculate current tier
-    let currentTier = 'bronze';
+    let currentTier = 'normie';
     for (const [tier, data] of Object.entries(TIER_SYSTEM)) {
       if (points >= data.minPoints && points <= data.maxPoints) {
         currentTier = tier;

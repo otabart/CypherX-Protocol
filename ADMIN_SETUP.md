@@ -25,14 +25,14 @@ node scripts/test-admin.js
 ## 📊 Admin Account Features
 
 ### Max Stats:
-- **Points**: 50,000
-- **Tier**: Diamond
+- **Points**: 100,000
+- **Tier**: Titan
 - **Badges**: All 15 badges
 - **Volume**: $1,000,000
 - **Swaps**: 1,000
 - **Referral Code**: ADMIN
 - **Referral Count**: 100
-- **Referral Earnings**: 50,000 points
+- **Referral Earnings**: 100,000 points
 
 ### Badges Included:
 - first_swap

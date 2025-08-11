@@ -1,0 +1,958 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwnUser(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true ||
+        request.auth.token.email == 'homebasemarkets@gmail.com'
+      );
+    }
+
+    function isModerator() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.moderator == true;
+    }
+
+    function isValidTimestamp(ts) {
+      return (ts is timestamp && ts <= request.time) || (ts is string && ts.matches('^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.\\d{3}Z$'));
+    }
+
+    function isValidAddress(addr) {
+      return addr is string &&
+        addr.size() == 42 &&
+        addr.matches('^0x[a-fA-F0-9]{40}$');
+    }
+
+    function isValidString(str, minLength, maxLength) {
+      return str is string &&
+        str.size() >= minLength &&
+        str.size() <= maxLength &&
+        str.matches('^[a-zA-Z0-9\\s\\-_.,:;!?()@#]+$');
+    }
+
+    function isValidUsername(str, minLength, maxLength) {
+      return str is string &&
+        str.size() >= minLength &&
+        str.size() <= maxLength &&
+        str.matches('^[a-z0-9\\-_]+$');
+    }
+
+    // Collection: blocks
+    match /blocks/{blockId} {
+      allow read: if true;
+      allow create, update: if isAuthenticated() && validateBlock();
+      allow delete: if isAdmin();
+
+      function validateBlock() {
+        let data = request.resource.data;
+        return data.number is number &&
+          data.number >= 0 &&
+          data.status is string &&
+          data.status.size() > 0 &&
+          data.timestamp is string &&
+          data.timestamp.size() > 0 &&
+          data.hash is string &&
+          data.hash.size() > 0 &&
+          data.transactions is number &&
+          data.transactions >= 0;
+      }
+    }
+
+    // Collection: indexes (optional subcollection structure)
+    match /indexes/{index}/tokens/{token} {
+      allow read: if true;
+      allow create, update: if (isAdmin() || isModerator()) && validateIndexToken();
+      allow delete: if isAdmin();
+
+      function validateIndexToken() {
+        let data = request.resource.data;
+        return isValidAddress(data.address) &&
+          data.weight is string &&
+          data.weight.matches('^\\d+(\\.\\d+)?%$');
+      }
+    }
+
+    // Collection: Individual Index Collections (CDEX, VDEX, BDEX, AIDEX)
+    match /{index}/{token} {
+      allow read: if index in ['CDEX', 'VDEX', 'BDEX', 'AIDEX'];
+      allow create, update: if (isAdmin() || isModerator()) && validateIndexToken() && index in ['CDEX', 'VDEX', 'BDEX', 'AIDEX'];
+      allow delete: if isAdmin() && index in ['CDEX', 'VDEX', 'BDEX', 'AIDEX'];
+
+      function validateIndexToken() {
+        let data = request.resource.data;
+        return isValidAddress(data.address) &&
+          data.weight is string &&
+          data.weight.matches('^\\d+(\\.\\d+)?%$');
+      }
+    }
+
+    // Collection: homescanData
+    match /homescanData/{dataId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && validateHomescanData();
+      allow delete: if isAdmin();
+
+      function validateHomescanData() {
+        let data = request.resource.data;
+        return data.scanId is string &&
+          data.scanId.size() > 0 &&
+          data.scanResult is map &&
+          'status' in data.scanResult &&
+          data.scanResult.status is string &&
+          data.scanResult.status in ['clean', 'suspicious', 'malicious'] &&
+          'details' in data.scanResult &&
+          data.scanResult.details is string &&
+          data.scanResult.details.size() <= 1000 &&
+          isValidAddress(data.tokenAddress) &&
+          data.timestamp is timestamp &&
+          isValidTimestamp(data.timestamp);
+      }
+    }
+
+    // Collection: tokens
+    match /tokens/{tokenId} {
+      allow read: if true;
+      allow create, update: if (isAdmin() || isModerator()) && validateToken();
+      allow delete: if isAdmin();
+
+      function validateToken() {
+        let data = request.resource.data;
+        return isValidAddress(data.address) &&
+          data.chainId is string &&
+          data.chainId == 'base' &&
+          isValidString(data.symbol, 1, 10) &&
+          isValidString(data.name, 1, 50) &&
+          (data.pool == null || isValidAddress(data.pool));
+      }
+    }
+
+    // Collection: boosts
+    match /boosts/{pairAddress} {
+      allow read: if true;
+      allow create, update: if isAuthenticated() && validateBoost();
+      allow delete: if isAdmin();
+
+      function validateBoost() {
+        let data = request.resource.data;
+        return isValidAddress(data.pairAddress) &&
+          data.boostValue is number &&
+          data.boostValue >= 0 &&
+          data.boostValue <= 1000 &&
+          data.createdAt is timestamp &&
+          isValidTimestamp(data.createdAt) &&
+          data.expiresAt is timestamp &&
+          data.expiresAt > request.time &&
+          data.createdBy is string &&
+          data.createdBy == request.auth.uid;
+      }
+    }
+
+    // Collection: pendingTokens
+    match /pendingTokens/{submissionId} {
+      allow read: if isAdmin() || isModerator();
+      allow create: if isAuthenticated() && validatePendingToken();
+      allow update, delete: if isAdmin() || isModerator();
+
+      function validatePendingToken() {
+        let data = request.resource.data;
+        return isValidString(data.tokenSymbol, 1, 10) &&
+          isValidAddress(data.tokenAddress) &&
+          data.tokenLogo is string &&
+          data.tokenLogo.size() > 0 &&
+          data.tokenLogo.size() <= 2048 &&
+          data.tokenLogo.matches('(https|gs)://firebasestorage.googleapis.com/.*\\.(png|jpg|jpeg|gif|webp)$') &&
+          data.submittedBy is string &&
+          data.submittedBy == request.auth.uid &&
+          data.status is string &&
+          data.status in ['pending', 'approved', 'rejected'] &&
+          data.createdAt is timestamp &&
+          isValidTimestamp(data.createdAt);
+      }
+    }
+
+    // Collection: notifications
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && validateReadQuery();
+      allow create: if (request.auth == null || isAuthenticated()) && validateNotification();
+      allow update, delete: if request.auth == null || isAdmin() || isModerator();
+
+      function validateReadQuery() {
+        let validTypes = [
+          'price_spike',
+          'price_spike_long',
+          'volume_spike',
+          'mover',
+          'loser',
+          'boost',
+          'swap',
+          'news',
+          'article',
+          'ai_index',
+          'eth_stats',
+          'new_token'
+        ];
+        return request.query.limit <= 50 &&
+          (
+            request.query.where == null
+            || (
+              request.query.where.field == 'type' &&
+              request.query.where.operator == 'in' &&
+              request.query.where.value is list &&
+              request.query.where.value.size() > 0 &&
+              request.query.where.value.all(type, type in validTypes)
+            )
+          );
+      }
+
+      function validateNotification() {
+        let data = request.resource.data;
+        return data.type is string &&
+          data.type in [
+            'price_spike',
+            'price_spike_long',
+            'volume_spike',
+            'mover',
+            'loser',
+            'boost',
+            'swap',
+            'news',
+            'article',
+            'ai_index',
+            'eth_stats',
+            'new_token'
+          ] &&
+          isValidString(data.message, 1, 500) &&
+          data.timestamp is timestamp &&
+          isValidTimestamp(data.timestamp) &&
+          (data.pairAddress == null || isValidAddress(data.pairAddress)) &&
+          (data.priceChangePercent == null || data.priceChangePercent is number) &&
+          data.createdAt is timestamp &&
+          isValidTimestamp(data.createdAt);
+      }
+    }
+
+    // Collection: articles
+    match /articles/{articleId} {
+      allow read: if true;
+      allow create: if (isAdmin() || isModerator()) && validateArticle();
+      allow update: if isAuthenticated() && onlyUpdatingInteractions() || (isAdmin() || isModerator()) && validateArticle();
+      allow delete: if isAdmin();
+
+      match /{document=**} {
+        allow read: if true;
+        allow write: if isAdmin() || isModerator();
+      }
+
+      function validateArticle() {
+        let data = request.resource.data;
+        return isValidString(data.title, 1, 100) &&
+          data.content is string &&
+          data.content.size() > 0 &&
+          data.createdAt is timestamp &&
+          isValidTimestamp(data.createdAt) &&
+          (data.thumbnailUrl == null ||
+            (
+              data.thumbnailUrl is string &&
+              data.thumbnailUrl.size() > 0 &&
+              data.thumbnailUrl.matches(
+                '(https|gs)://firebasestorage.googleapis.com/.*\\.(png|jpg|jpeg|gif|webp)$'
+              )
+            )
+          );
+      }
+
+      function onlyUpdatingInteractions() {
+        return request.resource.data.diff(resource.data).unchangedKeys().hasAll(['title', 'content', 'author', 'source', 'publishedAt', 'slug', 'category', 'lastUpdated']) &&
+          request.resource.data.likes is number &&
+          request.resource.data.dislikes is number &&
+          request.resource.data.comments is list &&
+          request.resource.data.views is number;
+      }
+    }
+
+    // Collection: comments
+    match /comments/{commentId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && validateComment();
+      allow update, delete: if isAdmin() || resource.data.userId == request.auth.uid;
+
+      function validateComment() {
+        let data = request.resource.data;
+        return data.articleSlug is string &&
+          data.articleSlug.matches('^[a-z0-9\\-]+$') &&
+          isValidString(data.content, 1, 500) &&
+          data.userId is string &&
+          data.userId == request.auth.uid &&
+          data.createdAt is timestamp &&
+          isValidTimestamp(data.createdAt) &&
+          (data.parentId == null || data.parentId is string) &&
+          data.likes is list &&
+          data.likes.size() <= 1000 &&
+          data.dislikes is list &&
+          data.dislikes.size() <= 1000;
+      }
+    }
+
+    // Collection: adImageUrl
+    match /adImageUrl/{adId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && validateAd();
+      allow delete: if isAdmin();
+
+      function validateAd() {
+        let data = request.resource.data;
+        return data.imageUrl is string &&
+          data.imageUrl.size() > 0 &&
+          data.imageUrl.matches('^https://.*\\.(png|jpg|jpeg|gif|webp)$') &&
+          data.destinationUrl is string &&
+          data.destinationUrl.size() > 0 &&
+          data.destinationUrl.matches('^https?://.*') &&
+          isValidString(data.altText, 1, 200) &&
+          data.type is string &&
+          data.type in ['banner', 'sidebar', 'inline'] &&
+          data.createdAt is timestamp &&
+          isValidTimestamp(data.createdAt);
+      }
+    }
+
+    // Collection: tokenLaunch
+    match /tokenLaunch/{launchId} {
+      allow read: if true;
+      allow create, update: if (isAdmin() || isModerator()) && validateTokenLaunch();
+      allow delete: if isAdmin();
+
+      match /{document=**} {
+        allow read: if true;
+        allow write: if isAdmin() || isModerator();
+      }
+
+      function validateTokenLaunch() {
+        let data = request.resource.data;
+        return isValidString(data.ticker, 1, 10) &&
+          isValidString(data.name, 1, 50) &&
+          data.date is timestamp &&
+          isValidTimestamp(data.date) &&
+          isValidString(data.description, 1, 500) &&
+          data.votes is map &&
+          'moon' in data.votes &&
+          data.votes.moon is number &&
+          data.votes.moon >= 0 &&
+          'rug' in data.votes &&
+          data.votes.rug is number &&
+          data.votes.rug >= 0 &&
+          data.reactions is map &&
+          'likes' in data.reactions &&
+          data.reactions.likes is list &&
+          data.reactions.likes.size() <= 1000 &&
+          'comments' in data.reactions &&
+          data.reactions.comments is list &&
+          data.reactions.comments.size() <= 1000 &&
+          data.followers is list &&
+          data.followers.size() <= 1000;
+      }
+    }
+
+    // Collection: projectEvents
+    match /projectEvents/{eventId} {
+      allow read: if (resource.data.status == 'approved') || isAdmin() || isModerator();
+      allow create: if (
+        isAuthenticated() && validateProjectEventPending()
+      ) || (
+        (isAdmin() || isModerator()) && validateProjectEvent()
+      );
+      allow update: if (
+        isAuthenticated() && validateProjectEventUpdate()
+      ) || (
+        (isAdmin() || isModerator()) && validateProjectEvent()
+      );
+      allow delete: if isAdmin();
+
+      function validateProjectEvent() {
+        let data = request.resource.data;
+        let projectExists = exists(
+          /databases/$(database)/documents/tokenLaunch/$(data.projectId)
+        );
+        return projectExists &&
+          data.projectId is string &&
+          data.projectId.size() > 0 &&
+          isValidString(data.title, 1, 100) &&
+          isValidString(data.description, 1, 500) &&
+          data.date is timestamp &&
+          isValidTimestamp(data.date) &&
+          data.createdBy is string &&
+          data.createdBy == request.auth.uid &&
+          data.eventType is string &&
+          data.eventType in ['AMA', 'Giveaway', 'Update', 'Other'] &&
+          (data.link == null || (data.link is string && data.link.size() <= 200)) &&
+          data.status is string &&
+          data.status in ['pending', 'approved', 'rejected'] &&
+          data.reactions is map &&
+          'likes' in data.reactions &&
+          data.reactions.likes is list &&
+          data.reactions.likes.size() <= 1000 &&
+          'dislikes' in data.reactions &&
+          data.reactions.dislikes is list &&
+          data.reactions.dislikes.size() <= 1000 &&
+          'comments' in data.reactions &&
+          data.reactions.comments is list &&
+          data.reactions.comments.size() <= 1000 &&
+          (
+            data.reactions.comments.size() == 0 ||
+            data.reactions.comments.all(comment,
+              comment is map &&
+              comment.userId is string &&
+              comment.text is string &&
+              comment.text.size() > 0 &&
+              comment.text.size() <= 500
+            )
+          ) &&
+          data.attendees is list &&
+          (
+            data.attendees.size() == 0 ||
+            data.attendees.all(uid, uid is string)
+          );
+      }
+
+      function validateProjectEventPending() {
+        let data = request.resource.data;
+        let projectExists = exists(
+          /databases/$(database)/documents/tokenLaunch/$(data.projectId)
+        );
+        return projectExists &&
+          data.projectId is string &&
+          data.projectId.size() > 0 &&
+          isValidString(data.title, 1, 100) &&
+          isValidString(data.description, 1, 500) &&
+          data.date is timestamp &&
+          isValidTimestamp(data.date) &&
+          data.createdBy is string &&
+          data.createdBy == request.auth.uid &&
+          data.eventType is string &&
+          data.eventType in ['AMA', 'Giveaway', 'Update', 'Other'] &&
+          (data.link == null || (data.link is string && data.link.size() <= 200)) &&
+          data.status is string &&
+          data.status == 'pending' &&
+          data.reactions is map &&
+          'likes' in data.reactions &&
+          data.reactions.likes is list &&
+          data.reactions.likes.size() <= 1000 &&
+          'dislikes' in data.reactions &&
+          data.reactions.dislikes is list &&
+          data.reactions.dislikes.size() <= 1000 &&
+          'comments' in data.reactions &&
+          data.reactions.comments is list &&
+          data.reactions.comments.size() <= 1000 &&
+          (
+            data.reactions.comments.size() == 0 ||
+            data.reactions.comments.all(comment,
+              comment is map &&
+              comment.userId is string &&
+              comment.text is string &&
+              comment.text.size() > 0 &&
+              comment.text.size() <= 500
+            )
+          ) &&
+          data.attendees is list &&
+          data.attendees.size() == 0;
+      }
+
+      function validateProjectEventUpdate() {
+        let data = request.resource.data;
+        let prevData = resource.data;
+        let immutableFieldsUnchanged =
+          data.projectId == prevData.projectId &&
+          data.title == prevData.title &&
+          data.description == prevData.description &&
+          data.date == prevData.date &&
+          data.createdBy == prevData.createdBy &&
+          data.eventType == prevData.eventType &&
+          (data.link == prevData.link) &&
+          data.status == prevData.status;
+        let reactionsValid =
+          data.reactions is map &&
+          'likes' in data.reactions &&
+          data.reactions.likes is list &&
+          data.reactions.likes.size() <= 1000 &&
+          'dislikes' in data.reactions &&
+          data.reactions.dislikes is list &&
+          data.reactions.dislikes.size() <= 1000 &&
+          'comments' in data.reactions &&
+          data.reactions.comments is list &&
+          data.reactions.comments.size() <= 1000 &&
+          (
+            data.reactions.comments.size() == 0 ||
+            data.reactions.comments.all(comment,
+              comment is map &&
+              comment.userId is string &&
+              comment.text is string &&
+              comment.text.size() > 0 &&
+              comment.text.size() <= 500
+            )
+          ) &&
+          'rsvps' in data.reactions &&
+          data.reactions.rsvps is list &&
+          data.reactions.rsvps.size() <= 1000;
+        let attendeesValid =
+          data.attendees is list &&
+          prevData.attendees is list &&
+          (
+            (
+              data.attendees.size() == prevData.attendees.size() + 1 &&
+              data.attendees.hasAll(prevData.attendees) &&
+              data.attendees.hasAny([request.auth.uid])
+            ) ||
+            (
+              prevData.attendees.size() == data.attendees.size() + 1 &&
+              prevData.attendees.hasAll(data.attendees) &&
+              prevData.attendees.hasAny([request.auth.uid])
+            ) ||
+            (
+              data.attendees.size() == prevData.attendees.size() &&
+              data.attendees.hasAll(prevData.attendees) &&
+              prevData.attendees.hasAll(data.attendees)
+            )
+          );
+        return immutableFieldsUnchanged &&
+          reactionsValid &&
+          attendeesValid;
+      }
+    }
+
+    // Collection: pendingProjects
+    match /pendingProjects/{projectId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated() && validatePendingProject();
+      allow update, delete: if isAdmin();
+
+      function validatePendingProject() {
+        let data = request.resource.data;
+        return isValidString(data.name, 1, 50) &&
+          isValidString(data.ticker, 1, 10) &&
+          isValidString(data.description, 1, 500) &&
+          isValidAddress(data.contractAddress) &&
+          data.website is string &&
+          data.website.size() > 0 &&
+          data.proofOfOwnership is string &&
+          data.proofOfOwnership.size() > 0 &&
+          data.proofOfOwnership.size() <= 500 &&
+          data.submitterId is string &&
+          data.submitterId == request.auth.uid &&
+          data.submittedAt is timestamp &&
+          isValidTimestamp(data.submittedAt) &&
+          data.status is string &&
+          data.status == 'pending' &&
+          data.adminNotes is string &&
+          data.adminNotes.size() <= 500;
+      }
+    }
+
+    // Collection: plugins
+    match /plugins/{pluginId} {
+      allow read: if true;
+      allow create: if isAdmin() && validatePlugin();
+      allow update: if isAdmin() && validatePlugin();
+      allow delete: if isAdmin();
+
+      function validatePlugin() {
+        let data = request.resource.data;
+        return isValidString(data.name, 1, 50) &&
+          isValidString(data.description, 1, 500);
+      }
+    }
+
+    // Collection: tournaments
+    match /tournaments/{tournamentId} {
+      allow read: if true;
+      allow create, update: if (isAdmin() || isModerator()) && validateTournament();
+      allow delete: if isAdmin();
+
+      match /{document=**} {
+        allow read: if true;
+        allow write: if isAdmin() || isModerator();
+      }
+
+      function validateTournament() {
+        let data = request.resource.data;
+        return isValidString(data.name, 1, 50) &&
+          data.startDate is timestamp &&
+          data.endDate is timestamp &&
+          data.startDate <= data.endDate &&
+          isValidTimestamp(data.startDate);
+      }
+    }
+
+    // Collection: tokenDataCache
+    match /tokenDataCache/{tokenId} {
+      allow read: if isAuthenticated() && validateReadQuery();
+      allow create, update: if isAdmin() && validateTokenData();
+      allow delete: if isAdmin();
+
+      function validateReadQuery() {
+        return request.query.limit <= 100;
+      }
+
+      function validateTokenData() {
+        let data = request.resource.data;
+        return isValidAddress(data.pairAddress) &&
+          data.baseToken is map &&
+          isValidAddress(data.baseToken.address) &&
+          isValidString(data.baseToken.name, 1, 50) &&
+          isValidString(data.baseToken.symbol, 1, 10) &&
+          data.quoteToken is map &&
+          isValidAddress(data.quoteToken.address) &&
+          isValidString(data.quoteToken.name, 1, 50) &&
+          isValidString(data.quoteToken.symbol, 1, 10) &&
+          data.priceUsd is string &&
+          data.txns is map &&
+          data.txns.h1 is map &&
+          data.txns.h1.buys is number &&
+          data.txns.h1.sells is number &&
+          data.txns.h6 is map &&
+          data.txns.h6.buys is number &&
+          data.txns.h6.sells is number &&
+          data.txns.h24 is map &&
+          data.txns.h24.buys is number &&
+          data.txns.h24.sells is number &&
+          data.priceChange is map &&
+          (data.priceChange.h1 == null || data.priceChange.h1 is number) &&
+          (data.priceChange.h6 == null || data.priceChange.h6 is number) &&
+          (data.priceChange.h24 == null || data.priceChange.h24 is number) &&
+          data.volume is map &&
+          data.volume.h24 is number &&
+          data.volume.h1 is number &&
+          data.liquidity is map &&
+          data.liquidity.usd is number &&
+          (data.marketCap == null || data.marketCap is number) &&
+          (data.fdv == null || data.fdv is number) &&
+          (data.pairCreatedAt == null || data.pairCreatedAt is number) &&
+          (data.info == null || (
+            data.info is map &&
+            (data.info.imageUrl == null || data.info.imageUrl is string)
+          ));
+      }
+    }
+
+    // Collection: users
+    match /users/{userId} {
+      allow read: if isOwnUser(userId) || isAdmin();
+      allow create: if isAuthenticated() && request.auth.uid == userId && validateUser();
+      allow update: if (isOwnUser(userId) && validateUserUpdate()) || isAdmin();
+      allow delete: if isAdmin();
+
+      match /settings/{settingId} {
+        allow read, write: if isOwnUser(userId) || isAdmin();
+      }
+
+      match /notifications/{notificationId} {
+        allow read: if isOwnUser(userId) || isAdmin();
+        allow create: if isAdmin() || isModerator();
+        allow update, delete: if isAdmin();
+      }
+
+      match /activity/{activityId} {
+        allow read: if isOwnUser(userId) || isAdmin();
+        allow create: if isAuthenticated() && request.resource.data.userId == userId;
+        allow update, delete: if isAdmin();
+      }
+
+      match /favorites/{favoriteId} {
+        allow read: if isOwnUser(userId) || isAdmin();
+        allow create: if isOwnUser(userId) && validateFavorite();
+        allow update, delete: if isOwnUser(userId) || isAdmin();
+
+        function validateFavorite() {
+          let data = request.resource.data;
+          return isValidAddress(data.pairAddress) &&
+            data.createdAt is timestamp &&
+            isValidTimestamp(data.createdAt);
+        }
+      }
+
+      match /installedPlugins/{pluginId} {
+        allow read: if isOwnUser(userId) || isAdmin();
+        allow create: if isOwnUser(userId) && validateInstalledPlugin();
+        allow update: if isOwnUser(userId) || isAdmin();
+        allow delete: if isOwnUser(userId) || isAdmin();
+
+        function validateInstalledPlugin() {
+          let data = request.resource.data;
+          return isValidString(data.name, 1, 50) &&
+            data.installedAt is timestamp &&
+            isValidTimestamp(data.installedAt);
+        }
+      }
+
+      match /snoozed/{symbol} {
+        allow read: if isOwnUser(userId) || isAdmin();
+        allow create, update: if isOwnUser(userId) && validateSnoozed();
+        allow delete: if isOwnUser(userId) || isAdmin();
+
+        function validateSnoozed() {
+          let data = request.resource.data;
+          return data.expiry is number &&
+            data.expiry > request.time.millis();
+        }
+      }
+
+      match /priceAlerts/{symbol} {
+        allow read: if isOwnUser(userId) || isAdmin();
+        allow create, update: if isOwnUser(userId) && validatePriceAlert();
+        allow delete: if isOwnUser(userId) || isAdmin();
+
+        function validatePriceAlert() {
+          let data = request.resource.data;
+          return data.threshold is number &&
+            data.threshold > 0 &&
+            data.direction is string &&
+            data.direction in ['above', 'below'] &&
+            data.interval is number &&
+            data.interval > 0;
+        }
+      }
+
+      match /watchTokens/{symbol} {
+        allow read: if isOwnUser(userId) || isAdmin();
+        allow create: if isOwnUser(userId) && validateWatchToken();
+        allow update, delete: if isOwnUser(userId) || isAdmin();
+
+        function validateWatchToken() {
+          let data = request.resource.data;
+          return isValidString(data.symbol, 1, 10) &&
+            data.createdAt is timestamp &&
+            isValidTimestamp(data.createdAt);
+        }
+      }
+
+      match /{document=**} {
+        allow read: if isOwnUser(userId) || isAdmin();
+        allow write: if isAdmin();
+      }
+
+      function validateUser() {
+        let data = request.resource.data;
+        return (
+          data.email is string &&
+          data.email.size() > 0 &&
+          (data.username == null || isValidUsername(data.username, 3, 50)) &&
+          isValidString(data.displayName, 1, 50) &&
+          isValidTimestamp(data.createdAt) &&
+          data.uid is string &&
+          data.uid == userId &&
+          (data.photoURL == null || data.photoURL is string) &&
+          (data.roles == null || (
+            data.roles is map &&
+            (data.roles.admin == null || data.roles.admin is bool) &&
+            (data.roles.moderator == null || data.roles.moderator is bool)
+          )) &&
+          (data.hasSeenTutorial == null || data.hasSeenTutorial is bool)
+        );
+      }
+
+      function validateUserUpdate() {
+        let data = request.resource.data;
+        let prevData = resource.data;
+        return data.email is string &&
+          data.email.size() > 0 &&
+          (data.username == null || isValidUsername(data.username, 3, 50)) &&
+          isValidString(data.displayName, 1, 50) &&
+          (data.createdAt == prevData.createdAt) &&
+          (data.photoURL == null || data.photoURL is string) &&
+          (data.roles == null || (
+            data.roles is map &&
+            (data.roles.admin == null || data.roles.admin == prevData.roles.admin) &&
+            (data.roles.moderator == null || data.roles.moderator == prevData.roles.moderator)
+          )) &&
+          (data.hasSeenTutorial == null || data.hasSeenTutorial is bool) &&
+          (data.uid == null || data.uid == prevData.uid) &&
+          (data.preferences == null || (
+            data.preferences is map &&
+            (data.preferences.favorites == null || (
+              data.preferences.favorites is list &&
+              data.preferences.favorites.all(addr, isValidAddress(addr))
+            )) &&
+            (data.preferences.notificationFilter == null || (
+              data.preferences.notificationFilter is map &&
+              (data.preferences.notificationFilter.excludeTypes == null || (
+                data.preferences.notificationFilter.excludeTypes is list &&
+                data.preferences.notificationFilter.excludeTypes.all(type, type is string)
+              )) &&
+              (data.preferences.notificationFilter.type == null || data.preferences.notificationFilter.type is string)
+            )) &&
+            (data.preferences.notifications == null || (
+              data.preferences.notifications is map &&
+              (data.preferences.notifications.ai_index == null || data.preferences.notifications.ai_index is bool) &&
+              (data.preferences.notifications.eth_stats == null || data.preferences.notifications.eth_stats is bool) &&
+              (data.preferences.notifications.loser == null || data.preferences.notifications.loser is bool) &&
+              (data.preferences.notifications.mover == null || data.preferences.notifications.mover is bool) &&
+              (data.preferences.notifications.new_token == null || data.preferences.notifications.new_token is bool) &&
+              (data.preferences.notifications.news == null || data.preferences.notifications.news is bool) &&
+              (data.preferences.notifications.price_spike == null || data.preferences.notifications.price_spike is bool) &&
+              (data.preferences.notifications.volume_spike == null || data.preferences.notifications.volume_spike is bool)
+            )) &&
+            (data.preferences.prioritizeNotifications == null || data.preferences.prioritizeNotifications is bool) &&
+            (data.preferences.terminalStyle == null || isValidString(data.preferences.terminalStyle, 1, 50))
+          ));
+      }
+    }
+
+    // Collection: whaleTransactions
+    match /whaleTransactions/{transactionId} {
+      allow read: if true;
+      allow create, update: if (request.auth == null || isAdmin()) && validateWhaleTransaction();
+      allow delete: if request.auth == null || isAdmin();
+
+      function validateWhaleTransaction() {
+        let data = request.resource.data;
+        return isValidString(data.tokenSymbol, 1, 10) &&
+          isValidString(data.tokenName, 1, 50) &&
+          isValidAddress(data.tokenAddress) &&
+          data.amountToken is number &&
+          data.amountToken > 0 &&
+          data.amountUSD is number &&
+          data.amountUSD >= 0 &&
+          data.percentSupply is number &&
+          data.percentSupply >= 0 &&
+          data.percentSupply <= 100 &&
+          isValidAddress(data.fromAddress) &&
+          isValidAddress(data.toAddress) &&
+          data.source is string &&
+          data.source in ["Base", "Uniswap V3", "Aerodrome"] &&
+          data.timestamp is timestamp &&
+          isValidTimestamp(data.timestamp) &&
+          data.createdAt is timestamp &&
+          isValidTimestamp(data.createdAt) &&
+          data.hash is string &&
+          data.hash.size() > 0 &&
+          data.eventType is string &&
+          data.eventType in ["Transfer", "Swap"] &&
+          data.blockNumber is number &&
+          data.blockNumber >= 0 &&
+          (
+            data.swapDetails == null ||
+            (
+              data.swapDetails is map &&
+              data.swapDetails.amountIn is number &&
+              data.swapDetails.amountOut is number &&
+              data.swapDetails.tokenIn is string &&
+              data.swapDetails.tokenOut is string
+            )
+          );
+      }
+    }
+
+    // Collection: customAlerts
+    match /customAlerts/{alertId} {
+      allow read: if isOwnUser(resource.data.userId) || isAdmin();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && validateCustomAlert();
+      allow update: if isOwnUser(resource.data.userId) && validateCustomAlert() || isAdmin();
+      allow delete: if isOwnUser(resource.data.userId) || isAdmin();
+
+      function validateCustomAlert() {
+        let data = request.resource.data;
+        return data.userId is string &&
+          data.userId == request.auth.uid &&
+          data.token is map &&
+          isValidString(data.token.symbol, 1, 10) &&
+          isValidAddress(data.token.address) &&
+          data.priceThreshold is number &&
+          data.priceThreshold > 0 &&
+          data.createdAt is timestamp &&
+          isValidTimestamp(data.createdAt);
+      }
+    }
+
+    // Collection: presence
+    match /presence/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isOwnUser(userId) && validatePresence();
+      allow delete: if isOwnUser(userId) || isAdmin();
+
+      function validatePresence() {
+        let data = request.resource.data;
+        return data.online is bool &&
+          data.lastSeen is timestamp &&
+          isValidTimestamp(data.lastSeen);
+      }
+    }
+
+    // Collection: test
+    match /test/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Collection: Cypherscope
+    match /Cypherscope/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin() && validateCypherscope();
+
+      function validateCypherscope() {
+        let data = request.resource.data;
+        return isValidAddress(data.address);
+      }
+    }
+
+    // Collection: user_activities
+    match /user_activities/{activityId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    // Collection: leaderboard
+    match /leaderboard/{entryId} {
+      allow read: if true;
+      allow create, update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    // Collection: wallet_transactions
+    match /wallet_transactions/{transactionId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && validateWalletTransaction();
+      allow update: if isAuthenticated() && validateWalletTransaction();
+      allow delete: if isAdmin();
+
+      function validateWalletTransaction() {
+        let data = request.resource.data;
+        return isValidAddress(data.walletAddress) &&
+          data.type is string &&
+          data.type in ["send", "receive", "swap", "test"] &&
+          data.status is string &&
+          data.status in ["pending", "confirmed", "failed"] &&
+          data.timestamp is timestamp &&
+          isValidTimestamp(data.timestamp) &&
+          (
+            data.amount == null ||
+            (data.amount is string && data.amount.matches('^\\d+(\\.\\d+)?$'))
+          ) &&
+          (
+            data.token == null ||
+            (data.token is string && data.token.size() > 0)
+          ) &&
+          (
+            data.description == null ||
+            (data.description is string && data.description.size() <= 500)
+          ) &&
+          (
+            data.recipient == null ||
+            isValidAddress(data.recipient)
+          );
+      }
+    }
+
+    // Default deny for any other collections/paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+} 

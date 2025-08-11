@@ -14,8 +14,9 @@ import {
   FiBarChart,
   FiCheckCircle,
 } from "react-icons/fi";
-import { useAuth } from "@/app/providers";
-import { useAccount } from "wagmi";
+import { useAuth, useWalletSystem } from "@/app/providers";
+import TierDisplay from "./TierDisplay";
+import TierProgressionModal from "./TierProgressionModal";
 
 interface UserStats {
   tier: string;
@@ -24,8 +25,8 @@ interface UserStats {
   progress: number;
   nextTier: string | null;
   pointsToNextTier: number;
-  tierSystem: any;
-  badgeSystem: any;
+  tierSystem: Record<string, unknown>;
+  badgeSystem: Record<string, unknown>;
   currentTierBenefits: string[];
 }
 
@@ -33,17 +34,19 @@ interface Activity {
   id: string;
   action: string;
   points: number;
-  metadata: any;
+  metadata: Record<string, unknown>;
   createdAt: string;
 }
 
 export default function UserProfileDashboard() {
   const { user } = useAuth();
-  const { address: walletAddress } = useAccount();
+  const { selfCustodialWallet } = useWalletSystem();
+  const walletAddress = selfCustodialWallet?.address;
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [recentActivities, setRecentActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'activities' | 'badges' | 'tiers'>('overview');
+  const [showTierModal, setShowTierModal] = useState(false);
 
   useEffect(() => {
     if (user && walletAddress) {
@@ -74,13 +77,13 @@ export default function UserProfileDashboard() {
 
   const getTierColor = (tier: string) => {
     const colors = {
-      bronze: '#cd7f32',
-      silver: '#c0c0c0',
-      gold: '#ffd700',
-      platinum: '#e5e4e2',
-      diamond: '#b9f2ff'
+      normie: '#6B7280',
+      degen: '#CD7F32', // Bronze
+      alpha: '#C0C0C0', // Silver
+      mogul: '#FFD700', // Gold
+      titan: '#8B5CF6'  // Purple
     };
-    return colors[tier as keyof typeof colors] || '#cd7f32';
+    return colors[tier as keyof typeof colors] || '#6B7280';
   };
 
   const formatAction = (action: string) => {
@@ -177,7 +180,7 @@ export default function UserProfileDashboard() {
         ].map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
+            onClick={() => setActiveTab(tab.id as 'overview' | 'activities' | 'badges' | 'tiers')}
             className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
               activeTab === tab.id
                 ? 'bg-blue-600 text-white'
@@ -282,7 +285,8 @@ export default function UserProfileDashboard() {
                 Badges
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {Object.entries(userStats.badgeSystem).map(([badgeId, badgeData]: [string, any]) => {
+                {Object.entries(userStats.badgeSystem).map(([badgeId, badgeData]) => {
+                  const badge = badgeData as { name: string; description: string; points: number };
                   const isEarned = userStats.badges.includes(badgeId);
                   return (
                     <div
@@ -305,11 +309,11 @@ export default function UserProfileDashboard() {
                         </div>
                         <div className="flex-1">
                           <h4 className={`font-medium ${isEarned ? 'text-white' : 'text-gray-400'}`}>
-                            {badgeData.name}
+                            {badge.name}
                           </h4>
-                          <p className="text-sm text-gray-500">{badgeData.description}</p>
+                          <p className="text-sm text-gray-500">{badge.description}</p>
                           <p className="text-xs text-gray-400 mt-1">
-                            {badgeData.points} points
+                            {badge.points} points
                           </p>
                         </div>
                       </div>
@@ -320,81 +324,39 @@ export default function UserProfileDashboard() {
             </div>
           )}
 
-          {activeTab === 'tiers' && (
-            <div className="bg-gray-800/30 backdrop-blur-sm rounded-lg border border-gray-700 p-6">
-              <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                               <FiAward className="w-5 h-5 text-yellow-400" />
-               Tier System
-              </h3>
-              <div className="space-y-4">
-                {Object.entries(userStats.tierSystem).map(([tier, tierData]: [string, any]) => {
-                  const isCurrentTier = userStats.tier === tier;
-                  const isUnlocked = userStats.points >= tierData.minPoints;
-                  
-                  return (
-                    <div
-                      key={tier}
-                      className={`p-4 rounded-lg border transition-all ${
-                        isCurrentTier
-                          ? 'bg-blue-900/20 border-blue-500/30'
-                          : isUnlocked
-                          ? 'bg-green-900/20 border-green-500/30'
-                          : 'bg-gray-700/50 border-gray-600'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div 
-                            className="w-10 h-10 rounded-full flex items-center justify-center"
-                            style={{ backgroundColor: tierData.color }}
-                          >
-                            <FiAward className="w-5 h-5 text-white" />
-                          </div>
-                          <div>
-                            <h4 className={`font-medium capitalize ${
-                              isCurrentTier ? 'text-blue-400' : isUnlocked ? 'text-green-400' : 'text-gray-400'
-                            }`}>
-                              {tier} Tier
-                            </h4>
-                            <p className="text-sm text-gray-500">
-                              {tierData.minPoints.toLocaleString()} points required
-                            </p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          {isCurrentTier && (
-                            <span className="text-blue-400 text-sm font-medium">Current</span>
-                          )}
-                          {isUnlocked && !isCurrentTier && (
-                            <span className="text-green-400 text-sm font-medium">Unlocked</span>
-                          )}
-                          {!isUnlocked && (
-                            <span className="text-gray-500 text-sm">Locked</span>
-                          )}
-                        </div>
-                      </div>
-                      
-                      {isCurrentTier && (
-                        <div className="mt-3 pt-3 border-t border-gray-600">
-                          <h5 className="text-sm font-medium text-white mb-2">Current Benefits:</h5>
-                          <ul className="space-y-1">
-                            {tierData.benefits.map((benefit: string, index: number) => (
-                              <li key={index} className="flex items-center gap-2 text-sm text-gray-300">
-                                <FiCheckCircle className="w-3 h-3 text-green-400" />
-                                {benefit}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </motion.div>
-      </AnimatePresence>
-    </div>
-  );
-} 
+                     {activeTab === 'tiers' && (
+             <div className="bg-gray-800/30 backdrop-blur-sm rounded-lg border border-gray-700 p-6">
+               <div className="flex items-center justify-between mb-6">
+                 <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                   <FiAward className="w-5 h-5 text-yellow-400" />
+                   Tier System
+                 </h3>
+                 <button
+                   onClick={() => setShowTierModal(true)}
+                   className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white rounded-lg font-medium transition-all duration-200 flex items-center gap-2"
+                 >
+                   <FiStar className="w-4 h-4" />
+                   View Full Progression
+                 </button>
+               </div>
+               <TierDisplay 
+                 currentTier={userStats.tier}
+                 currentPoints={userStats.points}
+               />
+             </div>
+           )}
+                 </motion.div>
+       </AnimatePresence>
+
+       {/* Tier Progression Modal */}
+       {userStats && (
+         <TierProgressionModal
+           isOpen={showTierModal}
+           onClose={() => setShowTierModal(false)}
+           currentTier={userStats.tier}
+           currentPoints={userStats.points}
+         />
+       )}
+     </div>
+   );
+ } 

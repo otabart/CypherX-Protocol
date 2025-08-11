@@ -34,8 +34,7 @@ import {
   orderBy,
   limit
 } from 'firebase/firestore';
-import { useAuth } from '@/app/providers';
-import { useAccount } from 'wagmi';
+import { useAuth, useWalletSystem } from '@/app/providers';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 
@@ -92,7 +91,8 @@ interface Annotation {
 export default function ArticleDetail({ article }: ArticleProps) {
   const router = useRouter();
   const { user } = useAuth();
-  const { address: walletAddress } = useAccount();
+  const { selfCustodialWallet } = useWalletSystem();
+  const walletAddress = selfCustodialWallet?.address;
   
   const [failedThumbnail, setFailedThumbnail] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -272,7 +272,7 @@ export default function ArticleDetail({ article }: ArticleProps) {
       
       try {
         range.surroundContents(highlight);
-      } catch (e) {
+      } catch {
         console.log('Could not highlight selection');
       }
     }
@@ -377,7 +377,7 @@ export default function ArticleDetail({ article }: ArticleProps) {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showAnnotationBox]);
+  }, [showAnnotationBox, cancelAnnotation]);
 
   // ─── Highlight Selected Text When Annotation Box Appears ───
   useEffect(() => {
@@ -387,7 +387,7 @@ export default function ArticleDetail({ article }: ArticleProps) {
         highlightSelectedText();
       }, 100);
     }
-  }, [showAnnotationBox, currentSelection]);
+  }, [showAnnotationBox, currentSelection, highlightSelectedText]);
 
   // ─── Increment views on mount ───
   useEffect(() => {
@@ -770,7 +770,7 @@ export default function ArticleDetail({ article }: ArticleProps) {
             <div className="mb-4 p-3 bg-blue-500/10 rounded-lg border border-blue-500/20 max-h-24 overflow-y-auto">
               <p className="text-xs text-blue-300 mb-2 font-medium">Selected text:</p>
               <p className="text-sm text-blue-200 italic leading-relaxed">
-                "{selectedText}"
+                &ldquo;{selectedText}&rdquo;
               </p>
             </div>
 
@@ -1172,7 +1172,7 @@ export default function ArticleDetail({ article }: ArticleProps) {
                         {comment.annotation && (
                           <div className="mb-3 p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
                             <p className="text-xs text-blue-300 mb-1">Annotated text:</p>
-                            <p className="text-sm text-blue-200 italic">"{comment.annotation.selectedText}"</p>
+                            <p className="text-sm text-blue-200 italic">&ldquo;{comment.annotation.selectedText}&rdquo;</p>
                           </div>
                         )}
                         <p className="text-gray-200 mb-4 text-lg leading-relaxed">{comment.content}</p>

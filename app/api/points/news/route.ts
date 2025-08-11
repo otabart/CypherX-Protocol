@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Firestore } from 'firebase-admin/firestore';
 
 interface NewsPointsRequest {
   action: 'read_article' | 'like_article' | 'unlike_article' | 'dislike_article' | 'share_article' | 'comment_article';
@@ -24,33 +24,97 @@ const POINTS_SYSTEM = {
 // POST - Handle news points and user engagement
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as NewsPointsRequest;
+    // Validate request body
+    let body: NewsPointsRequest;
+    try {
+      body = await request.json();
+    } catch (parseError) {
+      console.error('Failed to parse request body:', parseError);
+      return NextResponse.json({ 
+        error: 'Invalid JSON in request body',
+        details: 'Please check your request format'
+      }, { status: 400 });
+    }
+
     const { action, userId, walletAddress, articleSlug, platform, comment } = body;
 
-    if (!userId || !walletAddress || !action || !articleSlug) {
+    // Enhanced validation
+    if (!userId?.trim() || !walletAddress?.trim() || !action || !articleSlug?.trim()) {
       return NextResponse.json({ 
         error: 'Missing required fields',
         details: 'userId, walletAddress, action, and articleSlug are required'
       }, { status: 400 });
     }
 
-    const db = adminDb();
-    if (!db) {
-      console.error('Database connection failed');
-      return NextResponse.json({ error: 'Database connection failed' }, { status: 500 });
+    // Validate wallet address format
+    if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+      return NextResponse.json({ 
+        error: 'Invalid wallet address format',
+        details: 'Wallet address must be a valid Ethereum address'
+      }, { status: 400 });
     }
 
-    // Check if user exists
-    const userQuery = db.collection('users').where('walletAddress', '==', walletAddress);
-    const userSnapshot = await userQuery.get();
+    // Validate action-specific requirements
+    if (action === 'comment_article' && (!comment?.trim() || comment.trim().length < 1)) {
+      return NextResponse.json({ 
+        error: 'Comment is required',
+        details: 'Please provide a meaningful comment'
+      }, { status: 400 });
+    }
+
+    if (action === 'share_article' && !platform) {
+      return NextResponse.json({ 
+        error: 'Platform is required for sharing',
+        details: 'Please specify the platform (x, telegram, discord)'
+      }, { status: 400 });
+    }
+
+    // Get database connection with retry logic
+    let db: Firestore | null = null;
+    let retryCount = 0;
+    const maxRetries = 3;
     
-    let userDocId: string;
-    let userData: any = {};
-    
-    if (userSnapshot.empty) {
-      // Create new user
+    while (retryCount < maxRetries) {
       try {
-        const newUserRef = await db.collection('users').add({
+        const dbConnection = adminDb();
+        if (dbConnection) {
+          // Test the connection by making a simple query
+          await dbConnection.collection('users').limit(1).get();
+          db = dbConnection; // If we get here, connection is working
+          break;
+        }
+      } catch (dbError) {
+        console.error(`Database connection attempt ${retryCount + 1} failed:`, dbError);
+        retryCount++;
+        if (retryCount < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        }
+      }
+    }
+
+    if (!db) {
+      console.error('All database connection attempts failed');
+      return NextResponse.json({ 
+        error: 'Database connection failed',
+        details: 'Unable to connect to database after multiple attempts'
+      }, { status: 500 });
+    }
+
+    // Use batch write for better consistency
+    const batch = db.batch();
+    
+    try {
+      // Check if user exists
+      const userQuery = db.collection('users').where('walletAddress', '==', walletAddress);
+      const userSnapshot = await userQuery.get();
+      
+      let userDocId: string;
+      let userData: { likedArticles?: string[]; dislikedArticles?: string[] } = {};
+      
+      if (userSnapshot.empty) {
+        // Create new user
+        const newUserRef = db.collection('users').doc();
+        batch.set(newUserRef, {
           walletAddress,
           points: 0,
           likedArticles: [],
@@ -60,134 +124,103 @@ export async function POST(request: Request) {
         });
         userDocId = newUserRef.id;
         console.log('Created new user:', userDocId);
+      } else {
+        userDocId = userSnapshot.docs[0].id;
+        userData = userSnapshot.docs[0].data();
+        console.log('Found existing user:', userDocId);
+      }
+
+      // Check if action was already performed today
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      try {
+        const activityQuery = db.collection('user_activities')
+          .where('walletAddress', '==', walletAddress)
+          .where('action', '==', action)
+          .where('articleSlug', '==', articleSlug)
+          .where('createdAt', '>=', today);
+        
+        const activitySnapshot = await activityQuery.get();
+        
+        if (!activitySnapshot.empty) {
+          return NextResponse.json({ 
+            error: 'Action already performed today',
+            alreadyPerformed: true,
+            message: 'You have already performed this action today'
+          }, { status: 400 });
+        }
       } catch (error) {
-        console.error('Error creating new user:', error);
-        return NextResponse.json({ error: 'Failed to create user' }, { status: 500 });
+        console.error('Error checking daily activity:', error);
+        // Continue with action even if daily check fails
       }
-    } else {
-      userDocId = userSnapshot.docs[0].id;
-      userData = userSnapshot.docs[0].data();
-      console.log('Found existing user:', userDocId);
-    }
 
-    // Check if action was already performed today
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    try {
-      const activityQuery = db.collection('user_activities')
-        .where('walletAddress', '==', walletAddress)
-        .where('action', '==', action)
-        .where('articleSlug', '==', articleSlug)
-        .where('createdAt', '>=', today);
-      
-      const activitySnapshot = await activityQuery.get();
-      
-      if (!activitySnapshot.empty) {
-        return NextResponse.json({ 
-          error: 'Action already performed today',
-          alreadyPerformed: true,
-          message: 'You have already performed this action today'
-        }, { status: 400 });
-      }
-    } catch (error) {
-      console.error('Error checking daily activity:', error);
-      // Continue with action even if daily check fails
-    }
+      let points = 0;
+      let errorData: { error: string; alreadyLiked: boolean; message: string } | null = null;
 
-    let points = 0;
-    let errorData: any = null;
+      // Handle different actions
+      switch (action) {
+        case 'read_article':
+          points = POINTS_SYSTEM.READ_ARTICLE;
+          break;
 
-    // Handle different actions
-    switch (action) {
-      case 'read_article':
-        points = POINTS_SYSTEM.READ_ARTICLE;
-        break;
-
-      case 'like_article':
-        // Check if already liked
-        const likedArticles = userData.likedArticles || [];
-        if (likedArticles.includes(articleSlug)) {
-          errorData = {
-            error: 'Article already liked',
-            alreadyLiked: true,
-            message: 'You have already liked this article'
-          };
-        } else {
-          points = POINTS_SYSTEM.LIKE_ARTICLE;
-          // Add to liked articles
-          try {
-            await db.collection('users').doc(userDocId).update({
+        case 'like_article':
+          // Check if already liked
+          const likedArticles = userData.likedArticles || [];
+          if (likedArticles.includes(articleSlug)) {
+            errorData = {
+              error: 'Article already liked',
+              alreadyLiked: true,
+              message: 'You have already liked this article'
+            };
+          } else {
+            points = POINTS_SYSTEM.LIKE_ARTICLE;
+            // Add to liked articles
+            batch.update(db.collection('users').doc(userDocId), {
               likedArticles: FieldValue.arrayUnion(articleSlug)
             });
-          } catch (error) {
-            console.error('Error updating liked articles:', error);
-            return NextResponse.json({ error: 'Failed to update liked articles' }, { status: 500 });
           }
-        }
-        break;
+          break;
 
-      case 'unlike_article':
-        points = POINTS_SYSTEM.UNLIKE_ARTICLE;
-        // Remove from liked articles
-        try {
-          await db.collection('users').doc(userDocId).update({
+        case 'unlike_article':
+          points = POINTS_SYSTEM.UNLIKE_ARTICLE;
+          // Remove from liked articles
+          batch.update(db.collection('users').doc(userDocId), {
             likedArticles: FieldValue.arrayRemove(articleSlug)
           });
-        } catch (error) {
-          console.error('Error updating liked articles:', error);
-          return NextResponse.json({ error: 'Failed to update liked articles' }, { status: 500 });
-        }
-        break;
+          break;
 
-      case 'dislike_article':
-        points = POINTS_SYSTEM.DISLIKE_ARTICLE;
-        // Add to disliked articles
-        try {
-          await db.collection('users').doc(userDocId).update({
+        case 'dislike_article':
+          points = POINTS_SYSTEM.DISLIKE_ARTICLE;
+          // Add to disliked articles
+          batch.update(db.collection('users').doc(userDocId), {
             dislikedArticles: FieldValue.arrayUnion(articleSlug)
           });
-        } catch (error) {
-          console.error('Error updating disliked articles:', error);
-          return NextResponse.json({ error: 'Failed to update disliked articles' }, { status: 500 });
-        }
-        break;
+          break;
 
-      case 'share_article':
-        if (!platform) {
+        case 'share_article':
+          points = POINTS_SYSTEM.SHARE_ARTICLE;
+          break;
+
+        case 'comment_article':
+          points = POINTS_SYSTEM.COMMENT_ARTICLE;
+          break;
+
+        default:
           return NextResponse.json({ 
-            error: 'Platform is required for sharing',
-            details: 'Please specify the platform (x, telegram, discord)'
+            error: 'Invalid action',
+            details: 'Action must be one of: read_article, like_article, unlike_article, dislike_article, share_article, comment_article'
           }, { status: 400 });
-        }
-        points = POINTS_SYSTEM.SHARE_ARTICLE;
-        break;
+      }
 
-      case 'comment_article':
-        if (!comment?.trim()) {
-          return NextResponse.json({ 
-            error: 'Comment is required',
-            details: 'Please provide a comment'
-          }, { status: 400 });
-        }
-        points = POINTS_SYSTEM.COMMENT_ARTICLE;
-        break;
+      // If there was an error, return it
+      if (errorData) {
+        return NextResponse.json(errorData, { status: 400 });
+      }
 
-      default:
-        return NextResponse.json({ 
-          error: 'Invalid action',
-          details: 'Action must be one of: read_article, like_article, unlike_article, dislike_article, share_article, comment_article'
-        }, { status: 400 });
-    }
-
-    // If there was an error, return it
-    if (errorData) {
-      return NextResponse.json(errorData, { status: 400 });
-    }
-
-    // Record the activity
-    try {
-      await db.collection('user_activities').add({
+      // Record the activity
+      const activityRef = db.collection('user_activities').doc();
+      batch.set(activityRef, {
         userId,
         walletAddress,
         action,
@@ -199,71 +232,86 @@ export async function POST(request: Request) {
         },
         createdAt: FieldValue.serverTimestamp(),
       });
-    } catch (error) {
-      console.error('Error recording user activity:', error);
-      return NextResponse.json({ error: 'Failed to record activity' }, { status: 500 });
-    }
 
-    // Update user points
-    try {
-      await db.collection('users').doc(userDocId).update({
+      // Update user points
+      batch.update(db.collection('users').doc(userDocId), {
         points: FieldValue.increment(points),
         lastActivity: FieldValue.serverTimestamp(),
       });
-    } catch (error) {
-      console.error('Error updating user points:', error);
-      return NextResponse.json({ error: 'Failed to update user points' }, { status: 500 });
-    }
 
-    // Update leaderboard
-    try {
+      // Update leaderboard
       const leaderboardQuery = db.collection('leaderboard').where('walletAddress', '==', walletAddress);
       const leaderboardSnapshot = await leaderboardQuery.get();
       
       if (!leaderboardSnapshot.empty) {
         const leaderboardDoc = leaderboardSnapshot.docs[0];
-        await db.collection('leaderboard').doc(leaderboardDoc.id).update({
+        batch.update(leaderboardDoc.ref, {
           points: FieldValue.increment(points),
           lastUpdated: FieldValue.serverTimestamp(),
         });
       } else {
         // Create new leaderboard entry
-        await db.collection('leaderboard').add({
+        const leaderboardRef = db.collection('leaderboard').doc();
+        batch.set(leaderboardRef, {
           walletAddress,
           points: points,
           createdAt: FieldValue.serverTimestamp(),
           lastUpdated: FieldValue.serverTimestamp(),
         });
       }
-    } catch (error) {
-      console.error('Error updating leaderboard:', error);
-      // Don't fail the entire request if leaderboard update fails
-    }
 
-    // Get updated user data
-    try {
-      const updatedUserSnapshot = await db.collection('users').doc(userDocId).get();
-      const updatedUserData = updatedUserSnapshot.data();
+      // Commit all changes atomically
+      await batch.commit();
 
-      return NextResponse.json({
-        success: true,
-        pointsEarned: points,
-        totalPoints: updatedUserData?.points || 0,
-        action,
-        message: points > 0 ? `+${points} points earned!` : 'Action completed successfully'
-      });
-    } catch (error) {
-      console.error('Error getting updated user data:', error);
-      return NextResponse.json({
-        success: true,
-        pointsEarned: points,
-        action,
-        message: points > 0 ? `+${points} points earned!` : 'Action completed successfully'
-      });
+      // Get updated user data
+      try {
+        const updatedUserSnapshot = await db.collection('users').doc(userDocId).get();
+        const updatedUserData = updatedUserSnapshot.data();
+
+        return NextResponse.json({
+          success: true,
+          pointsEarned: points,
+          totalPoints: updatedUserData?.points || 0,
+          action,
+          message: points > 0 ? `+${points} points earned!` : 'Action completed successfully'
+        });
+      } catch (error) {
+        console.error('Error getting updated user data:', error);
+        return NextResponse.json({
+          success: true,
+          pointsEarned: points,
+          action,
+          message: points > 0 ? `+${points} points earned!` : 'Action completed successfully'
+        });
+      }
+
+    } catch (batchError) {
+      console.error('Error in batch operation:', batchError);
+      return NextResponse.json({ 
+        error: 'Failed to process request',
+        details: 'Database operation failed'
+      }, { status: 500 });
     }
 
   } catch (error) {
     console.error('Error handling news points:', error);
+    
+    // Provide more specific error messages
+    if (error instanceof Error) {
+      if (error.message.includes('permission-denied')) {
+        return NextResponse.json({ 
+          error: 'Permission denied',
+          details: 'You do not have permission to perform this action'
+        }, { status: 403 });
+      }
+      if (error.message.includes('unavailable')) {
+        return NextResponse.json({ 
+          error: 'Service temporarily unavailable',
+          details: 'Please try again in a few moments'
+        }, { status: 503 });
+      }
+    }
+    
     return NextResponse.json({ 
       error: 'Internal server error',
       details: 'An error occurred while processing your request'
@@ -277,13 +325,50 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const walletAddress = searchParams.get('walletAddress');
 
-    if (!walletAddress) {
-      return NextResponse.json({ error: 'Wallet address is required' }, { status: 400 });
+    if (!walletAddress?.trim()) {
+      return NextResponse.json({ 
+        error: 'Wallet address is required',
+        details: 'Please provide a valid wallet address'
+      }, { status: 400 });
     }
 
-    const db = adminDb();
+    // Validate wallet address format
+    if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+      return NextResponse.json({ 
+        error: 'Invalid wallet address format',
+        details: 'Wallet address must be a valid Ethereum address'
+      }, { status: 400 });
+    }
+
+    // Get database connection with retry logic
+    let db: Firestore | null = null;
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        const dbConnection = adminDb();
+        if (dbConnection) {
+          // Test the connection by making a simple query
+          await dbConnection.collection('users').limit(1).get();
+          db = dbConnection; // If we get here, connection is working
+          break;
+        }
+      } catch (dbError) {
+        console.error(`Database connection attempt ${retryCount + 1} failed:`, dbError);
+        retryCount++;
+        if (retryCount < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        }
+      }
+    }
+
     if (!db) {
-      return NextResponse.json({ error: 'Database connection failed' }, { status: 500 });
+      console.error('All database connection attempts failed');
+      return NextResponse.json({ 
+        error: 'Database connection failed',
+        details: 'Unable to connect to database after multiple attempts'
+      }, { status: 500 });
     }
 
     // Get user data
@@ -315,18 +400,18 @@ export async function GET(request: Request) {
         id: doc.id,
         ...data,
         createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt,
-      };
+      } as { id: string; action?: string; points?: number; createdAt: string };
     });
 
     // Calculate news-specific stats
-    const newsStats = activities.reduce((acc, activity: any) => {
+    const newsStats = activities.reduce((acc, activity) => {
       if (activity.action) {
         acc[activity.action] = (acc[activity.action] || 0) + 1;
       }
       return acc;
     }, {} as Record<string, number>);
 
-    const totalNewsPoints = activities.reduce((sum, activity: any) => sum + (activity.points || 0), 0);
+    const totalNewsPoints = activities.reduce((sum, activity) => sum + (activity.points || 0), 0);
 
     return NextResponse.json({
       user: userData,
@@ -338,6 +423,26 @@ export async function GET(request: Request) {
 
   } catch (error) {
     console.error('Error fetching news points:', error);
-    return NextResponse.json({ error: 'Error fetching news points' }, { status: 500 });
+    
+    // Provide more specific error messages
+    if (error instanceof Error) {
+      if (error.message.includes('permission-denied')) {
+        return NextResponse.json({ 
+          error: 'Permission denied',
+          details: 'You do not have permission to access this data'
+        }, { status: 403 });
+      }
+      if (error.message.includes('unavailable')) {
+        return NextResponse.json({ 
+          error: 'Service temporarily unavailable',
+          details: 'Please try again in a few moments'
+        }, { status: 503 });
+      }
+    }
+    
+    return NextResponse.json({ 
+      error: 'Error fetching news points',
+      details: 'An unexpected error occurred while fetching your data'
+    }, { status: 500 });
   }
 } 

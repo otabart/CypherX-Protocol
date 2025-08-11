@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Firestore } from 'firebase-admin/firestore';
 
 interface CalendarPointsRequest {
   walletAddress: string;
@@ -16,7 +16,15 @@ interface CalendarPointsRequest {
 
 export async function POST(request: Request) {
   try {
-    const body: CalendarPointsRequest = await request.json();
+    // Validate request body
+    let body: CalendarPointsRequest;
+    try {
+      body = await request.json();
+    } catch (parseError) {
+      console.error('Failed to parse request body:', parseError);
+      return NextResponse.json({ error: 'Invalid JSON in request body' }, { status: 400 });
+    }
+
     const { 
       walletAddress, 
       userId, 
@@ -29,13 +37,66 @@ export async function POST(request: Request) {
       attendanceTime
     } = body;
 
-    if (!walletAddress || !userId || !eventId || !action) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    // Enhanced validation
+    if (!walletAddress?.trim() || !userId?.trim() || !eventId?.trim() || !action) {
+      return NextResponse.json({ 
+        error: 'Missing required fields',
+        details: 'walletAddress, userId, eventId, and action are required'
+      }, { status: 400 });
     }
 
-    const db = adminDb();
+    // Validate wallet address format (basic check)
+    if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+      return NextResponse.json({ 
+        error: 'Invalid wallet address format',
+        details: 'Wallet address must be a valid Ethereum address'
+      }, { status: 400 });
+    }
+
+    // Validate action-specific requirements
+    if (action === 'comment' && (!comment?.trim() || comment.trim().length < 1)) {
+      return NextResponse.json({ 
+        error: 'Comment is required and cannot be empty',
+        details: 'Please provide a meaningful comment'
+      }, { status: 400 });
+    }
+    
+    if (action === 'share' && !platform) {
+      return NextResponse.json({ 
+        error: 'Platform is required for sharing',
+        details: 'Please specify the platform (x, telegram, discord)'
+      }, { status: 400 });
+    }
+
+    // Get database connection with retry logic
+    let db: Firestore | null = null;
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        const dbConnection = adminDb();
+        if (dbConnection) {
+          // Test the connection by making a simple query
+          await dbConnection.collection('users').limit(1).get();
+          db = dbConnection; // If we get here, connection is working
+          break;
+        }
+      } catch (dbError) {
+        console.error(`Database connection attempt ${retryCount + 1} failed:`, dbError);
+        retryCount++;
+        if (retryCount < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        }
+      }
+    }
+
     if (!db) {
-      return NextResponse.json({ error: 'Database connection failed' }, { status: 500 });
+      console.error('All database connection attempts failed');
+      return NextResponse.json({ 
+        error: 'Database connection failed',
+        details: 'Unable to connect to database after multiple attempts'
+      }, { status: 500 });
     }
 
     // Calculate points based on action
@@ -59,17 +120,11 @@ export async function POST(request: Request) {
         break;
       
       case 'comment':
-        if (!comment?.trim()) {
-          return NextResponse.json({ error: 'Comment is required' }, { status: 400 });
-        }
         points = 20;
         activityAction = 'comment_event';
         break;
       
       case 'share':
-        if (!platform) {
-          return NextResponse.json({ error: 'Platform is required for sharing' }, { status: 400 });
-        }
         points = 25;
         activityAction = `share_event_${platform}`;
         break;
@@ -95,15 +150,15 @@ export async function POST(request: Request) {
         break;
       
       default:
-        return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+        return NextResponse.json({ 
+          error: 'Invalid action',
+          details: `Action '${action}' is not supported`
+        }, { status: 400 });
     }
 
     // Check for daily limits to prevent farming
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
-    const userQuery = db.collection('users').where('walletAddress', '==', walletAddress);
-    const userSnapshot = await userQuery.get();
     
     // Daily limits to prevent farming
     const dailyLimits = {
@@ -117,10 +172,17 @@ export async function POST(request: Request) {
       attend_late: 8,
       create_event: 5
     };
+
+    // Use a batch write for better consistency
+    const batch = db.batch();
     
-    if (!userSnapshot.empty) {
-      try {
-        const userData = userSnapshot.docs[0].data();
+    try {
+      const userQuery = db.collection('users').where('walletAddress', '==', walletAddress);
+      const userSnapshot = await userQuery.get();
+      
+      if (!userSnapshot.empty) {
+        const userDoc = userSnapshot.docs[0];
+        const userData = userDoc.data();
         const todayActivities = userData.dailyActivities?.[today.toISOString().split('T')[0]] || {};
         const actionCount = todayActivities[action] || 0;
         
@@ -139,20 +201,22 @@ export async function POST(request: Request) {
         if (hasAlreadyPerformedAction) {
           return NextResponse.json({ 
             error: `You have already ${action}ed this event`,
-            alreadyPerformed: true
+            alreadyPerformed: true,
+            details: 'This action has already been performed on this event'
           }, { status: 400 });
         }
         
         if (actionCount >= dailyLimits[action]) {
           return NextResponse.json({ 
             error: `Daily limit reached for ${action}`,
-            limit: dailyLimits[action]
+            limit: dailyLimits[action],
+            details: `You can only perform this action ${dailyLimits[action]} times per day`
           }, { status: 429 });
         }
         
         // Update daily activity count and track event actions
         const dailyKey = today.toISOString().split('T')[0];
-        const updateData: any = {
+        const updateData: Record<string, any> = {
           [`dailyActivities.${dailyKey}.${action}`]: FieldValue.increment(1),
           points: FieldValue.increment(points),
           lastActivity: FieldValue.serverTimestamp(),
@@ -173,16 +237,12 @@ export async function POST(request: Request) {
           updateData[`eventActions.${eventId}.rsvp`] = FieldValue.delete();
         }
         
-        await db.collection('users').doc(userSnapshot.docs[0].id).update(updateData);
-      } catch (error) {
-        console.error('Error updating user data:', error);
-        return NextResponse.json({ error: 'Failed to update user data' }, { status: 500 });
-      }
-    } else {
-      // Create new user
-      try {
+        batch.update(userDoc.ref, updateData);
+      } else {
+        // Create new user
         const dailyKey = today.toISOString().split('T')[0];
-        await db.collection('users').add({
+        const newUserRef = db.collection('users').doc();
+        batch.set(newUserRef, {
           walletAddress,
           points,
           dailyActivities: {
@@ -198,86 +258,114 @@ export async function POST(request: Request) {
           createdAt: FieldValue.serverTimestamp(),
           lastActivity: FieldValue.serverTimestamp(),
         });
-      } catch (error) {
-        console.error('Error creating new user:', error);
-        return NextResponse.json({ error: 'Failed to create new user' }, { status: 500 });
       }
-    }
 
-    // Record the activity
-    const metadata: any = {
-      eventTitle,
-    };
-    
-    if (action === 'comment' && comment) {
-      metadata.comment = comment;
-    }
-    
-    if (action === 'share' && platform) {
-      metadata.platform = platform;
-    }
-
-    if (action === 'attend' && eventTime && attendanceTime) {
-      const eventDateTime = new Date(eventTime);
-      const attendanceDateTime = new Date(attendanceTime);
-      const timeDifference = attendanceDateTime.getTime() - eventDateTime.getTime();
-      const minutesLate = timeDifference / (1000 * 60);
-
-      if (minutesLate > 0) {
-        metadata.minutesLate = minutesLate;
+      // Record the activity
+      const metadata: Record<string, unknown> = {
+        eventTitle,
+      };
+      
+      if (action === 'comment' && comment) {
+        metadata.comment = comment;
       }
-    }
-    
-    const activityData = {
-      userId,
-      walletAddress,
-      action: activityAction,
-      points,
-      eventId,
-      metadata,
-      createdAt: FieldValue.serverTimestamp(),
-    };
+      
+      if (action === 'share' && platform) {
+        metadata.platform = platform;
+      }
 
-    try {
-      await db.collection('user_activities').add(activityData);
-    } catch (error) {
-      console.error('Error recording user activity:', error);
-      // Don't fail the entire request if activity recording fails
-    }
+      if (action === 'attend' && eventTime && attendanceTime) {
+        try {
+          const eventDateTime = new Date(eventTime);
+          const attendanceDateTime = new Date(attendanceTime);
+          
+          if (!isNaN(eventDateTime.getTime()) && !isNaN(attendanceDateTime.getTime())) {
+            const timeDifference = attendanceDateTime.getTime() - eventDateTime.getTime();
+            const minutesLate = timeDifference / (1000 * 60);
 
-    // Update leaderboard
-    try {
+            if (minutesLate > 0) {
+              metadata.minutesLate = minutesLate;
+            }
+          }
+        } catch (dateError) {
+          console.warn('Failed to parse date for attendance:', dateError);
+          // Continue without date metadata
+        }
+      }
+      
+      const activityRef = db.collection('user_activities').doc();
+      const activityData = {
+        userId,
+        walletAddress,
+        action: activityAction,
+        points,
+        eventId,
+        metadata,
+        createdAt: FieldValue.serverTimestamp(),
+      };
+      
+      batch.set(activityRef, activityData);
+
+      // Update leaderboard
       const leaderboardQuery = db.collection('leaderboard').where('walletAddress', '==', walletAddress);
       const leaderboardSnapshot = await leaderboardQuery.get();
       
       if (!leaderboardSnapshot.empty) {
         const leaderboardDoc = leaderboardSnapshot.docs[0];
-        await db.collection('leaderboard').doc(leaderboardDoc.id).update({
+        batch.update(leaderboardDoc.ref, {
           points: FieldValue.increment(points),
           lastUpdated: FieldValue.serverTimestamp(),
         });
       } else {
-        await db.collection('leaderboard').add({
+        const leaderboardRef = db.collection('leaderboard').doc();
+        batch.set(leaderboardRef, {
           walletAddress,
           points,
           createdAt: FieldValue.serverTimestamp(),
           lastUpdated: FieldValue.serverTimestamp(),
         });
       }
-    } catch (error) {
-      console.error('Error updating leaderboard:', error);
-      // Don't fail the entire request if leaderboard update fails
-    }
 
-    return NextResponse.json({
-      success: true,
-      pointsEarned: points,
-      action,
-      dailyLimit: dailyLimits[action] || 0,
-    });
+      // Commit all changes atomically
+      await batch.commit();
+
+      return NextResponse.json({
+        success: true,
+        pointsEarned: points,
+        action,
+        dailyLimit: dailyLimits[action] || 0,
+        message: points > 0 ? `+${points} points earned!` : 'Action completed successfully'
+      });
+
+    } catch (batchError) {
+      console.error('Error in batch operation:', batchError);
+      return NextResponse.json({ 
+        error: 'Failed to process request',
+        details: 'Database operation failed'
+      }, { status: 500 });
+    }
 
   } catch (error) {
     console.error('Error processing calendar points:', error);
-    return NextResponse.json({ error: 'Failed to process calendar points' }, { status: 500 });
+    
+    // Provide more specific error messages
+    if (error instanceof Error) {
+      if (error.message.includes('permission-denied')) {
+        return NextResponse.json({ 
+          error: 'Permission denied',
+          details: 'You do not have permission to perform this action'
+        }, { status: 403 });
+      }
+      if (error.message.includes('unavailable')) {
+        return NextResponse.json({ 
+          error: 'Service temporarily unavailable',
+          details: 'Please try again in a few moments'
+        }, { status: 503 });
+      }
+    }
+    
+    return NextResponse.json({ 
+      error: 'Internal server error',
+      details: 'An unexpected error occurred while processing your request'
+    }, { status: 500 });
   }
 } 

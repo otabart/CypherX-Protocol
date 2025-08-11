@@ -1,7 +1,5 @@
-import fs from "fs";
-import path from "path";
-
-const DB_FILE = path.join(process.cwd(), "data/tokens.json");
+import { collection, getDocs, query, where, orderBy, limit } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 // Define proper types
 interface TokenData {
@@ -18,7 +16,7 @@ interface TokenData {
   mediaContent?: string;
   source: string;
   dexName: string;
-  pairAddress?: string;
+  poolAddress?: string;
   description: string;
   website: string;
   telegram: string;
@@ -28,51 +26,142 @@ interface TokenData {
   tokenUri?: string;
   lastUpdated?: Date | string;
   tags?: string[];
+  // DexScreener enhanced fields
+  priceUsd?: string;
+  priceChange?: {
+    m5?: number;
+    h1?: number;
+    h6?: number;
+    h24?: number;
+  };
+  volume?: {
+    h1: number;
+    h24: number;
+  };
+  liquidity?: {
+    usd: number;
+  };
+  info?: {
+    imageUrl?: string;
+  };
+  txns?: {
+    h1: { buys: number; sells: number };
+    h6: { buys: number; sells: number };
+    h24: { buys: number; sells: number };
+  };
 }
 
-interface TokenStats {
-  totalTokens?: number;
-  totalMarketCap?: number;
-  totalVolume?: number;
-  [key: string]: unknown;
-}
-
-interface TokenDatabase {
-  tokens: TokenData[];
-  stats?: TokenStats;
+interface DexScreenerPair {
+  poolAddress: string;
+  baseToken?: {
+    address: string;
+    symbol: string;
+    name: string;
+    decimals: number;
+  };
+  priceUsd: string;
+  priceChange: {
+    m5: number;
+    h1: number;
+    h6: number;
+    h24: number;
+  };
+  volume: {
+    h1: number;
+    h24: number;
+  };
+  liquidity: {
+    usd: number;
+  };
+  marketCap: number;
+  info?: {
+    imageUrl: string;
+  };
+  txns: {
+    h1: { buys: number; sells: number };
+    h6: { buys: number; sells: number };
+    h24: { buys: number; sells: number };
+  };
+  pairCreatedAt: number;
 }
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const source = searchParams.get('source'); // 'all', 'clanker', 'zora', 'aerodrome', 'baseswap', 'uniswap'
-    const limit = parseInt(searchParams.get('limit') || '100');
+    const limitParam = parseInt(searchParams.get('limit') || '100');
     const offset = parseInt(searchParams.get('offset') || '0');
     const search = searchParams.get('search') || '';
     const sortBy = searchParams.get('sortBy') || 'createdAt';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
 
-    // Load tokens from database
-    if (!fs.existsSync(DB_FILE)) {
+    // Fetch tokens from Firebase 'tokens' collection
+    const tokensRef = collection(db, "tokens");
+    let tokensQuery = query(tokensRef);
+
+    // Apply search filter if provided
+    if (search) {
+      // For Firebase, we'll need to fetch all and filter client-side
+      // since Firebase doesn't support full-text search
+      tokensQuery = query(tokensRef);
+    } else {
+      // Apply source filter if specified
+      if (source && source !== 'all') {
+        tokensQuery = query(tokensRef, where("source", "==", source));
+      }
+      
+      // Apply sorting
+      if (sortBy === 'createdAt') {
+        tokensQuery = query(tokensQuery, orderBy("createdAt", sortOrder === 'desc' ? 'desc' : 'asc'));
+      }
+      
+      // Apply limit
+      tokensQuery = query(tokensQuery, limit(limitParam + offset));
+    }
+
+    const snapshot = await getDocs(tokensQuery);
+    
+    if (snapshot.empty) {
       return new Response(JSON.stringify({ 
         tokens: [], 
         total: 0,
-        message: "No tokens found. Run token-monitor first." 
+        message: "No tokens found in Firebase collection." 
       }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    const data: TokenDatabase = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-    let tokens: TokenData[] = data.tokens || [];
+    // Map Firebase data to our format
+    let tokens: TokenData[] = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        address: data.address || "",
+        name: data.name || data.symbol || "Unknown",
+        symbol: data.symbol || "",
+        marketCap: data.marketCap || 0,
+        volume24h: data.volume24h || 0,
+        uniqueHolders: data.uniqueHolders || 0,
+        totalSupply: data.totalSupply || 0,
+        creatorAddress: data.creatorAddress || "",
+        createdAt: data.createdAt?.toDate?.() || data.createdAt || new Date(),
+        mediaContent: data.mediaContent || "",
+        source: data.source || "unknown",
+        dexName: data.dexName || "unknown",
+        poolAddress: data.pool || "",
+        description: data.description || "",
+        website: data.website || "",
+        telegram: data.telegram || "",
+        twitter: data.twitter || "",
+        totalVolume: data.totalVolume || 0,
+        marketCapDelta24h: data.marketCapDelta24h || 0,
+        tokenUri: data.tokenUri || "",
+        lastUpdated: data.lastUpdated?.toDate?.() || data.lastUpdated || new Date(),
+      };
+    });
 
-    // Filter by source
-    if (source && source !== 'all') {
-      tokens = tokens.filter((token: TokenData) => token.source === source);
-    }
-
-    // Search filter
+    // Apply search filter client-side if needed
     if (search) {
       const searchLower = search.toLowerCase();
       tokens = tokens.filter((token: TokenData) => 
@@ -82,7 +171,12 @@ export async function GET(request: Request) {
       );
     }
 
-    // Sort tokens
+    // Apply source filter client-side if needed
+    if (source && source !== 'all') {
+      tokens = tokens.filter((token: TokenData) => token.source === source);
+    }
+
+    // Sort tokens client-side
     tokens.sort((a: TokenData, b: TokenData) => {
       let aVal: number | string = a[sortBy as keyof TokenData] as number | string;
       let bVal: number | string = b[sortBy as keyof TokenData] as number | string;
@@ -102,9 +196,64 @@ export async function GET(request: Request) {
       }
     });
 
-    // Pagination
+    // Apply pagination
     const total = tokens.length;
-    const paginatedTokens = tokens.slice(offset, offset + limit);
+    const paginatedTokens = tokens.slice(offset, offset + limitParam);
+
+    // Fetch DexScreener data for the tokens
+    const validTokens = paginatedTokens.filter((token) => /^0x[a-fA-F0-9]{40}$/.test(token.address));
+    
+    if (validTokens.length > 0) {
+      // Chunk tokens for DexScreener API (max 10 per request)
+      const tokenChunks: string[][] = [];
+      for (let i = 0; i < validTokens.length; i += 10) {
+        tokenChunks.push(validTokens.slice(i, i + 10).map((t) => t.address));
+      }
+
+      // Fetch from DexScreener
+      for (const chunk of tokenChunks) {
+        const joinedChunk = chunk.join(",");
+        try {
+          const res = await fetch(
+            `https://api.dexscreener.com/tokens/v1/base/${encodeURIComponent(joinedChunk)}`,
+            {
+              headers: { Accept: "application/json" },
+            }
+          );
+          
+          if (!res.ok) {
+            console.error(`DexScreener API fetch failed for chunk: ${joinedChunk}, status: ${res.status}`);
+            continue;
+          }
+          
+          const data: DexScreenerPair[] = await res.json();
+          
+          // Enhance tokens with DexScreener data
+          data.forEach((pair) => {
+            if (pair && pair.baseToken && pair.baseToken.address) {
+              const tokenIndex = validTokens.findIndex(
+                (t) => t.address.toLowerCase() === pair.baseToken?.address.toLowerCase()
+              );
+              
+              if (tokenIndex !== -1) {
+                const token = validTokens[tokenIndex];
+                // Update poolAddress from DexScreener pair data
+                token.poolAddress = pair.poolAddress || token.poolAddress || "";
+                token.priceUsd = pair.priceUsd || "0";
+                token.priceChange = pair.priceChange || { m5: 0, h1: 0, h6: 0, h24: 0 };
+                token.volume = pair.volume || { h1: 0, h24: 0 };
+                token.liquidity = pair.liquidity || { usd: 0 };
+                token.marketCap = pair.marketCap || token.marketCap || 0;
+                token.info = pair.info ? { imageUrl: pair.info.imageUrl } : undefined;
+                token.txns = pair.txns || { h1: { buys: 0, sells: 0 }, h6: { buys: 0, sells: 0 }, h24: { buys: 0, sells: 0 } };
+              }
+            }
+          });
+        } catch (error) {
+          console.error("Error fetching DexScreener data:", error);
+        }
+      }
+    }
 
     // Add tags to tokens
     const tokensWithTags = paginatedTokens.map((token: TokenData) => {
@@ -141,7 +290,6 @@ export async function GET(request: Request) {
       offset,
       limit,
       source: source || 'all',
-      stats: data.stats || {}
     }), {
       status: 200,
       headers: { "Content-Type": "application/json" },

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 
 import { useRouter } from "next/navigation";
 
@@ -11,10 +11,6 @@ import {
   FaBolt,
   FaStar,
   FaBell,
-  FaPlusCircle,
-  FaUser,
-  FaSearch,
-  FaFilter,
   FaList,
   FaTrash,
   FaCheck,
@@ -64,13 +60,19 @@ import 'react-toastify/dist/ReactToastify.css';
 
 import Image from 'next/image';
 
-// Performance constants
+import Header from "../components/Header";
 
-const DEBOUNCE_DELAY = 300;
+// Performance constants
 
 const MOBILE_BREAKPOINT = 768;
 
 const PULL_TO_REFRESH_THRESHOLD = 80;
+
+
+
+// Trending variety constants
+const FRESHNESS_BONUS_HOURS = 6; // Hours for which new tokens get bonus
+const VARIETY_BONUS = 15; // Bonus for tokens that haven't been trending recently
 
 // Explicitly type auth and db
 
@@ -300,8 +302,6 @@ export type CustomAlert = {
 
 // ====== CONSTANTS ======
 
-const DECAY_CONSTANT = 7;
-
 const COOLDOWN_PERIOD = 300_000; // 5 minutes
 
 const LONG_COOLDOWN_PERIOD = 1_800_000; // 30 minutes
@@ -363,9 +363,23 @@ function computeTrending(token: TokenData, boostValue: number): number {
   const volumeToMarketCap = token.marketCap ? (token.volume?.h24 || 0) / token.marketCap : 0;
   const volumeMarketCapScore = Math.log10(volumeToMarketCap + 1) * 2;
   const boostScore = boostValue || 0;
-  const ageDecay = token.pairCreatedAt
-    ? Math.max(0.3, Math.exp(-(Date.now() - token.pairCreatedAt) / (1000 * 60 * 60 * 24) / DECAY_CONSTANT))
-    : 0.5;
+  
+  // Freshness bonus for new tokens (removed age decay)
+  const tokenAge = token.pairCreatedAt ? (Date.now() - token.pairCreatedAt) / (1000 * 60 * 60) : 0;
+  const freshnessBonus = tokenAge <= FRESHNESS_BONUS_HOURS ? VARIETY_BONUS * (1 - tokenAge / FRESHNESS_BONUS_HOURS) : 0;
+  
+  // Volume spike bonus - reward sudden volume increases
+  const volumeSpikeBonus = token.volume?.h24 && token.volume?.h1 ? 
+    Math.max(0, Math.log10(token.volume.h24 / (token.volume.h1 * 24 + 1)) * 3) : 0;
+  
+  // Price momentum bonus - reward consistent positive price movement
+  const priceMomentumBonus = (priceChange1h > 0 && priceChange6h > 0 && priceChange24h > 0) ? 
+    Math.min(20, (priceChange1h + priceChange6h + priceChange24h) / 3) : 0;
+  
+  // Liquidity growth bonus - reward tokens with increasing liquidity
+  const liquidityGrowthBonus = token.liquidity?.usd ? 
+    Math.log10(token.liquidity.usd + 1) * 0.2 : 0;
+  
   const baseScore =
     txnScore +
     volumeScore +
@@ -373,9 +387,17 @@ function computeTrending(token: TokenData, boostValue: number): number {
     priceMovementScore +
     consistencyBonus +
     volumeMarketCapScore +
-    boostScore;
-  return token.pairCreatedAt ? baseScore * ageDecay : baseScore * 0.8;
+    boostScore +
+    freshnessBonus +
+    volumeSpikeBonus +
+    priceMomentumBonus +
+    liquidityGrowthBonus;
+  
+  // Return base score without age decay
+  return baseScore;
 }
+
+
 
 function getTrophy(rank: number): JSX.Element | null {
   if (rank === 1)
@@ -539,85 +561,188 @@ type Alert = {
 
 export default function TokenScreener() {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
   const [tokens, setTokens] = useState<TokenData[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [favorites, setFavorites] = useState<string[]>([]);
-  const [viewMode, setViewMode] = useState<"all" | "favorites" | "alerts" | "watchlist">(
-    "all"
-  );
-  const [alertTab, setAlertTab] = useState<"feed" | "triggers" | "history">("feed");
-  const [sortFilter, setSortFilter] = useState("trending");
+  const [viewMode, setViewMode] = useState<"all" | "favorites" | "watchlist" | "alerts">("all");
+  const [sortFilter, setSortFilter] = useState<string>("trending");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const [filters, setFilters] = useState({
     minLiquidity: 0,
     minVolume: 0,
     minAge: 0,
     maxAge: Infinity,
   });
-  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
-  const [previousPrices, setPreviousPrices] = useState<{ [symbol: string]: number }>({});
-  const [lastAlertTimes, setLastAlertTimes] = useState<{
-    [symbol: string]: { volume: number; price: number; priceLong: number; boost: number };
-  }>({});
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [selectedAlerts, setSelectedAlerts] = useState<Alert[] | null>(null);
-  const [notificationCount, setNotificationCount] = useState(0);
-  const [showModal, setShowModal] = useState(false);
-  const [tokenSymbol, setTokenSymbol] = useState("");
-  const [tokenAddress, setTokenAddress] = useState("");
-  const [tokenLogo, setTokenLogo] = useState("");
-  const [submissionSuccess, setSubmissionSuccess] = useState(false);
-  const [showBoostModal, setShowBoostModal] = useState(false);
-  const [showFavoritePopup, setShowFavoritePopup] = useState(false);
-  const [isMounted, setIsMounted] = useState(false);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [user, setUser] = useState<User | null>(null);
+  const [favorites, setFavorites] = useState<string[]>([]);
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
-  const [selectedWatchlist, setSelectedWatchlist] = useState<string | null>(null);
-  const [showCreateWatchlistModal, setShowCreateWatchlistModal] = useState(false);
-  const [newWatchlistName, setNewWatchlistName] = useState("");
+  const [selectedWatchlist, setSelectedWatchlist] = useState<string>("");
   const [customAlerts, setCustomAlerts] = useState<CustomAlert[]>([]);
-  const [showCustomAlertModal, setShowCustomAlertModal] = useState(false);
-  const [editingCustomAlert, setEditingCustomAlert] = useState<CustomAlert | null>(null);
-  const [customAlertForm, setCustomAlertForm] = useState({
-    poolAddress: "",
-    type: "price_above" as "price_above" | "price_below" | "volume_above" | "mc_above",
-    threshold: "",
-  });
-  const [showAddToWatchlistModal, setShowAddToWatchlistModal] = useState(false);
-  const [selectedTokenForWatchlist, setSelectedTokenForWatchlist] = useState<string | null>(null);
-  const [watchlistSelections, setWatchlistSelections] = useState<string[]>([]);
-  const [pageLoadTime, setPageLoadTime] = useState<number>(Date.now());
-  const [snoozedAlerts, setSnoozedAlerts] = useState<string[]>([]);
-  const [triggerFilter, setTriggerFilter] = useState<"all" | "price_above" | "price_below" | "volume_above" | "mc_above">("all");
-  
-  // Mobile UX state variables
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [notificationCount, setNotificationCount] = useState(0);
+
+  const [isMounted, setIsMounted] = useState(false);
+  const [pageLoadTime, setPageLoadTime] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pullToRefreshY, setPullToRefreshY] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
   const [showMobileSkeleton, setShowMobileSkeleton] = useState(true);
   
+  // Trending history tracking
+  const [trendingHistory, setTrendingHistory] = useState<Map<string, number>>(new Map());
+  const [lastTrendingUpdate, setLastTrendingUpdate] = useState(0);
+  
+  // Load trending history from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedHistory = localStorage.getItem('trendingHistory');
+      const savedUpdateTime = localStorage.getItem('lastTrendingUpdate');
+      
+      if (savedHistory) {
+        const historyData = JSON.parse(savedHistory);
+        const historyMap = new Map(Object.entries(historyData).map(([key, value]) => [key, value as number]));
+        setTrendingHistory(historyMap);
+      }
+      
+      if (savedUpdateTime) {
+        setLastTrendingUpdate(parseInt(savedUpdateTime));
+      }
+    } catch (error) {
+      console.error('Failed to load trending history:', error);
+    }
+  }, []);
+  
+  // Save trending history to localStorage when it updates
+  useEffect(() => {
+    try {
+      // Clean up old entries (older than 7 days)
+      const now = Date.now();
+      const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
+      const cleanedHistory = new Map<string, number>();
+      
+      trendingHistory.forEach((timestamp, poolAddress) => {
+        if (timestamp > sevenDaysAgo) {
+          cleanedHistory.set(poolAddress, timestamp);
+        }
+      });
+      
+      const historyObject = Object.fromEntries(cleanedHistory);
+      localStorage.setItem('trendingHistory', JSON.stringify(historyObject));
+      localStorage.setItem('lastTrendingUpdate', lastTrendingUpdate.toString());
+      
+      // Update state with cleaned history
+      if (cleanedHistory.size !== trendingHistory.size) {
+        setTrendingHistory(cleanedHistory);
+      }
+    } catch (error) {
+      console.error('Failed to save trending history:', error);
+    }
+  }, [trendingHistory, lastTrendingUpdate]);
+  
   const pageSize = 25;
+  
+  // Missing variables that were removed
+  const [previousPrices, setPreviousPrices] = useState<{ [symbol: string]: number }>({});
+  const [lastAlertTimes, setLastAlertTimes] = useState<{
+    [symbol: string]: { volume: number; price: number; priceLong: number; boost: number };
+  }>({});
+  
+  // Additional missing state variables
+  const [showFavoritePopup, setShowFavoritePopup] = useState(false);
+  const [selectedTokenForWatchlist, setSelectedTokenForWatchlist] = useState<string | null>(null);
+  const [watchlistSelections, setWatchlistSelections] = useState<string[]>([]);
+  const [showAddToWatchlistModal, setShowAddToWatchlistModal] = useState(false);
+  
+  // Remaining missing state variables
+  const [showBoostModal, setShowBoostModal] = useState(false);
+  const [tokenSymbol, setTokenSymbol] = useState("");
+  const [tokenAddress, setTokenAddress] = useState("");
+  const [tokenLogo, setTokenLogo] = useState("");
+  const [submissionSuccess, setSubmissionSuccess] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  
+  // Final missing state variables
+  const [newWatchlistName, setNewWatchlistName] = useState("");
+  const [showCreateWatchlistModal, setShowCreateWatchlistModal] = useState(false);
+  const [customAlertForm, setCustomAlertForm] = useState({
+    poolAddress: "",
+    type: "price_above" as "price_above" | "price_below" | "volume_above" | "mc_above",
+    threshold: "",
+  });
+  const [editingCustomAlert, setEditingCustomAlert] = useState<CustomAlert | null>(null);
+  
+  // Final missing state variables
+  const [showCustomAlertModal, setShowCustomAlertModal] = useState(false);
+  const [selectedAlerts, setSelectedAlerts] = useState<Alert[] | null>(null);
+  const [triggerFilter, setTriggerFilter] = useState<"all" | "price_above" | "price_below" | "volume_above" | "mc_above">("all");
+  
+  // Final missing state variables
+
+  const [alertTab, setAlertTab] = useState<"feed" | "triggers" | "history">("feed");
+  
+  // Final missing state variable
+
+  
+  // Apply Trending Scores
+  const tokensWithTrending = useMemo(() => {
+    const now = Date.now();
+    
+    // Update trending history every hour
+    if (now - lastTrendingUpdate > 60 * 60 * 1000) {
+      const newTrendingHistory = new Map<string, number>();
+      
+      // Calculate trending scores and track top trending tokens
+      const tokensWithScores = tokens.map((token) => ({
+        ...token,
+        trendingScore: computeTrending(token, token.boostValue || 0),
+      }));
+      
+      // Sort by trending score and track top 50 tokens
+      const topTrending = tokensWithScores
+        .sort((a, b) => (b.trendingScore || 0) - (a.trendingScore || 0))
+        .slice(0, 50);
+      
+      // Update trending history with current timestamp
+      topTrending.forEach((token) => {
+        newTrendingHistory.set(token.poolAddress, now);
+      });
+      
+      setTrendingHistory(newTrendingHistory);
+      setLastTrendingUpdate(now);
+    }
+    
+    return tokens.map((token) => {
+      const baseTrendingScore = computeTrending(token, token.boostValue || 0);
+      
+      // Apply trending fatigue based on history (removed age-based fatigue)
+      const lastTrendingTime = trendingHistory.get(token.poolAddress) || 0;
+      const hoursSinceLastTrending = (now - lastTrendingTime) / (1000 * 60 * 60);
+      
+      // Apply penalty for recently trending tokens (within last 24 hours)
+      let trendingFatigue = 1;
+      if (hoursSinceLastTrending < 24) {
+        // Reduce score for tokens that were trending recently
+        trendingFatigue = 0.3 + (0.7 * (hoursSinceLastTrending / 24));
+      }
+      
+      // Apply bonus for tokens that haven't been trending for a while
+      let varietyBonus = 0;
+      if (hoursSinceLastTrending > 48) {
+        varietyBonus = Math.min(20, (hoursSinceLastTrending - 48) * 0.5);
+      }
+      
+      return {
+        ...token,
+        trendingScore: (baseTrendingScore + varietyBonus) * trendingFatigue,
+      };
+    });
+  }, [tokens, trendingHistory, lastTrendingUpdate]);
 
   // Memoized filtered and sorted tokens
   const filteredAndSortedTokens = useMemo(() => {
-    let filtered = tokens;
-
-    // Apply search filter
-    if (debouncedSearchQuery) {
-      const query = debouncedSearchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (token) =>
-          token.symbol.toLowerCase().includes(query) ||
-          token.name.toLowerCase().includes(query) ||
-          token.poolAddress.toLowerCase().includes(query)
-      );
-    }
+    let filtered = tokensWithTrending;
 
     // Apply view mode filter
     switch (viewMode) {
@@ -685,22 +810,7 @@ export default function TokenScreener() {
     });
 
     return sorted;
-  }, [tokens, debouncedSearchQuery, viewMode, favorites, selectedWatchlist, watchlists, filters, sortFilter, sortDirection]);
-
-  // Debounced search effect
-  useEffect(() => {
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-    searchTimeoutRef.current = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery);
-    }, DEBOUNCE_DELAY);
-    return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
-    };
-  }, [searchQuery]);
+  }, [tokensWithTrending, viewMode, favorites, selectedWatchlist, watchlists, filters, sortFilter, sortDirection]);
 
   // Ensure component is mounted on client
   useEffect(() => {
@@ -1241,55 +1351,7 @@ export default function TokenScreener() {
     return () => clearInterval(interval);
   }, [tokens, notificationCount, alerts, pageLoadTime]);
 
-  // Apply Trending Scores
-  const tokensWithTrending = useMemo(() => {
-    return tokens.map((token) => ({
-      ...token,
-      trendingScore: computeTrending(token, token.boostValue || 0),
-    }));
-  }, [tokens]);
 
-  // Sorting & Filtering
-  const filteredTokens = useMemo(() => {
-    let tokenList = tokensWithTrending;
-    if (viewMode === "favorites") {
-      tokenList = tokenList.filter((token) => favorites.includes(token.poolAddress));
-    } else if (viewMode === "watchlist" && selectedWatchlist) {
-      const wl = watchlists.find((wl) => wl.id === selectedWatchlist);
-      tokenList = tokenList.filter((token) => wl?.tokens.includes(token.poolAddress));
-    } else if (viewMode === "alerts") {
-      tokenList = tokenList.filter((token) =>
-        alerts.some((alert) => alert.poolAddress === token.poolAddress)
-      );
-    }
-    return tokenList.filter((token) => {
-      const ageDays = token.pairCreatedAt
-        ? (Date.now() - token.pairCreatedAt) / (1000 * 60 * 60 * 24)
-        : 0;
-      return (
-        (token.liquidity?.usd || 0) >= (filters.minLiquidity || 0) &&
-        (token.volume?.h24 || 0) >= (filters.minVolume || 0) &&
-        ageDays >= (filters.minAge || 0) &&
-        (filters.maxAge === Infinity || ageDays <= filters.maxAge) &&
-        (searchQuery === "" ||
-          token.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          token.symbol.toLowerCase().includes(searchQuery.toLowerCase()))
-      );
-    });
-  }, [tokensWithTrending, filters, viewMode, favorites, searchQuery, alerts, watchlists, selectedWatchlist]);
-
-
-
-  const searchSuggestions = useMemo(() => {
-    if (!searchQuery) return [];
-    return tokens
-      .filter(
-        (token) =>
-          token.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          token.symbol.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-      .slice(0, 5);
-  }, [tokens, searchQuery]);
 
   // Handlers
   const handleCopy = useCallback(async (token: TokenData) => {
@@ -1442,9 +1504,7 @@ export default function TokenScreener() {
     router.push("/marketplace");
   };
 
-  const handleReturn = useCallback(() => {
-    router.back();
-  }, [router]);
+
 
   async function handleSubmitListing(e: React.FormEvent) {
     e.preventDefault();
@@ -1573,13 +1633,7 @@ export default function TokenScreener() {
     }
   };
 
-  const debouncedSetSearchQuery = useCallback(
-    (value: string) => {
-      const debouncedFn = debounce((val: string) => setSearchQuery(val), 300);
-      debouncedFn(value);
-    },
-    [setSearchQuery]
-  );
+
 
   const handleFilterChange = useCallback(
     (filter: string) => {
@@ -2147,102 +2201,8 @@ export default function TokenScreener() {
       {/* Main Container */}
       <div className="flex flex-col w-full h-full">
         {/* Header Bar */}
-        <div className="sticky top-0 z-50 bg-gray-900 shadow-lg w-full border-b border-blue-500/30">
-          <div className="w-full flex justify-between items-center px-4 py-3">
-            <div className="flex items-center space-x-2">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setShowFilterMenu(true)}
-                className="sm:hidden flex items-center space-x-1 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
-              >
-                <FaFilter className="text-blue-400" />
-                <span>Menu</span>
-              </motion.button>
-              <div className="relative w-full max-w-xs">
-                <div className="flex items-center bg-gray-900 rounded-lg px-3 py-2 border border-blue-500/30 w-full h-9 shadow-sm">
-                  <FaSearch className="text-gray-400 mr-2" />
-                  <input
-                    type="text"
-                    placeholder="Search tokens..."
-                    onChange={(e) => debouncedSetSearchQuery(e.target.value)}
-                    onFocus={() => setShowSearchDropdown(true)}
-                    onBlur={() => setTimeout(() => setShowSearchDropdown(false), 200)}
-                    className="bg-transparent text-gray-200 focus:outline-none text-sm font-sans w-full p-1 h-6 placeholder-gray-400 uppercase"
-                  />
-                </div>
-                {showSearchDropdown && searchSuggestions.length > 0 && (
-                  <div className="absolute top-full left-0 mt-2 w-full bg-gray-900 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto border border-blue-500/30">
-                    {searchSuggestions.map((token) => (
-                      <div
-                        key={token.poolAddress}
-                        onClick={() => {
-                          setSearchQuery("");
-                          setShowSearchDropdown(false);
-                          handleTokenClick(token.poolAddress);
-                        }}
-                        className="flex items-center space-x-3 p-3 hover:bg-gray-800 cursor-pointer transition-colors duration-150"
-                      >
-                        {token.info && (
-                          <Image
-                            src={token.info.imageUrl || "/fallback.png"}
-                            alt={token.symbol}
-                            width={24}
-                            height={24}
-                            className="rounded-full border border-blue-500/30"
-                          />
-                        )}
-                        <span className="text-sm font-sans truncate text-gray-200 uppercase">
-                          {token.name} ({token.symbol})
-                        </span>
-                        <span className="text-sm text-gray-400 ml-auto font-sans uppercase">
-                          {formatPrice(token.priceUsd || 0)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="hidden sm:flex items-center space-x-4">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setShowBoostModal(true)}
-                className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
-              >
-                <FaBolt className="text-blue-400" />
-                <span>Boost Info</span>
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setShowModal(true)}
-                className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
-              >
-                <FaPlusCircle className="text-blue-400" />
-                <span>Submit Listing</span>
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => router.push("/login")}
-                className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
-              >
-                <FaUser className="text-gray-200" />
-                <span>Account</span>
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleReturn}
-                className="flex items-center space-x-2 bg-gray-900 border border-blue-500/30 text-gray-200 text-sm font-sans whitespace-nowrap px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-sm uppercase"
-              >
-                <span>Return</span>
-              </motion.button>
-            </div>
-          </div>
-        </div>
+        {/* Header */}
+        <Header />
         {/* Filter & ViewMode Overlay (Mobile full-page) */}
         {showFilterMenu && (
           <div className="fixed inset-0 bg-gray-900 z-50 overflow-y-auto">
@@ -2406,7 +2366,7 @@ export default function TokenScreener() {
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 onClick={() => setViewMode("alerts")}
-                className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
+                className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors border border-blue-500/30 uppercase ${
                   viewMode === "alerts" ? "bg-red-500/20 text-red-400" : "bg-gray-900 hover:bg-gray-800"
                 }`}
               >
@@ -2539,7 +2499,7 @@ export default function TokenScreener() {
                 </tbody>
               </table>
             </div>
-          ) : filteredTokens.length === 0 && viewMode !== "alerts" ? (
+          ) : filteredAndSortedTokens.length === 0 && viewMode !== "alerts" ? (
             <div className="p-4 text-center text-gray-400 font-sans uppercase w-full h-full flex items-center justify-center">
               No tokens match your filters. Try adjusting filters or check Firebase data.
             </div>
@@ -2590,7 +2550,6 @@ export default function TokenScreener() {
                 ) : (
                   <ul className="space-y-2">
                     {alerts
-                      .filter((alert) => !snoozedAlerts.includes(alert.id || ''))
                       .map((alert, idx) => {
                         const token = tokens.find((t) => t.poolAddress === alert.poolAddress);
                         const colorClass =
@@ -2610,63 +2569,27 @@ export default function TokenScreener() {
                           )
                         ));
                         return (
-                          <li
-                            key={idx}
-                            className="flex items-center justify-between p-3 hover:bg-gray-800 transition-colors duration-150 border-b border-blue-500/30"
-                          >
-                            <div className="flex items-center space-x-3">
-                              {token?.info && (
-                                <Image
-                                  src={token.info.imageUrl || "/fallback.png"}
-                                  alt={token.symbol}
-                                  width={24}
-                                  height={24}
-                                  className="rounded-full border border-blue-500/30"
-                                />
-                              )}
-                              <div>
-                                <p className="text-sm font-sans uppercase">
-                                  <span className="font-bold">{alert.type.replace("_", " ").toUpperCase()}:</span>{" "}
-                                  <span className={colorClass}>{formattedMessage}</span>
-                                </p>
-                                <p className="text-xs text-gray-400 font-sans uppercase">
-                                  {new Date(alert.timestamp).toLocaleString()}
-                                </p>
-                              </div>
+                          <li key={idx} className="text-sm font-sans flex items-center space-x-3 uppercase relative pb-2">
+                            {token?.info && (
+                              <Image
+                                src={token.info.imageUrl || "/fallback.png"}
+                                alt={token.symbol}
+                                width={24}
+                                height={24}
+                                className="rounded-full border border-blue-500/30"
+                              />
+                            )}
+                            <div>
+                              <span className="font-bold">{alert.type.replace("_", " ").toUpperCase()}:</span>{" "}
+                              <span className={colorClass}>{formattedMessage}</span>
+                              <br />
+                              <span className="text-xs text-gray-400 font-sans uppercase">
+                                {new Date(alert.timestamp).toLocaleString()}
+                              </span>
                             </div>
-                            <div className="flex space-x-2 items-center">
-                              {token && (
-                                <motion.button
-                                  whileHover={{ scale: 1.05 }}
-                                  whileTap={{ scale: 0.95 }}
-                                  onClick={() => handleTokenClick(token.poolAddress)}
-                                  className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 px-2 py-1 rounded font-sans text-xs uppercase border border-blue-500/30"
-                                >
-                                  Trade
-                                </motion.button>
-                              )}
-                              <motion.button
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                                onClick={() => setSnoozedAlerts(prev => [...prev, alert.id!])}
-                                className="text-yellow-400 px-2 py-1 rounded font-sans text-xs uppercase border border-yellow-500/30"
-                              >
-                                Snooze
-                              </motion.button>
-                              <motion.button
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                                onClick={async () => {
-                                  if (alert.id) {
-                                    await deleteDoc(doc(firestoreDb, "notifications", alert.id));
-                                    setAlerts(prev => prev.filter(a => a.id !== alert.id));
-                                  }
-                                }}
-                                className="text-red-400 px-2 py-1 rounded font-sans text-xs uppercase border border-red-500/30"
-                              >
-                                Delete
-                              </motion.button>
-                            </div>
+                            {idx < alerts.length - 1 && (
+                              <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-blue-500/20 to-transparent"></div>
+                            )}
                           </li>
                         );
                       })}

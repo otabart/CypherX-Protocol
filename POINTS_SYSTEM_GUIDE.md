@@ -90,30 +90,34 @@ This comprehensive points and tier system is designed to reward user engagement 
 
 ## Tier System
 
-### Bronze (0 points)
+### Normie (0-1,999 points)
 - Basic access to all features
 - Standard support
+- Community access
 
-### Silver (500 points)
+### Degen (2,000-7,999 points)
 - Priority support
 - Early access to new features
 - Custom profile badge
-
-### Gold (2,000 points)
-- Exclusive content access
 - Higher airdrop multipliers
+
+### Alpha (8,000-19,999 points)
+- Exclusive content access
 - VIP community access
-
-### Platinum (5,000 points)
-- Whitelist priority
 - Governance voting rights
-- Exclusive events access
+- Whitelist priority
 
-### Diamond (10,000 points)
-- All benefits
+### Mogul (20,000-49,999 points)
+- Exclusive events access
 - Custom NFT rewards
 - Direct team access
-- Revenue sharing
+- Revenue sharing opportunities
+
+### Titan (50,000+ points)
+- All benefits
+- Legendary status
+- Platform partnership opportunities
+- Immortal status in community
 
 ## Badge System
 

@@ -33,8 +33,8 @@ import {
 } from "react-icons/fi";
 import { format, parseISO } from "date-fns";
 import toast, { Toaster } from "react-hot-toast";
-import { useAuth } from "@/app/providers";
-import { useAccount, useSignMessage } from "wagmi";
+import { useAuth, useWalletSystem } from "@/app/providers";
+import { useSignMessage } from "wagmi";
 import Header from "../components/Header";
 import Footer from "../components/Footer";
 
@@ -138,6 +138,7 @@ function getWeekDates(weekOffset: number = 0): { day: string; date: string; full
 
 export default function CalendarPage() {
   const { user } = useAuth();
+  const { selfCustodialWallet } = useWalletSystem();
   const isMobile = useIsMobile();
   
   // State management
@@ -183,7 +184,7 @@ export default function CalendarPage() {
   });
 
   // Wallet signing state
-  const { address: walletAddress } = useAccount();
+  const walletAddress = selfCustodialWallet?.address;
   const { signMessage, data: signatureData } = useSignMessage();
   const [signature, setSignature] = useState("");
   const [isVerifyingOwnership, setIsVerifyingOwnership] = useState(false);
@@ -302,7 +303,7 @@ export default function CalendarPage() {
 
   const handleVerifyOwnership = async () => {
     if (!walletAddress) {
-      toast.error("Please connect your wallet first");
+      toast.error("Please create or connect your XWallet first");
       return;
     }
 
@@ -331,7 +332,7 @@ export default function CalendarPage() {
 
   const handleAddEvent = async () => {
     if (!user || !walletAddress) {
-      toast.error("Please log in and connect your wallet to add events");
+      toast.error("Please log in and create or connect your XWallet to add events");
       return;
     }
 
@@ -475,7 +476,7 @@ export default function CalendarPage() {
 
   const handleEngagement = async (event: Event, action: "like" | "dislike") => {
     if (!user || !walletAddress) {
-      toast.error("Please log in and connect your wallet to interact with events");
+      toast.error("Please log in and create or connect your XWallet to interact with events");
       return;
     }
 
@@ -573,7 +574,7 @@ export default function CalendarPage() {
 
   const handleCommentSubmit = async (event: Event) => {
     if (!user || !walletAddress) {
-      toast.error("Please log in and connect your wallet to comment");
+      toast.error("Please log in and create or connect your XWallet to comment");
       return;
     }
 
@@ -670,7 +671,7 @@ export default function CalendarPage() {
 
   const handleRSVP = async (event: Event) => {
     if (!user || !walletAddress) {
-      toast.error("Please log in and connect your wallet to RSVP");
+      toast.error("Please log in and create or connect your XWallet to RSVP");
       return;
     }
 
@@ -811,7 +812,7 @@ export default function CalendarPage() {
   // ─── Handle Event Attendance ───
   const handleEventAttendance = async (event: Event) => {
     if (!user || !walletAddress) {
-      toast.error("Please log in and connect your wallet to track attendance");
+      toast.error("Please log in and create or connect your XWallet to track attendance");
       return;
     }
 
@@ -944,13 +945,13 @@ export default function CalendarPage() {
   // ─── Check Attendance Status ───
   const hasAttendedEvent = (eventId: string): boolean => {
     if (!userProfile?.attendedEvents) return false;
-    return userProfile.attendedEvents.some((attendance: any) => attendance.eventId === eventId);
+    return userProfile.attendedEvents.some((attendance) => attendance.eventId === eventId);
   };
 
   const getAttendanceStatus = (eventId: string): { attended: boolean; wasLate: boolean; minutesLate: number } => {
     if (!userProfile?.attendedEvents) return { attended: false, wasLate: false, minutesLate: 0 };
     
-    const attendance = userProfile.attendedEvents.find((att: any) => att.eventId === eventId);
+    const attendance = userProfile.attendedEvents.find((att) => att.eventId === eventId);
     if (!attendance) return { attended: false, wasLate: false, minutesLate: 0 };
     
     return {
@@ -1396,7 +1397,7 @@ export default function CalendarPage() {
                   </div>
                   <div>
                     <h2 className="text-xl font-bold text-white">My RSVP Events</h2>
-                    <p className="text-sm text-gray-400">Events you've confirmed attendance for</p>
+                    <p className="text-sm text-gray-400">Events you&apos;ve confirmed attendance for</p>
                   </div>
                 </div>
                 <div className="text-right">
@@ -1654,8 +1655,8 @@ export default function CalendarPage() {
                 <div className={`w-2 h-2 rounded-full ${walletAddress ? 'bg-green-500' : 'bg-red-500'}`}></div>
                 <span className="text-sm">
                   {walletAddress 
-                    ? `Wallet Connected: ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
-                    : 'Please connect your wallet to submit a project'
+                    ? `XWallet Connected: ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
+                    : 'Please create or connect your XWallet to submit a project'
                   }
                 </span>
               </div>
@@ -1721,10 +1722,10 @@ export default function CalendarPage() {
                     : isVerifyingOwnership 
                       ? 'Verifying...' 
                       : !walletAddress 
-                        ? 'Connect Wallet First'
+                        ? 'Create XWallet First'
                         : !newProject.contractAddress.trim()
                           ? 'Enter Contract Address First'
-                          : '🔐 Verify Ownership with Wallet'
+                          : '🔐 Verify Ownership with XWallet'
                   }
                 </button>
                 {signature && (

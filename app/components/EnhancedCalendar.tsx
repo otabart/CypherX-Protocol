@@ -30,7 +30,7 @@ interface Event {
   reactions: {
     likes: string[];
     dislikes: string[];
-    comments: any[];
+    comments: { userId: string; text: string; timestamp: string | Date }[];
     rsvps: string[];
   };
 }

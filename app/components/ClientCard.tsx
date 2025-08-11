@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { ShoppingBagIcon, SparklesIcon, UserIcon, RocketLaunchIcon, MegaphoneIcon } from '@heroicons/react/24/solid';
 import { motion } from 'framer-motion';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, useBalance } from 'wagmi';
+import { useWalletSystem } from '@/app/providers';
+import { useWriteContract, useWaitForTransactionReceipt, useBalance } from 'wagmi';
 import { parseUnits } from 'viem';
 
 // Define MarketplaceItem type directly (to avoid path issues)
@@ -68,7 +69,9 @@ const ClientCard = ({ item, isComingSoon = false }: { item: MarketplaceItem; isC
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  const { address, isConnected } = useAccount();
+  const { selfCustodialWallet } = useWalletSystem();
+  const address = selfCustodialWallet?.address as `0x${string}` | undefined;
+  const isConnected = !!selfCustodialWallet?.isConnected;
   const { data: usdcBalance } = useBalance({
     address,
     token: USDC_ADDRESS,

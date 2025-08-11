@@ -145,15 +145,15 @@ export default function ChartPage() {
     });
   }, [xAxisRange]);
 
-  // Calculate appropriate zoom level based on timeframe - even more zoomed out
+  // Calculate appropriate zoom level based on timeframe - like the reference chart
   const getDefaultZoomLevel = useCallback((tf: string) => {
     const timeframeMap: { [key: string]: number } = {
-      "1m": 2 * 60 * 60 * 1000, // 2 hours (much more zoomed out)
-      "5m": 6 * 60 * 60 * 1000, // 6 hours
-      "15m": 12 * 60 * 60 * 1000, // 12 hours
+      "1m": 2 * 60 * 60 * 1000, // 2 hours (lots of 1m candles)
+      "5m": 8 * 60 * 60 * 1000, // 8 hours
+      "15m": 24 * 60 * 60 * 1000, // 24 hours
       "1h": 7 * 24 * 60 * 60 * 1000, // 7 days
       "4h": 30 * 24 * 60 * 60 * 1000, // 30 days
-      "1d": 90 * 24 * 60 * 60 * 1000, // 90 days
+      "1d": 120 * 24 * 60 * 60 * 1000, // 120 days (4 months like reference)
     };
     return timeframeMap[tf] || timeframeMap["1h"];
   }, []);
@@ -803,17 +803,20 @@ export default function ChartPage() {
     const yValues = visibleCandleData.flatMap((d: any) => d.y);
     const lowestLow = yValues.length ? Math.min(...yValues) : 0;
     const highestHigh = yValues.length ? Math.max(...yValues) : 0;
-    const yPadding = (highestHigh - lowestLow) * 0.3;
-    const yMin = lowestLow - yPadding;
+    
+
+    
+    const yPadding = (highestHigh - lowestLow) * 0.15; // Reduced padding for cleaner look
+    const yMin = Math.max(0, lowestLow - yPadding); // Ensure minimum is not negative
     const yMax = highestHigh + yPadding;
     
-    // Calculate default zoom based on timeframe and zoom state
+    // Calculate default zoom based on timeframe and zoom state - focus on recent data
     const defaultZoomRange = getDefaultZoomLevel(timeframe);
     const now = Date.now();
     const baseRange = defaultZoomRange / zoom;
     const xMin = xAxisRange ? xAxisRange.min : now - baseRange;
     const xMax = xAxisRange ? xAxisRange.max : now;
-    const futurePadding = (xMax - xMin) * 0.1;
+    const futurePadding = (xMax - xMin) * 0.2; // Much more padding for larger candles
     const xMaxWithPadding = xMax + futurePadding;
 
     // Dynamic subtitle: current price or market cap
@@ -824,7 +827,7 @@ export default function ChartPage() {
     return {
       chart: {
         type: "candlestick",
-        height: 500,
+        height: 600, // Increased height for more vertical display
         background: "transparent",
         foreColor: "#A1A1AA",
         toolbar: {
@@ -850,6 +853,8 @@ export default function ChartPage() {
           }, 500),
         },
         animations: { enabled: false },
+        sparkline: { enabled: false }, // Ensure sparkline is disabled for full candlestick display
+        brush: { enabled: false }, // Disable brush for cleaner interface
       },
       subtitle: {
         text: subtitleText,
@@ -902,22 +907,24 @@ export default function ChartPage() {
           },
           formatter: (val: number) => `$${val.toFixed(4)}`,
         },
-        tickAmount: 5,
+        tickAmount: 4, // Fewer tick marks for cleaner look
         min: yMin,
         max: yMax,
+        forceNiceScale: true, // Ensure nice scale values
+        logarithmic: false, // Keep linear scale for better candlestick visibility
       },
       grid: {
         borderColor: "#2A3B5A",
-        opacity: 0.1,
+        opacity: 0.02, // Extremely faint grid lines
         strokeDashArray: 0,
-        xaxis: { lines: { show: false } },
-        yaxis: { lines: { show: true } },
+        xaxis: { lines: { show: true, color: "#0A0A1A", opacity: 0.01, width: 0.5 } }, // Extremely faint and thin x-axis lines
+        yaxis: { lines: { show: true, color: "#0A0A1A", opacity: 0.01, width: 0.5 } }, // Extremely faint and thin y-axis lines
       },
               plotOptions: {
           candlestick: {
             colors: { upward: "#10B981", downward: "#EF4444" },
             wick: { useFillColor: true },
-            columnWidth: width < 768 ? "80%" : "60%",
+            columnWidth: width < 768 ? "95%" : "85%", // Much wider candles
           },
         },
               tooltip: {
@@ -1008,7 +1015,7 @@ export default function ChartPage() {
     return {
       chart: {
         type: "line",
-        height: 500,
+        height: 600, // Increased height for more vertical display
         background: "transparent",
         foreColor: "#A1A1AA",
         toolbar: {
@@ -1086,16 +1093,18 @@ export default function ChartPage() {
           },
           formatter: (val: number) => `$${val.toFixed(4)}`,
         },
-        tickAmount: 5,
+        tickAmount: 4, // Fewer tick marks for cleaner look
         min: yMin,
         max: yMax,
+        forceNiceScale: true, // Ensure nice scale values
+        logarithmic: false, // Keep linear scale for better visibility
       },
       grid: {
         borderColor: "#2A3B5A",
-        opacity: 0.1,
+        opacity: 0.02, // Extremely faint grid lines
         strokeDashArray: 0,
-        xaxis: { lines: { show: false } },
-        yaxis: { lines: { show: true } },
+        xaxis: { lines: { show: true, color: "#0A0A1A", opacity: 0.01, width: 0.5 } }, // Extremely faint and thin x-axis lines
+        yaxis: { lines: { show: true, color: "#0A0A1A", opacity: 0.01, width: 0.5 } }, // Extremely faint and thin y-axis lines
       },
       stroke: {
         curve: "straight",
@@ -1358,8 +1367,8 @@ export default function ChartPage() {
           animation: slideIn 0.5s ease-out forwards;
         }
       `}</style>
-      {/* Header - Desktop Only */}
-      {(!width || width >= 768) && <Header />}
+      {/* Header - Always Show */}
+      <Header />
 
       {/* Loading Screen */}
       {initialLoading && (
@@ -1486,7 +1495,7 @@ export default function ChartPage() {
 
                         <div className="flex items-center space-x-2">
                           <div className="text-xs text-gray-500">
-                            cypherx.io • Trade • {timeframe}
+                            {timeframe}
                           </div>
                           {/* 5m Mover */}
                           {token?.priceChange?.m5 !== undefined ? (
@@ -1580,7 +1589,7 @@ export default function ChartPage() {
                     </div>
 
                     {/* Chart Area */}
-                    <div className="flex-1 bg-gray-950 p-2 relative min-h-0" style={{ maxHeight: width < 768 ? '60%' : '45%' }} onTouchStart={(e) => e.stopPropagation()}>
+                    <div className="flex-1 bg-gray-950 p-2 relative min-h-0" style={{ maxHeight: width < 768 ? '75%' : '65%' }} onTouchStart={(e) => e.stopPropagation()}>
                       <div className="w-full h-full">
                         {candleData.length > 0 ? (
                           <Chart

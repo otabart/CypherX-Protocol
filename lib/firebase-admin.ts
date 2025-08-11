@@ -10,102 +10,128 @@ const initializeAdmin = () => {
   if (isInitialized) return;
   
   try {
-    console.log("Starting Firebase Admin initialization...");
+    console.log("🚀 Starting Firebase Admin initialization...");
 
-    // Try to load service account from JSON file first
-    let serviceAccount;
+    // Try multiple authentication methods in order of preference
+    let initialized = false;
+    const errorMessages: string[] = [];
+
+    // Method 1: Try service account from JSON file
     try {
+      console.log("🔧 Method 1: Trying service account from JSON file...");
       const serviceAccountPath = path.join(process.cwd(), 'firebaseServiceAccount.json');
+      
       if (fs.existsSync(serviceAccountPath)) {
         const serviceAccountFile = fs.readFileSync(serviceAccountPath, 'utf8');
-        serviceAccount = JSON.parse(serviceAccountFile);
-        console.log("Loaded Firebase service account from JSON file");
+        const serviceAccount = JSON.parse(serviceAccountFile);
+        
+        if (!admin.apps.length) {
+          admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount),
+          });
+        }
+        
+        adminDb = admin.firestore();
+        adminStorage = admin.storage();
+        isInitialized = true;
+        initialized = true;
+        console.log("✅ Successfully initialized with service account from JSON file");
+      } else {
+        console.log("⚠️  Service account JSON file not found");
       }
     } catch (error) {
-      console.log("Could not load service account from JSON file, trying environment variables");
+      const errorMsg = `Service account JSON failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      console.log("❌ " + errorMsg);
+      errorMessages.push(errorMsg);
     }
 
-    // Fallback to environment variables if JSON file not available
-    if (!serviceAccount) {
-      console.log("Raw Firebase Admin Env Vars:", {
-        FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || "Missing",
-        FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL || "Missing",
-        FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY ? "Set" : "Missing",
-      });
+    // Method 2: Try environment variables
+    if (!initialized) {
+      try {
+        console.log("🔧 Method 2: Trying environment variables...");
+        
+        if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+          const normalizePrivateKey = (key: string): string => {
+            return key
+              .replace(/\\n/g, "\n")
+              .replace(/\\r/g, "")
+              .replace(/\s+/g, "")
+              .trim();
+          };
 
-      const requiredEnvVars = {
-        FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
-        FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL,
-        FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY,
-      };
-      const missingAdminEnvVars = Object.entries(requiredEnvVars).filter(
-        ([, value]) => !value
-      );
-      if (missingAdminEnvVars.length > 0) {
-        const errorMessage = `Missing server-side Firebase Admin environment variables: ${missingAdminEnvVars
-          .map(([key]) => key)
-          .join(", ")}`;
-        console.error(errorMessage);
-        throw new Error(errorMessage);
+          const serviceAccount = {
+            projectId: process.env.FIREBASE_PROJECT_ID,
+            clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+            privateKey: normalizePrivateKey(process.env.FIREBASE_PRIVATE_KEY),
+          };
+
+          if (!admin.apps.length) {
+            admin.initializeApp({
+              credential: admin.credential.cert(serviceAccount),
+            });
+          }
+          
+          adminDb = admin.firestore();
+          adminStorage = admin.storage();
+          isInitialized = true;
+          initialized = true;
+          console.log("✅ Successfully initialized with environment variables");
+        } else {
+          console.log("⚠️  Environment variables not complete");
+        }
+      } catch (error) {
+        const errorMsg = `Environment variables failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        console.log("❌ " + errorMsg);
+        errorMessages.push(errorMsg);
       }
-
-      const normalizePrivateKey = (key: string | undefined): string => {
-        if (!key) {
-          throw new Error("FIREBASE_PRIVATE_KEY is undefined or empty");
-        }
-        let normalizedKey = key
-          .replace(/\\n/g, "\n")
-          .replace(/\\r/g, "")
-          .replace(/\n+/g, "\n")
-          .trim();
-        if (!normalizedKey.startsWith("-----BEGIN PRIVATE KEY-----\n")) {
-          normalizedKey = "-----BEGIN PRIVATE KEY-----\n" + normalizedKey;
-        }
-        if (!normalizedKey.endsWith("\n-----END PRIVATE KEY-----\n")) {
-          normalizedKey = normalizedKey + "\n-----END PRIVATE KEY-----\n";
-        }
-        if (!normalizedKey.includes("PRIVATE KEY")) {
-          throw new Error(
-            "FIREBASE_PRIVATE_KEY is malformed: Missing expected key structure"
-          );
-        }
-        return normalizedKey;
-      };
-
-      serviceAccount = {
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: normalizePrivateKey(process.env.FIREBASE_PRIVATE_KEY),
-      };
     }
 
-    if (!admin.apps.length) {
-      const adminApp = admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
+    // Method 3: Try Firebase CLI credentials (simplest approach)
+    if (!initialized) {
+      try {
+        console.log("🔧 Method 3: Trying Firebase CLI credentials...");
+        
+        if (!admin.apps.length) {
+          admin.initializeApp({
+            projectId: 'homebase-dapp',
+          });
+        }
+        
+        adminDb = admin.firestore();
+        adminStorage = admin.storage();
+        isInitialized = true;
+        initialized = true;
+        console.log("✅ Successfully initialized with Firebase CLI credentials");
+      } catch (error) {
+        const errorMsg = `Firebase CLI credentials failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        console.log("❌ " + errorMsg);
+        errorMessages.push(errorMsg);
+      }
+    }
+
+    if (!initialized) {
+      console.error("❌ All Firebase Admin initialization methods failed:");
+      errorMessages.forEach((msg, index) => {
+        console.error(`  ${index + 1}. ${msg}`);
       });
-      console.log("Firebase Admin app initialized successfully:", adminApp.name);
-    } else {
-      console.log("Firebase Admin app already initialized");
+      throw new Error("All Firebase Admin initialization methods failed. Please check your Firebase project configuration and service account permissions.");
     }
 
-    adminDb = admin.firestore();
-    adminStorage = admin.storage();
-    console.log("Admin Firestore and Storage initialized: Success");
-    isInitialized = true;
+    console.log("✅ Firebase Admin initialization completed successfully");
 
   } catch (error: unknown) {
-    const errorInfo: { message?: string; code?: string; stack?: string } = {};
-    if (error instanceof Error) {
-      errorInfo.message = error.message;
-      errorInfo.stack = error.stack;
-    }
-    if (error && typeof error === "object" && "code" in error) {
-      errorInfo.code = String((error as { code: unknown }).code);
-    }
-    console.error("Firebase Admin initialization error:", errorInfo);
+    console.error("❌ Firebase Admin initialization error:", error);
+    
+    // Reset state on failure
     adminDb = null;
     adminStorage = null;
-    throw new Error("Firebase Admin initialization failed");
+    isInitialized = false;
+    
+    if (error instanceof Error) {
+      throw new Error(`Firebase Admin initialization failed: ${error.message}`);
+    } else {
+      throw new Error("Firebase Admin initialization failed with unknown error");
+    }
   }
 };
 
@@ -118,6 +144,10 @@ const getAdminDb = () => {
     initializeAdmin();
   }
   
+  if (!adminDb) {
+    throw new Error("Firebase Admin Firestore is not available - initialization failed");
+  }
+  
   return adminDb;
 };
 
@@ -128,6 +158,10 @@ const getAdminStorage = () => {
   
   if (!isInitialized) {
     initializeAdmin();
+  }
+  
+  if (!adminStorage) {
+    throw new Error("Firebase Admin Storage is not available - initialization failed");
   }
   
   return adminStorage;
