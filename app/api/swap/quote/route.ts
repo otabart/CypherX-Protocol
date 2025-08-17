@@ -87,6 +87,17 @@ function getTokenInfo(symbol: string, tokenAddress?: string) {
     };
   }
   
+  // If the symbol is actually a token address (starts with 0x), use it directly
+  if (symbol.startsWith('0x') && symbol.length === 42) {
+    return {
+      address: symbol,
+      symbol: "TOKEN", // Generic symbol for unknown tokens
+      name: "Token",
+      decimals: 18, // Default to 18 decimals for most tokens
+      logo: "https://via.placeholder.com/32"
+    };
+  }
+  
   // If we have a token address, create a dynamic token entry
   if (tokenAddress && !TOKEN_REGISTRY[symbol as keyof typeof TOKEN_REGISTRY]) {
     return {
@@ -121,12 +132,46 @@ function getPriceImpactLevel(impact: number): "low" | "medium" | "high" {
 // Get ETH price
 async function getEthPrice(): Promise<number> {
   try {
-    const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd");
+    console.log("🔄 Fetching ETH price from CoinGecko...");
+    const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd", {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'CypherX/1.0'
+      }
+    });
     const data = await response.json();
-    return data.ethereum?.usd || 0;
+    const ethPrice = data.ethereum?.usd || 0;
+    console.log("✅ ETH price from CoinGecko:", ethPrice);
+    
+    // If CoinGecko returns 0, use fallback
+    if (ethPrice <= 0) {
+      console.log("⚠️ CoinGecko returned 0, using fallback ETH price: 3000");
+      return 3000;
+    }
+    
+    return ethPrice;
   } catch (error) {
-    console.error("Error fetching ETH price:", error);
-    return 0;
+    console.error("❌ Error fetching ETH price from CoinGecko:", error);
+    // Fallback to our proxy
+    try {
+      console.log("🔄 Trying ETH price proxy fallback...");
+      const proxyResponse = await fetch("/api/coingecko-proxy?endpoint=simple/price?ids=ethereum&vs_currencies=usd");
+      const proxyData = await proxyResponse.json();
+      const ethPrice = proxyData.ethereum?.usd || 0;
+      console.log("✅ ETH price from proxy:", ethPrice);
+      
+      // If proxy also returns 0, use fallback
+      if (ethPrice <= 0) {
+        console.log("⚠️ Proxy also returned 0, using fallback ETH price: 3000");
+        return 3000;
+      }
+      
+      return ethPrice;
+    } catch (proxyError) {
+      console.error("❌ Proxy fallback also failed:", proxyError);
+      console.log("⚠️ Using fallback ETH price: 3000");
+      return 3000; // Fallback price
+    }
   }
 }
 
@@ -167,11 +212,11 @@ async function getTokenPrice(tokenAddress: string): Promise<number> {
       console.error("CoinGecko price fetch failed:", coingeckoError);
     }
     
-    console.log(`No price found for token ${tokenAddress}`);
-    return 0;
+    console.log(`No price found for token ${tokenAddress}, using fallback`);
+    return 0.0001; // Very low default price for unknown tokens
   } catch (error) {
     console.error("Error fetching token price:", error);
-    return 0;
+    return 0.0001; // Very low default price for unknown tokens
   }
 }
 
@@ -183,7 +228,32 @@ async function getUniswapQuote(
   decimals: number
 ): Promise<{ amountOut: string; gasEstimate: string }> {
   try {
+    console.log("🔄 Attempting Uniswap V3 quote:", {
+      tokenInAddress,
+      tokenOutAddress,
+      amountIn,
+      decimals
+    });
+    
     const provider = new ethers.JsonRpcProvider(BASE_RPC_URL);
+    
+    // Validate quoter contract exists
+    try {
+      const quoterCode = await provider.getCode(UNISWAP_V3_QUOTER);
+      if (quoterCode === "0x") {
+        throw new Error("Uniswap V3 Quoter contract not found");
+      }
+      console.log("✅ Uniswap V3 Quoter contract validated");
+    } catch (error) {
+      console.error("❌ Quoter contract validation failed:", error);
+      throw new Error("Failed to validate Uniswap V3 Quoter contract");
+    }
+    
+    // Validate token addresses
+    if (!tokenInAddress || !tokenOutAddress || tokenInAddress === tokenOutAddress) {
+      throw new Error("Invalid token addresses for quote");
+    }
+    
     const quoter = new ethers.Contract(UNISWAP_V3_QUOTER, QUOTER_ABI, provider);
     
     const amountInWei = ethers.parseUnits(amountIn, decimals);
@@ -195,6 +265,14 @@ async function getUniswapQuote(
     
     for (const fee of feeTiers) {
       try {
+        console.log(`🔄 Trying fee tier ${fee} (${fee/10000}%)`);
+        
+        // Validate inputs before calling quoter
+        if (amountInWei <= 0n) {
+          console.log(`❌ Invalid input amount for fee tier ${fee}`);
+          continue;
+        }
+        
         const quote = await quoter.quoteExactInputSingle(
           tokenInAddress,
           tokenOutAddress,
@@ -204,28 +282,41 @@ async function getUniswapQuote(
         );
         
         const amountOutWei = quote[0];
-        if (amountOutWei > bestAmountOut) {
+        console.log(`✅ Fee tier ${fee} quote:`, {
+          amountOutWei: amountOutWei.toString(),
+          amountOutFormatted: ethers.formatUnits(amountOutWei, decimals)
+        });
+        
+        // Validate the quote result
+        if (amountOutWei > 0n && amountOutWei > bestAmountOut) {
           bestAmountOut = amountOutWei;
           bestGasEstimate = quote[3];
           bestQuote = quote;
+          console.log(`🏆 New best quote from fee tier ${fee}`);
+        } else {
+          console.log(`⚠️ Fee tier ${fee} quote too low or zero:`, amountOutWei.toString());
         }
-             } catch (error) {
-         console.log(`Fee tier ${fee} failed:`, error instanceof Error ? error.message : 'Unknown error');
-         // Continue to next fee tier
-         continue;
-       }
+      } catch (error) {
+        console.log(`❌ Fee tier ${fee} failed:`, error instanceof Error ? error.message : 'Unknown error');
+        // Continue to next fee tier
+        continue;
+      }
     }
     
-    if (!bestQuote) {
-      throw new Error("No valid quote found from Uniswap V3");
+    if (!bestQuote || bestAmountOut <= 0n) {
+      console.log("❌ No valid Uniswap V3 quotes found");
+      throw new Error("No valid quote found from Uniswap V3 - all fee tiers failed");
     }
     
-    return {
+    const result = {
       amountOut: ethers.formatUnits(bestAmountOut, decimals),
       gasEstimate: ethers.formatEther(bestGasEstimate)
     };
+    
+    console.log("✅ Uniswap V3 quote result:", result);
+    return result;
   } catch (error) {
-    console.error("Uniswap quote error:", error);
+    console.error("❌ Uniswap quote error:", error);
     throw error;
   }
 }
@@ -237,23 +328,48 @@ async function getAggregatedQuote(
   amountIn: string,
   decimals: number
 ): Promise<{ amountOut: string; gasEstimate: string; route: string[] }> {
+  console.log("🔄 Starting aggregated quote for:", {
+    tokenInAddress,
+    tokenOutAddress,
+    amountIn,
+    decimals
+  });
+  
   const quotes = [];
   
   // Try Uniswap V3
   try {
+    console.log("🔄 Attempting Uniswap V3 quote...");
+    console.log("🔍 Uniswap V3 quote parameters:", {
+      tokenInAddress,
+      tokenOutAddress,
+      amountIn,
+      decimals,
+      quoterAddress: UNISWAP_V3_QUOTER
+    });
+    
     const uniswapQuote = await getUniswapQuote(tokenInAddress, tokenOutAddress, amountIn, decimals);
     quotes.push({
       ...uniswapQuote,
       source: "Uniswap V3",
       route: ["Uniswap V3"]
     });
-    console.log("Uniswap quote:", uniswapQuote);
+    console.log("✅ Uniswap quote added:", uniswapQuote);
   } catch (error) {
-    console.error("Uniswap quote failed:", error);
+    console.error("❌ Uniswap quote failed:", error);
+    console.error("❌ Uniswap quote error details:", {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      tokenInAddress,
+      tokenOutAddress,
+      amountIn,
+      decimals
+    });
   }
   
   // Try DexScreener for additional routes
   try {
+    console.log("🔄 Attempting DexScreener quote...");
     // Search for the specific token pair
     const searchQuery = `${tokenInAddress} ${tokenOutAddress}`;
     const dexScreenerResponse = await fetch(`https://api.dexscreener.com/latest/dex/search?q=${searchQuery}`);
@@ -267,14 +383,39 @@ async function getAggregatedQuote(
        pair.quoteToken?.address?.toLowerCase() === tokenInAddress.toLowerCase())
     ) || [];
     
-    console.log("DexScreener pairs found:", pairs.length);
+    console.log("📊 DexScreener pairs found:", pairs.length);
     
     for (const pair of pairs.slice(0, 3)) { // Limit to top 3 routes
       try {
+        console.log("🔍 Processing DexScreener pair:", {
+          dexId: (pair as { dexId?: string }).dexId,
+          baseToken: (pair as { baseToken?: { address?: string } }).baseToken?.address,
+          quoteToken: (pair as { quoteToken?: { address?: string } }).quoteToken?.address,
+          priceUsd: (pair as { priceUsd?: string }).priceUsd,
+          liquidity: (pair as { liquidity?: { usd?: string } }).liquidity?.usd,
+          baseTokenPrice: (pair as { baseToken?: { priceUsd?: string } }).baseToken?.priceUsd,
+          quoteTokenPrice: (pair as { quoteToken?: { priceUsd?: string } }).quoteToken?.priceUsd
+        });
+        
         // Calculate quote based on pair price and liquidity
         const pairPrice = parseFloat((pair as { priceUsd?: string }).priceUsd || "0");
-        const inputPrice = parseFloat((pair as { baseToken?: { priceUsd?: string } }).baseToken?.priceUsd || "0");
         const liquidity = parseFloat((pair as { liquidity?: { usd?: string } }).liquidity?.usd || "0");
+        
+        // For ETH swaps, we need to get the ETH price from the base token if it's ETH/WETH
+        let inputPrice = parseFloat((pair as { baseToken?: { priceUsd?: string } }).baseToken?.priceUsd || "0");
+        
+        // If inputPrice is 0 and we're dealing with ETH, try to get ETH price from quote token
+        if (inputPrice === 0 && (tokenInAddress === WETH_ADDRESS || tokenOutAddress === WETH_ADDRESS)) {
+          inputPrice = parseFloat((pair as { quoteToken?: { priceUsd?: string } }).quoteToken?.priceUsd || "0");
+        }
+        
+        // If still 0, use fallback ETH price
+        if (inputPrice === 0 && (tokenInAddress === WETH_ADDRESS || tokenOutAddress === WETH_ADDRESS)) {
+          inputPrice = 3000; // Fallback ETH price
+          console.log("⚠️ Using fallback ETH price for DexScreener calculation");
+        }
+        
+        console.log("💰 DexScreener pair data:", { pairPrice, inputPrice, liquidity });
         
         if (pairPrice > 0 && inputPrice > 0 && liquidity > 0) {
           // Calculate based on actual pair data
@@ -292,7 +433,7 @@ async function getAggregatedQuote(
             route: [(pair as { dexId?: string }).dexId || "Unknown DEX"]
           });
           
-          console.log("DexScreener quote:", {
+          console.log("✅ DexScreener quote added:", {
             pair: (pair as { dexId?: string }).dexId,
             price: pairPrice,
             inputPrice,
@@ -301,31 +442,63 @@ async function getAggregatedQuote(
             finalOutput,
             slippage
           });
+        } else {
+          console.log("⚠️ DexScreener pair skipped - invalid data:", { pairPrice, inputPrice, liquidity });
         }
-      } catch {
-        console.error("Error processing pair");
+      } catch (error) {
+        console.error("❌ Error processing DexScreener pair:", error);
         continue;
       }
     }
   } catch (error) {
-    console.error("DexScreener quote failed:", error);
+    console.error("❌ DexScreener quote failed:", error);
   }
+  
+  console.log("📊 Total quotes collected:", quotes.length);
   
   // Return best quote
   if (quotes.length === 0) {
-    console.log("No quotes available from any source");
-    return {
-      amountOut: "0",
-      gasEstimate: "150000",
-      route: ["No route found"]
-    };
+    console.log("❌ No real quotes available from any source");
+    return NextResponse.json(
+      { 
+        error: "No liquidity found for this token pair",
+        details: "Unable to find any trading pairs with sufficient liquidity"
+      },
+      { status: 400 }
+    );
   }
   
-  const bestQuote = quotes.reduce((best, current) => 
-    parseFloat(current.amountOut) > parseFloat(best.amountOut) ? current : best
-  );
+  // Prioritize Uniswap V3 quotes over DexScreener
+  const uniswapQuotes = quotes.filter(q => q.source === "Uniswap V3");
+  const dexScreenerQuotes = quotes.filter(q => q.source !== "Uniswap V3");
   
-  console.log("Best quote selected:", bestQuote);
+  let bestQuote;
+  if (uniswapQuotes.length > 0) {
+    // Use best Uniswap V3 quote if available
+    bestQuote = uniswapQuotes.reduce((best, current) => 
+      parseFloat(current.amountOut) > parseFloat(best.amountOut) ? current : best
+    );
+    console.log("🏆 Using Uniswap V3 quote:", bestQuote);
+  } else {
+    // Fallback to DexScreener only if no Uniswap V3 liquidity
+    bestQuote = dexScreenerQuotes.reduce((best, current) => 
+      parseFloat(current.amountOut) > parseFloat(best.amountOut) ? current : best
+    );
+    console.log("⚠️ No Uniswap V3 liquidity, using DexScreener quote:", bestQuote);
+  }
+  
+  // Validate the best quote is reasonable
+  const bestAmount = parseFloat(bestQuote.amountOut);
+  if (bestAmount <= 0) {
+    console.log("❌ Best quote is zero or negative");
+    return NextResponse.json(
+      { 
+        error: "Invalid quote received from exchange",
+        details: "The exchange returned an invalid quote amount"
+      },
+      { status: 400 }
+    );
+  }
   
   return {
     amountOut: bestQuote.amountOut,
@@ -357,16 +530,30 @@ export async function POST(request: Request) {
       );
     }
     
-      // Get token information
-  console.log("Getting token info for quote:", { inputToken, outputToken, tokenAddress });
-  const inputTokenInfo = getTokenInfo(inputToken, inputToken === "ETH" ? undefined : tokenAddress);
-  const outputTokenInfo = getTokenInfo(outputToken, outputToken === "ETH" ? undefined : tokenAddress);
-  console.log("Quote token info:", { inputTokenInfo, outputTokenInfo });
-  
-  // Validate token addresses
-  if (!inputTokenInfo.address || !outputTokenInfo.address) {
-    throw new Error("Invalid token addresses for quote");
-  }
+    // Get token information
+    console.log("Getting token info for quote:", { inputToken, outputToken, tokenAddress });
+    // For non-ETH tokens, we need the tokenAddress to get the correct info
+    const inputTokenInfo = getTokenInfo(inputToken, inputToken !== "ETH" ? tokenAddress : undefined);
+    const outputTokenInfo = getTokenInfo(outputToken, outputToken !== "ETH" ? tokenAddress : undefined);
+    console.log("Quote token info:", { inputTokenInfo, outputTokenInfo });
+    
+    // Validate token addresses
+    if (!inputTokenInfo.address || !outputTokenInfo.address) {
+      throw new Error("Invalid token addresses for quote");
+    }
+    
+    // Additional validation for token addresses
+    if (inputTokenInfo.address === "0x0000000000000000000000000000000000000000" || 
+        outputTokenInfo.address === "0x0000000000000000000000000000000000000000") {
+      throw new Error("Invalid token address - zero address detected");
+    }
+    
+    console.log("🔍 Token addresses for quote:", {
+      inputToken: inputTokenInfo.address,
+      outputToken: outputTokenInfo.address,
+      inputTokenSymbol: inputTokenInfo.symbol,
+      outputTokenSymbol: outputTokenInfo.symbol
+    });
     
     // Get aggregated quote
     const quote = await getAggregatedQuote(
@@ -376,11 +563,38 @@ export async function POST(request: Request) {
       inputTokenInfo.decimals
     );
     
+    console.log("🔍 Initial quote result:", {
+      inputToken: inputTokenInfo.address,
+      outputToken: outputTokenInfo.address,
+      inputAmount,
+      outputAmount: quote.amountOut,
+      route: quote.route
+    });
+    
+    // Validate that we got a real quote
+    if (!quote || !quote.amountOut || parseFloat(quote.amountOut) <= 0) {
+      console.error("❌ No valid quote received from aggregated quote function");
+      return NextResponse.json(
+        { 
+          error: "No liquidity found for this token pair",
+          details: "Unable to find any trading pairs with sufficient liquidity"
+        },
+        { status: 400 }
+      );
+    }
+    
     // Get current prices for better calculation
     const inputPrice = await getTokenPrice(inputTokenInfo.address);
     const outputPrice = await getTokenPrice(outputTokenInfo.address);
     
-    console.log("Prices:", { inputPrice, outputPrice, inputAmount, outputAmount: quote.amountOut });
+    console.log("💰 Price data:", { 
+      inputPrice, 
+      outputPrice, 
+      inputAmount, 
+      outputAmount: quote.amountOut,
+      inputTokenAddress: inputTokenInfo.address,
+      outputTokenAddress: outputTokenInfo.address
+    });
     
     // Calculate price impact
     const inputValue = amount * inputPrice;
@@ -394,48 +608,32 @@ export async function POST(request: Request) {
     const slippage = 0.005; // 0.5% default slippage
     const minimumReceived = parseFloat(quote.amountOut) * (1 - slippage);
     
-    // If we couldn't get a proper quote, provide a fallback estimate
+    // Final validation - ensure we have a valid output amount
     if (parseFloat(quote.amountOut) <= 0) {
-      console.log("No valid quote found, providing fallback estimate");
-      const fallbackOutput = amount * (inputPrice / outputPrice) * 0.997; // Apply 0.3% fee
-      quote.amountOut = fallbackOutput.toString();
-    }
-    
-    // Validate quote makes sense
-    if (inputPrice > 0 && outputPrice > 0) {
-      const expectedOutput = (amount * inputPrice) / outputPrice * 0.997; // Apply 0.3% fee
-      const actualOutput = parseFloat(quote.amountOut);
-      
-      // If quote is significantly off (more than 50% difference), use fallback
-      if (Math.abs(actualOutput - expectedOutput) / expectedOutput > 0.5) {
-        console.log("Quote seems off, using fallback calculation");
-        console.log("Expected:", expectedOutput, "Actual:", actualOutput);
-        quote.amountOut = expectedOutput.toString();
-      }
-    }
-    
-    // Always provide a fallback if no quote was found
-    if (parseFloat(quote.amountOut) <= 0 && inputPrice > 0 && outputPrice > 0) {
-      console.log("Using price-based fallback calculation");
-      const fallbackOutput = amount * (inputPrice / outputPrice) * 0.997;
-      quote.amountOut = fallbackOutput.toString();
-      quote.route = ["Price-based estimate"];
-      quote.gasEstimate = "150000";
+      console.error("❌ Invalid quote output amount:", quote.amountOut);
+      console.error("Debug info:", { inputPrice, outputPrice, amount, inputTokenInfo, outputTokenInfo });
+      return NextResponse.json(
+        { 
+          error: "Unable to get valid quote - insufficient liquidity or invalid token pair",
+          details: "No valid swap route found for the specified tokens and amount"
+        },
+        { status: 400 }
+      );
     }
     
     const response: QuoteResponse = {
       inputAmount,
       outputAmount: quote.amountOut,
       priceImpact: Math.abs(priceImpact),
-      gasEstimate: quote.gasEstimate,
-      route: quote.route,
+      gasEstimate: quote.gasEstimate || "150000",
+      route: quote.route || ["Unknown"],
       fees,
       executionPrice: outputValue / amount,
       minimumReceived: minimumReceived.toString(),
       priceImpactLevel: getPriceImpactLevel(Math.abs(priceImpact))
     };
     
-    console.log("Quote response:", response);
+    console.log("✅ Real quote response:", response);
     
     return NextResponse.json(response);
     

@@ -102,18 +102,23 @@ export async function GET(
     ).sort((a, b) => parseInt(b.metadata.blockTimestamp) - parseInt(a.metadata.blockTimestamp));
 
     // Convert to our transaction format
-    const transactions: Transaction[] = uniqueTransfers.map((transfer) => ({
-      id: transfer.hash,
-      from: transfer.from,
-      to: transfer.to,
-      value: transfer.value,
-      tokenAmount: parseFloat(transfer.value) / Math.pow(10, 18), // Assuming 18 decimals
-      timestamp: parseInt(transfer.metadata.blockTimestamp) * 1000,
-      blockNumber: parseInt(transfer.metadata.blockNum),
-      tokenSymbol: transfer.asset === 'ETH' ? 'ETH' : 'TOKEN',
-      decimals: 18,
-      hash: transfer.hash,
-    }));
+    const transactions: Transaction[] = uniqueTransfers.map((transfer) => {
+      const isETH = transfer.asset === 'ETH';
+      const decimals = isETH ? 18 : 18; // Most tokens use 18 decimals, but this could be improved
+      
+      return {
+        id: transfer.hash,
+        from: transfer.from,
+        to: transfer.to,
+        value: transfer.value,
+        tokenAmount: parseFloat(transfer.value) / Math.pow(10, decimals),
+        timestamp: parseInt(transfer.metadata.blockTimestamp) * 1000,
+        blockNumber: parseInt(transfer.metadata.blockNum),
+        tokenSymbol: transfer.asset === 'ETH' ? 'ETH' : 'TOKEN',
+        decimals: decimals,
+        hash: transfer.hash,
+      };
+    });
 
     return NextResponse.json({ transactions });
   } catch (error: unknown) {

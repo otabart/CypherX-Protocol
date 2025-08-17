@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAccount } from "wagmi";
 import toast from "react-hot-toast";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 interface IndexVotingModalProps {
   isOpen: boolean;
@@ -15,6 +17,21 @@ interface IndexVotingModalProps {
     address: string;
     weight: number;
   }>;
+}
+
+// Available indexes
+const AVAILABLE_INDEXES = [
+  { name: 'CDEX', label: 'CDEX Index' },
+  { name: 'BDEX', label: 'BDEX Index' },
+  { name: 'VDEX', label: 'VDEX Index' },
+  { name: 'AIDEX', label: 'AIDEX Index' },
+];
+
+interface NewTokenData {
+  address: string;
+  symbol: string;
+  weight: number;
+  dexScreenerData?: any;
 }
 
 interface VotingData {
@@ -44,17 +61,26 @@ export default function IndexVotingModal({
   const [loading, setLoading] = useState(false);
   const [tokenVotes, setTokenVotes] = useState<{[key: string]: 'keep' | 'remove' | 'weight_change'}>({});
   const [tokenWeights, setTokenWeights] = useState<{[key: string]: number}>({});
+  const [newTokens, setNewTokens] = useState<{[key: string]: NewTokenData}>({});
+  const [dexScreenerLoading, setDexScreenerLoading] = useState<{[key: string]: boolean}>({});
+  const [fetchedTokens, setFetchedTokens] = useState<Array<{
+    id: string;
+    symbol: string;
+    address: string;
+    weight: number;
+  }>>([]);
+  const [selectedIndex, setSelectedIndex] = useState(indexName);
 
   // Fetch voting data
   useEffect(() => {
     if (isOpen && walletAddress) {
       fetchVotingData();
     }
-  }, [isOpen, walletAddress, indexName]);
+  }, [isOpen, walletAddress, selectedIndex]);
 
   const fetchVotingData = useCallback(async () => {
     try {
-      const response = await fetch(`/api/indexes/voting?walletAddress=${walletAddress}&indexName=${indexName}`);
+      const response = await fetch(`/api/indexes/voting?walletAddress=${walletAddress}&indexName=${selectedIndex}`);
       if (response.ok) {
         const data = await response.json();
         setVotingData(data);
@@ -62,23 +88,68 @@ export default function IndexVotingModal({
     } catch (error) {
       console.error('Error fetching voting data:', error);
     }
-  }, [walletAddress, indexName]);
+  }, [walletAddress, selectedIndex]);
+
+  const fetchIndexTokens = useCallback(async () => {
+    try {
+      const indexRef = collection(db, selectedIndex);
+      const querySnapshot = await getDocs(indexRef);
+      
+      if (querySnapshot.empty) {
+        console.warn(`${selectedIndex} collection is empty or does not exist.`);
+        return;
+      }
+
+      const tokens: Array<{
+        id: string;
+        symbol: string;
+        address: string;
+        weight: number;
+      }> = [];
+      
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        const id = doc.id;
+        const symbol = data.symbol || data.baseToken?.symbol || data.name || data.baseToken?.name || `Token-${id.slice(0, 4)}`;
+        const address = data.address || "";
+        const weight = parseFloat(data.weight) || 0;
+
+        if (address) {
+          tokens.push({ id, symbol, address, weight });
+        }
+      });
+
+      const sortedTokens = tokens.sort((a, b) => b.weight - a.weight).slice(0, 10);
+      setFetchedTokens(sortedTokens);
+    } catch (error) {
+      console.error('Error fetching index tokens:', error);
+    }
+  }, [selectedIndex]);
+
+  // Fetch index tokens if not provided
+  useEffect(() => {
+    if (isOpen && currentTokens.length === 0) {
+      fetchIndexTokens();
+    }
+  }, [isOpen, currentTokens.length, fetchIndexTokens]);
 
   // Initialize token votes when component mounts
   useEffect(() => {
-    if (currentTokens.length > 0) {
+    const tokensToUse = currentTokens.length > 0 ? currentTokens : fetchedTokens;
+    if (tokensToUse.length > 0) {
       const initialVotes: {[key: string]: 'keep' | 'remove' | 'weight_change'} = {};
       const initialWeights: {[key: string]: number} = {};
       
-      currentTokens.forEach(token => {
-        initialVotes[token.address] = 'keep';
+      tokensToUse.forEach(token => {
+        // Don't pre-select any votes - start with empty state
         initialWeights[token.address] = token.weight;
       });
       
+      console.log('Initializing votes:', { tokens: tokensToUse.length, initialVotes: Object.keys(initialVotes).length });
       setTokenVotes(initialVotes);
       setTokenWeights(initialWeights);
     }
-  }, [currentTokens]);
+  }, [currentTokens, fetchedTokens]);
 
   const handleTokenVote = (tokenAddress: string, action: 'keep' | 'remove' | 'weight_change') => {
     setTokenVotes(prev => ({
@@ -87,12 +158,115 @@ export default function IndexVotingModal({
     }));
   };
 
+  const handleIndexChange = (newIndex: string) => {
+    setSelectedIndex(newIndex);
+    // Reset all state when switching indexes
+    setTokenVotes({});
+    setTokenWeights({});
+    setNewTokens({});
+    setFetchedTokens([]);
+    setVotingData(null);
+  };
+
   const handleWeightChange = (tokenAddress: string, weight: number) => {
+    // Ensure weight is between 0 and 100
+    const clampedWeight = Math.max(0, Math.min(100, weight));
+    
     setTokenWeights(prev => ({
       ...prev,
-      [tokenAddress]: weight
+      [tokenAddress]: clampedWeight
     }));
   };
+
+  const fetchDexScreenerData = async (tokenAddress: string, originalTokenAddress: string) => {
+    if (!tokenAddress || tokenAddress.length < 42) return; // Basic validation
+    
+    setDexScreenerLoading(prev => ({ ...prev, [originalTokenAddress]: true }));
+    
+    try {
+      const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${tokenAddress}`);
+      const data = await response.json();
+      
+      if (data.pairs && data.pairs.length > 0) {
+        const pair = data.pairs[0]; // Get the first pair
+        const tokenData = {
+          address: tokenAddress,
+          symbol: pair.baseToken.symbol || 'Unknown',
+          weight: newTokens[originalTokenAddress]?.weight || 0,
+          dexScreenerData: {
+            priceUsd: pair.priceUsd,
+            priceChange24h: pair.priceChange?.h24,
+            volume24h: pair.volume?.h24,
+            liquidity: pair.liquidity?.usd,
+            marketCap: pair.marketCap,
+            fdv: pair.fdv
+          }
+        };
+        
+        setNewTokens(prev => ({
+          ...prev,
+          [originalTokenAddress]: tokenData
+        }));
+      }
+    } catch (error) {
+      console.error('Error fetching DexScreener data:', error);
+      toast.error('Failed to fetch token data from DexScreener');
+    } finally {
+      setDexScreenerLoading(prev => ({ ...prev, [originalTokenAddress]: false }));
+    }
+  };
+
+  const handleNewTokenAddressChange = (originalTokenAddress: string, newAddress: string) => {
+    setNewTokens(prev => ({
+      ...prev,
+      [originalTokenAddress]: {
+        ...prev[originalTokenAddress],
+        address: newAddress
+      }
+    }));
+    
+    // Auto-fetch DexScreener data when address is entered
+    if (newAddress && newAddress.length >= 42) {
+      fetchDexScreenerData(newAddress, originalTokenAddress);
+    }
+  };
+
+  const handleNewTokenWeightChange = (originalTokenAddress: string, weight: number) => {
+    const clampedWeight = Math.max(0, Math.min(100, weight));
+    
+    setNewTokens(prev => ({
+      ...prev,
+      [originalTokenAddress]: {
+        ...prev[originalTokenAddress],
+        weight: clampedWeight
+      }
+    }));
+  };
+
+  // Calculate total weight for validation
+  const calculateTotalWeight = () => {
+    const weightChangeTokens = currentTokens.filter(token => tokenVotes[token.address] === 'weight_change');
+    const totalWeightChange = weightChangeTokens.reduce((sum, token) => {
+      return sum + (tokenWeights[token.address] || 0);
+    }, 0);
+    
+    // Add weights of tokens that are being kept (not changed)
+    const keptTokens = currentTokens.filter(token => tokenVotes[token.address] === 'keep');
+    const totalKeptWeight = keptTokens.reduce((sum, token) => {
+      return sum + (token.weight || 0);
+    }, 0);
+    
+    // Add weights of new tokens being added (replacements)
+    const removedTokens = currentTokens.filter(token => tokenVotes[token.address] === 'remove');
+    const totalNewTokenWeight = removedTokens.reduce((sum, token) => {
+      return sum + (newTokens[token.address]?.weight || 0);
+    }, 0);
+    
+    return totalWeightChange + totalKeptWeight + totalNewTokenWeight;
+  };
+
+  const totalWeight = calculateTotalWeight();
+  const isWeightValid = totalWeight <= 100;
 
   const submitVote = async () => {
     if (!walletAddress) {
@@ -107,6 +281,15 @@ export default function IndexVotingModal({
       return;
     }
 
+    // Check if all removed tokens have new token data
+    const removedTokens = currentTokens.filter(token => tokenVotes[token.address] === 'remove');
+    const missingNewTokenData = removedTokens.filter(token => !newTokens[token.address] || !newTokens[token.address].address);
+    
+    if (missingNewTokenData.length > 0) {
+      toast.error('Please provide new token details for all removed tokens');
+      return;
+    }
+
     // Validate weight changes
     const weightChanges = currentTokens.filter(token => tokenVotes[token.address] === 'weight_change');
     const invalidWeights = weightChanges.filter(token => 
@@ -118,44 +301,104 @@ export default function IndexVotingModal({
       return;
     }
 
+    // Validate total weight doesn't exceed 100%
+    if (!isWeightValid) {
+      toast.error(`Total weight (${totalWeight.toFixed(1)}%) exceeds 100%. Please adjust your weight changes.`);
+      return;
+    }
+
+    // Check if voting is active
+    if (votingData && !votingData.isActive) {
+      toast.error('Voting is currently closed. Please wait for the next voting period.');
+      return;
+    }
+
     setLoading(true);
     try {
-      // Submit votes for each token
-      const votePromises = currentTokens.map(token => {
+      // Show submission confirmation
+      toast.loading('Submitting your votes...', { id: 'vote-submission' });
+      
+      // Prepare batch vote data
+      const tokensToUse = currentTokens.length > 0 ? currentTokens : fetchedTokens;
+      const votes = tokensToUse.map(token => {
         const action = tokenVotes[token.address];
-        const weight = action === 'weight_change' ? tokenWeights[token.address] : undefined;
-        
-        return fetch('/api/indexes/voting', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            walletAddress,
-            indexName,
-            tokenAddress: token.address,
-            action: action === 'keep' ? 'add' : action === 'remove' ? 'remove' : 'weight_change',
-            weight,
-          }),
-        });
+        return {
+          tokenAddress: token.address,
+          action: action === 'keep' ? 'add' : action === 'remove' ? 'remove' : 'weight_change',
+          weight: action === 'weight_change' ? tokenWeights[token.address] : undefined,
+        };
       });
 
-      const responses = await Promise.all(votePromises);
-      const results = await Promise.all(responses.map(r => r.json()));
+      // Add new token data for removed tokens
+      const newTokenVotes = removedTokens.map(token => {
+        const newToken = newTokens[token.address];
+        return {
+          tokenAddress: newToken.address,
+          action: 'add',
+          weight: newToken.weight,
+          dexScreenerData: newToken.dexScreenerData,
+          replacingToken: token.address
+        };
+      });
+
+      // Combine all votes
+      const allVotes = [...votes, ...newTokenVotes];
+
+      console.log('Submitting votes:', { votes, totalVotes: votes.length });
+
+      // Submit batch vote
+      const response = await fetch('/api/indexes/voting/batch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          walletAddress,
+          indexName: selectedIndex,
+          votes: allVotes,
+        }),
+      });
+
+      const result = await response.json();
+      console.log('Vote submission result:', result);
       
-      const successCount = results.filter(r => r.success).length;
-      const errorCount = results.length - successCount;
+      // Dismiss loading toast
+      toast.dismiss('vote-submission');
       
-      if (errorCount === 0) {
-        toast.success(`Successfully voted on ${successCount} tokens!`);
+      if (result.success) {
+        // Show success message (points are awarded silently to profile)
+        if (result.pointsEarned > 0) {
+          toast.success('✅ Votes submitted successfully! Points have been added to your profile.', {
+            duration: 5000,
+          });
+        } else {
+          toast.success('✅ Votes updated successfully!', {
+            duration: 3000,
+          });
+        }
+        
+        // Show a more detailed success popup
+        setTimeout(() => {
+          toast.success(`🎉 Voting complete! You voted on ${result.voteCount} tokens for the ${selectedIndex} index. Your votes have been recorded successfully.`, {
+            duration: 6000,
+          });
+        }, 1000);
+        
         fetchVotingData(); // Refresh voting data
         onClose();
       } else {
-        toast.error(`Voted on ${successCount} tokens, ${errorCount} failed`);
+        // Show detailed error message
+        const errorMessage = result.error || result.details || 'Failed to submit votes';
+        toast.error(`❌ ${errorMessage}`, {
+          duration: 5000,
+        });
       }
     } catch (error) {
       console.error('Error submitting votes:', error);
-      toast.error('Failed to submit votes');
+      toast.dismiss('vote-submission');
+      toast.error('❌ Network error. Failed to submit votes. Please check your connection and try again.', {
+        duration: 5000,
+      });
     } finally {
       setLoading(false);
     }
@@ -183,18 +426,25 @@ export default function IndexVotingModal({
     return `${days}d ${hours}h remaining`;
   };
 
+
+  
+  // Add debugging to see if modal is being rendered
+  if (!isOpen) {
+    return null;
+  }
+
   return (
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
           {/* Backdrop */}
           <motion.div
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            className="absolute inset-0 bg-gray-900/80 backdrop-blur-sm"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -208,16 +458,15 @@ export default function IndexVotingModal({
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.9, opacity: 0, y: 20 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            style={{ marginTop: '80px', marginBottom: '20px' }}
           >
                          {/* Header */}
              <div className="flex items-center justify-between mb-3">
                <div>
                  <h2 className="text-lg font-bold text-gray-100 mb-1">
-                   Vote for {indexName} Index
+                   Vote for {selectedIndex} Index
                  </h2>
                  <p className="text-gray-400 text-xs">
-                   Help shape the future of the {indexName} index
+                   Help shape the future of the {selectedIndex} index
                  </p>
                </div>
               <button
@@ -229,6 +478,22 @@ export default function IndexVotingModal({
                 </svg>
               </button>
             </div>
+
+                         {/* Index Selector */}
+             <div className="mb-3">
+               <label className="block text-xs text-gray-400 mb-2">Select Index to Vote On:</label>
+               <select
+                 value={selectedIndex}
+                 onChange={(e) => handleIndexChange(e.target.value)}
+                 className="w-full p-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
+               >
+                 {AVAILABLE_INDEXES.map((index) => (
+                   <option key={index.name} value={index.name}>
+                     {index.label}
+                   </option>
+                 ))}
+               </select>
+             </div>
 
                          {/* Voting Status */}
              {votingData && (
@@ -287,15 +552,49 @@ export default function IndexVotingModal({
             )}
 
                          {/* Token Voting Interface */}
-             {votingData?.isActive && (
-               <div className="space-y-3">
-                 <div>
-                   <h3 className="text-sm font-semibold text-gray-100 mb-2">Vote on Each Token</h3>
-                   <p className="text-xs text-gray-400 mb-3">Select an action for each token in the {indexName} index</p>
+             <div className="space-y-3">
+               <div>
+                 <h3 className="text-sm font-semibold text-gray-100 mb-2">Vote on Each Token</h3>
+                 <p className="text-xs text-gray-400 mb-3">Select an action for each token in the {selectedIndex} index</p>
+
+                                    {votingData && !votingData.isActive && (
+                     <div className="p-2 bg-orange-500/10 border border-orange-500/30 rounded text-xs text-orange-400 mb-2">
+                       ⏰ Voting is currently closed. This is a preview of the voting interface.
+                     </div>
+                   )}
+                   
+                                                            {/* Submission Info */}
+                     <div className="p-2 bg-blue-500/10 border border-blue-500/30 rounded text-xs text-blue-400 mb-2">
+                       💡 Every 2 weeks our indexes will be re-weighted and changed. Voters will receive points for completing the voting process.
+                     </div>
+                     
+                     {/* Weight Validation */}
+                     {Object.keys(tokenVotes).length > 0 && (
+                       <div className={`p-2 border rounded text-xs mb-2 ${
+                         isWeightValid 
+                           ? 'bg-green-500/10 border-green-500/30 text-green-400' 
+                           : 'bg-red-500/10 border-red-500/30 text-red-400'
+                       }`}>
+                         {isWeightValid 
+                           ? `✅ Total Weight: ${totalWeight.toFixed(1)}%` 
+                           : `❌ Total Weight: ${totalWeight.toFixed(1)}% (exceeds 100%)`
+                         }
+                       </div>
+                     )}
                   
                                      {/* Token List with Actions */}
                    <div className="space-y-3 max-h-64 overflow-y-auto scrollbar-hide">
-                    {currentTokens.map((token) => (
+                    {(() => {
+                      const tokensToUse = currentTokens.length > 0 ? currentTokens : fetchedTokens;
+                      if (tokensToUse.length === 0) {
+                        return (
+                          <div key="loading" className="p-4 bg-gray-800/50 rounded-lg border border-gray-700/50 text-center">
+                            <p className="text-gray-400 text-sm">Loading tokens for {selectedIndex} index...</p>
+                            <p className="text-gray-500 text-xs mt-1">Please wait while we fetch the data</p>
+                          </div>
+                        );
+                      }
+                      return tokensToUse.map((token) => (
                       <div key={token.address} className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center space-x-2">
@@ -344,19 +643,116 @@ export default function IndexVotingModal({
                           <div className="flex items-center space-x-2">
                             <label className="text-xs text-gray-400">New Weight:</label>
                             <input
-                              type="number"
-                              value={tokenWeights[token.address] || token.weight}
-                              onChange={(e) => handleWeightChange(token.address, parseFloat(e.target.value) || token.weight)}
-                              min="1"
-                              max="100"
-                              step="0.1"
+                              type="text"
+                              value={tokenWeights[token.address] || ''}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                // Only allow numbers and decimal points
+                                if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                                  const numValue = parseFloat(value) || 0;
+                                  handleWeightChange(token.address, numValue);
+                                }
+                              }}
+                              onBlur={(e) => {
+                                // Ensure value is within bounds when user finishes typing
+                                const value = parseFloat(e.target.value) || 0;
+                                const clampedValue = Math.max(0, Math.min(100, value));
+                                if (value !== clampedValue) {
+                                  handleWeightChange(token.address, clampedValue);
+                                }
+                              }}
+                              placeholder="0-100"
                               className="w-20 p-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
                             />
                             <span className="text-xs text-gray-400">%</span>
                           </div>
                         )}
+
+                        {/* New Token Input for Remove */}
+                        {tokenVotes[token.address] === 'remove' && (
+                          <div className="space-y-2 mt-2 p-2 bg-gray-700/50 rounded border border-gray-600/50">
+                            <div className="text-xs text-gray-300 font-medium">Replace with new token:</div>
+                            
+                            {/* Token Address Input */}
+                            <div className="flex items-center space-x-2">
+                              <label className="text-xs text-gray-400">Address:</label>
+                              <input
+                                type="text"
+                                value={newTokens[token.address]?.address || ''}
+                                onChange={(e) => handleNewTokenAddressChange(token.address, e.target.value)}
+                                placeholder="0x..."
+                                className="flex-1 p-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+                              />
+                              {dexScreenerLoading[token.address] && (
+                                <div className="w-3 h-3 border border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                              )}
+                            </div>
+
+                            {/* Token Symbol (auto-filled from DexScreener) */}
+                            {newTokens[token.address]?.symbol && (
+                              <div className="flex items-center space-x-2">
+                                <label className="text-xs text-gray-400">Symbol:</label>
+                                <span className="text-xs text-gray-200 font-medium">{newTokens[token.address].symbol}</span>
+                              </div>
+                            )}
+
+                            {/* Token Weight Input */}
+                            <div className="flex items-center space-x-2">
+                              <label className="text-xs text-gray-400">Weight:</label>
+                              <input
+                                type="text"
+                                value={newTokens[token.address]?.weight || ''}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                                    const numValue = parseFloat(value) || 0;
+                                    handleNewTokenWeightChange(token.address, numValue);
+                                  }
+                                }}
+                                onBlur={(e) => {
+                                  const value = parseFloat(e.target.value) || 0;
+                                  const clampedValue = Math.max(0, Math.min(100, value));
+                                  if (value !== clampedValue) {
+                                    handleNewTokenWeightChange(token.address, clampedValue);
+                                  }
+                                }}
+                                placeholder="0-100"
+                                className="w-20 p-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+                              />
+                              <span className="text-xs text-gray-400">%</span>
+                            </div>
+
+                            {/* DexScreener Data Display */}
+                            {newTokens[token.address]?.dexScreenerData && (
+                              <div className="mt-2 p-2 bg-gray-800/50 rounded border border-gray-600/50">
+                                <div className="text-xs text-gray-300 font-medium mb-1">Token Data:</div>
+                                <div className="grid grid-cols-2 gap-1 text-xs">
+                                  <div>
+                                    <span className="text-gray-400">Price:</span>
+                                    <span className="text-gray-200 ml-1">${parseFloat(newTokens[token.address].dexScreenerData.priceUsd || '0').toFixed(6)}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-400">24h:</span>
+                                    <span className={`ml-1 ${parseFloat(newTokens[token.address].dexScreenerData.priceChange24h || '0') >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                      {parseFloat(newTokens[token.address].dexScreenerData.priceChange24h || '0').toFixed(2)}%
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-400">Volume:</span>
+                                    <span className="text-gray-200 ml-1">${(parseFloat(newTokens[token.address].dexScreenerData.volume24h || '0') / 1000).toFixed(1)}K</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-400">MCap:</span>
+                                    <span className="text-gray-200 ml-1">${(parseFloat(newTokens[token.address].dexScreenerData.marketCap || '0') / 1000000).toFixed(1)}M</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    ))}
+                    ));
+                    })()}
                   </div>
 
                                      {/* Progress Indicator */}
@@ -364,28 +760,79 @@ export default function IndexVotingModal({
                      <div className="flex items-center justify-between mb-2">
                       <span className="text-xs text-gray-400">Voting Progress</span>
                       <span className="text-xs text-gray-300">
-                        {Object.keys(tokenVotes).length}/{currentTokens.length} tokens voted
+                        {Object.keys(tokenVotes).length}/{(() => {
+                          const tokensToUse = currentTokens.length > 0 ? currentTokens : fetchedTokens;
+                          return tokensToUse.length;
+                        })()} tokens voted
                       </span>
                     </div>
                     <div className="w-full bg-gray-700 rounded-full h-2">
                       <div 
-                        className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${(Object.keys(tokenVotes).length / currentTokens.length) * 100}%` }}
+                        className={`h-2 rounded-full transition-all duration-300 ${
+                          Object.keys(tokenVotes).length === currentTokens.length 
+                            ? 'bg-green-500' 
+                            : 'bg-blue-500'
+                        }`}
+                        style={{ width: `${(Object.keys(tokenVotes).length / (() => {
+                          const tokensToUse = currentTokens.length > 0 ? currentTokens : fetchedTokens;
+                          return tokensToUse.length;
+                        })()) * 100}%` }}
                       />
                     </div>
+                    {Object.keys(tokenVotes).length === (() => {
+                      const tokensToUse = currentTokens.length > 0 ? currentTokens : fetchedTokens;
+                      return tokensToUse.length;
+                    })() && (() => {
+                      const tokensToUse = currentTokens.length > 0 ? currentTokens : fetchedTokens;
+                      return tokensToUse.length;
+                    })() > 0 && (
+                      <div className="mt-2 flex items-center justify-center">
+                        <span className="text-xs text-green-400 font-medium flex items-center">
+                          <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                          Ready to submit!
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Submit Button */}
                   <button
                     onClick={submitVote}
-                    disabled={loading || Object.keys(tokenVotes).length < currentTokens.length}
-                    className="w-full p-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold rounded-lg transition-all duration-200 disabled:cursor-not-allowed text-sm"
+                    disabled={loading || !isWeightValid}
+                    className={`w-full p-3 text-white font-semibold rounded-lg transition-all duration-200 text-sm flex items-center justify-center space-x-2 ${
+                      loading || !isWeightValid
+                        ? 'bg-gray-600 cursor-not-allowed' 
+                        : Object.keys(tokenVotes).length === (() => {
+                          const tokensToUse = currentTokens.length > 0 ? currentTokens : fetchedTokens;
+                          return tokensToUse.length;
+                        })()
+                        ? 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800'
+                        : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800'
+                    }`}
+                    title={`Token votes: ${Object.keys(tokenVotes).length}, Current tokens: ${currentTokens.length}, Weight valid: ${isWeightValid}`}
                   >
-                    {loading ? 'Submitting Votes...' : `Submit Votes (${Object.keys(tokenVotes).length}/${currentTokens.length})`}
+                    {loading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <span>Submitting Votes...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>{Object.keys(tokenVotes).length === (() => {
+                          const tokensToUse = currentTokens.length > 0 ? currentTokens : fetchedTokens;
+                          return tokensToUse.length;
+                        })() ? 'Submit All Votes' : 'Submit Votes'}</span>
+                        <span className="text-xs opacity-75">({Object.keys(tokenVotes).length}/{(() => {
+                          const tokensToUse = currentTokens.length > 0 ? currentTokens : fetchedTokens;
+                          return tokensToUse.length;
+                        })()})</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
-            )}
 
                          {/* Vote Statistics */}
              {votingData?.voteStats && votingData.voteStats.length > 0 && (
@@ -393,7 +840,7 @@ export default function IndexVotingModal({
                  <h3 className="text-sm font-semibold text-gray-100 mb-2">Vote Statistics</h3>
                                  <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-hide">
                   {votingData.voteStats
-                    .filter(stat => stat.indexName === indexName)
+                    .filter(stat => stat.indexName === selectedIndex)
                     .map((stat, index) => (
                       <div key={index} className="flex items-center justify-between p-2 bg-gray-800 rounded-lg">
                         <div>
@@ -418,7 +865,7 @@ export default function IndexVotingModal({
                 <li>• Voting periods: 1st-15th and 16th-end of month</li>
                 <li>• One vote per wallet per period</li>
                 <li>• You can change your vote once per period</li>
-                <li>• Earn 25 points for participating in voting</li>
+                <li>• Complete all votes to earn rewards</li>
                 <li>• Top voted changes will be implemented in the next re-weighting</li>
               </ul>
             </div>

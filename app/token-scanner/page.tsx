@@ -70,9 +70,7 @@ const PULL_TO_REFRESH_THRESHOLD = 80;
 
 
 
-// Trending variety constants
-const FRESHNESS_BONUS_HOURS = 6; // Hours for which new tokens get bonus
-const VARIETY_BONUS = 15; // Bonus for tokens that haven't been trending recently
+
 
 // Explicitly type auth and db
 
@@ -114,6 +112,7 @@ type DexScreenerPair = {
     h24: { buys: number; sells: number };
   };
   pairCreatedAt: number;
+  dexId?: string;
 };
 
 // Memoized Token Row Component
@@ -144,6 +143,7 @@ const TokenRow = React.memo(({ token, index, style, onTokenClick, favorites, onT
         >
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center space-x-2">
+              <DexIcon dexId={token.dexId} />
               {token.info?.imageUrl && (
                 <Image src={token.info.imageUrl} alt={token.symbol} width={24} height={24} className="w-6 h-6 rounded-full" />
               )}
@@ -203,6 +203,7 @@ const TokenRow = React.memo(({ token, index, style, onTokenClick, favorites, onT
           {token.boosted && <MarketingIcon />}
         </div>
         <div className="flex items-center space-x-3 w-32">
+          <DexIcon dexId={token.dexId} />
           {token.info?.imageUrl && (
             <Image src={token.info.imageUrl} alt={token.symbol} width={24} height={24} className="w-6 h-6 rounded-full" />
           )}
@@ -284,6 +285,7 @@ export type TokenData = {
   boostValue?: number;
   weight?: number;
   docId?: string;
+  dexId?: string;
 };
 
 export type Watchlist = {
@@ -364,9 +366,8 @@ function computeTrending(token: TokenData, boostValue: number): number {
   const volumeMarketCapScore = Math.log10(volumeToMarketCap + 1) * 2;
   const boostScore = boostValue || 0;
   
-  // Freshness bonus for new tokens (removed age decay)
-  const tokenAge = token.pairCreatedAt ? (Date.now() - token.pairCreatedAt) / (1000 * 60 * 60) : 0;
-  const freshnessBonus = tokenAge <= FRESHNESS_BONUS_HOURS ? VARIETY_BONUS * (1 - tokenAge / FRESHNESS_BONUS_HOURS) : 0;
+  // Freshness bonus for new tokens (removed age logic)
+  const freshnessBonus = 0;
   
   // Volume spike bonus - reward sudden volume increases
   const volumeSpikeBonus = token.volume?.h24 && token.volume?.h1 ? 
@@ -408,6 +409,62 @@ function getTrophy(rank: number): JSX.Element | null {
     return <FaTrophy size={16} className="text-[#CD7F32]" title="Bronze Trophy (Rank 3)" />;
   return null;
 }
+
+// DEX Icon component
+const DexIcon = ({ dexId }: { dexId?: string }) => {
+  const getDexIcon = (dexId: string) => {
+    switch (dexId?.toLowerCase()) {
+      case 'baseswap':
+        return (
+          <div className="w-4 h-4 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+            <span className="text-white text-xs font-bold">B</span>
+          </div>
+        );
+      case 'uniswap_v3':
+      case 'uniswap':
+        return (
+          <img
+            src="https://i.imgur.com/woTkNd2.png"
+            alt="Uniswap"
+            className="w-4 h-4 rounded-full object-cover"
+          />
+        );
+      case 'pancakeswap_v3':
+      case 'pancakeswap':
+        return (
+          <div className="w-4 h-4 bg-gradient-to-br from-yellow-500 to-orange-600 rounded-full flex items-center justify-center">
+            <span className="text-white text-xs font-bold">P</span>
+          </div>
+        );
+      case 'aerodrome':
+        return (
+          <img
+            src="https://i.imgur.com/TpmRnXs.png"
+            alt="Aerodrome"
+            className="w-4 h-4 rounded-full object-cover"
+          />
+        );
+      case 'alienbase':
+        return (
+          <div className="w-4 h-4 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center">
+            <span className="text-white text-xs font-bold">A</span>
+          </div>
+        );
+      default:
+        return (
+          <div className="w-4 h-4 bg-gray-600 rounded-full flex items-center justify-center">
+            <span className="text-white text-xs font-bold">D</span>
+          </div>
+        );
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      {getDexIcon(dexId || '')}
+    </div>
+  );
+};
 
 function MarketingIcon(): JSX.Element {
   return (
@@ -973,6 +1030,7 @@ export default function TokenScreener() {
                   marketCap: pair.marketCap || 0,
                   info: pair.info ? { imageUrl: pair.info.imageUrl } : undefined,
                   txns: pair.txns || { h1: { buys: 0, sells: 0 }, h6: { buys: 0, sells: 0 }, h24: { buys: 0, sells: 0 } },
+                  dexId: (pair as any).dexId || "unknown",
                 });
               }
             }
@@ -1729,7 +1787,7 @@ export default function TokenScreener() {
       <div className="w-screen h-screen bg-gray-950 text-gray-200 font-sans m-0 p-0 overflow-hidden">
         <div className="flex flex-col w-full h-full">
           {/* Enhanced Header Skeleton */}
-          <div className="sticky top-0 z-50 bg-gray-900 shadow-lg w-full border-b border-blue-500/30 h-16">
+          <div className="sticky top-0 z-50 bg-gray-950 shadow-lg w-full border-b border-gray-800 h-16">
             <div className="flex items-center justify-between px-4 py-3">
               <div className="flex items-center space-x-2">
                 <div className="w-8 h-8 bg-gray-800 rounded-lg animate-pulse"></div>
@@ -1744,7 +1802,7 @@ export default function TokenScreener() {
           </div>
           
           {/* Enhanced Filter Bar Skeleton */}
-          <div className="bg-gray-900 p-4 border-b border-blue-500/30 shadow-inner">
+          <div className="bg-gray-950 p-4 border-b border-gray-800 shadow-inner border-t border-gray-800">
             <div className="flex flex-wrap gap-2">
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="w-24 h-8 bg-gray-800 rounded animate-pulse"></div>
@@ -2334,13 +2392,13 @@ export default function TokenScreener() {
         )}
         {/* Desktop Filter Bar & ViewMode Tabs */}
         {!showFilterMenu && (
-          <div className="hidden sm:flex bg-gray-900 p-3 sm:p-4 flex-col sm:flex-row gap-3 sm:gap-4 border-b border-blue-500/30 shadow-inner">
+          <div className="hidden sm:flex bg-gray-950 p-3 sm:p-4 flex-col sm:flex-row gap-3 sm:gap-4 border-b border-gray-800 shadow-inner border-t border-gray-800">
             <div className="flex flex-col sm:flex-row gap-2 w-full items-center">
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 onClick={() => setViewMode("all")}
                 className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
-                  viewMode === "all" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
+                  viewMode === "all" ? "bg-blue-500/20 text-blue-400" : "bg-gray-950 hover:bg-gray-800"
                 }`}
               >
                 All Tokens
@@ -2349,7 +2407,7 @@ export default function TokenScreener() {
                 whileHover={{ scale: 1.05 }}
                 onClick={() => setViewMode("favorites")}
                 className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
-                  viewMode === "favorites" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
+                  viewMode === "favorites" ? "bg-blue-500/20 text-blue-400" : "bg-gray-950 hover:bg-gray-800"
                 }`}
               >
                 Favorites
@@ -2358,7 +2416,7 @@ export default function TokenScreener() {
                 whileHover={{ scale: 1.05 }}
                 onClick={() => setViewMode("watchlist")}
                 className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors shadow-sm border border-blue-500/30 truncate uppercase ${
-                  viewMode === "watchlist" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
+                  viewMode === "watchlist" ? "bg-blue-500/20 text-blue-400" : "bg-gray-950 hover:bg-gray-800"
                 }`}
               >
                 Watchlists
@@ -2367,7 +2425,7 @@ export default function TokenScreener() {
                 whileHover={{ scale: 1.05 }}
                 onClick={() => setViewMode("alerts")}
                 className={`p-2 text-gray-200 rounded-lg text-sm sm:text-base w-full sm:w-auto font-sans transition-colors border border-blue-500/30 uppercase ${
-                  viewMode === "alerts" ? "bg-red-500/20 text-red-400" : "bg-gray-900 hover:bg-gray-800"
+                  viewMode === "alerts" ? "bg-red-500/20 text-red-400" : "bg-gray-950 hover:bg-gray-800"
                 }`}
               >
                 Alerts
@@ -2416,7 +2474,7 @@ export default function TokenScreener() {
         )}
         {/* Watchlist Selector */}
         {viewMode === "watchlist" && (
-          <div className="bg-gray-900 p-4 border-b border-blue-500/30 shadow-inner">
+          <div className="bg-gray-950 p-4 border-b border-gray-800 shadow-inner border-t border-gray-800">
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
               <select
                 value={selectedWatchlist || ""}
@@ -2504,8 +2562,8 @@ export default function TokenScreener() {
               No tokens match your filters. Try adjusting filters or check Firebase data.
             </div>
           ) : viewMode === "alerts" ? (
-            <div className="w-full h-full bg-gray-900 overflow-y-auto">
-              <div className="p-4 border-b border-blue-500/30 flex justify-between items-center">
+            <div className="w-full h-full bg-gray-950 overflow-y-auto">
+              <div className="p-4 border-b border-gray-800 flex justify-between items-center">
                 <h2 className="text-xl font-bold font-sans text-gray-200 uppercase">Alerts</h2>
                 <motion.button
                   whileHover={{ scale: 1.05 }}
@@ -2520,7 +2578,7 @@ export default function TokenScreener() {
                   whileHover={{ scale: 1.05 }}
                   onClick={() => setAlertTab("feed")}
                   className={`p-2 text-gray-200 rounded-lg text-sm font-sans transition-colors border border-blue-500/30 uppercase ${
-                    alertTab === "feed" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
+                    alertTab === "feed" ? "bg-blue-500/20 text-blue-400" : "bg-gray-950 hover:bg-gray-800"
                   }`}
                 >
                   Feed
@@ -2529,7 +2587,7 @@ export default function TokenScreener() {
                   whileHover={{ scale: 1.05 }}
                   onClick={() => setAlertTab("triggers")}
                   className={`p-2 text-gray-200 rounded-lg text-sm font-sans transition-colors border border-blue-500/30 uppercase ${
-                    alertTab === "triggers" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
+                    alertTab === "triggers" ? "bg-blue-500/20 text-blue-400" : "bg-gray-950 hover:bg-gray-800"
                   }`}
                 >
                   Triggers
@@ -2538,7 +2596,7 @@ export default function TokenScreener() {
                   whileHover={{ scale: 1.05 }}
                   onClick={() => setAlertTab("history")}
                   className={`p-2 text-gray-200 rounded-lg text-sm font-sans transition-colors border border-blue-500/30 uppercase ${
-                    alertTab === "history" ? "bg-blue-500/20 text-blue-400" : "bg-gray-900 hover:bg-gray-800"
+                    alertTab === "history" ? "bg-blue-500/20 text-blue-400" : "bg-gray-950 hover:bg-gray-800"
                   }`}
                 >
                   History
@@ -2803,7 +2861,7 @@ export default function TokenScreener() {
               {/* Desktop Table View */}
               <div className="hidden md:block overflow-x-auto">
                 <table className="table-auto w-full whitespace-nowrap text-sm font-sans uppercase min-w-[1200px]">
-                  <thead className="bg-gray-900 text-gray-400 sticky top-0 z-10 border-b border-blue-500/30">
+                  <thead className="bg-gray-950 text-gray-400 sticky top-0 z-10 border-b border-gray-800">
                     <tr>
                       <th
                         className="p-3 text-left cursor-pointer hover:text-blue-400 transition-colors"
@@ -2928,6 +2986,7 @@ export default function TokenScreener() {
                                 onClick={() => handleTokenClick(token.poolAddress)}
                                 className="flex items-center space-x-2 hover:text-blue-400 cursor-pointer transition-colors duration-150"
                               >
+                                <DexIcon dexId={token.dexId} />
                                 {token.info && (
                                   <Image
                                     src={token.info.imageUrl || "/fallback.png"}

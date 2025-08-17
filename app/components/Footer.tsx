@@ -9,59 +9,124 @@ const Footer = () => {
   const [connectionStatus, setConnectionStatus] = useState<"Connected" | "Disconnected">("Connected");
   const [uptime, setUptime] = useState<string>("0h 0m 0s");
 
-  // Fetch ETH and BTC prices
+  // Fetch ETH and BTC prices with better error handling and caching
   useEffect(() => {
+    let isMounted = true;
+    
     const fetchPrices = async () => {
       try {
-        // Fetch ETH price from CoinGecko
+        // Fetch ETH price from CoinGecko with timeout
+        const ethController = new AbortController();
+        const ethTimeout = setTimeout(() => ethController.abort(), 5000);
+        
         const ethRes = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd", {
           cache: "no-store",
+          signal: ethController.signal,
         });
-        const ethData = await ethRes.json();
-        setEthPrice(ethData.ethereum.usd);
+        clearTimeout(ethTimeout);
+        
+        if (isMounted) {
+          const ethData = await ethRes.json();
+          setEthPrice(ethData.ethereum.usd);
+        }
 
-        // Fetch Bitcoin price from DEX Screener
+        // Fetch Bitcoin price from DEX Screener with timeout
+        const btcController = new AbortController();
+        const btcTimeout = setTimeout(() => btcController.abort(), 5000);
+        
         const btcRes = await fetch("https://api.dexscreener.com/latest/dex/tokens/0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf", {
           cache: "no-store",
+          signal: btcController.signal,
         });
-        const btcData = await btcRes.json();
-        if (btcData.pairs && btcData.pairs[0]) {
-          setBtcPrice(parseFloat(btcData.pairs[0].priceUsd));
+        clearTimeout(btcTimeout);
+        
+        if (isMounted && btcRes.ok) {
+          const btcData = await btcRes.json();
+          if (btcData.pairs && btcData.pairs[0]) {
+            setBtcPrice(parseFloat(btcData.pairs[0].priceUsd));
+          }
         }
-      } catch (err) {
-        console.error("Error fetching prices:", err);
-        setEthPrice(null);
-        setBtcPrice(null);
-      }
+              } catch (err) {
+          if (isMounted && err instanceof Error && err.name !== 'AbortError') {
+            console.error("Error fetching prices:", err);
+            // Don't clear prices on error, keep last known values
+          }
+        }
     };
+    
     fetchPrices();
-    const interval = setInterval(fetchPrices, 60000); // Update every minute
-    return () => clearInterval(interval);
+    
+    // Only set interval if component is still mounted
+    const interval = setInterval(() => {
+      if (isMounted) {
+        fetchPrices();
+      }
+    }, 120000); // Update every 2 minutes instead of 1 minute
+    
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
-  // Simulate connection status
+  // Real connection status monitoring
   useEffect(() => {
-    const simulateConnection = () => {
-      setConnectionStatus(Math.random() > 0.1 ? "Connected" : "Disconnected");
+    let isMounted = true;
+    
+    const checkConnection = () => {
+      if (isMounted) {
+        // Check if we can reach external services
+        const checkOnline = async () => {
+          try {
+            // Try to fetch a small resource to check connectivity
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000);
+            
+            await fetch('https://api.coingecko.com/api/v3/ping', {
+              signal: controller.signal,
+              cache: 'no-store'
+            });
+            
+            clearTimeout(timeoutId);
+            setConnectionStatus("Connected");
+          } catch (error) {
+            setConnectionStatus("Disconnected");
+          }
+        };
+        
+        checkOnline();
+      }
     };
-    simulateConnection();
-    const interval = setInterval(simulateConnection, 30000);
-    return () => clearInterval(interval);
+    
+    checkConnection();
+    const interval = setInterval(checkConnection, 10000); // Check every 10 seconds
+    
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   // Calculate real-time uptime
   useEffect(() => {
+    let isMounted = true;
     const startTime = Date.now();
+    
     const calculateUptime = () => {
-      const diff = Date.now() - startTime;
-      const hours = Math.floor(diff / (1000 * 60 * 60));
-      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-      setUptime(`${hours}h ${minutes}m ${seconds}s`);
+      if (isMounted) {
+        const diff = Date.now() - startTime;
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+        setUptime(`${hours}h ${minutes}m ${seconds}s`);
+      }
     };
     calculateUptime();
-    const interval = setInterval(calculateUptime, 1000);
-    return () => clearInterval(interval);
+    const interval = setInterval(calculateUptime, 1000); // Update every 1 second
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   return (
@@ -102,7 +167,11 @@ const Footer = () => {
 
         {/* Center Section - Navigation Links */}
         <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 w-full sm:w-auto">
-          <Link href="/token-scanner" className="flex items-center space-x-1 hover:text-blue-400 transition-colors">
+          <Link 
+            href="/token-scanner" 
+            className="flex items-center space-x-1 hover:text-blue-400 transition-colors duration-200"
+            prefetch={true}
+          >
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
@@ -110,28 +179,44 @@ const Footer = () => {
             <span>Screener</span>
           </Link>
           
-          <Link href="/honeypot-scanner" className="flex items-center space-x-1 hover:text-blue-400 transition-colors">
+          <Link 
+            href="/honeypot-scanner" 
+            className="flex items-center space-x-1 hover:text-blue-400 transition-colors duration-200"
+            prefetch={true}
+          >
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
             <span>Smart Audit</span>
           </Link>
           
-          <Link href="/explorer/latest/block" className="flex items-center space-x-1 hover:text-blue-400 transition-colors">
+          <Link 
+            href="/explorer/latest/block" 
+            className="flex items-center space-x-1 hover:text-blue-400 transition-colors duration-200"
+            prefetch={true}
+          >
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             <span>Block Scan</span>
           </Link>
           
-          <Link href="/marketplace" className="flex items-center space-x-1 hover:text-blue-400 transition-colors">
+          <Link 
+            href="/marketplace" 
+            className="flex items-center space-x-1 hover:text-blue-400 transition-colors duration-200"
+            prefetch={true}
+          >
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
             </svg>
             <span>Marketplace</span>
           </Link>
           
-          <Link href="/explorer" className="flex items-center space-x-1 hover:text-blue-400 transition-colors">
+          <Link 
+            href="/explorer" 
+            className="flex items-center space-x-1 hover:text-blue-400 transition-colors duration-200"
+            prefetch={true}
+          >
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
             </svg>

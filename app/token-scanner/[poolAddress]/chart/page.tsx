@@ -2,8 +2,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
+
 import { XMarkIcon } from "@heroicons/react/24/outline";
 import { Sparklines, SparklinesLine } from "react-sparklines";
 import { doc, getDoc } from "firebase/firestore";
@@ -15,6 +16,86 @@ import Header from "../../../components/Header";
 
 // Dynamically import ApexCharts to avoid SSR issues
 const Chart = dynamic(() => import("react-apexcharts"), { ssr: false });
+
+// DEX Icon component
+const DexIcon = ({ dexId }: { dexId?: string }) => {
+  const getDexIcon = (dexId: string) => {
+    switch (dexId?.toLowerCase()) {
+      case 'baseswap':
+        return (
+          <div className="w-4 h-4 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+            <span className="text-white text-xs font-bold">B</span>
+          </div>
+        );
+      case 'uniswap_v3':
+      case 'uniswap':
+        return (
+          <img
+            src="https://i.imgur.com/woTkNd2.png"
+            alt="Uniswap"
+            className="w-4 h-4 rounded-full object-cover"
+            onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+              console.log('Uniswap image failed to load, showing fallback');
+              e.currentTarget.style.display = 'none';
+              const fallback = e.currentTarget.parentElement?.querySelector('.fallback');
+              if (fallback) fallback.classList.remove('hidden');
+            }}
+            onLoad={() => console.log('Uniswap image loaded successfully')}
+          />
+        );
+      case 'pancakeswap_v3':
+      case 'pancakeswap':
+        return (
+          <div className="w-4 h-4 bg-gradient-to-br from-yellow-500 to-orange-600 rounded-full flex items-center justify-center">
+            <span className="text-white text-xs font-bold">P</span>
+          </div>
+        );
+      case 'aerodrome':
+        return (
+          <img
+            src="https://i.imgur.com/TpmRnXs.png"
+            alt="Aerodrome"
+            className="w-4 h-4 rounded-full object-cover"
+            onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+              console.log('Aerodrome image failed to load, showing fallback');
+              e.currentTarget.style.display = 'none';
+              const fallback = e.currentTarget.parentElement?.querySelector('.fallback');
+              if (fallback) fallback.classList.remove('hidden');
+            }}
+            onLoad={() => console.log('Aerodrome image loaded successfully')}
+          />
+        );
+      case 'alienbase':
+        return (
+          <div className="w-4 h-4 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center">
+            <span className="text-white text-xs font-bold">A</span>
+          </div>
+        );
+      default:
+        return (
+          <div className="w-4 h-4 bg-gray-600 rounded-full flex items-center justify-center">
+            <span className="text-white text-xs font-bold">D</span>
+          </div>
+        );
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      <div className="relative">
+        {getDexIcon(dexId || '')}
+        {/* Fallback text for image loading failures */}
+        <div className={`fallback absolute inset-0 w-4 h-4 bg-gray-600 rounded-full flex items-center justify-center ${dexId?.toLowerCase() === 'uniswap' || dexId?.toLowerCase() === 'uniswap_v3' || dexId?.toLowerCase() === 'aerodrome' ? 'hidden' : ''}`}>
+          <span className="text-white text-xs font-bold">
+            {dexId?.toLowerCase() === 'uniswap' || dexId?.toLowerCase() === 'uniswap_v3' ? 'U' : 
+             dexId?.toLowerCase() === 'aerodrome' ? 'A' : 'D'}
+          </span>
+        </div>
+      </div>
+      <span className="text-xs text-gray-400">{dexId ? dexId.charAt(0).toUpperCase() + dexId.slice(1).toLowerCase() : 'Unknown'}</span>
+    </div>
+  );
+};
 
 // Types
 interface TokenMetadata {
@@ -30,6 +111,9 @@ interface TokenMetadata {
   logoUrl?: string;
   adImageUrl?: string;
   priceChange?: { m5: number; h1: number; h6: number; h24: number };
+  dexId?: string;
+  dexName?: string;
+  imageUrl?: string;
 }
 
 interface OHLCVData {
@@ -74,6 +158,7 @@ interface TrendInsight {
 
 export default function ChartPage() {
   const { poolAddress } = useParams();
+  const router = useRouter();
   const transactionLimit = 50;
   const [token, setToken] = useState<TokenMetadata | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +169,7 @@ export default function ChartPage() {
   const [chartType, setChartType] = useState<"candlestick" | "line">("candlestick");
   const [xAxisRange, setXAxisRange] = useState<{ min: number; max: number } | null>(null);
   const [ethPrice, setEthPrice] = useState<number>(3000);
+
   const [width, setWidth] = useState(0);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [transactionLoading, setTransactionLoading] = useState(false);
@@ -192,6 +278,11 @@ export default function ChartPage() {
       return newZoom;
     });
   }, [xAxisRange]);
+
+  // Handle transaction row click to navigate to wallet page
+  const handleTransactionClick = useCallback((tx: Transaction) => {
+    router.push(`/explorer/address/${tx.from}`);
+  }, [router]);
 
   const handleResetZoom = useCallback(() => {
     setZoom(1);
@@ -432,6 +523,7 @@ export default function ChartPage() {
   useEffect(() => {
     if (!token?.pairAddress || initialLoading || !ethPrice) return;
     const wsUrl = "wss://base-mainnet.g.alchemy.com/v2/8KR6qwxbLlIISgrMCZfsrYeMmn6-S-bN";
+    const httpUrl = "https://base-mainnet.g.alchemy.com/v2/8KR6qwxbLlIISgrMCZfsrYeMmn6-S-bN";
     const ws = new WebSocket(wsUrl);
     let transactionBuffer: Transaction[] = [];
     let chartBuffer: { candle: { x: Date; y: number[] }; line: IndicatorData }[] = [];
@@ -446,7 +538,7 @@ export default function ChartPage() {
           method: "eth_getTransactionByHash",
           params: [txHash],
         };
-        const response = await fetch(wsUrl, {
+        const response = await fetch(httpUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(requestBody),
@@ -483,7 +575,7 @@ export default function ChartPage() {
             value = "0";
           }
           const newTransaction: Transaction = {
-            id: tx.hash,
+            id: `${tx.hash}-${Date.now()}`, // Make ID unique by adding timestamp
             hash: tx.hash,
             from: tx.from,
             to: tx.to || token.pairAddress,
@@ -624,6 +716,25 @@ export default function ChartPage() {
     };
   }, [token, initialLoading, ethPrice, calculateSupertrend]);
 
+  const fetchOhlcData = useCallback(async (tokenId: string) => {
+    try {
+      const response = await fetch(`https://api.coingecko.com/api/v3/coins/${tokenId}/ohlc?vs_currency=usd&days=1`);
+      const data = await response.json();
+      
+      if (data && data.length > 0) {
+        const latest = data[data.length - 1];
+        setOhlcData({
+          open: latest[1],
+          high: latest[2],
+          low: latest[3],
+          close: latest[4]
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching OHLC data:', error);
+    }
+  }, []);
+
   const fetchTokenData = useCallback(async (poolAddress: string) => {
     try {
       const dexScreenerRes = await fetch(
@@ -636,8 +747,9 @@ export default function ChartPage() {
         throw new Error("No token data found");
 
       const pair = dexScreenerData.pairs[0];
-      let logoUrl = pair.baseToken?.image || pair.info?.image || "https://i.imgur.com/NWLAQXV.jpeg";
-      let bannerUrl = pair.info?.image || pair.baseToken?.image || "https://i.imgur.com/NWLAQXV.jpeg";
+      // Use DexScreener API response for logo
+      let logoUrl = pair.info?.imageUrl || pair.baseToken?.image || `https://dexscreener.com/base/${pair.baseToken.address}/logo.png`;
+      let bannerUrl = pair.info?.imageUrl || pair.baseToken?.image || "https://i.imgur.com/NWLAQXV.jpeg";
       let adImageUrl = "";
 
       try {
@@ -679,6 +791,9 @@ export default function ChartPage() {
           h6: pair.priceChange?.h6 || 0,
           h24: pair.priceChange?.h24 || 0,
         },
+        dexId: pair.dexId,
+        dexName: pair.dexName,
+        imageUrl: pair.imageUrl,
       };
 
       setToken(newMetadata);
@@ -705,6 +820,13 @@ export default function ChartPage() {
     }, 5000);
     return () => clearInterval(interval);
   }, [poolAddress, fetchTokenData]);
+
+  // Fetch OHLC data when token changes
+  useEffect(() => {
+    if (token?.baseToken?.symbol) {
+      fetchOhlcData(token.baseToken.symbol.toLowerCase());
+    }
+  }, [token?.baseToken?.symbol, fetchOhlcData]);
 
   const fetchChartData = useCallback(
     async (poolAddress: string) => {
@@ -1334,7 +1456,7 @@ export default function ChartPage() {
 
   // JSX Return Statement
   return (
-    <div className={`${width < 768 ? 'h-screen font-sans bg-gray-950 text-gray-200 w-full overflow-hidden' : 'min-h-screen font-sans bg-gray-950 text-gray-200 w-full'}`}>
+    <div className={`${width < 768 ? 'h-screen font-sans text-gray-200 w-full overflow-hidden' : 'min-h-screen font-sans text-gray-200 w-full'} bg-gray-950`}>
       <style jsx>{`
         @keyframes flash {
           0% {
@@ -1369,20 +1491,33 @@ export default function ChartPage() {
       `}</style>
       {/* Header - Always Show */}
       <Header />
+      
+      {/* Separator Line */}
+      <div className="border-b border-blue-500/20"></div>
 
       {/* Loading Screen */}
       {initialLoading && (
-        <div className="h-screen bg-gray-950 flex items-center justify-center">
+        <div className="h-screen flex items-center justify-center bg-gray-950">
           <div className="text-center">
-            <svg className="animate-spin h-12 w-12 text-blue-500 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <h2 className="text-xl font-semibold text-gray-200 mb-2">Loading Chart Data</h2>
-            <p className="text-gray-400">Fetching token information and market data...</p>
+            {/* Cool Animated Dots */}
+            <div className="mb-8">
+              <div className="flex justify-center space-x-3">
+                <div className="w-4 h-4 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0ms' }}></div>
+                <div className="w-4 h-4 bg-purple-400 rounded-full animate-pulse" style={{ animationDelay: '200ms' }}></div>
+                <div className="w-4 h-4 bg-cyan-400 rounded-full animate-pulse" style={{ animationDelay: '400ms' }}></div>
+              </div>
+            </div>
+
+            {/* Cool Loading Text */}
+            <div className="text-gray-300 text-sm font-medium tracking-wide">
+              <span className="animate-pulse" style={{ animationDelay: '0ms' }}>Loading Token Data</span>
+              <span className="animate-pulse" style={{ animationDelay: '500ms' }}>.</span>
+              <span className="animate-pulse" style={{ animationDelay: '1000ms' }}>.</span>
+              <span className="animate-pulse" style={{ animationDelay: '1500ms' }}>.</span>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
       {/* Main Content */}
       {!initialLoading && (
@@ -1398,21 +1533,33 @@ export default function ChartPage() {
             <>
               {/* Chart Tab Content */}
                 {(!width || width >= 768 || mobileActiveTab === "chart") && (
-                <div className="bg-gray-950 h-full flex flex-col">
+                <div className="h-full flex flex-col bg-gray-950">
                     {/* Enhanced Chart Header with OHLC and Branding */}
-                    <div className="bg-gray-900 border-b border-blue-500/20 p-3">
+                    <div className="border-b border-blue-500/20 p-3 bg-gray-950">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-3">
-                          <div className="w-8 h-8 bg-gray-800 rounded-lg flex items-center justify-center">
-                            <span className="text-gray-400 text-sm">
-                              {token?.baseToken.symbol?.charAt(0) || "T"}
-                            </span>
-                          </div>
+                          {/* Token Logo - Use DexScreener API response */}
+                          <img
+                            src={token?.logoUrl || `https://dexscreener.com/base/${token?.baseToken.address}/logo.png`}
+                            alt={token?.baseToken.symbol || "Token"}
+                            className="w-8 h-8 rounded-full bg-blue-900"
+                            onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+                              e.currentTarget.src = `https://ui-avatars.com/api/?name=${token?.baseToken.symbol}&background=1f2937&color=60a5fa&size=32`;
+                            }}
+                          />
                           <div>
                             <h1 className="text-sm font-bold text-gray-100">
                               {token?.baseToken.symbol}/{token?.quoteToken.symbol}
                             </h1>
-                            <p className="text-xs text-gray-400">${token?.priceUsd ? parseFloat(token.priceUsd).toFixed(6) : "0.000000"}</p>
+                            <div className="flex items-center space-x-2">
+                              <p className="text-xs text-gray-400">${token?.priceUsd ? parseFloat(token.priceUsd).toFixed(6) : "0.000000"}</p>
+                              {token?.dexId && (
+                                <>
+                                  <span className="text-xs text-gray-500">•</span>
+                                  <DexIcon dexId={token.dexId} />
+                                </>
+                              )}
+                            </div>
                           </div>
                         </div>
 
@@ -1446,141 +1593,142 @@ export default function ChartPage() {
                       </div>
                     </div>
                     
-                    {/* Compact Chart Controls */}
-                    <div className="bg-gray-900 border-b border-blue-500/20 p-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                          {/* Timeframe Selector */}
-                        <select
-                          value={timeframe}
-                            onChange={(e) => setTimeframe(e.target.value)}
-                            className="bg-gray-800 text-gray-300 text-xs px-3 py-2 rounded border border-gray-700 focus:outline-none focus:border-blue-500 transition-colors h-8 min-w-[60px]"
-                        >
-                          <option value="1m">1m</option>
-                          <option value="5m">5m</option>
-                          <option value="15m">15m</option>
-                          <option value="1h">1h</option>
-                          <option value="4h">4h</option>
-                          <option value="1d">1d</option>
-                        </select>
 
-                          {/* Chart Type Toggle */}
-                        <button
-                            onClick={() => setChartType(chartType === "candlestick" ? "line" : "candlestick")}
-                            className="bg-gray-800 text-gray-300 text-xs px-3 py-2 rounded border border-gray-700 hover:bg-gray-700 transition-colors h-8 min-w-[80px] flex items-center justify-center"
-                        >
-                            {chartType === "candlestick" ? "Candle" : "Line"}
-                        </button>
+                    
+                                         {/* Enhanced Chart Controls */}
+                     <div className="border-b border-blue-500/20 p-3 bg-gray-950">
+                       <div className="flex items-center justify-between">
+                         {/* Left Side - Chart Controls */}
+                         <div className="flex items-center space-x-2">
+                           {/* Timeframe Selector */}
+                           <select
+                             value={timeframe}
+                             onChange={(e) => setTimeframe(e.target.value)}
+                             className="bg-gray-800/50 text-gray-200 text-xs px-3 py-1.5 rounded-lg border border-gray-700 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-all duration-200 h-8 min-w-[60px]"
+                           >
+                             <option value="1m">1m</option>
+                             <option value="5m">5m</option>
+                             <option value="15m">15m</option>
+                             <option value="1h">1h</option>
+                             <option value="4h">4h</option>
+                             <option value="1d">1d</option>
+                           </select>
 
-                          {/* Zoom Controls */}
-                          <button
-                            onClick={handleZoomIn}
-                            className="bg-gray-800 text-gray-300 text-xs px-3 py-2 rounded border border-gray-700 hover:bg-gray-700 transition-colors h-8 min-w-[40px] flex items-center justify-center"
-                          >
-                            +
-                          </button>
-                          <button
-                            onClick={handleZoomOut}
-                            className="bg-gray-800 text-gray-300 text-xs px-3 py-2 rounded border border-gray-700 hover:bg-gray-700 transition-colors h-8 min-w-[40px] flex items-center justify-center"
-                          >
-                            -
-                          </button>
-                          <button
-                            onClick={handleResetZoom}
-                            className="bg-gray-800 text-gray-300 text-xs px-3 py-2 rounded border border-gray-700 hover:bg-gray-700 transition-colors h-8 min-w-[60px] flex items-center justify-center"
-                          >
-                            Reset
-                          </button>
-                        </div>
+                           {/* Chart Type Toggle */}
+                           <button
+                             onClick={() => setChartType(chartType === "candlestick" ? "line" : "candlestick")}
+                             className="bg-gray-800/50 text-gray-200 text-xs px-3 py-1.5 rounded-lg border border-gray-700 hover:bg-gray-700/50 hover:border-gray-600 transition-all duration-200 h-8 min-w-[70px] flex items-center justify-center"
+                           >
+                             {chartType === "candlestick" ? "Candle" : "Line"}
+                           </button>
 
-                        <div className="flex items-center space-x-2">
-                          <div className="text-xs text-gray-500">
-                            {timeframe}
-                          </div>
-                          {/* 5m Mover */}
-                          {token?.priceChange?.m5 !== undefined ? (
-                            <div className={`bg-gray-800/90 backdrop-blur-sm rounded px-3 py-2 border border-gray-700 h-8 flex flex-col justify-center min-w-[60px] ${
-                              token.priceChange.m5 >= 0 
-                                ? "border-green-500/30" 
-                                : "border-red-500/30"
-                            }`}>
-                              <div className="text-xs text-gray-400">5m</div>
-                              <div className={`text-xs font-medium ${
-                                token.priceChange.m5 >= 0 ? "text-green-400" : "text-red-400"
-                              }`}>
-                                {token.priceChange.m5 >= 0 ? "+" : ""}{token.priceChange.m5.toFixed(2)}%
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="bg-gray-800/90 backdrop-blur-sm rounded px-3 py-2 border border-gray-700 h-8 flex flex-col justify-center min-w-[60px]">
-                              <div className="text-xs text-gray-400">5m</div>
-                              <div className="text-xs text-gray-400">0.00%</div>
-                            </div>
-                          )}
-                          {/* 1h Mover */}
-                          {token?.priceChange?.h1 !== undefined ? (
-                            <div className={`bg-gray-800/90 backdrop-blur-sm rounded px-3 py-2 border border-gray-700 h-8 flex flex-col justify-center min-w-[60px] ${
-                              token.priceChange.h1 >= 0 
-                                ? "border-green-500/30" 
-                                : "border-red-500/30"
-                            }`}>
-                              <div className="text-xs text-gray-400">1h</div>
-                              <div className={`text-xs font-medium ${
-                                token.priceChange.h1 >= 0 ? "text-green-400" : "text-red-400"
-                              }`}>
-                                {token.priceChange.h1 >= 0 ? "+" : ""}{token.priceChange.h1.toFixed(2)}%
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="bg-gray-800/90 backdrop-blur-sm rounded px-3 py-2 border border-gray-700 h-8 flex flex-col justify-center min-w-[60px]">
-                              <div className="text-xs text-gray-400">1h</div>
-                              <div className="text-xs text-gray-400">0.00%</div>
-                            </div>
-                          )}
-                          {/* 4h Mover */}
-                          {token?.priceChange?.h6 !== undefined ? (
-                            <div className={`bg-gray-800/90 backdrop-blur-sm rounded px-3 py-2 border border-gray-700 h-8 flex flex-col justify-center min-w-[60px] ${
-                              token.priceChange.h6 >= 0 
-                                ? "border-green-500/30" 
-                                : "border-red-500/30"
-                            }`}>
-                              <div className="text-xs text-gray-400">4h</div>
-                              <div className={`text-xs font-medium ${
-                                token.priceChange.h6 >= 0 ? "text-green-400" : "text-red-400"
-                              }`}>
-                                {token.priceChange.h6 >= 0 ? "+" : ""}{token.priceChange.h6.toFixed(2)}%
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="bg-gray-800/90 backdrop-blur-sm rounded px-3 py-2 border border-gray-700 h-8 flex flex-col justify-center min-w-[60px]">
-                              <div className="text-xs text-gray-400">4h</div>
-                              <div className="text-xs text-gray-400">0.00%</div>
-                            </div>
-                          )}
+                           {/* Zoom Controls */}
+                           <button
+                             onClick={handleZoomIn}
+                             className="bg-gray-800/50 text-gray-200 text-xs px-2 py-1.5 rounded-lg border border-gray-700 hover:bg-gray-700/50 hover:border-gray-600 transition-all duration-200 h-8 w-8 flex items-center justify-center"
+                           >
+                             <span className="text-sm">+</span>
+                           </button>
+                           <button
+                             onClick={handleZoomOut}
+                             className="bg-gray-800/50 text-gray-200 text-xs px-2 py-1.5 rounded-lg border border-gray-700 hover:bg-gray-700/50 hover:border-gray-600 transition-all duration-200 h-8 w-8 flex items-center justify-center"
+                           >
+                             <span className="text-sm">−</span>
+                           </button>
+                           <button
+                             onClick={handleResetZoom}
+                             className="bg-gray-800/50 text-gray-200 text-xs px-3 py-1.5 rounded-lg border border-gray-700 hover:bg-gray-700/50 hover:border-gray-600 transition-all duration-200 h-8 min-w-[60px] flex items-center justify-center"
+                           >
+                             Reset
+                           </button>
+                         </div>
+
+                         {/* Right Side - Price Movers */}
+                         <div className="flex items-center space-x-2">
+                           {/* 5m Mover */}
+                           {token?.priceChange?.m5 !== undefined ? (
+                             <div className={`bg-gray-800/50 backdrop-blur-sm rounded-lg px-3 py-2 border border-gray-700/50 hover:border-gray-600/50 transition-all duration-200 min-w-[60px] ${
+                               token.priceChange.m5 >= 0 
+                                 ? "border-green-500/30 hover:border-green-500/50" 
+                                 : "border-red-500/30 hover:border-red-500/50"
+                             }`}>
+                               <div className="text-xs text-gray-400 font-medium">5m</div>
+                               <div className={`text-xs font-semibold ${
+                                 token.priceChange.m5 >= 0 ? "text-green-400" : "text-red-400"
+                               }`}>
+                                 {token.priceChange.m5 >= 0 ? "+" : ""}{token.priceChange.m5.toFixed(2)}%
+                               </div>
+                             </div>
+                           ) : (
+                             <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg px-3 py-2 border border-gray-700/50 min-w-[60px]">
+                               <div className="text-xs text-gray-400 font-medium">5m</div>
+                               <div className="text-xs text-gray-400 font-semibold">0.00%</div>
+                             </div>
+                           )}
+                           {/* 1h Mover */}
+                           {token?.priceChange?.h1 !== undefined ? (
+                             <div className={`bg-gray-800/50 backdrop-blur-sm rounded-lg px-3 py-2 border border-gray-700/50 hover:border-gray-600/50 transition-all duration-200 min-w-[60px] ${
+                               token.priceChange.h1 >= 0 
+                                 ? "border-green-500/30 hover:border-green-500/50" 
+                                 : "border-red-500/30 hover:border-red-500/50"
+                             }`}>
+                               <div className="text-xs text-gray-400 font-medium">1h</div>
+                               <div className={`text-xs font-semibold ${
+                                 token.priceChange.h1 >= 0 ? "text-green-400" : "text-red-400"
+                               }`}>
+                                 {token.priceChange.h1 >= 0 ? "+" : ""}{token.priceChange.h1.toFixed(2)}%
+                               </div>
+                             </div>
+                           ) : (
+                             <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg px-3 py-2 border border-gray-700/50 min-w-[60px]">
+                               <div className="text-xs text-gray-400 font-medium">1h</div>
+                               <div className="text-xs text-gray-400 font-semibold">0.00%</div>
+                             </div>
+                           )}
+                           {/* 4h Mover */}
+                           {token?.priceChange?.h6 !== undefined ? (
+                             <div className={`bg-gray-800/50 backdrop-blur-sm rounded-lg px-3 py-2 border border-gray-700/50 hover:border-gray-600/50 transition-all duration-200 min-w-[60px] ${
+                               token.priceChange.h6 >= 0 
+                                 ? "border-green-500/30 hover:border-green-500/50" 
+                                 : "border-red-500/30 hover:border-red-500/50"
+                             }`}>
+                               <div className="text-xs text-gray-400 font-medium">4h</div>
+                               <div className={`text-xs font-semibold ${
+                                 token.priceChange.h6 >= 0 ? "text-green-400" : "text-red-400"
+                               }`}>
+                                 {token.priceChange.h6 >= 0 ? "+" : ""}{token.priceChange.h6.toFixed(2)}%
+                               </div>
+                             </div>
+                           ) : (
+                             <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg px-3 py-2 border border-gray-700/50 min-w-[60px]">
+                               <div className="text-xs text-gray-400 font-medium">4h</div>
+                               <div className="text-xs text-gray-400 font-semibold">0.00%</div>
+                             </div>
+                           )}
                           {/* 24h Mover */}
                           {token?.priceChange?.h24 ? (
-                            <div className={`bg-gray-800/90 backdrop-blur-sm rounded px-3 py-2 border border-gray-700 h-8 flex flex-col justify-center min-w-[80px] ${
+                            <div className={`bg-gray-800/50 backdrop-blur-sm rounded-lg px-3 py-2 border border-gray-700/50 hover:border-gray-600/50 transition-all duration-200 min-w-[60px] ${
                               token.priceChange.h24 >= 0 
-                                ? "border-green-500/30" 
-                                : "border-red-500/30"
+                                ? "border-green-500/30 hover:border-green-500/50" 
+                                : "border-red-500/30 hover:border-red-500/50"
                             }`}>
-                              <div className="text-xs text-gray-400">24h</div>
-                              <div className={`text-xs font-medium ${
+                              <div className="text-xs text-gray-400 font-medium">24h</div>
+                              <div className={`text-xs font-semibold ${
                                 token.priceChange.h24 >= 0 ? "text-green-400" : "text-red-400"
                               }`}>
                                 {token.priceChange.h24 >= 0 ? "+" : ""}{token.priceChange.h24.toFixed(2)}%
                               </div>
                             </div>
                           ) : (
-                            <div className="bg-gray-800/90 backdrop-blur-sm rounded px-3 py-2 border border-gray-700 h-8 flex flex-col justify-center min-w-[80px]">
-                              <div className="text-xs text-gray-400">24h</div>
-                              <div className="text-xs text-gray-400">0.00%</div>
+                            <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg px-3 py-2 border border-gray-700/50 min-w-[60px]">
+                              <div className="text-xs text-gray-400 font-medium">24h</div>
+                              <div className="text-xs text-gray-400 font-semibold">0.00%</div>
                             </div>
                           )}
                           {/* UTC Timer */}
-                          <div className="bg-gray-800/90 backdrop-blur-sm rounded px-3 py-2 border border-gray-700 h-8 flex flex-col justify-center min-w-[60px]">
-                            <div className="text-xs text-gray-400">UTC</div>
-                            <div className="text-xs text-gray-200 font-mono">
+                          <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg px-3 py-2 border border-gray-700/50 min-w-[60px]">
+                            <div className="text-xs text-gray-400 font-medium">UTC</div>
+                            <div className="text-xs text-gray-200 font-mono font-semibold">
                               {currentTime.toUTCString().split(' ')[4]}
                             </div>
                           </div>
@@ -1589,8 +1737,15 @@ export default function ChartPage() {
                     </div>
 
                     {/* Chart Area */}
-                    <div className="flex-1 bg-gray-950 p-2 relative min-h-0" style={{ maxHeight: width < 768 ? '75%' : '65%' }} onTouchStart={(e) => e.stopPropagation()}>
-                      <div className="w-full h-full">
+                    <div className="flex-1 p-2 relative min-h-0 bg-gray-950" style={{ maxHeight: width < 768 ? '75%' : '65%' }} onTouchStart={(e) => e.stopPropagation()}>
+                      {/* CypherX Branding Watermark */}
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+                        <div className="text-gray-800/20 text-6xl font-bold tracking-wider transform -rotate-12 select-none">
+                          cypherx.io
+                        </div>
+                      </div>
+                      
+                      <div className="w-full h-full relative z-10">
                         {candleData.length > 0 ? (
                           <Chart
                             key={`${chartType}-${zoom}-${timeframe}`}
@@ -1614,7 +1769,7 @@ export default function ChartPage() {
                   </div>
 
                     {/* Compact Transactions Section */}
-                    <div className="bg-gray-900 border-t border-blue-500/20 p-2 flex-1 flex flex-col min-h-0 h-full">
+                    <div className="border-t border-blue-500/20 p-2 flex-1 flex flex-col min-h-0 h-full bg-gray-950">
                       <div className="flex items-center justify-between mb-2 flex-shrink-0">
                         <h3 className="text-sm font-semibold text-gray-200">Transactions</h3>
                         <select
@@ -1628,17 +1783,15 @@ export default function ChartPage() {
                         </select>
                       </div>
                       <div className="overflow-y-auto flex-1 custom-scrollbar h-full" onScroll={handleTransactionScroll}>
-                        <table className="w-full text-xs text-left">
-                          <thead className="text-xs text-gray-400 uppercase bg-gray-900 sticky top-0">
+                        <table className="w-full text-xs text-left -ml-16">
+                          <thead className="text-xs text-gray-400 uppercase sticky top-0 bg-gray-950">
                             <tr>
-                              <th className="px-1 py-2">Time</th>
-                              <th className="px-1 py-2">Type</th>
-                              <th className="px-1 py-2">USD</th>
-                              <th className="px-1 py-2 flex items-center justify-center">
-                                <span className="mr-1">🐟</span>
-                                <span>Size</span>
-                              </th>
-                              <th className="px-1 py-2">Price</th>
+                              <th className="px-2 py-2 text-left"></th>
+                              <th className="px-2 py-2 text-left">Time</th>
+                              <th className="px-2 py-2 text-left">Type</th>
+                              <th className="px-2 py-2 text-left font-mono">USD</th>
+                              <th className="px-2 py-2 text-left font-mono">Price</th>
+                              <th className="px-2 py-2 text-left">Maker</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1648,49 +1801,77 @@ export default function ChartPage() {
                               </tr>
                             ) : (
                               filteredTransactions.map((tx) => {
-                                // Determine if this is a buy or sell based on the transaction direction
-                                // For DEX transactions:
-                                // BUY: ETH sent to pool (from user to pool) - user receives tokens
-                                // SELL: Tokens sent to pool (from user to pool) - user receives ETH
+                                // Simple logic: 2 types - BUY and SELL
                                 const isTokenTransaction = tx.tokenSymbol === token?.baseToken.symbol;
                                 const isETHTransaction = !isTokenTransaction;
                                 
-                                // If it's a token transaction and going TO the pool, it's a SELL (user selling tokens)
-                                // If it's an ETH transaction and going TO the pool, it's a BUY (user buying tokens)
-                                const isBuy = isETHTransaction && tx.to?.toLowerCase() === (token?.poolAddress?.toLowerCase() || '');
-                                const isSell = isTokenTransaction && tx.to?.toLowerCase() === (token?.poolAddress?.toLowerCase() || '');
+                                // BUY: ETH transaction to pool
+                                // SELL: Token transaction to pool
+                                const isBuy = isETHTransaction;
+                                const isSell = isTokenTransaction;
                                 
                                 const txLabel = isBuy ? "BUY" : isSell ? "SELL" : "UNKNOWN";
                                 const txColor = isBuy ? "text-green-400" : isSell ? "text-red-400" : "text-gray-400";
-                                const txBgColor = isBuy ? "bg-green-500/10" : isSell ? "bg-red-500/10" : "bg-gray-500/10";
                             
                             let usdValue = 0, ethValue = 0, priceAtTime = 0;
                             
                             if (isTokenTransaction) {
-                                  // For token transactions, calculate based on token amount and current price
+                                  // For SELL transactions (token transactions), calculate based on token amount and current price
                               const tokenAmount = tx.tokenAmount || 0;
                               priceAtTime = token?.priceUsd ? parseFloat(token.priceUsd) : 0;
                               usdValue = tokenAmount * priceAtTime;
                               ethValue = usdValue / (ethPrice || 1);
                             } else {
-                                  // For ETH transactions
-                              ethValue = Number(tx.value) / 1e18;
-                              usdValue = ethValue * (ethPrice || 1);
+                                  // For BUY transactions (ETH → Token), use symmetrical logic to SELL
+                              // Use the raw value field which contains ETH amount in wei, convert to ETH units
+                              const rawValue = parseFloat(tx.value || "0");
+                              const ethAmount = rawValue / Math.pow(10, 18); // Convert wei to ETH (same as API does)
+                              usdValue = ethAmount * ethPrice; // Multiply by ETH price (symmetrical to SELL logic)
                               priceAtTime = token?.priceUsd ? parseFloat(token.priceUsd) : 0;
+                              
+
                             }
-                            let sizeIcon = "🐟";
-                            if (usdValue > 10000) sizeIcon = "🐋";
-                            else if (usdValue > 1000) sizeIcon = "🐬";
-                            else if (usdValue > 100) sizeIcon = "🐠";
-                            return (
-                                  <tr key={tx.id} className={`border-b border-gray-800 text-gray-100 ${txBgColor} ${
-                                    flashTransactions.has(tx.id) ? 'flash-animation slide-in-animation' : ''
-                                  }`}>
-                                    <td className="px-1 py-2 text-xs">{formatTimeAgo(tx.timestamp)}</td>
-                                    <td className={`px-1 py-2 font-bold text-xs ${txColor}`}>{txLabel}</td>
-                                    <td className="px-1 py-2 text-xs">{formatUSD(usdValue)}</td>
-                                    <td className="px-1 py-2 text-center text-xs">{sizeIcon}</td>
-                                    <td className="px-1 py-2 text-xs">${priceAtTime.toFixed(4)}</td>
+                            // Calculate row fill percentage based on order size
+                            let rowFillPercentage = 0;
+                            if (usdValue > 0) {
+                              // Scale: $0-100 = 0-20%, $100-500 = 20-40%, $500-1000 = 40-60%, $1000-2000 = 60-80%, $2000+ = 80-100%
+                              if (usdValue <= 100) {
+                                rowFillPercentage = (usdValue / 100) * 20;
+                              } else if (usdValue <= 500) {
+                                rowFillPercentage = 20 + ((usdValue - 100) / 400) * 20;
+                              } else if (usdValue <= 1000) {
+                                rowFillPercentage = 40 + ((usdValue - 500) / 500) * 20;
+                              } else if (usdValue <= 2000) {
+                                rowFillPercentage = 60 + ((usdValue - 1000) / 1000) * 20;
+                              } else {
+                                rowFillPercentage = 80 + Math.min((usdValue - 2000) / 1000 * 20, 20); // Cap at 100%
+                                                              }
+                              }
+
+                              return (
+                                  <tr 
+                                    key={tx.id} 
+                                    className={`border-b border-gray-800 text-gray-100 relative cursor-pointer hover:bg-gray-800/30 transition-colors ${
+                                      flashTransactions.has(tx.id) ? 'flash-animation slide-in-animation' : ''
+                                    }`}
+                                    onClick={() => handleTransactionClick(tx)}
+                                  >
+                                    {/* Background fill based on order size - extended to left edge with fade-out */}
+                                    <div 
+                                      className={`absolute inset-0 transition-all duration-300 ${
+                                        isBuy ? 'bg-gradient-to-r from-green-500/20 via-green-500/15 to-transparent' : 'bg-gradient-to-r from-red-500/20 via-red-500/15 to-transparent'
+                                      }`}
+                                      style={{ 
+                                        width: `${rowFillPercentage}%`,
+                                        left: '0',
+                                        right: 'auto'
+                                      }}
+                                    ></div>
+                                    <td className="px-2 py-2 text-xs relative z-10 align-middle">{formatTimeAgo(tx.timestamp)}</td>
+                                    <td className={`px-2 py-2 font-bold text-xs ${txColor} relative z-10 align-middle`}>{txLabel}</td>
+                                    <td className="px-2 py-2 text-xs relative z-10 align-middle font-mono">{formatUSD(usdValue)}</td>
+                                    <td className="px-2 py-2 text-xs relative z-10 align-middle font-mono">${priceAtTime.toFixed(4)}</td>
+                                    <td className="px-2 py-2 text-xs relative z-10 align-middle">{tx.from?.slice(0, 6)}...{tx.from?.slice(-4)}</td>
                               </tr>
                             );
                           })
@@ -1712,19 +1893,21 @@ export default function ChartPage() {
                     </table>
                 </div>
               </div>
+              
+
             </div>
           )}
 
           {/* Info Tab Content */}
                 {width < 768 && mobileActiveTab === "info" && (
-                  <div className="bg-gray-950 flex-1 flex flex-col overflow-hidden">
-                    <div className="bg-gray-900 border-b border-blue-500/20 p-3">
+                  <div className="flex-1 flex flex-col overflow-hidden bg-gray-950">
+                    <div className="border-b border-blue-500/20 p-3 bg-gray-950">
                       <h3 className="text-sm font-semibold text-gray-200">Token Information</h3>
               </div>
                     <div className="flex-1 p-3 overflow-y-auto">
                       {token && (
                 <div className="space-y-4">
-                          <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                          <div className="rounded-lg p-4 border border-gray-700 bg-gray-950">
                             <h4 className="text-lg font-semibold text-gray-100 mb-3">Token Details</h4>
                             <div className="grid grid-cols-2 gap-4 text-sm">
                               <div>
@@ -1765,14 +1948,14 @@ export default function ChartPage() {
           {/* Swap Section - Desktop Only */}
           {(!width || width >= 768) && (
             <div className="w-80 flex-shrink-0 h-full flex flex-col border-l border-blue-500/20">
-              <div className="bg-gray-900 h-full flex flex-col">
-                <div className="flex-1 p-4 overflow-y-auto">
+              <div className="h-full flex flex-col bg-gray-950">
+                <div className="flex-1 p-4">
                   <Swap token={token} ethPrice={ethPrice} />
                       </div>
                 
                 {/* Enhanced Ad Banner at Bottom */}
-                <div className="bg-gray-900 border-t border-blue-500/20 p-4 flex-shrink-0">
-                  <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <div className="border-t border-blue-500/20 p-4 flex-shrink-0 bg-gray-950">
+                  <div className="rounded-lg p-6 border border-gray-700 bg-gray-950">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-4">
                         <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
@@ -1799,7 +1982,7 @@ export default function ChartPage() {
               <div className="bg-gray-900 border-b border-blue-500/20 p-3">
                 <h3 className="text-sm font-semibold text-gray-200">Swap</h3>
               </div>
-              <div className="flex-1 p-3 overflow-y-auto">
+              <div className="flex-1 p-3">
                 <Swap token={token} ethPrice={ethPrice} />
               </div>
             </div>
@@ -1964,6 +2147,10 @@ export default function ChartPage() {
           </div>
         </div>
       )}
+
+
+
+
 
       {/* Custom Scrollbar Styles */}
       <style jsx>{`

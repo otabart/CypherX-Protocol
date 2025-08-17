@@ -55,7 +55,7 @@ export async function POST(
       userId,
       walletAddress,
       content: content.trim(),
-      sectionId,
+      sectionId: sectionId || 'general',
       parentCommentId,
       annotation,
       likes: [],

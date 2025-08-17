@@ -9,8 +9,12 @@
     "start": "next start",
     "lint": "next lint",
     "aggregator": "node runAggregator.cjs",
+    "aggregator:start": "scripts\\start-aggregator.bat",
+    "aggregator:dev": "ts-node aggregator.ts",
     "zora-fetch": "node scripts/zora-fetcher.cjs",
-    "add-articles": "node scripts/add-sample-articles.js"
+    "add-articles": "node scripts/add-sample-articles.js",
+    "monitor-tokens": "node scripts/monitorNewTokens.cjs",
+    "test-aggregator": "node scripts/test-aggregator.js"
   },
   "dependencies": {
     "@alch/alchemy-sdk": "^1.2.0",

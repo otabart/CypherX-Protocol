@@ -157,7 +157,6 @@ const formatDate = (timestamp: unknown): string => {
 };
 
 
-
 export default function NewsPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -190,9 +189,53 @@ export default function NewsPage() {
     portfolio: '',
     motivation: ''
   });
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [articlesPerPage] = useState(8); // Show 8 articles per page (excluding featured)
 
   // ────────── Refs ──────────
   const searchRef = useRef<HTMLInputElement>(null);
+
+  // Sync article vote counts with user state
+  const syncArticleVoteCounts = () => {
+    if (!articles.length) return;
+
+    setArticles(prev => prev.map(article => {
+      let upvotes = article.upvotes || 0;
+      let downvotes = article.downvotes || 0;
+
+      // If user has liked this article but upvotes is 0, set to 1
+      // This handles the case where the database count is stale
+      if (likedArticles.includes(article.slug) && upvotes === 0) {
+        upvotes = 1;
+      }
+      // If user has disliked this article but downvotes is 0, set to 1
+      if (dislikedArticles.includes(article.slug) && downvotes === 0) {
+        downvotes = 1;
+      }
+
+      return {
+        ...article,
+        upvotes,
+        downvotes
+      };
+    }));
+
+    // Also sync featured article
+    if (featuredArticle) {
+      const isLiked = likedArticles.includes(featuredArticle.slug);
+      const isDisliked = dislikedArticles.includes(featuredArticle.slug);
+      
+      let upvotes = featuredArticle.upvotes || 0;
+      let downvotes = featuredArticle.downvotes || 0;
+
+      if (isLiked && upvotes === 0) upvotes = 1;
+      if (isDisliked && downvotes === 0) downvotes = 1;
+
+      setFeaturedArticle(prev => prev ? { ...prev, upvotes, downvotes } : null);
+    }
+  };
 
   // ────────── Fetch Articles from Firebase ──────────
   useEffect(() => {
@@ -282,14 +325,21 @@ export default function NewsPage() {
     fetchUserData();
   }, [user, walletAddress]);
 
-  // Auto-refresh comments every 30 seconds
+  // Auto-refresh comments every 60 seconds
   useEffect(() => {
     const interval = setInterval(() => {
       refreshComments();
-    }, 30000); // 30 seconds
+    }, 60000); // 60 seconds
 
     return () => clearInterval(interval);
   }, []);
+
+  // Sync article vote counts with user state after both are loaded
+  useEffect(() => {
+    if (articles.length > 0 && (likedArticles.length > 0 || dislikedArticles.length > 0)) {
+      syncArticleVoteCounts();
+    }
+  }, [articles, likedArticles, dislikedArticles]);
 
   // ────────── Event Handlers ──────────
   const handleArticleClick = async (slug: string) => {
@@ -325,73 +375,63 @@ export default function NewsPage() {
       const isLiked = likedArticles.includes(article.slug);
       const isDisliked = dislikedArticles.includes(article.slug);
       
+      // Call the API first to get the actual state
+      const action = isLiked ? 'unlike_article' : 'like_article';
+      const result = await handleNewsPoints(action, user.uid, walletAddress, article.slug);
+      
+      // Update local state based on the action
       if (isLiked) {
-        // Unlike
-        try {
-          await handleNewsPoints('unlike_article', user.uid, walletAddress, article.slug);
-          setLikedArticles(prev => prev.filter(slug => slug !== article.slug));
-          // Update article upvotes locally
-          setArticles(prev => prev.map(a => 
-            a.slug === article.slug 
-              ? { ...a, upvotes: (a.upvotes || 0) - 1 }
-              : a
-          ));
-          // Update featured article if it's the same article
-          if (featuredArticle && featuredArticle.slug === article.slug) {
-            setFeaturedArticle(prev => prev ? { ...prev, upvotes: (prev.upvotes || 0) - 1 } : null);
-          }
-          addToast('Article unliked', 'info');
-        } catch (error) {
-          if (error instanceof Error && error.message.includes('already performed')) {
-            addToast('Already unliked today', 'info');
-          } else {
-            addToast(error instanceof Error ? error.message : 'Error unliking article', 'error');
-          }
+        // Was liked, now unliked
+        setLikedArticles(prev => prev.filter(slug => slug !== article.slug));
+        setArticles(prev => prev.map(a => 
+          a.slug === article.slug 
+            ? { ...a, upvotes: Math.max(0, (a.upvotes || 0) - 1) }
+            : a
+        ));
+        if (featuredArticle && featuredArticle.slug === article.slug) {
+          setFeaturedArticle(prev => prev ? { ...prev, upvotes: Math.max(0, (prev.upvotes || 0) - 1) } : null);
         }
+        addToast('Article unliked', 'info');
       } else {
-        // Like - remove dislike if exists
+        // Was not liked, now liked
+        // Remove dislike first if exists
         if (isDisliked) {
           setDislikedArticles(prev => prev.filter(slug => slug !== article.slug));
           setArticles(prev => prev.map(a => 
             a.slug === article.slug 
-              ? { ...a, downvotes: (a.downvotes || 0) - 1 }
+              ? { ...a, downvotes: Math.max(0, (a.downvotes || 0) - 1) }
               : a
           ));
-          // Update featured article if it's the same article
           if (featuredArticle && featuredArticle.slug === article.slug) {
-            setFeaturedArticle(prev => prev ? { ...prev, downvotes: (prev.downvotes || 0) - 1 } : null);
+            setFeaturedArticle(prev => prev ? { ...prev, downvotes: Math.max(0, (prev.downvotes || 0) - 1) } : null);
           }
         }
         
-        try {
-          const result = await handleNewsPoints('like_article', user.uid, walletAddress, article.slug);
-          setLikedArticles(prev => [...prev, article.slug]);
-          // Update article upvotes locally
-          setArticles(prev => prev.map(a => 
-            a.slug === article.slug 
-              ? { ...a, upvotes: (a.upvotes || 0) + 1 }
-              : a
-          ));
-          // Update featured article if it's the same article
-          if (featuredArticle && featuredArticle.slug === article.slug) {
-            setFeaturedArticle(prev => prev ? { ...prev, upvotes: (prev.upvotes || 0) + 1 } : null);
-          }
-          
+        setLikedArticles(prev => [...prev, article.slug]);
+        setArticles(prev => prev.map(a => 
+          a.slug === article.slug 
+            ? { ...a, upvotes: (a.upvotes || 0) + 1 }
+            : a
+        ));
+        if (featuredArticle && featuredArticle.slug === article.slug) {
+          setFeaturedArticle(prev => prev ? { ...prev, upvotes: (prev.upvotes || 0) + 1 } : null);
+        }
+        
+        if (result.pointsEarned > 0) {
           addToast(`Article liked! +${result.pointsEarned} points`, 'success');
-          refreshUserPoints(); // Refresh points after successful interaction
-        } catch (error) {
-          if (error instanceof Error && error.message.includes('already liked')) {
-            addToast('You have already liked this article', 'info');
-          } else if (error instanceof Error && error.message.includes('already performed')) {
-            addToast('Already liked today', 'info');
-          } else {
-            addToast(error instanceof Error ? error.message : 'Error liking article', 'error');
-          }
+        } else {
+          addToast('Article liked!', 'success');
         }
       }
+      
+      refreshUserPoints(); // Refresh points after successful interaction
     } catch (error) {
       console.error('Error toggling like:', error);
-      addToast('Error liking article', 'error');
+      if (error instanceof Error && error.message.includes('already performed')) {
+        addToast('Already performed this action today', 'info');
+      } else {
+        addToast(error instanceof Error ? error.message : 'Error liking article', 'error');
+      }
     }
   };
 
@@ -405,59 +445,58 @@ export default function NewsPage() {
       const isDisliked = dislikedArticles.includes(article.slug);
       const isLiked = likedArticles.includes(article.slug);
       
+      // Call the API first to get the actual state
+      const action = 'dislike_article'; // API handles both dislike and undislike based on current state
+      await handleNewsPoints(action, user.uid, walletAddress, article.slug);
+      
+      // Update local state based on the action
       if (isDisliked) {
-        // Remove dislike
+        // Was disliked, now undisliked
         setDislikedArticles(prev => prev.filter(slug => slug !== article.slug));
-        // Update article downvotes locally
         setArticles(prev => prev.map(a => 
           a.slug === article.slug 
-            ? { ...a, downvotes: (a.downvotes || 0) - 1 }
+            ? { ...a, downvotes: Math.max(0, (a.downvotes || 0) - 1) }
             : a
         ));
-        // Update featured article if it's the same article
         if (featuredArticle && featuredArticle.slug === article.slug) {
-          setFeaturedArticle(prev => prev ? { ...prev, downvotes: (prev.downvotes || 0) - 1 } : null);
+          setFeaturedArticle(prev => prev ? { ...prev, downvotes: Math.max(0, (prev.downvotes || 0) - 1) } : null);
         }
+        addToast('Article undisliked', 'info');
       } else {
-        // Add dislike - remove like if exists
+        // Was not disliked, now disliked
+        // Remove like first if exists
         if (isLiked) {
           setLikedArticles(prev => prev.filter(slug => slug !== article.slug));
           setArticles(prev => prev.map(a => 
             a.slug === article.slug 
-              ? { ...a, upvotes: (a.upvotes || 0) - 1 }
+              ? { ...a, upvotes: Math.max(0, (a.upvotes || 0) - 1) }
               : a
           ));
-          // Update featured article if it's the same article
           if (featuredArticle && featuredArticle.slug === article.slug) {
-            setFeaturedArticle(prev => prev ? { ...prev, upvotes: (prev.upvotes || 0) - 1 } : null);
+            setFeaturedArticle(prev => prev ? { ...prev, upvotes: Math.max(0, (prev.upvotes || 0) - 1) } : null);
           }
         }
         
-        try {
-          await handleNewsPoints('dislike_article', user.uid, walletAddress, article.slug);
-          setDislikedArticles(prev => [...prev, article.slug]);
-          // Update article downvotes locally
-          setArticles(prev => prev.map(a => 
-            a.slug === article.slug 
-              ? { ...a, downvotes: (a.downvotes || 0) + 1 }
-              : a
-          ));
-          // Update featured article if it's the same article
-          if (featuredArticle && featuredArticle.slug === article.slug) {
-            setFeaturedArticle(prev => prev ? { ...prev, downvotes: (prev.downvotes || 0) + 1 } : null);
-          }
-          addToast('Article disliked', 'info');
-          refreshUserPoints(); // Refresh points after successful interaction
-        } catch (error) {
-          if (error instanceof Error && error.message.includes('already performed')) {
-            addToast('Already disliked today', 'info');
-          } else {
-            addToast(error instanceof Error ? error.message : 'Error disliking article', 'error');
-          }
+        setDislikedArticles(prev => [...prev, article.slug]);
+        setArticles(prev => prev.map(a => 
+          a.slug === article.slug 
+            ? { ...a, downvotes: (a.downvotes || 0) + 1 }
+            : a
+        ));
+        if (featuredArticle && featuredArticle.slug === article.slug) {
+          setFeaturedArticle(prev => prev ? { ...prev, downvotes: (prev.downvotes || 0) + 1 } : null);
         }
+        addToast('Article disliked', 'info');
       }
+      
+      refreshUserPoints(); // Refresh points after successful interaction
     } catch (error) {
       console.error('Error toggling dislike:', error);
+      if (error instanceof Error && error.message.includes('already performed')) {
+        addToast('Already performed this action today', 'info');
+      } else {
+        addToast(error instanceof Error ? error.message : 'Error disliking article', 'error');
+      }
     }
   };
 
@@ -585,37 +624,51 @@ export default function NewsPage() {
       const q = query(articlesRef, orderBy('publishedAt', 'desc'));
       const querySnapshot = await getDocs(q);
       
-      const updatedArticles: NewsArticle[] = [];
+      // Create a map of updated data by slug for efficient lookup
+      const updatedDataMap = new Map();
       querySnapshot.forEach((doc) => {
         const data = doc.data();
-        updatedArticles.push({
-          id: doc.id,
-          title: data.title || '',
-          content: data.content || '',
-          author: data.author || '',
-          source: data.source || '',
-          publishedAt: data.publishedAt,
-          slug: data.slug || '',
-          category: data.category || 'General',
+        updatedDataMap.set(data.slug, {
+          comments: data.comments || [],
           views: data.views || 0,
           upvotes: data.upvotes || 0,
           downvotes: data.downvotes || 0,
-          comments: data.comments || [],
-          updatedAt: data.updatedAt || '',
-          thumbnail: data.thumbnail || '',
-          excerpt: data.excerpt || truncateAtWord(data.content || '', 200)
+          updatedAt: data.updatedAt || ''
         });
       });
 
-      setArticles(updatedArticles);
+      // Update only the dynamic fields without replacing the entire articles array
+      setArticles(prev => prev.map(article => {
+        const updatedData = updatedDataMap.get(article.slug);
+        if (updatedData) {
+          return {
+            ...article,
+            comments: updatedData.comments,
+            views: updatedData.views,
+            upvotes: updatedData.upvotes,
+            downvotes: updatedData.downvotes,
+            updatedAt: updatedData.updatedAt
+          };
+        }
+        return article;
+      }));
       
-      // Update featured article
-      if (updatedArticles.length > 0) {
-        const featured = updatedArticles.reduce((prev, current) => 
-          (current.views || 0) > (prev.views || 0) ? current : prev
-        );
-        setFeaturedArticle(featured);
-      }
+      // Update featured article if needed
+      setFeaturedArticle(prev => {
+        if (!prev) return prev;
+        const updatedData = updatedDataMap.get(prev.slug);
+        if (updatedData) {
+          return {
+            ...prev,
+            comments: updatedData.comments,
+            views: updatedData.views,
+            upvotes: updatedData.upvotes,
+            downvotes: updatedData.downvotes,
+            updatedAt: updatedData.updatedAt
+          };
+        }
+        return prev;
+      });
     } catch (error) {
       console.error('Error refreshing comments:', error);
     }
@@ -658,6 +711,60 @@ export default function NewsPage() {
 
   const categories = Array.from(new Set(articles.map(article => article.category).filter(Boolean)));
   const authors = Array.from(new Set(articles.map(article => article.author)));
+
+  // ────────── Pagination Logic ──────────
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filterCategory, filterAuthor, sortBy]);
+
+  // Scroll to top when page changes
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [currentPage]);
+
+  // Calculate pagination
+  const totalArticles = sortedArticles.length - 1; // Exclude featured article
+  const totalPages = Math.ceil(totalArticles / articlesPerPage);
+  const startIndex = (currentPage - 1) * articlesPerPage;
+  const endIndex = startIndex + articlesPerPage;
+  const currentArticles = sortedArticles.slice(1).slice(startIndex, endIndex); // Exclude featured article and apply pagination
+
+  // Generate page numbers for pagination
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxVisiblePages = 5;
+    
+    if (totalPages <= maxVisiblePages) {
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      if (currentPage <= 3) {
+        for (let i = 1; i <= 4; i++) {
+          pages.push(i);
+        }
+        pages.push('...');
+        pages.push(totalPages);
+      } else if (currentPage >= totalPages - 2) {
+        pages.push(1);
+        pages.push('...');
+        for (let i = totalPages - 3; i <= totalPages; i++) {
+          pages.push(i);
+        }
+      } else {
+        pages.push(1);
+        pages.push('...');
+        for (let i = currentPage - 1; i <= currentPage + 1; i++) {
+          pages.push(i);
+        }
+        pages.push('...');
+        pages.push(totalPages);
+      }
+    }
+    
+    return pages;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
@@ -715,6 +822,7 @@ export default function NewsPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search articles..."
                 className="w-full pl-12 pr-4 py-4 bg-gray-800/50 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base min-h-[56px]"
+                autoComplete="off"
               />
             </div>
 
@@ -914,6 +1022,7 @@ export default function NewsPage() {
                             onChange={(e) => setNewComments(prev => ({ ...prev, [featuredArticle.slug]: e.target.value }))}
                             className="w-full px-4 py-3 pr-12 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
                             rows={2}
+                            autoComplete="off"
                           />
                           <button
                             onClick={() => sendComment(featuredArticle.slug)}
@@ -940,7 +1049,7 @@ export default function NewsPage() {
 
               {/* Articles Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                {sortedArticles.slice(1).map((article, index) => (
+                {currentArticles.map((article, index) => (
                   <motion.div
                     key={article.slug}
                     initial={{ opacity: 0, y: 20 }}
@@ -1056,6 +1165,7 @@ export default function NewsPage() {
                             onChange={(e) => setNewComments(prev => ({ ...prev, [article.slug]: e.target.value }))}
                             className="w-full px-4 py-3 pr-12 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
                             rows={2}
+                            autoComplete="off"
                           />
                           <button
                             onClick={() => sendComment(article.slug)}
@@ -1079,6 +1189,62 @@ export default function NewsPage() {
                   </motion.div>
                 ))}
               </div>
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.4 }}
+                  className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4"
+                >
+                  {/* Page Info */}
+                  <div className="text-gray-400 text-sm">
+                    Showing {startIndex + 1}-{Math.min(endIndex, totalArticles)} of {totalArticles} articles
+                  </div>
+
+                  {/* Pagination Buttons */}
+                  <div className="flex items-center gap-2">
+                    {/* Previous Button */}
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                      className="px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-white hover:bg-gray-700/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Previous
+                    </button>
+
+                    {/* Page Numbers */}
+                    <div className="flex items-center gap-1">
+                      {getPageNumbers().map((page, index) => (
+                        <button
+                          key={index}
+                          onClick={() => typeof page === 'number' && setCurrentPage(page)}
+                          disabled={page === '...'}
+                          className={`px-3 py-2 rounded-lg transition-colors ${
+                            page === currentPage
+                              ? 'bg-blue-500 text-white'
+                              : page === '...'
+                              ? 'text-gray-500 cursor-default'
+                              : 'bg-gray-800/50 border border-gray-700 text-white hover:bg-gray-700/50'
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Next Button */}
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages}
+                      className="px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-white hover:bg-gray-700/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </motion.div>
+              )}
             </div>
 
             {/* Sidebar */}

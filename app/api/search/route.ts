@@ -81,11 +81,52 @@ interface BlockSearchResult {
   gasLimit?: string | null;
 }
 
+interface NewsSearchResult {
+  type: "news";
+  id: string;
+  title: string;
+  content: string;
+  author: string;
+  source: string;
+  publishedAt: string;
+  slug: string;
+  thumbnailUrl?: string;
+}
+
+interface IndexSearchResult {
+  type: "index";
+  indexName: string;
+  tokenAddress: string;
+  tokenSymbol: string;
+  tokenName: string;
+  weight: number;
+  marketCap?: number;
+  priceUsd?: string;
+}
+
+interface CalendarEventSearchResult {
+  type: "calendar";
+  id: string;
+  projectId: string;
+  projectName: string;
+  projectTicker: string;
+  title: string;
+  description: string;
+  date: string;
+  time: string;
+  eventType: string;
+  status: string;
+  votes: number;
+}
+
 interface SearchResult {
   tokens: TokenSearchResult[];
   wallets: WalletSearchResult[];
   transactions: TransactionSearchResult[];
   blocks: BlockSearchResult[];
+  news: NewsSearchResult[];
+  indexes: IndexSearchResult[];
+  calendar: CalendarEventSearchResult[];
 }
 
 // Helper function to check if string is an Ethereum address
@@ -221,6 +262,119 @@ async function searchTokens(query: string): Promise<TokenSearchResult[]> {
   return results.slice(0, 10);
 }
 
+// Search news articles
+async function searchNews(query: string): Promise<NewsSearchResult[]> {
+  const results: NewsSearchResult[] = [];
+  
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/news`);
+    if (response.ok) {
+      const articles = await response.json();
+      
+      // Filter articles by title, content, or author
+      const filteredArticles = articles.filter((article: any) => {
+        const searchText = query.toLowerCase();
+        return (
+          article.title?.toLowerCase().includes(searchText) ||
+          article.content?.toLowerCase().includes(searchText) ||
+          article.author?.toLowerCase().includes(searchText) ||
+          article.source?.toLowerCase().includes(searchText)
+        );
+      });
+      
+      results.push(...filteredArticles.slice(0, 5).map((article: any) => ({
+        type: "news" as const,
+        id: article.id || article.slug,
+        title: article.title,
+        content: article.content,
+        author: article.author,
+        source: article.source,
+        publishedAt: article.publishedAt,
+        slug: article.slug,
+        thumbnailUrl: article.thumbnailUrl
+      })));
+    }
+  } catch (error) {
+    console.error("Error searching news:", error);
+  }
+
+  return results;
+}
+
+// Search index data
+async function searchIndexes(query: string): Promise<IndexSearchResult[]> {
+  const results: IndexSearchResult[] = [];
+  
+  try {
+    // Search through all available indexes
+    const indexes = ['CDEX', 'BDEX', 'VDEX', 'AIDEX'];
+    
+    for (const indexName of indexes) {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/tokens?collection=${indexName}&search=${encodeURIComponent(query)}&limit=5`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.tokens && data.tokens.length > 0) {
+            // Only include tokens that are actually in this index and have a weight
+            const validTokens = data.tokens.filter((token: any) => token.weight && token.weight > 0);
+            if (validTokens.length > 0) {
+              results.push(...validTokens.map((token: any) => ({
+                type: "index" as const,
+                indexName,
+                tokenAddress: token.address,
+                tokenSymbol: token.symbol,
+                tokenName: token.name,
+                weight: token.weight || 0,
+                marketCap: token.marketCap,
+                priceUsd: token.priceUsd
+              })));
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Error searching ${indexName} index:`, error);
+      }
+    }
+  } catch (error) {
+    console.error("Error searching indexes:", error);
+  }
+
+  return results.slice(0, 10);
+}
+
+// Search calendar events
+async function searchCalendarEvents(query: string): Promise<CalendarEventSearchResult[]> {
+  const results: CalendarEventSearchResult[] = [];
+  
+  try {
+    // Search through calendar events collection
+    const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/calendar/events?search=${encodeURIComponent(query)}&limit=5`);
+    if (response.ok) {
+      const data = await response.json();
+      if (data.events) {
+        results.push(...data.events.map((event: any) => ({
+          type: "calendar" as const,
+          id: event.id,
+          projectId: event.projectId,
+          projectName: event.projectName,
+          projectTicker: event.projectTicker,
+          title: event.title,
+          description: event.description,
+          date: event.date,
+          time: event.time,
+          eventType: event.eventType,
+          status: event.status,
+          votes: event.votes || 0
+        })));
+      }
+    }
+  } catch (error) {
+    console.error("Error searching calendar events:", error);
+  }
+
+  return results;
+}
+
 // Search wallet information
 async function searchWallet(address: string): Promise<WalletSearchResult | null> {
   try {
@@ -343,7 +497,10 @@ export async function GET(request: Request) {
       tokens: [],
       wallets: [],
       transactions: [],
-      blocks: []
+      blocks: [],
+      news: [],
+      indexes: [],
+      calendar: []
     };
 
     // Determine query type and search accordingly
@@ -377,6 +534,18 @@ export async function GET(request: Request) {
       const tokenResults = await searchTokens(query);
       results.tokens.push(...tokenResults);
       
+      // Search for news articles
+      const newsResults = await searchNews(query);
+      results.news.push(...newsResults);
+      
+      // Search for index data
+      const indexResults = await searchIndexes(query);
+      results.indexes.push(...indexResults);
+      
+      // Search for calendar events
+      const calendarResults = await searchCalendarEvents(query);
+      results.calendar.push(...calendarResults);
+      
       // If query looks like a block number, try searching for it
       if (isBlockNumber(query)) {
         const blockResult = await searchBlock(query);
@@ -390,7 +559,7 @@ export async function GET(request: Request) {
       success: true,
       query,
       results,
-      totalResults: results.tokens.length + results.wallets.length + results.transactions.length + results.blocks.length
+      totalResults: results.tokens.length + results.wallets.length + results.transactions.length + results.blocks.length + results.news.length + results.indexes.length + results.calendar.length
     });
     
   } catch (error) {

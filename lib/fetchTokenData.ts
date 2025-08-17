@@ -30,6 +30,7 @@ export interface TokenData {
 
 // Define a basic type for DexScreener pair data
 interface DexScreenerPair {
+  pairAddress?: string;
   baseToken?: {
     address?: string;
     symbol?: string;
@@ -122,6 +123,7 @@ export const fetchAllTokenData = async (): Promise<TokenData[]> => {
             return firestoreToken
               ? {
                   ...firestoreToken,
+                  poolAddress: pair.pairAddress || firestoreToken.poolAddress || "",
                   priceUsd: pair.priceUsd || "0",
                   priceChange: pair.priceChange || { m5: 0, h1: 0, h6: 0, h24: 0 },
                   volume: pair.volume || { h1: 0, h24: 0 },
@@ -130,7 +132,7 @@ export const fetchAllTokenData = async (): Promise<TokenData[]> => {
                   info: pair.info ? { imageUrl: pair.info.imageUrl } : undefined,
                 }
               : {
-                  poolAddress: "",
+                  poolAddress: pair.pairAddress || "",
                   tokenAddress: pair.baseToken?.address || "",
                   symbol: pair.baseToken?.symbol || "UNK",
                   name: pair.baseToken?.name || "Unknown",

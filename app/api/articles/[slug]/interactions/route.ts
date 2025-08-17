@@ -52,9 +52,10 @@ export async function POST(
         if (!userSnapshot.empty) {
           const userData = userSnapshot.docs[0].data();
           const likedArticles = userData.likedArticles || [];
+          const dislikedArticles = userData.dislikedArticles || [];
           
           if (likedArticles.includes(slug)) {
-            // Unlike
+            // Unlike - remove from liked articles
             await articleRef.update({ upvotes: FieldValue.increment(-1) });
             await db.collection('users').doc(userSnapshot.docs[0].id).update({
               likedArticles: FieldValue.arrayRemove(slug)
@@ -62,7 +63,14 @@ export async function POST(
             points = 0;
             activityAction = 'unlike_article';
           } else {
-            // Like
+            // Like - remove dislike first if exists, then add like
+            if (dislikedArticles.includes(slug)) {
+              await articleRef.update({ downvotes: FieldValue.increment(-1) });
+              await db.collection('users').doc(userSnapshot.docs[0].id).update({
+                dislikedArticles: FieldValue.arrayRemove(slug)
+              });
+            }
+            
             await articleRef.update({ upvotes: FieldValue.increment(1) });
             await db.collection('users').doc(userSnapshot.docs[0].id).update({
               likedArticles: FieldValue.arrayUnion(slug)
@@ -74,9 +82,40 @@ export async function POST(
         break;
 
       case 'dislike':
-        await articleRef.update({ downvotes: FieldValue.increment(1) });
-        points = 0; // No points for dislikes
-        activityAction = 'dislike_article';
+        // Check if user already disliked
+        const userQuery2 = db.collection('users').where('walletAddress', '==', walletAddress);
+        const userSnapshot2 = await userQuery2.get();
+        
+        if (!userSnapshot2.empty) {
+          const userData = userSnapshot2.docs[0].data();
+          const likedArticles = userData.likedArticles || [];
+          const dislikedArticles = userData.dislikedArticles || [];
+          
+          if (dislikedArticles.includes(slug)) {
+            // Undislike - remove from disliked articles
+            await articleRef.update({ downvotes: FieldValue.increment(-1) });
+            await db.collection('users').doc(userSnapshot2.docs[0].id).update({
+              dislikedArticles: FieldValue.arrayRemove(slug)
+            });
+            points = 0;
+            activityAction = 'undislike_article';
+          } else {
+            // Dislike - remove like first if exists, then add dislike
+            if (likedArticles.includes(slug)) {
+              await articleRef.update({ upvotes: FieldValue.increment(-1) });
+              await db.collection('users').doc(userSnapshot2.docs[0].id).update({
+                likedArticles: FieldValue.arrayRemove(slug)
+              });
+            }
+            
+            await articleRef.update({ downvotes: FieldValue.increment(1) });
+            await db.collection('users').doc(userSnapshot2.docs[0].id).update({
+              dislikedArticles: FieldValue.arrayUnion(slug)
+            });
+            points = 0; // No points for dislikes
+            activityAction = 'dislike_article';
+          }
+        }
         break;
 
       case 'share':

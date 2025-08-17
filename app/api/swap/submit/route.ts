@@ -14,18 +14,32 @@ interface SubmitSwapRequest {
   outputAmount: string;
   walletAddress: string;
   tokenAddress?: string;
+  autoConfirm?: boolean; // New option to auto-confirm
 }
 
 
 
 async function getEthPrice(): Promise<number> {
   try {
-    const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd");
+    const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd", {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'CypherX/1.0'
+      }
+    });
     const data = await response.json();
     return data.ethereum?.usd || 3000;
   } catch (error) {
     console.error("Error fetching ETH price:", error);
-    return 3000; // Fallback price
+    // Fallback to our proxy
+    try {
+      const proxyResponse = await fetch("/api/coingecko-proxy?endpoint=simple/price?ids=ethereum&vs_currencies=usd");
+      const proxyData = await proxyResponse.json();
+      return proxyData.ethereum?.usd || 3000;
+    } catch (proxyError) {
+      console.error("Proxy fallback also failed:", proxyError);
+      return 3000; // Fallback price
+    }
   }
 }
 
@@ -135,7 +149,8 @@ export async function POST(request: Request) {
       outputToken, 
       inputAmount, 
       outputAmount, 
-      walletAddress 
+      walletAddress,
+      autoConfirm = true // Default to auto-confirm
     } = body;
     
     if (!signedTransaction || !inputToken || !outputToken || !inputAmount || !outputAmount || !walletAddress) {
@@ -174,7 +189,19 @@ export async function POST(request: Request) {
       
       // Check if the transaction data is empty
       if (!parsedTx.data || parsedTx.data === "0x") {
+        console.error("❌ Transaction data is empty after parsing:", {
+          signedTransactionLength: signedTransaction.length,
+          parsedTxData: parsedTx.data,
+          parsedTxTo: parsedTx.to,
+          parsedTxValue: parsedTx.value?.toString()
+        });
         throw new Error("Signed transaction has no function call data");
+      }
+      
+      // Additional validation - ensure we have the expected data length
+      if (parsedTx.data.length < 10) {
+        console.error("❌ Transaction data too short:", parsedTx.data.length);
+        throw new Error("Signed transaction data is too short");
       }
     } catch (parseError) {
       console.error("❌ Failed to parse signed transaction:", parseError);
@@ -185,6 +212,16 @@ export async function POST(request: Request) {
     try {
       tx = await provider.broadcastTransaction(signedTransaction);
       console.log("✅ Transaction broadcasted:", tx.hash);
+      
+      // If autoConfirm is false, return immediately after broadcasting
+      if (!autoConfirm) {
+        return NextResponse.json({
+          success: true,
+          transactionHash: tx.hash,
+          status: "broadcasted",
+          message: "Transaction broadcasted successfully"
+        });
+      }
     } catch (broadcastError) {
       console.error("❌ Broadcast error details:", {
         error: broadcastError,
@@ -210,11 +247,18 @@ export async function POST(request: Request) {
       throw broadcastError;
     }
     
-    // Wait for confirmation
+    // Wait for confirmation with shorter timeout
     console.log("⏳ Waiting for transaction confirmation...");
-    let receipt;
+    let receipt: any;
     try {
-      receipt = await tx.wait();
+      // Use a shorter timeout for faster response
+      receipt = await Promise.race([
+        tx.wait(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Confirmation timeout")), 15000) // 15 second timeout
+        )
+      ]);
+      
       if (!receipt) {
         throw new Error("Transaction receipt is null");
       }
@@ -242,12 +286,32 @@ export async function POST(request: Request) {
               gasPrice: receipt.gasPrice?.toString(),
               logs: receipt.logs
             });
-            throw new Error("Transaction reverted - insufficient liquidity or price impact too high");
+            
+            // Try to decode the revert reason from logs
+            let revertReason = "Transaction reverted";
+            if (receipt.logs && receipt.logs.length > 0) {
+              try {
+                // Look for revert reason in logs
+                for (const log of receipt.logs) {
+                  if (log.data && log.data !== "0x") {
+                    const decoded = ethers.AbiCoder.defaultAbiCoder().decode(["string"], log.data);
+                    if (decoded && decoded[0]) {
+                      revertReason = decoded[0];
+                      break;
+                    }
+                  }
+                }
+              } catch (decodeError) {
+                console.error("Failed to decode revert reason:", decodeError);
+              }
+            }
+            
+            throw new Error(`Transaction reverted: ${revertReason}`);
           } else {
-            throw new Error("Transaction execution reverted");
+            throw new Error("Transaction execution reverted - insufficient liquidity or price impact too high");
           }
         } else if (confirmationError.message.includes("timeout")) {
-          throw new Error("Transaction confirmation timeout");
+          throw new Error("Transaction confirmation timeout - check your transaction hash");
         } else if (confirmationError.message.includes("replacement")) {
           throw new Error("Transaction replacement error");
         }

@@ -15,7 +15,7 @@ interface NewsPointsRequest {
 const POINTS_SYSTEM = {
   READ_ARTICLE: 10,
   LIKE_ARTICLE: 5,
-  UNLIKE_ARTICLE: -5, // Remove points when unliking
+  UNLIKE_ARTICLE: 0, // No points for unlike - allow unlimited actions
   DISLIKE_ARTICLE: 0, // No points for dislikes
   SHARE_ARTICLE: 10,
   COMMENT_ARTICLE: 15,
@@ -134,22 +134,19 @@ export async function POST(request: Request) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       
+      let activitySnapshot: any = null;
+      
       try {
+        // Use a simpler query that works with the existing index
         const activityQuery = db.collection('user_activities')
           .where('walletAddress', '==', walletAddress)
           .where('action', '==', action)
-          .where('articleSlug', '==', articleSlug)
-          .where('createdAt', '>=', today);
+          .where('articleSlug', '==', articleSlug);
         
-        const activitySnapshot = await activityQuery.get();
+        activitySnapshot = await activityQuery.get();
         
-        if (!activitySnapshot.empty) {
-          return NextResponse.json({ 
-            error: 'Action already performed today',
-            alreadyPerformed: true,
-            message: 'You have already performed this action today'
-          }, { status: 400 });
-        }
+        // Only block if trying to earn points for an action already performed today
+        // Don't block the action itself
       } catch (error) {
         console.error('Error checking daily activity:', error);
         // Continue with action even if daily check fails
@@ -165,16 +162,43 @@ export async function POST(request: Request) {
           break;
 
         case 'like_article':
-          // Check if already liked
+          // Check current state
           const likedArticles = userData.likedArticles || [];
+          const dislikedArticles = userData.dislikedArticles || [];
+          
           if (likedArticles.includes(articleSlug)) {
-            errorData = {
-              error: 'Article already liked',
-              alreadyLiked: true,
-              message: 'You have already liked this article'
-            };
+            // Already liked - this is an unlike action
+            points = 0;
+            // Remove from liked articles
+            batch.update(db.collection('users').doc(userDocId), {
+              likedArticles: FieldValue.arrayRemove(articleSlug)
+            });
           } else {
-            points = POINTS_SYSTEM.LIKE_ARTICLE;
+            // Not currently liked - this is a like action
+            // Remove dislike first if exists
+            if (dislikedArticles.includes(articleSlug)) {
+              batch.update(db.collection('users').doc(userDocId), {
+                dislikedArticles: FieldValue.arrayRemove(articleSlug)
+              });
+            }
+            
+            // Check if they've already earned points for liking this article today
+            const todayLikeActivities = activitySnapshot?.docs?.filter((doc: any) => {
+              const data = doc.data();
+              const createdAt = data.createdAt?.toDate?.() || new Date(data.createdAt);
+              return data.action === 'like_article' && 
+                     data.articleSlug === articleSlug && 
+                     createdAt >= today;
+            }) || [];
+            
+            if (todayLikeActivities.length > 0) {
+              // Already earned points today for liking - allow action but no points
+              points = 0;
+            } else {
+              // First time liking today - give points
+              points = POINTS_SYSTEM.LIKE_ARTICLE;
+            }
+            
             // Add to liked articles
             batch.update(db.collection('users').doc(userDocId), {
               likedArticles: FieldValue.arrayUnion(articleSlug)
@@ -183,19 +207,56 @@ export async function POST(request: Request) {
           break;
 
         case 'unlike_article':
-          points = POINTS_SYSTEM.UNLIKE_ARTICLE;
-          // Remove from liked articles
+          // Unlike always removes from liked articles, no points
+          points = 0;
           batch.update(db.collection('users').doc(userDocId), {
             likedArticles: FieldValue.arrayRemove(articleSlug)
           });
           break;
 
         case 'dislike_article':
-          points = POINTS_SYSTEM.DISLIKE_ARTICLE;
-          // Add to disliked articles
-          batch.update(db.collection('users').doc(userDocId), {
-            dislikedArticles: FieldValue.arrayUnion(articleSlug)
-          });
+          // Check current state
+          const currentLikedArticles = userData.likedArticles || [];
+          const currentDislikedArticles = userData.dislikedArticles || [];
+          
+          if (currentDislikedArticles.includes(articleSlug)) {
+            // Already disliked - this is an undislike action
+            points = 0;
+            // Remove from disliked articles
+            batch.update(db.collection('users').doc(userDocId), {
+              dislikedArticles: FieldValue.arrayRemove(articleSlug)
+            });
+          } else {
+            // Not currently disliked - this is a dislike action
+            // Remove like first if exists
+            if (currentLikedArticles.includes(articleSlug)) {
+              batch.update(db.collection('users').doc(userDocId), {
+                likedArticles: FieldValue.arrayRemove(articleSlug)
+              });
+            }
+            
+            // Check if they've already earned points for disliking this article today
+            const todayDislikeActivities = activitySnapshot?.docs?.filter((doc: any) => {
+              const data = doc.data();
+              const createdAt = data.createdAt?.toDate?.() || new Date(data.createdAt);
+              return data.action === 'dislike_article' && 
+                     data.articleSlug === articleSlug && 
+                     createdAt >= today;
+            }) || [];
+            
+            if (todayDislikeActivities.length > 0) {
+              // Already earned points today for disliking - allow action but no points
+              points = 0;
+            } else {
+              // First time disliking today - give points (0 for dislikes)
+              points = POINTS_SYSTEM.DISLIKE_ARTICLE;
+            }
+            
+            // Add to disliked articles
+            batch.update(db.collection('users').doc(userDocId), {
+              dislikedArticles: FieldValue.arrayUnion(articleSlug)
+            });
+          }
           break;
 
         case 'share_article':
@@ -227,7 +288,7 @@ export async function POST(request: Request) {
         points,
         articleSlug,
         metadata: {
-          platform,
+          platform: platform || 'web',
           comment: action === 'comment_article' ? comment : undefined,
         },
         createdAt: FieldValue.serverTimestamp(),
@@ -238,6 +299,39 @@ export async function POST(request: Request) {
         points: FieldValue.increment(points),
         lastActivity: FieldValue.serverTimestamp(),
       });
+
+      // Update article vote counts in database
+      try {
+        const articleQuery = db.collection('articles').where('slug', '==', articleSlug);
+        const articleSnapshot = await articleQuery.get();
+        
+        if (!articleSnapshot.empty) {
+          const articleDoc = articleSnapshot.docs[0];
+          const articleRef = db.collection('articles').doc(articleDoc.id);
+          
+          // Update vote counts based on action
+          if (action === 'like_article') {
+            // Check if user was previously disliked
+            const dislikedArticles = userData.dislikedArticles || [];
+            if (dislikedArticles.includes(articleSlug)) {
+              batch.update(articleRef, { downvotes: FieldValue.increment(-1) });
+            }
+            batch.update(articleRef, { upvotes: FieldValue.increment(1) });
+          } else if (action === 'unlike_article') {
+            batch.update(articleRef, { upvotes: FieldValue.increment(-1) });
+          } else if (action === 'dislike_article') {
+            // Check if user was previously liked
+            const likedArticles = userData.likedArticles || [];
+            if (likedArticles.includes(articleSlug)) {
+              batch.update(articleRef, { upvotes: FieldValue.increment(-1) });
+            }
+            batch.update(articleRef, { downvotes: FieldValue.increment(1) });
+          }
+        }
+      } catch (error) {
+        console.error('Error updating article vote counts:', error);
+        // Don't fail the entire request if article update fails
+      }
 
       // Update leaderboard
       const leaderboardQuery = db.collection('leaderboard').where('walletAddress', '==', walletAddress);
@@ -445,4 +539,4 @@ export async function GET(request: Request) {
       details: 'An unexpected error occurred while fetching your data'
     }, { status: 500 });
   }
-} 
+}

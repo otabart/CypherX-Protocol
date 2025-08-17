@@ -141,7 +141,12 @@ const getAdminDb = () => {
   }
   
   if (!isInitialized) {
-    initializeAdmin();
+    try {
+      initializeAdmin();
+    } catch (error) {
+      console.error("Failed to initialize Firebase Admin:", error);
+      throw new Error(`Firebase Admin initialization failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
   
   if (!adminDb) {

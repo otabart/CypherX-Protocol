@@ -25,7 +25,6 @@ import {
   FiChevronLeft,
   FiChevronRight,
   FiX,
-  FiShield,
   FiBell,
   FiAward,
   FiUser,
@@ -154,7 +153,7 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState<string>("");
-  const [commentText, setCommentText] = useState("");
+    const [commentText, setCommentText] = useState("");
   const [userPoints, setUserPoints] = useState(0);
   const [userBadges, setUserBadges] = useState<string[]>([]);
   const [userRsvpedEvents, setUserRsvpedEvents] = useState<string[]>([]);
@@ -289,8 +288,10 @@ export default function CalendarPage() {
 
       } catch (error) {
         console.error("Error fetching data:", error);
-        // Only show error toast for actual network/database errors
-        toast.error("Failed to load calendar data");
+        // Only show error toast for actual network/database errors, not auth issues
+        if (user) {
+          toast.error("Failed to load calendar data");
+        }
       } finally {
         setLoading(false);
       }
@@ -1012,43 +1013,7 @@ export default function CalendarPage() {
       <Toaster position="top-right" />
       
       <main className="flex-1 container mx-auto px-4 py-4 sm:py-8">
-        {/* Enhanced Header Section */}
-        <div className="mb-8">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-            <div>
-              <h1 className="text-3xl lg:text-5xl font-bold text-white mb-3">📅 Event Calendar</h1>
-              <p className="text-lg text-gray-400 max-w-2xl">Stay updated with the latest events, AMAs, launches, and community gatherings in the Base ecosystem</p>
-            </div>
-            
-            {/* Enhanced User Stats Card */}
-            {user && (
-              <div className="bg-gradient-to-r from-blue-900/20 to-purple-900/20 backdrop-blur-sm rounded-xl border border-blue-500/30 p-6 min-w-[300px]">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-gradient-to-br from-blue-500/80 to-purple-600/80 rounded-full flex items-center justify-center">
-                      <FiAward className="w-6 h-6 text-white" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-400">Your Points</p>
-                      <p className="text-2xl font-bold text-white">{userPoints.toLocaleString()}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm text-gray-400">RSVPs</p>
-                    <p className="text-xl font-bold text-blue-400">{userRsvpedEvents.length}</p>
-                  </div>
-                </div>
-                
-                {userBadges.length > 0 && (
-                  <div className="flex items-center gap-2 pt-3 border-t border-gray-700">
-                    <FiShield className="w-4 h-4 text-purple-400" />
-                    <span className="text-sm text-gray-300">Badges: {userBadges.slice(0, 2).join(", ")}{userBadges.length > 2 && ` +${userBadges.length - 2} more`}</span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+
 
 
 

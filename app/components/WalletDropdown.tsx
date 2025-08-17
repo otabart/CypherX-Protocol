@@ -67,9 +67,16 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
     try {
       const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd');
       const data = await response.json();
-      setEthPrice(data.ethereum.usd);
+      if (data.ethereum && data.ethereum.usd) {
+        setEthPrice(data.ethereum.usd);
+        console.log("ETH price fetched:", data.ethereum.usd);
+      } else {
+        console.error("Invalid ETH price data:", data);
+        setEthPrice(0);
+      }
     } catch (error) {
       console.error("Error fetching ETH price:", error);
+      setEthPrice(0);
     }
   }, []);
 
@@ -486,80 +493,62 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
     <AnimatePresence>
       {isOpen && (
         <>
+          {/* Enhanced backdrop with grey tint */}
           <motion.div
-            className="fixed inset-0 bg-black bg-opacity-50 z-40"
+            className="fixed inset-0 bg-gray-900/80 backdrop-blur-sm z-40"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
           />
-                     <motion.div
-             className={isMobile 
-               ? "fixed inset-x-0 bottom-0 w-full bg-gray-900 border-t border-gray-700 rounded-t-2xl shadow-2xl z-50 h-[70vh] flex flex-col"
-               : "fixed top-20 right-4 w-96 bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl z-50 max-h-[80vh] overflow-hidden"
-             }
-             initial={isMobile 
-               ? { opacity: 0, y: 100 }
-               : { opacity: 0, y: -10, scale: 0.95 }
-             }
-             animate={isMobile 
-               ? { opacity: 1, y: 0 }
-               : { opacity: 1, y: 0, scale: 1 }
-             }
-             exit={isMobile 
-               ? { opacity: 0, y: 100 }
-               : { opacity: 0, y: -10, scale: 0.95 }
-             }
-             transition={{ duration: 0.3 }}
-           >
-             {/* Close Button */}
-             {isMobile ? (
-               <div className="sticky top-0 bg-gray-900 pt-4 pb-2 px-6 border-b border-gray-700">
-                 <div className="flex justify-between items-center">
-                   <div className="w-12 h-1 bg-gray-600 rounded-full mx-auto"></div>
-                   <button
-                     onClick={onClose}
-                     className="absolute right-4 top-4 text-gray-400 hover:text-gray-200 text-2xl font-bold"
-                   >
-                     ×
-                   </button>
-                 </div>
-               </div>
-             ) : (
-               <div className="sticky top-0 bg-gray-900 pt-4 pb-2 px-6 border-b border-gray-700">
-                 <div className="flex justify-between items-center">
-                   <button
-                     onClick={onClose}
-                     className="absolute right-4 top-4 text-gray-400 hover:text-gray-200 text-2xl font-bold"
-                   >
-                     ×
-                   </button>
-                 </div>
-               </div>
-             )}
-             <div className="p-6 flex-1 overflow-y-auto">
-                               {/* Header */}
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-semibold text-gray-100">
-                    <span className="text-blue-400 font-bold">X</span>
-                    <span className="text-gray-100">Wallet</span>
-                  </h3>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => setShowPrivateKey(!showPrivateKey)}
-                      className="text-gray-400 hover:text-gray-200 p-1 rounded transition-colors"
-                      title="Settings"
-                    >
-                      <FaCog className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={onClose}
-                      className="text-gray-400 hover:text-gray-200 text-xl"
-                    >
-                      ×
-                    </button>
-                  </div>
+          <motion.div
+            className={isMobile 
+              ? "fixed inset-x-0 bottom-0 w-full bg-gray-900/95 backdrop-blur-xl border-t border-blue-500/30 rounded-t-2xl shadow-2xl z-50 h-[70vh] flex flex-col"
+              : "fixed top-20 right-8 w-96 bg-gray-900/95 backdrop-blur-xl border border-blue-500/30 rounded-2xl shadow-2xl z-50 max-h-[80vh] overflow-hidden"
+            }
+            initial={isMobile 
+              ? { opacity: 0, y: 100 }
+              : { opacity: 0, y: -10, scale: 0.95 }
+            }
+            animate={isMobile 
+              ? { opacity: 1, y: 0 }
+              : { opacity: 1, y: 0, scale: 1 }
+            }
+            exit={isMobile 
+              ? { opacity: 0, y: 100 }
+              : { opacity: 0, y: -10, scale: 0.95 }
+            }
+            transition={{ duration: 0.3 }}
+          >
+            {/* Header with single close button */}
+            <div className="sticky top-0 bg-gray-900/95 backdrop-blur-xl pt-4 pb-2 px-6 border-b border-blue-500/20">
+              {isMobile && (
+                <div className="w-12 h-1 bg-gray-600 rounded-full mx-auto mb-3"></div>
+              )}
+              <div className="flex justify-between items-center">
+                <h3 className="text-xl font-semibold text-gray-100">
+                  <span className="text-blue-400 font-bold">X</span>
+                  <span className="text-gray-100">Wallet</span>
+                </h3>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setShowPrivateKey(!showPrivateKey)}
+                    className="text-gray-400 hover:text-gray-200 p-1 rounded transition-colors"
+                    title="Settings"
+                  >
+                    <FaCog className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={onClose}
+                    className="text-gray-400 hover:text-gray-200 px-2 py-1 rounded transition-colors bg-gray-800/50 border border-gray-600/50"
+                    title="Close"
+                  >
+                    ×
+                  </button>
                 </div>
+              </div>
+            </div>
+            <div className="p-6 flex-1 overflow-y-auto max-h-[calc(80vh-80px)] scrollbar-hide">
 
                
 
@@ -567,13 +556,13 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
                {walletSystem === "self-custodial" && (
                  <div>
                                        {/* Tab Navigation */}
-                    <div className="flex mb-6 bg-gray-800 p-1.5 rounded-xl border border-gray-700">
+                    <div className="flex mb-6 bg-gray-800/80 p-1.5 rounded-xl border border-blue-500/20">
                       <button
                         onClick={() => setActiveTab("overview")}
                         className={`flex-1 flex items-center justify-center py-2.5 px-3 text-sm font-medium rounded-lg transition-all duration-200 ${
                           activeTab === "overview" 
-                            ? "bg-gray-700 text-gray-100 shadow-sm border border-gray-600" 
-                            : "text-gray-400 hover:text-gray-300 hover:bg-gray-750"
+                            ? "bg-blue-500/20 text-blue-100 shadow-sm border border-blue-500/30" 
+                            : "text-gray-400 hover:text-blue-300 hover:bg-blue-500/10"
                         }`}
                       >
                         <FaWallet className="w-3.5 h-3.5 mr-1.5" />
@@ -583,8 +572,8 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
                          onClick={() => setActiveTab("swap")}
                          className={`flex-1 flex items-center justify-center py-2.5 px-3 text-sm font-medium rounded-lg transition-all duration-200 ${
                            activeTab === "swap" 
-                             ? "bg-gray-700 text-gray-100 shadow-sm border border-gray-600" 
-                             : "text-gray-400 hover:text-gray-300 hover:bg-gray-750"
+                             ? "bg-blue-500/20 text-blue-100 shadow-sm border border-blue-500/30" 
+                             : "text-gray-400 hover:text-blue-300 hover:bg-blue-500/10"
                          }`}
                        >
                          <FaExchangeAlt className="w-3.5 h-3.5 mr-1.5" />
@@ -594,8 +583,8 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
                         onClick={() => setActiveTab("history")}
                         className={`flex-1 flex items-center justify-center py-2.5 px-3 text-sm font-medium rounded-lg transition-all duration-200 ${
                           activeTab === "history" 
-                            ? "bg-gray-700 text-gray-100 shadow-sm border border-gray-600" 
-                            : "text-gray-400 hover:text-gray-300 hover:bg-gray-750"
+                            ? "bg-blue-500/20 text-blue-100 shadow-sm border border-blue-500/30" 
+                            : "text-gray-400 hover:text-blue-300 hover:bg-blue-500/10"
                         }`}
                       >
                         <FaDownload className="w-3.5 h-3.5 mr-1.5" />

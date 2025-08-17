@@ -277,6 +277,11 @@ if (typeof window === "undefined") {
       adminDb = getAdminFirestore();
       console.log("Admin Firestore initialized: Success");
 
+      // Enable ignoreUndefinedProperties to prevent undefined value errors
+      adminDb.settings({
+        ignoreUndefinedProperties: true
+      });
+
       adminStorage = getAdminStorage(adminApp);
       console.log("Admin Storage initialized: Success, Bucket:", adminStorage.bucket().name);
 

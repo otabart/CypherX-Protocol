@@ -184,15 +184,7 @@ const TierProgressionModal: React.FC<TierProgressionModalProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
-          style={{ 
-            zIndex: 999999999,
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0
-          }}
+          className="fixed inset-0 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm z-[9999]"
           onClick={onClose}
         >
           <motion.div
@@ -222,7 +214,7 @@ const TierProgressionModal: React.FC<TierProgressionModalProps> = ({
             </div>
 
             {/* Content */}
-            <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)] scrollbar-hide">
               {/* Current Status */}
               <div className="mb-8 p-6 bg-gradient-to-r from-blue-900/20 to-purple-900/20 rounded-xl border border-blue-500/30">
                 <div className="flex items-center justify-between mb-4">

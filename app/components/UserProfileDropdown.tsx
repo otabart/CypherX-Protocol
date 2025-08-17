@@ -5,10 +5,13 @@ import { useRouter } from "next/navigation";
 import { signOut, type Auth } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth as firebaseAuth, db } from "@/lib/firebase";
-import { useAuth, useWalletSystem } from "@/app/providers";
-import { UserCircleIcon } from "@heroicons/react/24/solid";
-import { FiAward, FiTrendingUp } from "react-icons/fi";
+import { useAuth, useWalletSystem, useVotingModal } from "@/app/providers";
+import { motion, AnimatePresence } from "framer-motion";
+import { FiAward, FiTrendingUp, FiUser, FiLogOut, FiCopy, FiGift, FiInfo } from "react-icons/fi";
+import { HiOutlineSparkles, HiOutlineCog } from "react-icons/hi";
 import Link from "next/link";
+import { createPortal } from "react-dom";
+import TierProgressionModal from "./TierProgressionModal";
 
 const auth: Auth = firebaseAuth as Auth;
 
@@ -16,6 +19,7 @@ const UserProfileDropdown: React.FC = () => {
   const router = useRouter();
   const { user } = useAuth();
   const { selfCustodialWallet } = useWalletSystem();
+  const { setShowVotingModal, setSelectedIndexForVoting } = useVotingModal();
   const walletAddress = selfCustodialWallet?.address;
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [points, setPoints] = useState<number | null>(null);
@@ -27,6 +31,8 @@ const UserProfileDropdown: React.FC = () => {
   const [referralCode, setReferralCode] = useState<string>("");
   const [referralEarnings, setReferralEarnings] = useState<number>(0);
   const [referralCount, setReferralCount] = useState<number>(0);
+  const [copied, setCopied] = useState(false);
+  const [showTierModal, setShowTierModal] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
 
   // Fetch user stats from API
@@ -48,37 +54,37 @@ const UserProfileDropdown: React.FC = () => {
         if (statsResponse.ok) {
           const statsData = await statsResponse.json();
           setPoints(statsData.points || 0);
-                       setTier(statsData.tier || 'normie');
+          setTier(statsData.tier || 'normie');
           setBadges(statsData.badges || []);
           setProgress(statsData.progress || 0);
           setNextTier(statsData.nextTier);
           setPointsToNextTier(statsData.pointsToNextTier || 0);
-                 } else {
-           // Fallback to old method
-           const userDocRef = doc(db, "users", user.uid);
-           const userDoc = await getDoc(userDocRef);
+        } else {
+          // Fallback to old method
+          const userDocRef = doc(db, "users", user.uid);
+          const userDoc = await getDoc(userDocRef);
 
-           if (userDoc.exists()) {
-             const userData = userDoc.data();
-             setPoints(userData.points ?? 0);
-             setTier(userData.tier ?? 'normie');
-             setBadges(userData.badges ?? []);
-             setReferralCode(userData.referralCode ?? "");
-             setReferralEarnings(userData.referralEarnings ?? 0);
-             setReferralCount(userData.referralCount ?? 0);
-           } else {
-             setPoints(0);
-             setTier('normie');
-             setBadges([]);
-             setReferralCode("");
-             setReferralEarnings(0);
-             setReferralCount(0);
-           }
-         }
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            setPoints(userData.points ?? 0);
+            setTier(userData.tier ?? 'normie');
+            setBadges(userData.badges ?? []);
+            setReferralCode(userData.referralCode ?? "");
+            setReferralEarnings(userData.referralEarnings ?? 0);
+            setReferralCount(userData.referralCount ?? 0);
+          } else {
+            setPoints(0);
+            setTier('normie');
+            setBadges([]);
+            setReferralCode("");
+            setReferralEarnings(0);
+            setReferralCount(0);
+          }
+        }
       } catch (error) {
         console.error("Error fetching user stats:", error);
         setPoints(0);
-                 setTier('normie');
+        setTier('normie');
         setBadges([]);
       }
     };
@@ -118,184 +124,303 @@ const UserProfileDropdown: React.FC = () => {
     return colors[tier as keyof typeof colors] || '#6B7280';
   };
 
+  const getTierGradient = (tier: string) => {
+    const gradients = {
+      normie: 'from-gray-500 to-gray-600',
+      degen: 'from-red-500 to-red-600',
+      alpha: 'from-green-500 to-green-600',
+      mogul: 'from-yellow-500 to-yellow-600',
+      titan: 'from-purple-500 to-purple-600'
+    };
+    return gradients[tier as keyof typeof gradients] || 'from-gray-500 to-gray-600';
+  };
+
+  const copyReferralCode = async () => {
+    if (referralCode) {
+      await navigator.clipboard.writeText(referralCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleVoteAndEarn = () => {
+    setShowAccountModal(false); // Close the profile dropdown
+    setSelectedIndexForVoting('CDEX'); // Default to CDEX index
+    setShowVotingModal(true);
+  };
+
+  const [buttonRef, setButtonRef] = useState<HTMLButtonElement | null>(null);
+
   return (
     <div className="relative">
-      <button
+      <motion.button
+        ref={setButtonRef}
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
         onClick={() => setShowAccountModal((prev) => !prev)}
-        className="flex items-center focus:outline-none focus:ring-2 focus:ring-blue-500/50 rounded-md hover:scale-105 transform"
+        className="flex items-center focus:outline-none focus:ring-2 focus:ring-blue-500/50 rounded-full hover:scale-105 transform transition-all duration-200"
         aria-label={user ? "Account" : "Sign In"}
       >
-        <div className="w-8 h-8 rounded-full bg-blue-500/20 border border-blue-500/30 flex items-center justify-center transition-transform duration-300">
-          <UserCircleIcon className="w-5 h-5 text-gray-100 hover:text-blue-300 transition-colors" />
+        <div className="relative w-9 h-9 rounded-full bg-blue-400/20 backdrop-blur-sm flex items-center justify-center transition-all duration-300 hover:bg-blue-400/30 shadow-lg border border-blue-400/50 hover:border-blue-400">
+          <FiUser className="w-4 h-4 text-blue-400" />
+          {user && (
+            <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-gray-900"></div>
+          )}
         </div>
-      </button>
-      {showAccountModal && (
-        <div
-          ref={modalRef}
-          className="absolute right-0 mt-3 w-80 bg-gray-900/80 backdrop-blur-sm rounded-lg p-4 transition-all duration-300 ease-out"
-          style={{
-            opacity: showAccountModal ? 1 : 0,
-            transform: showAccountModal ? "translateY(0)" : "translateY(-10px)",
-          }}
-        >
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              {/* Wallet connection handled by XWallet in header */}
-            </div>
-            
-            {/* Enhanced Profile Section */}
-            <div className="bg-gray-800 p-4 rounded-lg border border-blue-500/50">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs uppercase font-medium text-blue-300">
-                  Profile
-                </span>
-                <div className="flex items-center gap-1">
-                  <div 
-                    className="w-4 h-4 rounded-full"
-                    style={{ backgroundColor: getTierColor(tier) }}
-                  ></div>
-                  <span className="text-xs text-gray-400 capitalize">{tier}</span>
-                </div>
-              </div>
-              
-              {/* Points Display */}
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <FiTrendingUp className="w-4 h-4 text-blue-400" />
-                  <span className="text-sm font-semibold text-gray-100">Points</span>
-                </div>
-                <span className="text-sm font-semibold text-blue-300">
-                  {points !== null ? `${points.toLocaleString()} pts` : "—"}
-                </span>
-              </div>
+      </motion.button>
 
-              {/* Progress Bar */}
-              {nextTier && (
-                <div className="mb-3">
-                  <div className="flex justify-between text-xs text-gray-400 mb-1">
-                    <span>Progress to {nextTier}</span>
-                    <span>{progress}%</span>
+      {showAccountModal && buttonRef && createPortal(
+        <AnimatePresence>
+          <motion.div
+            initial={{ opacity: 0, y: -10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.95 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            ref={modalRef}
+            className="fixed w-96 bg-gray-900/95 backdrop-blur-xl rounded-2xl border border-gray-700/50 shadow-2xl overflow-hidden z-[9999]"
+            style={{
+              top: buttonRef.getBoundingClientRect().bottom + 12,
+              right: window.innerWidth - buttonRef.getBoundingClientRect().right,
+            }}
+          >
+            {/* Header with gradient background */}
+            <div className={`bg-gradient-to-r ${getTierGradient(tier)} p-6 relative overflow-hidden`}>
+              <div className="absolute inset-0 bg-black/20"></div>
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-12 h-12 rounded-full bg-blue-400/20 backdrop-blur-sm flex items-center justify-center">
+                      <FiUser className="w-6 h-6 text-blue-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-white font-semibold text-lg">
+                        {user ? 'My Profile' : 'Welcome'}
+                      </h3>
+                      <p className="text-white/80 text-sm capitalize">
+                        {tier} • {points !== null ? `${points.toLocaleString()} pts` : "—"}
+                      </p>
+                    </div>
                   </div>
-                  <div className="w-full bg-gray-700 rounded-full h-1.5">
-                    <div
-                      className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
-                      style={{ width: `${progress}%` }}
+                  <div className="flex items-center space-x-2">
+                    <div 
+                      className="w-4 h-4 rounded-full shadow-lg"
+                      style={{ backgroundColor: getTierColor(tier) }}
                     ></div>
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    {pointsToNextTier} points to next tier
+                </div>
+
+                {/* Progress to next tier */}
+                {nextTier && (
+                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-white/90 text-sm font-medium">Progress to {nextTier}</span>
+                      <span className="text-white/90 text-sm font-semibold">{progress}%</span>
+                    </div>
+                    <div className="w-full bg-white/20 rounded-full h-2 overflow-hidden">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${progress}%` }}
+                        transition={{ duration: 0.8, ease: "easeOut" }}
+                        className="bg-white h-2 rounded-full shadow-sm"
+                      ></motion.div>
+                    </div>
+                    <p className="text-white/70 text-xs mt-2">
+                      {pointsToNextTier} points to next tier
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-6">
+              {/* Stats Grid */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                      <FiTrendingUp className="w-5 h-5 text-blue-400" />
+                    </div>
+                                         <div>
+                       <div className="flex items-center gap-2">
+                         <p className="text-gray-400 text-xs">Total Points</p>
+                         <button
+                           onClick={() => setShowTierModal(true)}
+                           className="p-1 hover:bg-blue-500/20 rounded transition-colors"
+                           title="View Tier Progression"
+                         >
+                           <FiInfo className="w-3 h-3 text-blue-400" />
+                         </button>
+                       </div>
+                       <p className="text-white font-semibold text-lg">
+                         {points !== null ? points.toLocaleString() : "—"}
+                       </p>
+                     </div>
                   </div>
                 </div>
-              )}
 
-              {/* Badges Display */}
-              {badges.length > 0 && (
-                <div className="mb-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <FiAward className="w-4 h-4 text-yellow-400" />
-                    <span className="text-sm font-semibold text-gray-100">Badges</span>
-                    <span className="text-xs text-gray-400">({badges.length})</span>
+                <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 rounded-lg bg-yellow-500/20 flex items-center justify-center">
+                      <FiAward className="w-5 h-5 text-yellow-400" />
+                    </div>
+                    <div>
+                      <p className="text-gray-400 text-xs">Badges</p>
+                      <p className="text-white font-semibold text-lg">{badges.length}</p>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-1">
-                    {badges.slice(0, 3).map((badge, index) => (
-                      <div
+                </div>
+              </div>
+
+              {/* Badges Section */}
+              {badges.length > 0 && (
+                <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <HiOutlineSparkles className="w-5 h-5 text-yellow-400" />
+                    <h4 className="text-white font-medium">Recent Badges</h4>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {badges.slice(0, 4).map((badge, index) => (
+                      <motion.div
                         key={index}
-                        className="px-2 py-1 bg-yellow-500/20 text-yellow-300 text-xs rounded-full border border-yellow-500/30"
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: index * 0.1 }}
+                        className="px-3 py-1.5 bg-yellow-500/20 text-yellow-300 text-xs rounded-full border border-yellow-500/30 font-medium"
                       >
                         {badge.replace(/_/g, ' ')}
-                      </div>
+                      </motion.div>
                     ))}
-                    {badges.length > 3 && (
-                      <div className="px-2 py-1 bg-gray-600/50 text-gray-300 text-xs rounded-full">
-                        +{badges.length - 3} more
+                    {badges.length > 4 && (
+                      <div className="px-3 py-1.5 bg-gray-600/50 text-gray-300 text-xs rounded-full font-medium">
+                        +{badges.length - 4} more
                       </div>
                     )}
                   </div>
                 </div>
               )}
 
-                             {/* Referral Code */}
-               <div className="flex items-center justify-between">
-                 <span className="text-sm font-semibold text-gray-100">
-                   Referral Code
-                 </span>
-                 <div className="flex items-center">
-                   <span className="text-sm font-semibold text-gray-100 mr-2">
-                     {referralCode || "—"}
-                   </span>
-                   {referralCode && (
-                     <button
-                       onClick={() => navigator.clipboard.writeText(referralCode)}
-                       className="px-2 py-0.5 bg-blue-500/20 text-blue-300 text-xs rounded hover:bg-blue-500/40 transition-colors duration-150"
-                     >
-                       Copy
-                     </button>
-                   )}
-                 </div>
-               </div>
-               
-               {/* Referral Stats */}
-               {referralCount > 0 && (
-                 <div className="flex items-center justify-between mt-2">
-                   <span className="text-xs text-gray-400">Referrals</span>
-                   <span className="text-xs text-gray-400">{referralCount} users</span>
-                 </div>
-               )}
-               
-               {referralEarnings > 0 && (
-                 <div className="flex items-center justify-between">
-                   <span className="text-xs text-gray-400">Referral Earnings</span>
-                   <span className="text-xs text-green-400">{referralEarnings} pts</span>
-                 </div>
-               )}
-            </div>
-            <hr className="border-blue-500/30" />
-            <ul className="space-y-2">
-              
-              <li>
-                <Link
-                  href="/vote"
-                  className="block px-2 py-1 text-sm text-gray-100 font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                  onClick={() => setShowAccountModal(false)}
+              {/* Referral Section */}
+              {referralCode && (
+                <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <FiGift className="w-5 h-5 text-green-400" />
+                    <h4 className="text-white font-medium">Referral Program</h4>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-400 text-sm">Your Code</span>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-white font-mono text-sm bg-gray-700/50 px-2 py-1 rounded">
+                          {referralCode}
+                        </span>
+                        <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={copyReferralCode}
+                          className="p-1.5 bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/40 transition-colors"
+                        >
+                          <FiCopy className="w-4 h-4" />
+                        </motion.button>
+                      </div>
+                    </div>
+                    
+                    {copied && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="text-green-400 text-xs text-center"
+                      >
+                        Copied to clipboard!
+                      </motion.div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-4 pt-2">
+                      <div className="text-center">
+                        <p className="text-gray-400 text-xs">Referrals</p>
+                        <p className="text-white font-semibold">{referralCount}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-gray-400 text-xs">Earnings</p>
+                        <p className="text-green-400 font-semibold">{referralEarnings} pts</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Navigation Links */}
+              <div className="space-y-2">
+                <button
+                  onClick={handleVoteAndEarn}
+                  className="flex items-center space-x-3 w-full p-3 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-xl transition-all duration-200 group"
                 >
-                  Vote
-                </Link>
-              </li>
-              <li>
+                  <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center group-hover:bg-blue-500/30 transition-colors">
+                    <FiTrendingUp className="w-4 h-4 text-blue-400" />
+                  </div>
+                  <span className="font-medium">Vote & Earn</span>
+                </button>
+
                 <Link
                   href="/account"
-                  className="block px-2 py-1 text-sm text-gray-100 font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  className="flex items-center space-x-3 w-full p-3 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-xl transition-all duration-200 group"
                   onClick={() => setShowAccountModal(false)}
                 >
-                  Account Settings
+                  <div className="w-8 h-8 rounded-lg bg-gray-500/20 flex items-center justify-center group-hover:bg-gray-500/30 transition-colors">
+                    <HiOutlineCog className="w-4 h-4 text-gray-400" />
+                  </div>
+                  <span className="font-medium">Account Settings</span>
                 </Link>
-              </li>
-            </ul>
-            <hr className="border-blue-500/30" />
-            <div className="text-center text-xs text-gray-400">
-              Powered by Base
-            </div>
-            <hr className="border-blue-500/30" />
-            <div>
-              {user ? (
-                <button
-                  onClick={handleSignOut}
-                  className="w-full text-left px-2 py-2 text-sm text-gray-100 font-sans font-normal hover:text-red-400 hover:bg-red-500/20 rounded-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-red-500/50"
-                >
-                  Logout
-                </button>
-              ) : (
-                <Link
-                  href="/login"
-                  className="block px-2 py-2 text-sm text-gray-100 font-sans font-normal hover:bg-blue-500/20 hover:text-blue-300 rounded-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                  onClick={() => setShowAccountModal(false)}
-                >
-                  Login / Sign Up
-                </Link>
-              )}
-            </div>
-          </div>
-        </div>
+              </div>
+
+              {/* Logout Section */}
+              <div className="pt-4 border-t border-gray-700/50">
+                {user ? (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleSignOut}
+                    className="flex items-center space-x-3 w-full p-3 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-all duration-200 group"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center group-hover:bg-red-500/30 transition-colors">
+                      <FiLogOut className="w-4 h-4 text-red-400" />
+                    </div>
+                    <span className="font-medium">Sign Out</span>
+                  </motion.button>
+                ) : (
+                  <Link
+                    href="/login"
+                    className="flex items-center space-x-3 w-full p-3 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded-xl transition-all duration-200 group"
+                    onClick={() => setShowAccountModal(false)}
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center group-hover:bg-blue-500/30 transition-colors">
+                      <FiUser className="w-4 h-4 text-blue-400" />
+                    </div>
+                    <span className="font-medium">Sign In</span>
+                  </Link>
+                )}
+              </div>
+
+                             {/* Footer */}
+               <div className="text-center pt-4">
+                 <p className="text-gray-500 text-xs">Powered by Base</p>
+               </div>
+             </div>
+           </motion.div>
+         </AnimatePresence>
+               , document.body
+        )}
+      
+      {/* Tier Progression Modal */}
+      {showTierModal && createPortal(
+        <TierProgressionModal 
+          isOpen={showTierModal}
+          onClose={() => setShowTierModal(false)}
+          currentTier={tier}
+          currentPoints={points || 0}
+        />
+      , document.body
       )}
     </div>
   );

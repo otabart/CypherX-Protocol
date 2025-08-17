@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { MagnifyingGlassIcon, XMarkIcon } from "@heroicons/react/24/outline";
-import { FaEthereum, FaWallet, FaExchangeAlt, FaCube, FaCoins } from "react-icons/fa";
+import { FaWallet, FaExchangeAlt, FaCube, FaCoins, FaNewspaper, FaChartLine, FaCalendar } from "react-icons/fa";
 import { SiEthereum } from "react-icons/si";
 import debounce from "lodash/debounce";
 
@@ -85,11 +85,52 @@ interface BlockSearchResult {
   gasLimit?: string;
 }
 
+interface NewsSearchResult {
+  type: "news";
+  id: string;
+  title: string;
+  content: string;
+  author: string;
+  source: string;
+  publishedAt: string;
+  slug: string;
+  thumbnailUrl?: string;
+}
+
+interface IndexSearchResult {
+  type: "index";
+  indexName: string;
+  tokenAddress: string;
+  tokenSymbol: string;
+  tokenName: string;
+  weight: number;
+  marketCap?: number;
+  priceUsd?: string;
+}
+
+interface CalendarEventSearchResult {
+  type: "calendar";
+  id: string;
+  projectId: string;
+  projectName: string;
+  projectTicker: string;
+  title: string;
+  description: string;
+  date: string;
+  time: string;
+  eventType: string;
+  status: string;
+  votes: number;
+}
+
 interface SearchResults {
   tokens: TokenSearchResult[];
   wallets: WalletSearchResult[];
   transactions: TransactionSearchResult[];
   blocks: BlockSearchResult[];
+  news: NewsSearchResult[];
+  indexes: IndexSearchResult[];
+  calendar: CalendarEventSearchResult[];
 }
 
 interface GlobalSearchProps {
@@ -109,7 +150,10 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
     tokens: [],
     wallets: [],
     transactions: [],
-    blocks: []
+    blocks: [],
+    news: [],
+    indexes: [],
+    calendar: []
   });
   const [isLoading, setIsLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
@@ -118,12 +162,14 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
   
   const searchRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const [isMouseInResults, setIsMouseInResults] = useState(false);
 
   // Debounced search function
   const debouncedSearch = useRef(
     debounce(async (searchQuery: string) => {
       if (!searchQuery || searchQuery.length < 2) {
-        setResults({ tokens: [], wallets: [], transactions: [], blocks: [] });
+        setResults({ tokens: [], wallets: [], transactions: [], blocks: [], news: [], indexes: [], calendar: [] });
         setIsLoading(false);
         return;
       }
@@ -135,7 +181,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
         const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
         if (response.ok) {
           const data = await response.json();
-          setResults(data.results || { tokens: [], wallets: [], transactions: [], blocks: [] });
+          setResults(data.results || { tokens: [], wallets: [], transactions: [], blocks: [], news: [], indexes: [], calendar: [] });
         } else {
           setError("Search failed");
         }
@@ -199,6 +245,79 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Handle mouse enter/leave for results container
+  useEffect(() => {
+    const handleMouseEnter = () => {
+      setIsMouseInResults(true);
+    };
+
+    const handleMouseLeave = () => {
+      setIsMouseInResults(false);
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const resultsContainer = resultsRef.current;
+      if (resultsContainer) {
+        const rect = resultsContainer.getBoundingClientRect();
+        const isInResults = e.clientX >= rect.left && e.clientX <= rect.right && 
+                           e.clientY >= rect.top && e.clientY <= rect.bottom;
+        setIsMouseInResults(isInResults);
+      }
+    };
+
+    const resultsContainer = resultsRef.current;
+    if (resultsContainer && showResults) {
+      resultsContainer.addEventListener('mouseenter', handleMouseEnter);
+      resultsContainer.addEventListener('mouseleave', handleMouseLeave);
+      document.addEventListener('mousemove', handleMouseMove);
+    }
+
+    return () => {
+      if (resultsContainer) {
+        resultsContainer.removeEventListener('mouseenter', handleMouseEnter);
+        resultsContainer.removeEventListener('mouseleave', handleMouseLeave);
+      }
+      document.removeEventListener('mousemove', handleMouseMove);
+    };
+  }, [showResults]);
+
+  // Prevent page scroll when mouse is in results area
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      if (isMouseInResults && showResults) {
+        const resultsContainer = resultsRef.current;
+        if (resultsContainer) {
+          const scrollTop = resultsContainer.scrollTop;
+          const scrollHeight = resultsContainer.scrollHeight;
+          const clientHeight = resultsContainer.clientHeight;
+          
+          // Check if we can scroll in the results container
+          const canScrollUp = scrollTop > 0;
+          const canScrollDown = scrollTop < scrollHeight - clientHeight;
+          
+          // Prevent page scroll if we can scroll within the results container
+          if ((e.deltaY > 0 && canScrollDown) || (e.deltaY < 0 && canScrollUp)) {
+            e.preventDefault();
+            
+            // Manually scroll the results container
+            const newScrollTop = scrollTop + e.deltaY;
+            resultsContainer.scrollTop = Math.max(0, Math.min(newScrollTop, scrollHeight - clientHeight));
+          }
+        }
+      }
+    };
+
+    if (isMouseInResults && showResults) {
+      document.addEventListener('wheel', handleWheel, { passive: false });
+    }
+
+    return () => {
+      document.removeEventListener('wheel', handleWheel);
+    };
+  }, [isMouseInResults, showResults]);
+
+
+
   // Get result by index across all result types
   const getResultByIndex = (index: number) => {
     let currentIndex = 0;
@@ -224,6 +343,24 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
     // Check blocks
     if (index < currentIndex + results.blocks.length) {
       return { type: "block", result: results.blocks[index - currentIndex] };
+    }
+    currentIndex += results.blocks.length;
+    
+    // Check news
+    if (index < currentIndex + results.news.length) {
+      return { type: "news", result: results.news[index - currentIndex] };
+    }
+    currentIndex += results.news.length;
+    
+    // Check indexes
+    if (index < currentIndex + results.indexes.length) {
+      return { type: "index", result: results.indexes[index - currentIndex] };
+    }
+    currentIndex += results.indexes.length;
+    
+    // Check calendar
+    if (index < currentIndex + results.calendar.length) {
+      return { type: "calendar", result: results.calendar[index - currentIndex] };
     }
     
     return null;
@@ -252,6 +389,15 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
       case "block":
         router.push(`/explorer/latest/block/${result.number}`);
         break;
+      case "news":
+        router.push(`/base-chain-news/${result.slug}`);
+        break;
+      case "index":
+        router.push(`/token-scanner/${result.tokenAddress}/chart`);
+        break;
+      case "calendar":
+        router.push(`/calendar`);
+        break;
     }
     
     setShowResults(false);
@@ -260,7 +406,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
   };
 
   // Get total results count
-  const totalResults = results.tokens.length + results.wallets.length + results.transactions.length + results.blocks.length;
+  const totalResults = results.tokens.length + results.wallets.length + results.transactions.length + results.blocks.length + results.news.length + results.indexes.length + results.calendar.length;
 
   // Format number for display
   const formatNumber = (num: number | undefined) => {
@@ -282,25 +428,33 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
         return <FaExchangeAlt className="w-4 h-4 text-green-400" />;
       case "block":
         return <FaCube className="w-4 h-4 text-purple-400" />;
+      case "news":
+        return <FaNewspaper className="w-4 h-4 text-orange-400" />;
+      case "index":
+        return <FaChartLine className="w-4 h-4 text-indigo-400" />;
+      case "calendar":
+        return <FaCalendar className="w-4 h-4 text-pink-400" />;
       default:
         return <SiEthereum className="w-4 h-4 text-gray-400" />;
     }
   };
 
-  // Get result type label
-  const getResultTypeLabel = (type: string) => {
-    switch (type) {
-      case "token":
-        return "Token";
-      case "wallet":
-        return "Wallet";
-      case "transaction":
-        return "Transaction";
-      case "block":
-        return "Block";
-      default:
-        return "Unknown";
-    }
+
+
+  // Highlight search terms in text
+  const highlightSearchTerm = (text: string, searchTerm: string) => {
+    if (!searchTerm || !text) return text;
+    
+    const regex = new RegExp(`(${searchTerm})`, 'gi');
+    const parts = text.split(regex);
+    
+    return parts.map((part, index) => 
+      regex.test(part) ? (
+        <span key={index} className="bg-yellow-500/30 text-yellow-200 font-medium">
+          {part}
+        </span>
+      ) : part
+    );
   };
 
   return (
@@ -322,7 +476,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
               setShowResults(true);
             }
           }}
-          className={`w-full pl-12 pr-12 py-3 text-sm text-gray-100 bg-gray-800/90 backdrop-blur-xl border border-gray-600/50 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all duration-300 placeholder-gray-400 shadow-lg group-hover:border-blue-400/50 ${
+          className={`w-full pl-12 pr-12 py-2 text-sm text-gray-100 bg-gray-900/95 backdrop-blur-xl border border-gray-700/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all duration-300 placeholder-gray-400 shadow-lg group-hover:border-blue-400/50 ${
             variant === "homepage" ? "bg-gray-900/80" : ""
           }`}
         />
@@ -363,12 +517,12 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
       <AnimatePresence>
         {showResults && (query.length >= 2 || totalResults > 0) && (
           <motion.div
-            className={`absolute top-full left-0 right-0 mt-2 bg-gray-800/95 backdrop-blur-xl border border-blue-500/30 rounded-xl shadow-2xl max-h-96 overflow-y-auto z-50 scrollbar-hide ${
-              variant === "homepage" ? "w-full" : "w-full max-w-2xl"
+            className={`absolute top-full left-0 right-0 mt-2 bg-gray-800/95 backdrop-blur-xl border border-blue-500/30 rounded-xl shadow-2xl overflow-hidden flex flex-col ${
+              variant === "homepage" ? "w-full max-h-[50vh]" : "w-full max-w-2xl max-h-[60vh]"
             }`}
             style={{
-              scrollbarWidth: 'none',
-              msOverflowStyle: 'none'
+              top: variant === "header" ? "calc(100% + 12px)" : "100%",
+              zIndex: variant === "header" ? 999999 : 99999
             }}
             initial={{ opacity: 0, y: -10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -397,248 +551,462 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
               </div>
             )}
 
-            {/* Results */}
+            {/* Results Summary */}
             {!isLoading && !error && totalResults > 0 && (
-              <div className="py-2">
-                {/* Tokens */}
-                {results.tokens.length > 0 && (
-                  <div className="mb-4">
-                    <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 sticky top-0 bg-gray-800/95 backdrop-blur-sm z-10">
-                      Tokens ({results.tokens.length})
-                    </div>
-                    <div className="max-h-64 overflow-y-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                      {results.tokens.map((token, index) => {
-                        const globalIndex = index;
-                        const isSelected = selectedIndex === globalIndex;
-                        
-                        return (
-                          <motion.div
-                            key={token.address}
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: index * 0.05 }}
-                            className={`p-4 hover:bg-blue-500/20 cursor-pointer border-b border-gray-700/50 last:border-b-0 transition-all duration-200 ${
-                              isSelected ? "bg-blue-500/20" : ""
-                            }`}
-                            onClick={() => handleResultClick({ type: "token", result: token })}
-                          >
-                            <div className="flex items-start space-x-3">
-                              {/* Token Icon */}
-                              <div className="relative flex-shrink-0">
-                                {token.imageUrl ? (
-                                  <img
-                                    src={token.imageUrl}
-                                    alt={token.name}
-                                    className="w-10 h-10 rounded-full border border-gray-600"
-                                    onError={(e) => {
-                                      e.currentTarget.src = `https://ui-avatars.com/api/?name=${token.symbol}&background=1f2937&color=60a5fa&size=40`;
-                                    }}
-                                  />
-                                ) : (
-                                  <img
-                                    src={`https://ui-avatars.com/api/?name=${token.symbol}&background=1f2937&color=60a5fa&size=40`}
-                                    alt={token.name}
-                                    className="w-10 h-10 rounded-full border border-gray-600"
-                                  />
-                                )}
-                                <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-gray-800"></div>
-                              </div>
-                              
-                              {/* Token Info - Inline Layout */}
-                              <div className="flex-1 min-w-0">
-                                {/* First Row: Symbol, Name, Price */}
-                                <div className="flex items-center justify-between mb-2">
-                                  <div className="flex items-center space-x-2 min-w-0">
-                                    <span className="font-bold text-gray-200 truncate">{token.symbol}</span>
-                                    <span className="text-sm text-gray-400 truncate">({token.name})</span>
-                                  </div>
-                                  <div className="flex items-center space-x-2 text-sm">
-                                    <span className="text-gray-300">
-                                      ${token.priceUsd ? parseFloat(token.priceUsd).toFixed(6) : "0.000000"}
-                                    </span>
-                                    {token.priceChange?.h24 && (
-                                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                        parseFloat(token.priceChange.h24.toString()) > 0 
-                                          ? 'bg-green-500/20 text-green-400' 
-                                          : 'bg-red-500/20 text-red-400'
-                                      }`}>
-                                        {parseFloat(token.priceChange.h24.toString()) > 0 ? '+' : ''}{parseFloat(token.priceChange.h24.toString()).toFixed(2)}%
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                                
-                                {/* Second Row: Market Cap, Volume, Transactions */}
-                                <div className="flex items-center justify-between mb-2">
-                                  <div className="flex items-center space-x-4 text-xs text-gray-400">
-                                    <span>MC: ${formatNumber(token.marketCap)}</span>
-                                    {token.volume?.h24 && (
-                                      <span>Vol: ${formatNumber(token.volume.h24)}</span>
-                                    )}
-                                    {token.txns?.h24 && (
-                                      <span>{token.txns.h24.buys + token.txns.h24.sells} txns</span>
-                                    )}
-                                  </div>
-                                </div>
-                                
-                                {/* Third Row: Enhanced Metrics */}
-                                {token.metrics && (
-                                  <div className="flex flex-wrap gap-2">
-                                    {/* Buy ratio indicator */}
-                                    {token.metrics.buyRatio24h > 0 && (
-                                      <span className={`text-xs px-2 py-1 rounded font-medium ${
-                                        token.metrics.buyRatio24h > 0.6 ? 'bg-green-500/20 text-green-400' : 
-                                        token.metrics.buyRatio24h > 0.4 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'
-                                      }`}>
-                                        Buy: {(token.metrics.buyRatio24h * 100).toFixed(0)}%
-                                      </span>
-                                    )}
-                                    {/* Volume change */}
-                                    {token.metrics.volumeChange24h !== 0 && (
-                                      <span className={`text-xs px-2 py-1 rounded font-medium ${
-                                        token.metrics.volumeChange24h > 0 ? 'bg-blue-500/20 text-blue-400' : 'bg-orange-500/20 text-orange-400'
-                                      }`}>
-                                        Vol: {token.metrics.volumeChange24h > 0 ? '+' : ''}{token.metrics.volumeChange24h.toFixed(1)}%
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Wallets */}
-                {results.wallets.length > 0 && (
-                  <div className="mb-4">
-                    <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 sticky top-0 bg-gray-800/95 backdrop-blur-sm z-10">
-                      Wallets ({results.wallets.length})
-                    </div>
-                    <div className="max-h-48 overflow-y-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                      {results.wallets.map((wallet, index) => {
-                        const globalIndex = results.tokens.length + index;
-                        const isSelected = selectedIndex === globalIndex;
-                        
-                        return (
-                          <motion.div
-                            key={wallet.address}
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: index * 0.05 }}
-                            className={`p-3 hover:bg-blue-500/20 cursor-pointer border-b border-gray-700/50 last:border-b-0 transition-all duration-200 ${
-                              isSelected ? "bg-blue-500/20" : ""
-                            }`}
-                            onClick={() => handleResultClick({ type: "wallet", result: wallet })}
-                          >
-                            <div className="flex items-center space-x-3">
-                              <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
-                                {getResultIcon("wallet")}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="font-mono text-sm text-gray-200 truncate">
-                                  {wallet.address}
-                                </div>
-                                <div className="text-xs text-gray-400 mt-1">
-                                  {wallet.balance ? `${parseFloat(wallet.balance).toFixed(4)} ETH` : "0 ETH"} • {wallet.transactionCount || 0} txs
-                                </div>
-                              </div>
-                            </div>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Transactions */}
-                {results.transactions.length > 0 && (
-                  <div className="mb-4">
-                    <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 sticky top-0 bg-gray-800/95 backdrop-blur-sm z-10">
-                      Transactions ({results.transactions.length})
-                    </div>
-                    <div className="max-h-48 overflow-y-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                      {results.transactions.map((tx, index) => {
-                        const globalIndex = results.tokens.length + results.wallets.length + index;
-                        const isSelected = selectedIndex === globalIndex;
-                        
-                        return (
-                          <motion.div
-                            key={tx.hash}
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: index * 0.05 }}
-                            className={`p-3 hover:bg-blue-500/20 cursor-pointer border-b border-gray-700/50 last:border-b-0 transition-all duration-200 ${
-                              isSelected ? "bg-blue-500/20" : ""
-                            }`}
-                            onClick={() => handleResultClick({ type: "transaction", result: tx })}
-                          >
-                            <div className="flex items-center space-x-3">
-                              <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center">
-                                {getResultIcon("transaction")}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="font-mono text-sm text-gray-200 truncate">
-                                  {tx.hash.slice(0, 10)}...{tx.hash.slice(-8)}
-                                </div>
-                                <div className="text-xs text-gray-400 mt-1">
-                                  Block {tx.blockNumber} • {tx.status === 1 ? "Success" : "Failed"}
-                                </div>
-                              </div>
-                            </div>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Blocks */}
-                {results.blocks.length > 0 && (
-                  <div className="mb-4">
-                    <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 sticky top-0 bg-gray-800/95 backdrop-blur-sm z-10">
-                      Blocks ({results.blocks.length})
-                    </div>
-                    <div className="max-h-48 overflow-y-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                      {results.blocks.map((block, index) => {
-                        const globalIndex = results.tokens.length + results.wallets.length + results.transactions.length + index;
-                        const isSelected = selectedIndex === globalIndex;
-                        
-                        return (
-                          <motion.div
-                            key={block.number}
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: index * 0.05 }}
-                            className={`p-3 hover:bg-blue-500/20 cursor-pointer border-b border-gray-700/50 last:border-b-0 transition-all duration-200 ${
-                              isSelected ? "bg-blue-500/20" : ""
-                            }`}
-                            onClick={() => handleResultClick({ type: "block", result: block })}
-                          >
-                            <div className="flex items-center space-x-3">
-                              <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center">
-                                {getResultIcon("block")}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="font-semibold text-gray-200">
-                                  Block #{block.number}
-                                </div>
-                                <div className="text-xs text-gray-400 mt-1">
-                                  {block.transactions || 0} transactions • {block.timestamp ? new Date(block.timestamp).toLocaleString() : "Unknown time"}
-                                </div>
-                              </div>
-                            </div>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+              <div className="px-4 py-2 bg-gray-700/30 border-b border-gray-600/50 sticky top-0 z-20">
+                <div className="text-xs text-gray-400">
+                  Found {totalResults} result{totalResults !== 1 ? 's' : ''} for "{query}"
+                </div>
               </div>
             )}
+
+            {/* Results Container */}
+            <div 
+              ref={resultsRef}
+              className={`overflow-y-auto pr-2 scrollbar-hide flex-1 transition-all duration-200 ${
+                variant === "homepage" ? "min-h-0" : "max-h-[400px]"
+              } ${isMouseInResults ? 'ring-1 ring-blue-400/30' : ''}`}
+              style={{
+                scrollBehavior: 'smooth',
+                overscrollBehavior: 'contain'
+              }}
+            >
+              {/* Results */}
+              {!isLoading && !error && totalResults > 0 && (
+                <div className="py-2">
+                 {/* Tokens */}
+                 {results.tokens.length > 0 && (
+                   <div className="mb-2">
+                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 sticky top-0 bg-gray-800/95 backdrop-blur-sm z-10">
+                       Tokens ({results.tokens.length})
+                     </div>
+                     <div>
+                       {results.tokens.map((token, index) => {
+                         const globalIndex = index;
+                         const isSelected = selectedIndex === globalIndex;
+                         
+                         return (
+                           <motion.div
+                             key={token.address}
+                             initial={{ opacity: 0, x: -20 }}
+                             animate={{ opacity: 1, x: 0 }}
+                             transition={{ delay: index * 0.05 }}
+                             className={`p-3 hover:bg-blue-500/20 cursor-pointer border-b border-gray-700/50 last:border-b-0 transition-all duration-200 ${
+                               isSelected ? "bg-blue-500/20" : ""
+                             }`}
+                             onClick={() => handleResultClick({ type: "token", result: token })}
+                           >
+                             <div className="flex items-start space-x-3">
+                               {/* Token Icon */}
+                               <div className="relative flex-shrink-0">
+                                 {token.imageUrl ? (
+                                   <img
+                                     src={token.imageUrl}
+                                     alt={token.name}
+                                     className="w-10 h-10 rounded-full border border-gray-600"
+                                     onError={(e) => {
+                                       e.currentTarget.src = `https://ui-avatars.com/api/?name=${token.symbol}&background=1f2937&color=60a5fa&size=40`;
+                                     }}
+                                   />
+                                 ) : (
+                                   <img
+                                     src={`https://ui-avatars.com/api/?name=${token.symbol}&background=1f2937&color=60a5fa&size=40`}
+                                     alt={token.name}
+                                     className="w-10 h-10 rounded-full border border-gray-600"
+                                   />
+                                 )}
+                                 <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-gray-800"></div>
+                               </div>
+                               
+                               {/* Token Info - Compact Layout */}
+                               <div className="flex-1 min-w-0">
+                                 {/* First Row: Symbol, Name, and Metrics */}
+                                 <div className="flex items-center justify-between mb-2">
+                                   <div className="flex items-center space-x-2 min-w-0">
+                                     <span className="font-bold text-gray-200 truncate">{token.symbol}</span>
+                                     <span className="text-sm text-gray-400 truncate">({token.name})</span>
+                                   </div>
+                                   <div className="flex items-center space-x-2">
+                                     {token.priceChange?.h24 && (
+                                       <span className={`text-xs px-2 py-1 rounded-md font-medium ${
+                                         parseFloat(token.priceChange.h24.toString()) > 0 
+                                           ? 'bg-green-500/20 text-green-400' 
+                                           : 'bg-red-500/20 text-red-400'
+                                       }`}>
+                                         {parseFloat(token.priceChange.h24.toString()) > 0 ? '+' : ''}{parseFloat(token.priceChange.h24.toString()).toFixed(2)}%
+                                       </span>
+                                     )}
+                                     {token.metrics && token.metrics.buyRatio24h > 0 && (
+                                       <span className={`text-xs px-2 py-1 rounded-md font-medium ${
+                                         token.metrics.buyRatio24h > 0.6 ? 'bg-green-500/20 text-green-400' : 
+                                         token.metrics.buyRatio24h > 0.4 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'
+                                       }`}>
+                                         Buy: {(token.metrics.buyRatio24h * 100).toFixed(0)}%
+                                       </span>
+                                     )}
+                                     {token.metrics && token.metrics.volumeChange24h !== 0 && (
+                                       <span className={`text-xs px-2 py-1 rounded-md font-medium ${
+                                         token.metrics.volumeChange24h > 0 ? 'bg-blue-500/20 text-blue-400' : 'bg-orange-500/20 text-orange-400'
+                                       }`}>
+                                         Vol: {token.metrics.volumeChange24h > 0 ? '+' : ''}{token.metrics.volumeChange24h.toFixed(1)}%
+                                       </span>
+                                     )}
+                                   </div>
+                                 </div>
+                                 
+                                 {/* Second Row: Market Cap, Volume, Transactions */}
+                                 <div className="flex items-center justify-between">
+                                   <div className="flex items-center space-x-4 text-xs text-gray-400">
+                                     <span>MC: ${formatNumber(token.marketCap)}</span>
+                                     {token.volume?.h24 && (
+                                       <span>Vol: ${formatNumber(token.volume.h24)}</span>
+                                     )}
+                                     {token.txns?.h24 && (
+                                       <span>{token.txns.h24.buys + token.txns.h24.sells} txns</span>
+                                     )}
+                                   </div>
+                                 </div>
+                               </div>
+                             </div>
+                           </motion.div>
+                         );
+                       })}
+                     </div>
+                   </div>
+                 )}
+
+                 {/* Separator */}
+                 {results.tokens.length > 0 && (results.wallets.length > 0 || results.transactions.length > 0 || results.blocks.length > 0 || results.news.length > 0 || results.indexes.length > 0 || results.calendar.length > 0) && (
+                   <div className="py-1">
+                     <div className="border-t border-gray-700/50"></div>
+                   </div>
+                 )}
+
+                 {/* Wallets */}
+                 {results.wallets.length > 0 && (
+                   <div className="mb-2">
+                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 sticky top-0 bg-gray-800/95 backdrop-blur-sm z-10">
+                       Wallets ({results.wallets.length})
+                     </div>
+                     <div>
+                       {results.wallets.map((wallet, index) => {
+                         const globalIndex = results.tokens.length + index;
+                         const isSelected = selectedIndex === globalIndex;
+                         
+                         return (
+                           <motion.div
+                             key={wallet.address}
+                             initial={{ opacity: 0, x: -20 }}
+                             animate={{ opacity: 1, x: 0 }}
+                             transition={{ delay: index * 0.05 }}
+                             className={`p-3 hover:bg-blue-500/20 cursor-pointer border-b border-gray-700/50 last:border-b-0 transition-all duration-200 ${
+                               isSelected ? "bg-blue-500/20" : ""
+                             }`}
+                             onClick={() => handleResultClick({ type: "wallet", result: wallet })}
+                           >
+                             <div className="flex items-center space-x-3">
+                               <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
+                                 {getResultIcon("wallet")}
+                               </div>
+                               <div className="flex-1 min-w-0">
+                                 <div className="font-mono text-sm text-gray-200 truncate">
+                                   {wallet.address}
+                                 </div>
+                                 <div className="text-xs text-gray-400 mt-1">
+                                   {wallet.balance ? `${parseFloat(wallet.balance).toFixed(4)} ETH` : "0 ETH"} • {wallet.transactionCount || 0} txs
+                                 </div>
+                               </div>
+                             </div>
+                           </motion.div>
+                         );
+                       })}
+                     </div>
+                   </div>
+                 )}
+
+                 {/* Separator */}
+                 {results.wallets.length > 0 && (results.transactions.length > 0 || results.blocks.length > 0 || results.news.length > 0 || results.indexes.length > 0 || results.calendar.length > 0) && (
+                   <div className="py-1">
+                     <div className="border-t border-gray-700/50"></div>
+                   </div>
+                 )}
+
+                 {/* Transactions */}
+                 {results.transactions.length > 0 && (
+                   <div className="mb-2">
+                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 sticky top-0 bg-gray-800/95 backdrop-blur-sm z-10">
+                       Transactions ({results.transactions.length})
+                     </div>
+                     <div>
+                       {results.transactions.map((tx, index) => {
+                         const globalIndex = results.tokens.length + results.wallets.length + index;
+                         const isSelected = selectedIndex === globalIndex;
+                         
+                         return (
+                           <motion.div
+                             key={tx.hash}
+                             initial={{ opacity: 0, x: -20 }}
+                             animate={{ opacity: 1, x: 0 }}
+                             transition={{ delay: index * 0.05 }}
+                             className={`p-3 hover:bg-blue-500/20 cursor-pointer border-b border-gray-700/50 last:border-b-0 transition-all duration-200 ${
+                               isSelected ? "bg-blue-500/20" : ""
+                             }`}
+                             onClick={() => handleResultClick({ type: "transaction", result: tx })}
+                           >
+                             <div className="flex items-center space-x-3">
+                               <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center">
+                                 {getResultIcon("transaction")}
+                               </div>
+                               <div className="flex-1 min-w-0">
+                                 <div className="font-mono text-sm text-gray-200 truncate">
+                                   {tx.hash.slice(0, 10)}...{tx.hash.slice(-8)}
+                                 </div>
+                                 <div className="text-xs text-gray-400 mt-1">
+                                   Block {tx.blockNumber} • {tx.status === 1 ? "Success" : "Failed"}
+                                 </div>
+                               </div>
+                             </div>
+                           </motion.div>
+                         );
+                       })}
+                     </div>
+                   </div>
+                 )}
+
+                 {/* Separator */}
+                 {results.transactions.length > 0 && (results.blocks.length > 0 || results.news.length > 0 || results.indexes.length > 0 || results.calendar.length > 0) && (
+                   <div className="py-1">
+                     <div className="border-t border-gray-700/50"></div>
+                   </div>
+                 )}
+
+                 {/* Blocks */}
+                 {results.blocks.length > 0 && (
+                   <div className="mb-2">
+                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 sticky top-0 bg-gray-800/95 backdrop-blur-sm z-10">
+                       Blocks ({results.blocks.length})
+                     </div>
+                     <div>
+                       {results.blocks.map((block, index) => {
+                         const globalIndex = results.tokens.length + results.wallets.length + results.transactions.length + index;
+                         const isSelected = selectedIndex === globalIndex;
+                         
+                         return (
+                           <motion.div
+                             key={block.number}
+                             initial={{ opacity: 0, x: -20 }}
+                             animate={{ opacity: 1, x: 0 }}
+                             transition={{ delay: index * 0.05 }}
+                             className={`p-3 hover:bg-blue-500/20 cursor-pointer border-b border-gray-700/50 last:border-b-0 transition-all duration-200 ${
+                               isSelected ? "bg-blue-500/20" : ""
+                             }`}
+                             onClick={() => handleResultClick({ type: "block", result: block })}
+                           >
+                             <div className="flex items-center space-x-3">
+                               <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center">
+                                 {getResultIcon("block")}
+                               </div>
+                               <div className="flex-1 min-w-0">
+                                 <div className="font-semibold text-gray-200">
+                                   Block #{block.number}
+                                 </div>
+                                 <div className="text-xs text-gray-400 mt-1">
+                                   {block.transactions || 0} transactions • {block.timestamp ? new Date(block.timestamp).toLocaleString() : "Unknown time"}
+                                 </div>
+                               </div>
+                             </div>
+                           </motion.div>
+                         );
+                       })}
+                     </div>
+                   </div>
+                 )}
+
+                 {/* Separator */}
+                 {results.blocks.length > 0 && (results.news.length > 0 || results.indexes.length > 0 || results.calendar.length > 0) && (
+                   <div className="py-1">
+                     <div className="border-t border-gray-700/50"></div>
+                   </div>
+                 )}
+
+                 {/* News Articles */}
+                 {results.news.length > 0 && (
+                   <div className="mb-2">
+                                         <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 sticky top-0 bg-gray-800/95 backdrop-blur-sm z-10">
+                       News ({results.news.length})
+                     </div>
+                     <div>
+                      {results.news.map((article, index) => {
+                        const globalIndex = results.tokens.length + results.wallets.length + results.transactions.length + results.blocks.length + index;
+                        const isSelected = selectedIndex === globalIndex;
+                        
+                        return (
+                          <motion.div
+                            key={article.id}
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: index * 0.05 }}
+                            className={`p-3 hover:bg-blue-500/20 cursor-pointer border-b border-gray-700/50 last:border-b-0 transition-all duration-200 ${
+                              isSelected ? "bg-blue-500/20" : ""
+                            }`}
+                            onClick={() => handleResultClick({ type: "news", result: article })}
+                          >
+                            <div className="flex items-center space-x-3">
+                              <div className="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center">
+                                {getResultIcon("news")}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="font-semibold text-gray-200 truncate">
+                                  {highlightSearchTerm(article.title, query)}
+                                </div>
+                                <div className="text-xs text-gray-400 mt-1">
+                                  {article.author} • {article.source} • {new Date(article.publishedAt).toLocaleDateString()}
+                                </div>
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                 {/* Separator */}
+                 {results.news.length > 0 && (results.indexes.length > 0 || results.calendar.length > 0) && (
+                   <div className="py-1">
+                     <div className="border-t border-gray-700/50"></div>
+                   </div>
+                 )}
+
+                 {/* Index Data */}
+                 {results.indexes.length > 0 && (
+                   <div className="mb-2">
+                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 sticky top-0 bg-gray-800/95 backdrop-blur-sm z-10">
+                       Index Tokens ({results.indexes.length})
+                     </div>
+                     <div>
+                       {results.indexes.map((index, indexIndex) => {
+                         const globalIndex = results.tokens.length + results.wallets.length + results.transactions.length + results.blocks.length + results.news.length + indexIndex;
+                         const isSelected = selectedIndex === globalIndex;
+                         
+                         return (
+                           <motion.div
+                             key={`${index.indexName}-${index.tokenAddress}`}
+                             initial={{ opacity: 0, x: -20 }}
+                             animate={{ opacity: 1, x: 0 }}
+                             transition={{ delay: indexIndex * 0.05 }}
+                             className={`p-3 hover:bg-blue-500/20 cursor-pointer border-b border-gray-700/50 last:border-b-0 transition-all duration-200 ${
+                               isSelected ? "bg-blue-500/20" : ""
+                             }`}
+                             onClick={() => handleResultClick({ type: "index", result: index })}
+                           >
+                             <div className="flex items-start space-x-3">
+                               {/* Index Icon */}
+                               <div className="relative flex-shrink-0">
+                                 <div className="w-10 h-10 rounded-full bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30">
+                                   {getResultIcon("index")}
+                                 </div>
+                                 <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-indigo-400 rounded-full border-2 border-gray-800 text-xs font-bold flex items-center justify-center">
+                                   {index.indexName.charAt(0)}
+                                 </div>
+                               </div>
+                               
+                               {/* Index Info */}
+                               <div className="flex-1 min-w-0">
+                                 {/* First Row: Symbol, Index Name, Weight */}
+                                 <div className="flex items-center justify-between mb-1">
+                                   <div className="flex items-center space-x-2 min-w-0">
+                                     <span className="font-bold text-gray-200 truncate">{index.tokenSymbol}</span>
+                                     <span className="text-sm text-indigo-400 font-medium">({index.indexName})</span>
+                                   </div>
+                                   <div className="flex items-center space-x-2 text-sm">
+                                     <span className="text-gray-300">
+                                       ${index.priceUsd ? parseFloat(index.priceUsd).toFixed(6) : "0.000000"}
+                                     </span>
+                                     <span className="px-2 py-1 rounded text-xs font-medium bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+                                       {index.weight}% weight
+                                     </span>
+                                   </div>
+                                 </div>
+                                 
+                                 {/* Second Row: Token Name, Market Cap */}
+                                 <div className="flex items-center justify-between">
+                                   <div className="flex items-center space-x-4 text-xs text-gray-400">
+                                     <span className="text-gray-300">{index.tokenName}</span>
+                                     {index.marketCap && (
+                                       <span>MC: ${formatNumber(index.marketCap)}</span>
+                                     )}
+                                   </div>
+                                 </div>
+                               </div>
+                             </div>
+                           </motion.div>
+                         );
+                       })}
+                     </div>
+                   </div>
+                 )}
+
+                 {/* Separator */}
+                 {results.indexes.length > 0 && results.calendar.length > 0 && (
+                   <div className="px-4 py-2">
+                     <div className="border-t border-gray-700/50"></div>
+                   </div>
+                 )}
+
+                 {/* Calendar Events */}
+                 {results.calendar.length > 0 && (
+                   <div className="mb-2">
+                                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 sticky top-0 bg-gray-800/95 backdrop-blur-sm z-10">
+                       Events ({results.calendar.length})
+                     </div>
+                     <div>
+                      {results.calendar.map((event, index) => {
+                        const globalIndex = results.tokens.length + results.wallets.length + results.transactions.length + results.blocks.length + results.news.length + results.indexes.length + index;
+                        const isSelected = selectedIndex === globalIndex;
+                        
+                        return (
+                          <motion.div
+                            key={event.id}
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: index * 0.05 }}
+                            className={`p-3 hover:bg-blue-500/20 cursor-pointer border-b border-gray-700/50 last:border-b-0 transition-all duration-200 ${
+                              isSelected ? "bg-blue-500/20" : ""
+                            }`}
+                            onClick={() => handleResultClick({ type: "calendar", result: event })}
+                          >
+                            <div className="flex items-center space-x-3">
+                              <div className="w-8 h-8 rounded-full bg-pink-500/20 flex items-center justify-center">
+                                {getResultIcon("calendar")}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="font-semibold text-gray-200 truncate">
+                                  {event.title}
+                                </div>
+                                <div className="text-xs text-gray-400 mt-1">
+                                  {event.projectName} ({event.projectTicker}) • {event.date} • {event.votes} votes
+                                </div>
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                                 )}
+              </div>
+            )}
+            
+            {/* Scroll Indicator */}
+            {!isLoading && !error && totalResults > 0 && (
+              <div className="px-4 py-2 bg-gradient-to-t from-gray-800/50 to-transparent border-t border-gray-700/30">
+                <div className="text-xs text-gray-400 text-center">
+                  {isMouseInResults ? "Scroll to see more results" : "Hover to scroll results"}
+                </div>
+              </div>
+            )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

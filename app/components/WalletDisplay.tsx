@@ -23,18 +23,8 @@ const WalletDisplay: React.FC<WalletDisplayProps> = ({
   const { setSelfCustodialWallet, setWalletLoading } = useWalletSystem();
   const [walletData, setWalletData] = useState<WalletData | null>(null);
   const [ethBalance, setEthBalance] = useState<string>("0.0");
-  const [ethPrice, setEthPrice] = useState<number>(0);
 
-  // Fetch ETH price
-  const fetchEthPrice = useCallback(async () => {
-    try {
-      const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd');
-      const data = await response.json();
-      setEthPrice(data.ethereum.usd);
-    } catch (error) {
-      console.error("Error fetching ETH price:", error);
-    }
-  }, []);
+
 
   // Fetch wallet balance
   const fetchBalance = useCallback(async (address: string) => {
@@ -106,10 +96,7 @@ const WalletDisplay: React.FC<WalletDisplayProps> = ({
     loadWallet();
   }, [setSelfCustodialWallet, setWalletLoading]);
 
-  // Auto-load wallet and fetch data
-  useEffect(() => {
-    fetchEthPrice();
-  }, [fetchEthPrice]);
+
 
   // Refresh balance periodically
   useEffect(() => {
@@ -126,11 +113,11 @@ const WalletDisplay: React.FC<WalletDisplayProps> = ({
     return (
       <button
         onClick={onToggleDropdown}
-        className="flex items-center space-x-3 px-4 py-2 rounded-xl bg-gray-900/80 border border-gray-700 hover:bg-gray-800/80 transition-all duration-200"
+        className="flex items-center space-x-3 px-3 py-2 rounded-xl bg-blue-400/20 backdrop-blur-sm border border-blue-400/50 hover:bg-blue-400/30 transition-all duration-200"
       >
-        <FaWallet className="w-4 h-4 text-gray-400 hidden sm:block" />
+        <FaWallet className="w-4 h-4 text-blue-400 hidden sm:block" />
         <div className="flex items-center space-x-2">
-          <span className="text-gray-300 text-sm font-medium hidden sm:block">XWallet</span>
+          <span className="text-gray-300 text-sm font-medium hidden sm:block">Connect</span>
           <span className="text-gray-300 text-sm font-medium sm:hidden">Connect</span>
           <FaChevronDown className={`w-3 h-3 text-gray-400 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''} hidden sm:block`} />
         </div>
@@ -141,10 +128,10 @@ const WalletDisplay: React.FC<WalletDisplayProps> = ({
   return (
     <button
       onClick={onToggleDropdown}
-      className="flex items-center space-x-3 px-4 py-2 rounded-xl bg-gray-900/80 border border-gray-700 hover:bg-gray-800/80 transition-all duration-200"
+      className="flex items-center space-x-3 px-3 py-2 rounded-xl bg-blue-400/20 backdrop-blur-sm border border-blue-400/50 hover:bg-blue-400/30 transition-all duration-200"
     >
       {/* Wallet Icon - Hidden on Mobile */}
-      <FaWallet className="w-4 h-4 text-gray-400 hidden sm:block" />
+      <FaWallet className="w-4 h-4 text-blue-400 hidden sm:block" />
       
       {/* Separator - Hidden on Mobile */}
       <div className="w-px h-4 bg-gray-600 hidden sm:block"></div>
@@ -152,9 +139,8 @@ const WalletDisplay: React.FC<WalletDisplayProps> = ({
       {/* ETH Balance Display - Hidden on Mobile */}
       <div className="hidden sm:flex items-center space-x-2">
         {/* ETH Icon */}
-        <div className="w-5 h-5 flex items-center justify-center relative">
-          <SiEthereum className="w-5 h-5 text-blue-400" />
-          <div className="absolute -bottom-1 -right-1 w-2 h-2 bg-green-400 rounded-full border border-white"></div>
+        <div className="w-4 h-4 flex items-center justify-center relative">
+          <SiEthereum className="w-4 h-4 text-gray-400" />
         </div>
         
         {/* Balance */}
@@ -162,11 +148,6 @@ const WalletDisplay: React.FC<WalletDisplayProps> = ({
           <span className="text-white text-sm font-semibold">
             {parseFloat(ethBalance).toFixed(4)} ETH
           </span>
-          {ethPrice > 0 && (
-            <span className="text-gray-400 text-xs font-medium">
-              ${(parseFloat(ethBalance) * ethPrice).toFixed(2)}
-            </span>
-          )}
         </div>
       </div>
       

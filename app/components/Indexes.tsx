@@ -7,8 +7,7 @@ import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Tooltip } from "react-tooltip";
 import toast from "react-hot-toast";
-import { useWalletSystem } from "@/app/providers";
-import IndexVotingModal from "./IndexVotingModal";
+import { useWalletSystem, useVotingModal } from "@/app/providers";
 
 // Custom debounce function to replace lodash
 const debounce = <T extends (...args: unknown[]) => unknown>(func: T, wait: number) => {
@@ -368,15 +367,14 @@ export default function BaseAiIndex() {
   const indexRef = useRef<HTMLDivElement>(null);
   const [currentIndex, setCurrentIndex] = useState(0); // For mobile carousel
   
-  // Voting state
-  const [showVotingModal, setShowVotingModal] = useState(false);
-  const [selectedIndexForVoting, setSelectedIndexForVoting] = useState<string>('');
+  // Voting state - using global context
+  const { setShowVotingModal, setSelectedIndexForVoting } = useVotingModal();
   
   // View state
   const [viewMode, setViewMode] = useState<'overview' | 'voting' | 'analytics'>('overview');
   
   // Points tracking
-  const [userPoints, setUserPoints] = useState<number>(0);
+
 
   const fetchData = useCallback(async () => {
     const indexNames = ["CDEX", "BDEX", "VDEX", "AIDEX"];
@@ -529,8 +527,7 @@ export default function BaseAiIndex() {
       
       const result = await response.json();
       if (result.success) {
-        setUserPoints(result.totalPoints);
-        toast.success(`+${result.pointsEarned} points earned!`);
+        // Points are awarded silently to profile
       } else if (result.limitReached) {
         toast.error(result.message);
       }
@@ -539,26 +536,9 @@ export default function BaseAiIndex() {
     }
   }, [walletAddress]);
 
-  const fetchUserPoints = useCallback(async () => {
-    if (!walletAddress) return;
-    
-    try {
-      const response = await fetch(`/api/points/indexes?walletAddress=${walletAddress}`);
-      const result = await response.json();
-      if (result.user) {
-        setUserPoints(result.totalPoints);
-      }
-    } catch (error) {
-      console.error('Error fetching user points:', error);
-    }
-  }, [walletAddress]);
 
-  // Fetch user points when wallet connects
-  useEffect(() => {
-    if (walletAddress) {
-      fetchUserPoints();
-    }
-  }, [walletAddress, fetchUserPoints]);
+
+
 
   const aggStatsByIndex = useMemo(() => {
     return indexesData.map((index) => {
@@ -626,16 +606,15 @@ export default function BaseAiIndex() {
       toast.error('Please create or connect your XWallet to vote');
       return;
     }
+    
     setSelectedIndexForVoting(indexName);
     setShowVotingModal(true);
+    
     // Award points for viewing voting interface
     awardPoints('view_index', indexName);
   };
 
-  const handleCloseVotingModal = () => {
-    setShowVotingModal(false);
-    setSelectedIndexForVoting('');
-  };
+
 
   if (loading) {
     return (
@@ -652,12 +631,24 @@ export default function BaseAiIndex() {
               <p className="text-sm text-gray-400">AI-powered token indices</p>
             </div>
           </div>
-          <div className="h-8 w-8 bg-gray-800 rounded animate-pulse" />
+          <div className="flex items-center space-x-2">
+            <div className="flex space-x-1">
+              <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+              <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+              <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+            </div>
+            <span className="text-gray-400 text-xs">Loading...</span>
+          </div>
         </div>
-        <div className="space-y-4">
-          {Array(4).fill(null).map((_, idx) => (
-            <div key={idx} className="h-64 bg-gray-800 rounded-lg animate-pulse" />
-          ))}
+        <div className="flex items-center justify-center h-64">
+          <div className="flex items-center space-x-2">
+            <div className="flex space-x-1">
+              <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+              <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+              <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+            </div>
+            <span className="text-gray-400 text-sm ml-2">Loading indexes...</span>
+          </div>
         </div>
       </div>
     );
@@ -717,14 +708,7 @@ export default function BaseAiIndex() {
                   <span className="text-xs text-blue-400">Loading wallet...</span>
                 </div>
               )}
-              {walletAddress && userPoints > 0 && (
-                <div className="flex items-center space-x-1 mt-1">
-                  <svg className="w-3 h-3 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                  </svg>
-                  <span className="text-xs text-yellow-400 font-medium">{userPoints} points</span>
-                </div>
-              )}
+
             </div>
           </div>
           
@@ -1023,18 +1007,7 @@ export default function BaseAiIndex() {
                 <p className="text-xs sm:text-sm text-gray-400">1st-15th & 16th-end of month</p>
               </div>
 
-              <div className="bg-gradient-to-br from-green-500/10 to-green-600/10 rounded-xl border border-green-500/20 p-4 sm:p-6">
-                <div className="flex items-center justify-between mb-3 sm:mb-4">
-                  <div className="w-8 h-8 sm:w-10 sm:h-10 bg-green-500/20 rounded-lg flex items-center justify-center">
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                    </svg>
-                  </div>
-                  <span className="text-xl sm:text-2xl font-bold text-green-400">25</span>
-                </div>
-                <h4 className="text-base sm:text-lg font-semibold text-gray-100 mb-1">Points Earned</h4>
-                <p className="text-xs sm:text-sm text-gray-400">For participating in voting</p>
-              </div>
+
 
               <div className="bg-gradient-to-br from-purple-500/10 to-purple-600/10 rounded-xl border border-purple-500/20 p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-3 sm:mb-4">
@@ -1125,7 +1098,7 @@ export default function BaseAiIndex() {
                   </p>
                   <p className="flex items-center">
                     <span className="w-2 h-2 bg-green-400 rounded-full mr-3"></span>
-                    Earn 25 points for participating in voting
+                    Complete all votes to earn rewards
                   </p>
                 </div>
                 <div className="space-y-2">
@@ -1385,15 +1358,7 @@ export default function BaseAiIndex() {
         )}
       </motion.div>
       
-      {/* Voting Modal */}
-      {showVotingModal && selectedIndexForVoting && (
-        <IndexVotingModal
-          isOpen={showVotingModal}
-          onClose={handleCloseVotingModal}
-          indexName={selectedIndexForVoting}
-          currentTokens={indexesData.find(index => index.name === selectedIndexForVoting)?.tokens || []}
-        />
-      )}
+
     </motion.div>
   );
 }
