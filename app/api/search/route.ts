@@ -9,6 +9,7 @@ interface TokenSearchResult {
   type: "token";
   address: string;
   poolAddress?: string;
+  secondaryPoolAddress?: string;
   name: string;
   symbol: string;
   marketCap?: number;
@@ -155,7 +156,7 @@ async function searchTokens(query: string): Promise<TokenSearchResult[]> {
       const data = await response.json();
       if (data.tokens) {
         // Enhance our tokens with DexScreener data using the same pattern as token screener
-        const enhancedTokens = await Promise.all(
+        const enhancedTokensArrays = await Promise.all(
           data.tokens.map(async (token: any) => {
             // Use the same DexScreener API pattern as token screener
             const dexResponse = await fetch(`https://api.dexscreener.com/tokens/v1/base/${token.address}`, {
@@ -164,35 +165,57 @@ async function searchTokens(query: string): Promise<TokenSearchResult[]> {
             
             if (dexResponse.ok) {
               const dexData = await dexResponse.json();
-              const pair = Array.isArray(dexData) ? dexData[0] : dexData;
-              
-              if (pair && pair.baseToken) {
+              const pairs = Array.isArray(dexData) ? dexData : [dexData];
+
+              // Also fetch from the 'latest' endpoint which often has more pairs
+              let morePairs: any[] = [];
+              try {
+                const dexResponse2 = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${token.address}`, {
+                  headers: { Accept: "application/json" }
+                });
+                if (dexResponse2.ok) {
+                  const dexData2 = await dexResponse2.json();
+                  morePairs = Array.isArray(dexData2?.pairs) ? dexData2.pairs : [];
+                }
+              } catch (_) {}
+
+              // Merge and dedupe pairs by pairAddress
+              const combinedMap: Record<string, any> = {};
+              [...pairs, ...morePairs].forEach((p: any) => {
+                const key = String(p?.pairAddress || "").toLowerCase();
+                if (key) combinedMap[key] = p;
+              });
+              const combinedPairs: any[] = Object.values(combinedMap);
+
+              // Select only supported pools: those configured in our tokens collection (pool/pair and pool2/pair2)
+              const wantedPoolsSet = new Set<string>();
+              if (token.poolAddress) wantedPoolsSet.add(String(token.poolAddress).toLowerCase());
+              if (token.secondaryPoolAddress) wantedPoolsSet.add(String(token.secondaryPoolAddress).toLowerCase());
+              const selectedPairs = combinedPairs.filter((p: any) => wantedPoolsSet.has(String(p?.pairAddress || "").toLowerCase()));
+
+              const mapped: TokenSearchResult[] = selectedPairs.map((pair: any) => {
                 const priceChange = pair.priceChange || {};
                 const volume = pair.volume || {};
                 const txns = pair.txns || {};
-                
                 const priceUsd = parseFloat(pair.priceUsd || "0");
                 const marketCap = parseFloat(pair.marketCap || "0");
                 const liquidityUsd = parseFloat(pair.liquidity?.usd || "0");
                 const volume24h = parseFloat(volume.h24 || "0");
                 const volume1h = parseFloat(volume.h1 || "0");
-                
                 const priceChange24h = parseFloat(priceChange.h24 || "0");
                 const priceChange1h = parseFloat(priceChange.h1 || "0");
                 const priceChange6h = parseFloat(priceChange.h6 || "0");
                 const priceChange5m = parseFloat(priceChange.m5 || "0");
-                
                 const totalTxns24h = (txns.h24?.buys || 0) + (txns.h24?.sells || 0);
                 const totalTxns1h = (txns.h1?.buys || 0) + (txns.h1?.sells || 0);
                 const totalTxns6h = (txns.h6?.buys || 0) + (txns.h6?.sells || 0);
-                
                 const buyRatio24h = totalTxns24h > 0 ? (txns.h24?.buys || 0) / totalTxns24h : 0;
                 const buyRatio1h = totalTxns1h > 0 ? (txns.h1?.buys || 0) / totalTxns1h : 0;
-                
                 return {
                   type: "token" as const,
                   address: token.address,
                   poolAddress: pair.pairAddress || token.poolAddress,
+                  secondaryPoolAddress: token.secondaryPoolAddress,
                   name: token.name,
                   symbol: token.symbol,
                   marketCap: marketCap || token.marketCap,
@@ -234,25 +257,185 @@ async function searchTokens(query: string): Promise<TokenSearchResult[]> {
                     liquidityChange24h: liquidityUsd > 0 ? ((liquidityUsd - parseFloat(pair.liquidity?.h24 || "0")) / liquidityUsd) * 100 : 0
                   }
                 };
+              });
+
+              // Ensure we include all configured pools: fetch any missing wanted pairs explicitly
+              const wantedPoolsSet2 = new Set<string>();
+              if (token.poolAddress) wantedPoolsSet2.add(String(token.poolAddress).toLowerCase());
+              if (token.secondaryPoolAddress) wantedPoolsSet2.add(String(token.secondaryPoolAddress).toLowerCase());
+              const found = new Set<string>(mapped.map(m => String(m.poolAddress || '').toLowerCase()).filter(Boolean));
+              const missing = Array.from(wantedPoolsSet2).filter(w => !found.has(w));
+              if (missing.length > 0) {
+                for (const w of missing) {
+                  try {
+                    const pairRes = await fetch(`https://api.dexscreener.com/latest/dex/pairs/base/${w}`, { headers: { Accept: "application/json" } });
+                    if (!pairRes.ok) continue;
+                    const pairData = await pairRes.json();
+                    const pair = Array.isArray(pairData?.pairs) ? pairData.pairs[0] : pairData?.pair || pairData;
+                    if (!pair?.pairAddress) continue;
+                    const priceChange = pair.priceChange || {};
+                    const volume = pair.volume || {};
+                    const txns = pair.txns || {};
+                    const priceUsd = parseFloat(pair.priceUsd || "0");
+                    const marketCap = parseFloat(pair.marketCap || "0");
+                    const liquidityUsd = parseFloat(pair.liquidity?.usd || "0");
+                    const volume24h = parseFloat(volume.h24 || "0");
+                    const volume1h = parseFloat(volume.h1 || "0");
+                    const priceChange24h = parseFloat(priceChange.h24 || "0");
+                    const priceChange1h = parseFloat(priceChange.h1 || "0");
+                    const priceChange6h = parseFloat(priceChange.h6 || "0");
+                    const priceChange5m = parseFloat(priceChange.m5 || "0");
+                    const totalTxns24h = (txns.h24?.buys || 0) + (txns.h24?.sells || 0);
+                    const totalTxns1h = (txns.h1?.buys || 0) + (txns.h1?.sells || 0);
+                    const totalTxns6h = (txns.h6?.buys || 0) + (txns.h6?.sells || 0);
+                    const buyRatio24h = totalTxns24h > 0 ? (txns.h24?.buys || 0) / totalTxns24h : 0;
+                    const buyRatio1h = totalTxns1h > 0 ? (txns.h1?.buys || 0) / totalTxns1h : 0;
+                    mapped.push({
+                      type: "token",
+                      address: token.address,
+                      poolAddress: pair.pairAddress,
+                      secondaryPoolAddress: token.secondaryPoolAddress,
+                      name: token.name,
+                      symbol: token.symbol,
+                      marketCap: marketCap || token.marketCap,
+                      volume24h: volume24h || token.volume24h,
+                      priceUsd: priceUsd > 0 ? priceUsd.toString() : undefined,
+                      liquidity: { usd: liquidityUsd },
+                      source: "CypherX",
+                      imageUrl: pair.info?.imageUrl || undefined,
+                      priceChange: { m5: priceChange5m, h1: priceChange1h, h6: priceChange6h, h24: priceChange24h },
+                      volume: { h1: volume1h, h24: volume24h },
+                      txns: {
+                        h1: { buys: txns.h1?.buys || 0, sells: txns.h1?.sells || 0 },
+                        h6: { buys: txns.h6?.buys || 0, sells: txns.h6?.sells || 0 },
+                        h24: { buys: txns.h24?.buys || 0, sells: txns.h24?.sells || 0 }
+                      },
+                      fdv: parseFloat(pair.fdv || "0"),
+                      pairCreatedAt: pair.pairCreatedAt,
+                      dexId: pair.dexId,
+                      url: pair.url,
+                      metrics: {
+                        priceChange24h,
+                        priceChange1h,
+                        priceChange6h,
+                        priceChange5m,
+                        totalTxns24h,
+                        totalTxns1h,
+                        totalTxns6h,
+                        buyRatio24h,
+                        buyRatio1h,
+                        volumeChange24h: volume24h > 0 ? ((volume24h - parseFloat(volume.h6 || "0")) / volume24h) * 100 : 0,
+                        liquidityChange24h: liquidityUsd > 0 ? ((liquidityUsd - parseFloat(pair.liquidity?.h24 || "0")) / liquidityUsd) * 100 : 0
+                      }
+                    });
+                  } catch (_) {}
+                }
               }
+              // If no pairs returned, try explicit fetch of configured pairs
+              if (mapped.length === 0 && wantedPoolsSet.size > 0) {
+                const wantedArr = Array.from(wantedPoolsSet);
+                const fetched: any[] = [];
+                for (const w of wantedArr) {
+                  try {
+                    const pairRes = await fetch(`https://api.dexscreener.com/latest/dex/pairs/base/${w}`, { headers: { Accept: "application/json" } });
+                    if (!pairRes.ok) continue;
+                    const pairData = await pairRes.json();
+                    const pair = Array.isArray(pairData?.pairs) ? pairData.pairs[0] : pairData?.pair || pairData;
+                    if (pair?.pairAddress) fetched.push(pair);
+                  } catch (_) {}
+                }
+                if (fetched.length > 0) {
+                  return fetched.map((pair: any) => {
+                    const priceChange = pair.priceChange || {};
+                    const volume = pair.volume || {};
+                    const txns = pair.txns || {};
+                    const priceUsd = parseFloat(pair.priceUsd || "0");
+                    const marketCap = parseFloat(pair.marketCap || "0");
+                    const liquidityUsd = parseFloat(pair.liquidity?.usd || "0");
+                    const volume24h = parseFloat(volume.h24 || "0");
+                    const volume1h = parseFloat(volume.h1 || "0");
+                    const priceChange24h = parseFloat(priceChange.h24 || "0");
+                    const priceChange1h = parseFloat(priceChange.h1 || "0");
+                    const priceChange6h = parseFloat(priceChange.h6 || "0");
+                    const priceChange5m = parseFloat(priceChange.m5 || "0");
+                    const totalTxns24h = (txns.h24?.buys || 0) + (txns.h24?.sells || 0);
+                    const totalTxns1h = (txns.h1?.buys || 0) + (txns.h1?.sells || 0);
+                    const totalTxns6h = (txns.h6?.buys || 0) + (txns.h6?.sells || 0);
+                    const buyRatio24h = totalTxns24h > 0 ? (txns.h24?.buys || 0) / totalTxns24h : 0;
+                    const buyRatio1h = totalTxns1h > 0 ? (txns.h1?.buys || 0) / totalTxns1h : 0;
+                    return {
+                      type: "token" as const,
+                      address: token.address,
+                      poolAddress: pair.pairAddress || token.poolAddress,
+                      secondaryPoolAddress: token.secondaryPoolAddress,
+                      name: token.name,
+                      symbol: token.symbol,
+                      marketCap: marketCap || token.marketCap,
+                      volume24h: volume24h || token.volume24h,
+                      priceUsd: priceUsd > 0 ? priceUsd.toString() : undefined,
+                      liquidity: { usd: liquidityUsd },
+                      source: "CypherX",
+                      imageUrl: pair.info?.imageUrl || undefined,
+                      priceChange: { m5: priceChange5m, h1: priceChange1h, h6: priceChange6h, h24: priceChange24h },
+                      volume: { h1: volume1h, h24: volume24h },
+                      txns: {
+                        h1: { buys: txns.h1?.buys || 0, sells: txns.h1?.sells || 0 },
+                        h6: { buys: txns.h6?.buys || 0, sells: txns.h6?.sells || 0 },
+                        h24: { buys: txns.h24?.buys || 0, sells: txns.h24?.sells || 0 }
+                      },
+                      fdv: parseFloat(pair.fdv || "0"),
+                      pairCreatedAt: pair.pairCreatedAt,
+                      dexId: pair.dexId,
+                      url: pair.url,
+                      metrics: {
+                        priceChange24h,
+                        priceChange1h,
+                        priceChange6h,
+                        priceChange5m,
+                        totalTxns24h,
+                        totalTxns1h,
+                        totalTxns6h,
+                        buyRatio24h,
+                        buyRatio1h,
+                        volumeChange24h: volume24h > 0 ? ((volume24h - parseFloat(volume.h6 || "0")) / volume24h) * 100 : 0,
+                        liquidityChange24h: liquidityUsd > 0 ? ((liquidityUsd - parseFloat(pair.liquidity?.h24 || "0")) / liquidityUsd) * 100 : 0
+                      }
+                    };
+                  });
+                }
+              }
+              // If still nothing, return empty array (we only show supported pools)
+              if (mapped.length === 0) {
+                return [] as TokenSearchResult[];
+              }
+              return mapped;
             }
             
             // Fallback to basic token data if DexScreener data not available
-            return {
+            return [{
               type: "token" as const,
               address: token.address,
               poolAddress: token.poolAddress,
+              secondaryPoolAddress: token.secondaryPoolAddress,
               name: token.name,
               symbol: token.symbol,
               marketCap: token.marketCap,
               volume24h: token.volume24h,
               source: "CypherX",
               imageUrl: undefined
-            };
+            }];
           })
         );
-        
-        results.push(...enhancedTokens);
+        // Flatten arrays and dedupe by poolAddress
+        const flattened = enhancedTokensArrays.flat();
+        const seenPools = new Set<string>();
+        for (const r of flattened) {
+          const key = (r.poolAddress || "").toLowerCase();
+          if (key && !seenPools.has(key)) {
+            seenPools.add(key);
+            results.push(r);
+          }
+        }
       }
     }
   } catch (error) {

@@ -398,7 +398,7 @@ function TransactionTable({
               <tbody>
                 {transactions.map((tx, idx) => (
                   <motion.tr
-                    key={idx}
+                    key={tx.hash}
                     className="border-b border-blue-500/30 hover:bg-gray-800/50 transition-all duration-200"
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}

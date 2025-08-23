@@ -89,69 +89,82 @@ export default function CypherScanPage() {
       const blocksToFetch = Math.min(blocksPerPage, totalBlocksToFetch - startIndex);
       const fetchedBlocks: Block[] = [];
 
-      // Fetch blocks in the current page range
+      // Fetch blocks in parallel for much faster loading
+      const blockPromises = [];
       for (let i = 0; i < blocksToFetch; i++) {
         const blockNumber = endBlock - (startIndex + i);
         if (blockNumber < startBlock) break;
 
-        // Check Firestore first
-        const blockRef = doc(db, "blocks", blockNumber.toString());
-        const blockSnap = await getDoc(blockRef);
+        blockPromises.push((async () => {
+          // Check Firestore first
+          const blockRef = doc(db, "blocks", blockNumber.toString());
+          const blockSnap = await getDoc(blockRef);
 
-        if (blockSnap.exists()) {
-          const blockData = blockSnap.data() as Block;
-          fetchedBlocks.push(blockData);
-          continue;
-        }
-
-        // Fetch from Alchemy if not in Firestore
-        const blockRes = await fetch(alchemyUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            method: "eth_getBlockByNumber",
-            params: [`0x${blockNumber.toString(16)}`, false],
-            id: 1,
-          }),
-        });
-
-        if (!blockRes.ok) {
-          const errorText = await blockRes.text();
-          console.warn(`Failed to fetch block ${blockNumber}: ${errorText}`);
-          continue;
-        }
-
-        const blockData = await blockRes.json();
-        const block = blockData?.result;
-
-        if (block) {
-          const timestamp = new Date(parseInt(block.timestamp, 16) * 1000);
-          const timeAgo = formatDistanceToNow(timestamp, {
-            addSuffix: true,
-            includeSeconds: false,
-          })
-            .toUpperCase()
-            .replace("LESS THAN A MINUTE", "1 MINUTE");
-          const blockInfo: Block = {
-            number: blockNumber,
-            status: "Finalized",
-            timestamp: timeAgo,
-            hash: block.hash,
-            transactions: block.transactions?.length || 0,
-          };
-          fetchedBlocks.push(blockInfo);
-
-          // Store in Firestore
-          try {
-            await setDoc(blockRef, blockInfo);
-            console.log(`Block ${blockNumber} stored in Firestore`);
-          } catch (writeError: unknown) {
-            const errorMessage = writeError instanceof Error ? writeError.message : "Unknown error";
-            console.warn(`Failed to store block ${blockNumber} in Firestore: ${errorMessage}`);
+          if (blockSnap.exists()) {
+            const blockData = blockSnap.data() as Block;
+            return { blockNumber, blockData };
           }
-        }
+
+          // Fetch from Alchemy if not in Firestore
+          const blockRes = await fetch(alchemyUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              method: "eth_getBlockByNumber",
+              params: [`0x${blockNumber.toString(16)}`, false],
+              id: 1,
+            }),
+          });
+
+          if (!blockRes.ok) {
+            console.warn(`Failed to fetch block ${blockNumber}`);
+            return null;
+          }
+
+          const blockData = await blockRes.json();
+          const block = blockData?.result;
+
+          if (block) {
+            const timestamp = new Date(parseInt(block.timestamp, 16) * 1000);
+            const timeAgo = formatDistanceToNow(timestamp, {
+              addSuffix: true,
+              includeSeconds: false,
+            })
+              .toUpperCase()
+              .replace("LESS THAN A MINUTE", "1 MINUTE");
+            const blockInfo: Block = {
+              number: blockNumber,
+              status: "Finalized",
+              timestamp: timeAgo,
+              hash: block.hash,
+              transactions: block.transactions?.length || 0,
+            };
+
+            // Store in Firestore in background (don't wait for it)
+            setDoc(blockRef, blockInfo).catch((writeError: unknown) => {
+              const errorMessage = writeError instanceof Error ? writeError.message : "Unknown error";
+              console.warn(`Failed to store block ${blockNumber} in Firestore: ${errorMessage}`);
+            });
+
+            return { blockNumber, blockData: blockInfo };
+          }
+          return null;
+        })());
       }
+
+      // Wait for all blocks to be fetched
+      const results = await Promise.all(blockPromises);
+      
+      // Sort results by block number and add to fetchedBlocks
+      results
+        .filter(result => result !== null)
+        .sort((a, b) => b!.blockNumber - a!.blockNumber)
+        .forEach(result => {
+          if (result) {
+            fetchedBlocks.push(result.blockData);
+          }
+        });
 
       setBlocks(fetchedBlocks);
       if (fetchedBlocks.length === 0) {
@@ -222,10 +235,31 @@ export default function CypherScanPage() {
   }, [page]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 flex flex-col">
+    <div className="h-screen bg-gray-950 flex flex-col overflow-hidden">
+      <style jsx>{`
+        .scrollbar-thin::-webkit-scrollbar {
+          width: 6px;
+        }
+        .scrollbar-thin::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+          background: #4B5563;
+          border-radius: 3px;
+        }
+        .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+          background: #6B7280;
+        }
+        .scrollbar-track-transparent::-webkit-scrollbar-track {
+          background: transparent;
+        }
+      `}</style>
       <Header />
       
-      <main className="flex-1 container mx-auto px-4 py-8">
+      {/* Separator line between header and main content */}
+      <div className="h-px bg-gray-800"></div>
+      
+      <main className="flex-1 container mx-auto px-4 py-8 pb-8 overflow-hidden">
         {/* Header Section */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -424,7 +458,7 @@ export default function CypherScanPage() {
 
           {/* Blocks Table/Grid */}
           {!loading && (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
               {viewMode === "list" ? (
                 <table className="w-full">
                   <thead>
@@ -574,7 +608,10 @@ export default function CypherScanPage() {
         </motion.div>
       </main>
 
-      <Footer />
+      {/* Footer - Fixed at bottom */}
+      <div className="flex-shrink-0">
+        <Footer />
+      </div>
     </div>
   );
 }

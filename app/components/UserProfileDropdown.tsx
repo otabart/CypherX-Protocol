@@ -7,11 +7,13 @@ import { doc, getDoc } from "firebase/firestore";
 import { auth as firebaseAuth, db } from "@/lib/firebase";
 import { useAuth, useWalletSystem, useVotingModal } from "@/app/providers";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiAward, FiTrendingUp, FiUser, FiLogOut, FiCopy, FiGift, FiInfo } from "react-icons/fi";
+import { FiAward, FiTrendingUp, FiUser, FiLogOut, FiCopy, FiGift, FiInfo, FiClock } from "react-icons/fi";
 import { HiOutlineSparkles, HiOutlineCog } from "react-icons/hi";
+import { FaShoppingBag } from "react-icons/fa";
 import Link from "next/link";
 import { createPortal } from "react-dom";
 import TierProgressionModal from "./TierProgressionModal";
+import PointsHistoryModal from "./PointsHistoryModal";
 
 const auth: Auth = firebaseAuth as Auth;
 
@@ -33,7 +35,19 @@ const UserProfileDropdown: React.FC = () => {
   const [referralCount, setReferralCount] = useState<number>(0);
   const [copied, setCopied] = useState(false);
   const [showTierModal, setShowTierModal] = useState(false);
+  const [showPointsHistory, setShowPointsHistory] = useState(false);
+  const [isAuthor, setIsAuthor] = useState(false);
+  const [showAliasModal, setShowAliasModal] = useState(false);
+  const [alias, setAlias] = useState<string>("");
+  const [isUpdatingAlias, setIsUpdatingAlias] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
+
+  // Debug logging for Points History
+  useEffect(() => {
+    if (showPointsHistory) {
+      console.log('Points History opened with walletAddress:', walletAddress);
+    }
+  }, [showPointsHistory, walletAddress]);
 
   // Fetch user stats from API
   useEffect(() => {
@@ -81,6 +95,14 @@ const UserProfileDropdown: React.FC = () => {
             setReferralCount(0);
           }
         }
+
+        // Check author status
+        const authorResponse = await fetch(`/api/author/status?walletAddress=${walletAddress}`);
+        if (authorResponse.ok) {
+          const authorData = await authorResponse.json();
+          setIsAuthor(authorData.isAuthor);
+          setAlias(authorData.authorData?.alias || "");
+        }
       } catch (error) {
         console.error("Error fetching user stats:", error);
         setPoints(0);
@@ -112,6 +134,41 @@ const UserProfileDropdown: React.FC = () => {
     }
     setShowAccountModal(false);
   }
+
+  const handleUpdateAlias = async () => {
+    if (!user || !walletAddress || !alias.trim()) return;
+    
+    setIsUpdatingAlias(true);
+    try {
+      const response = await fetch('/api/user/update-alias', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          walletAddress,
+          alias: alias.trim(),
+        }),
+      });
+
+      if (response.ok) {
+        setShowAliasModal(false);
+        // Refresh user data by re-fetching
+        const statsResponse = await fetch(`/api/tiers?walletAddress=${walletAddress}`);
+        if (statsResponse.ok) {
+          const statsData = await statsResponse.json();
+          setPoints(statsData.points || 0);
+          setTier(statsData.tier || 'normie');
+        }
+      } else {
+        console.error('Failed to update alias');
+      }
+    } catch (error) {
+      console.error('Error updating alias:', error);
+    } finally {
+      setIsUpdatingAlias(false);
+    }
+  };
 
   const getTierColor = (tier: string) => {
     const colors = {
@@ -161,8 +218,8 @@ const UserProfileDropdown: React.FC = () => {
         className="flex items-center focus:outline-none focus:ring-2 focus:ring-blue-500/50 rounded-full hover:scale-105 transform transition-all duration-200"
         aria-label={user ? "Account" : "Sign In"}
       >
-        <div className="relative w-9 h-9 rounded-full bg-blue-400/20 backdrop-blur-sm flex items-center justify-center transition-all duration-300 hover:bg-blue-400/30 shadow-lg border border-blue-400/50 hover:border-blue-400">
-          <FiUser className="w-4 h-4 text-blue-400" />
+        <div className="relative w-9 h-9 rounded-full bg-gray-800/50 backdrop-blur-sm flex items-center justify-center transition-all duration-300 hover:bg-gray-700/50 shadow-lg border border-gray-600/50 hover:border-gray-500">
+          <FiUser className="w-4 h-4 icon-blue-gradient" />
           {user && (
             <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-gray-900"></div>
           )}
@@ -353,6 +410,34 @@ const UserProfileDropdown: React.FC = () => {
               {/* Navigation Links */}
               <div className="space-y-2">
                 <button
+                  onClick={() => {
+                    setShowPointsHistory(true);
+                    setShowAccountModal(false); // Close profile dropdown
+                  }}
+                  className="flex items-center space-x-3 w-full p-3 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-xl transition-all duration-200 group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center group-hover:bg-green-500/30 transition-colors">
+                    <FiClock className="w-4 h-4 text-green-400" />
+                  </div>
+                  <span className="font-medium">Points History</span>
+                </button>
+
+                {isAuthor && (
+                  <Link
+                    href="/author/dashboard"
+                    className="flex items-center space-x-3 w-full p-3 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-xl transition-all duration-200 group"
+                    onClick={() => setShowAccountModal(false)}
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center group-hover:bg-purple-500/30 transition-colors">
+                      <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </div>
+                    <span className="font-medium">Author Dashboard</span>
+                  </Link>
+                )}
+
+                <button
                   onClick={handleVoteAndEarn}
                   className="flex items-center space-x-3 w-full p-3 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-xl transition-all duration-200 group"
                 >
@@ -360,6 +445,27 @@ const UserProfileDropdown: React.FC = () => {
                     <FiTrendingUp className="w-4 h-4 text-blue-400" />
                   </div>
                   <span className="font-medium">Vote & Earn</span>
+                </button>
+
+                <Link
+                  href="/marketplace"
+                  className="flex items-center space-x-3 w-full p-3 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-xl transition-all duration-200 group"
+                  onClick={() => setShowAccountModal(false)}
+                >
+                  <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center group-hover:bg-purple-500/30 transition-colors">
+                    <FaShoppingBag className="w-4 h-4 text-purple-400" />
+                  </div>
+                  <span className="font-medium">Marketplace</span>
+                </Link>
+
+                <button
+                  onClick={() => setShowAliasModal(true)}
+                  className="flex items-center space-x-3 w-full p-3 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-xl transition-all duration-200 group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center group-hover:bg-green-500/30 transition-colors">
+                    <FiUser className="w-4 h-4 text-green-400" />
+                  </div>
+                  <span className="font-medium">Set Alias</span>
                 </button>
 
                 <Link
@@ -420,6 +526,64 @@ const UserProfileDropdown: React.FC = () => {
           currentTier={tier}
           currentPoints={points || 0}
         />
+      , document.body
+      )}
+
+      {/* Points History Modal */}
+      {showPointsHistory && walletAddress && createPortal(
+        <PointsHistoryModal
+          isOpen={showPointsHistory}
+          onClose={() => setShowPointsHistory(false)}
+          walletAddress={walletAddress}
+        />
+      , document.body
+      )}
+
+      {/* Alias Modal */}
+      {showAliasModal && createPortal(
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="bg-gray-900 rounded-xl p-6 w-96 border border-gray-700"
+          >
+            <h3 className="text-white text-lg font-semibold mb-4">Set Your Alias</h3>
+            <p className="text-gray-400 text-sm mb-4">
+              Choose a display name that will appear on leaderboards and in the community.
+            </p>
+            
+            <div className="mb-4">
+              <label className="block text-gray-300 text-sm font-medium mb-2">
+                Display Name (Alias)
+              </label>
+              <input
+                type="text"
+                value={alias}
+                onChange={(e) => setAlias(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                placeholder="Enter your preferred display name"
+                maxLength={20}
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowAliasModal(false)}
+                className="flex-1 px-4 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateAlias}
+                disabled={!alias.trim() || isUpdatingAlias}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isUpdatingAlias ? 'Updating...' : 'Update Alias'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
       , document.body
       )}
     </div>

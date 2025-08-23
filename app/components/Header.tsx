@@ -9,6 +9,7 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "@/app/providers";
 
 
+
 import WalletDropdown from "./WalletDropdown";
 import WalletDisplay from "./WalletDisplay";
 import TierProgressionModal from "./TierProgressionModal";
@@ -16,20 +17,12 @@ import GlobalSearch from "./GlobalSearch";
 import UserProfileDropdown from "./UserProfileDropdown";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { FiTrendingUp, FiSearch, FiBarChart, FiZap } from "react-icons/fi";
-import { FaSearch, FaChartLine, FaUsers, FaBolt, FaCalendarAlt, FaNewspaper, FaShoppingBag } from "react-icons/fa";
+import { FiTrendingUp, FiBarChart, FiZap } from "react-icons/fi";
+import { FaSearch, FaChartLine, FaUsers, FaBolt, FaCalendarAlt, FaNewspaper } from "react-icons/fa";
 
 
 
-// Custom CypherX text component with styled X
-const CypherXText: React.FC<{ className?: string }> = ({ className = "" }) => {
-  return (
-    <span className={className}>
-      <span className="text-gray-100">Cypher</span>
-      <span className="text-blue-400 font-bold">X</span>
-    </span>
-  );
-};
+
 
 
 
@@ -41,6 +34,7 @@ const Header: React.FC = () => {
 
   const [showExplorerDropdown, setShowExplorerDropdown] = useState(false);
   const [showToolsDropdown, setShowToolsDropdown] = useState(false);
+
   const [points, setPoints] = useState<number | null>(null);
   const [tier, setTier] = useState<string>('normie');
   const [showTierModal, setShowTierModal] = useState(false);
@@ -53,6 +47,7 @@ const Header: React.FC = () => {
 
   const explorerDropdownRef = useRef<HTMLDivElement>(null);
   const toolsDropdownRef = useRef<HTMLDivElement>(null);
+
   const mobileMenuRef = useRef<HTMLDivElement>(null);
 
   // Fetch user stats from API
@@ -85,6 +80,7 @@ const Header: React.FC = () => {
         setShowToolsDropdown(false);
       }
 
+
       if (mobileMenuRef.current && !mobileMenuRef.current.contains(event.target as Node)) {
         setIsMenuOpen(false);
       }
@@ -114,26 +110,17 @@ const Header: React.FC = () => {
 
   return (
     <>
-      <header className="bg-gray-950 backdrop-blur-xl border-b border-gray-950 sticky top-0 z-50 overflow-x-hidden" style={{ isolation: 'isolate' }}>
+      <header className="bg-gray-950 backdrop-blur-xl border-b border-gray-950 sticky top-0 z-[999999]" style={{ isolation: 'isolate' }}>
       <div className="w-full">
-        <div className="flex items-center justify-between px-4 py-3 lg:px-6 lg:py-4">
+        <div className="flex items-center justify-between px-4 py-2 lg:px-6 lg:py-3">
           {/* Enhanced Logo / Brand - Far Left */}
           <div className="flex-shrink-0">
             <Link href="/" className="flex items-center group">
-              <motion.span 
-                className="text-lg sm:text-xl font-semibold tracking-tight italic leading-none flex items-center h-10 sm:h-12"
-                whileHover={{ scale: 1.05 }}
-                transition={{ duration: 0.2 }}
-              >
-                <CypherXText />
-              </motion.span>
-              <motion.span 
-                className="ml-2 text-xs text-blue-400 font-medium bg-blue-500/20 px-3 py-1 rounded-full border border-blue-500/30"
-                whileHover={{ scale: 1.1 }}
-                transition={{ duration: 0.2 }}
-              >
-                v1 BETA
-              </motion.span>
+              <motion.div>
+                <span className="text-lg sm:text-xl font-cypherx-gradient">
+                  CYPHERX
+                </span>
+              </motion.div>
             </Link>
           </div>
 
@@ -145,12 +132,12 @@ const Header: React.FC = () => {
             />
           </div>
 
-          {/* Enhanced Desktop Navigation - Center */}
-          <nav className="hidden xl:flex items-center justify-center space-x-10">
-            {/* Enhanced Navigation Links */}
-            <motion.div className="flex items-center space-x-10">
+                      {/* Enhanced Desktop Navigation - Center */}
+            <nav className="hidden xl:flex items-center justify-center space-x-10 -mr-8">
+              {/* Enhanced Navigation Links */}
+              <motion.div className="flex items-center space-x-10">
               <Link
-                href="/token-scanner"
+                href="/trade"
                 className="text-gray-100 text-sm font-medium hover:text-blue-300 transition-all duration-200 group"
                 prefetch={true}
               >
@@ -183,26 +170,19 @@ const Header: React.FC = () => {
               </Link>
 
               <Link
-                href="/base-chain-news"
+                href="/insights"
                 className="text-gray-100 text-sm font-medium hover:text-blue-300 transition-all duration-200 group"
                 prefetch={true}
               >
                 <span className="relative">
-                  News
+                  Insights
                   <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-blue-400 group-hover:w-full transition-all duration-300"></span>
                 </span>
               </Link>
 
-              <Link
-                href="/marketplace"
-                className="text-gray-100 text-sm font-medium hover:text-blue-300 transition-all duration-200 group"
-                prefetch={true}
-              >
-                <span className="relative">
-                  Marketplace
-                  <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-blue-400 group-hover:w-full transition-all duration-300"></span>
-                </span>
-              </Link>
+
+
+
             </motion.div>
 
             {/* Enhanced Explorer Dropdown */}
@@ -213,7 +193,7 @@ const Header: React.FC = () => {
                 whileHover={{ scale: 1.05 }}
                 transition={{ duration: 0.2 }}
               >
-                <span>Explorer</span>
+                <span>Developers</span>
                 <motion.div
                   animate={{ rotate: showExplorerDropdown ? 180 : 0 }}
                   transition={{ duration: 0.2 }}
@@ -222,7 +202,43 @@ const Header: React.FC = () => {
                 </motion.div>
               </motion.button>
               
+                            {/* Explorer Dropdown Content */}
+              <AnimatePresence>
+                {showExplorerDropdown && (
+                  <motion.div
+                    className="absolute top-full left-0 mt-4 w-64 bg-gray-800/95 backdrop-blur-xl border border-gray-700/50 rounded-xl shadow-2xl"
+                    style={{ zIndex: 9999999 }}
+                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <div className="p-2">
 
+                      <Link href="/explorer/latest/block" className="flex items-center space-x-3 p-3 hover:bg-blue-500/20 rounded-lg transition-all duration-200 group">
+                        <div className="w-8 h-8 bg-purple-500/20 rounded-lg flex items-center justify-center group-hover:bg-purple-500/30 transition-colors duration-200">
+                          <FiBarChart className="w-4 h-4 text-purple-400" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-gray-200 group-hover:text-purple-300 transition-colors duration-200">Blocks</div>
+                          <div className="text-xs text-gray-400">Latest blocks & mining info</div>
+                        </div>
+                      </Link>
+                      <div className="flex items-center space-x-3 p-3 opacity-50 cursor-not-allowed">
+                        <div className="w-8 h-8 bg-orange-500/20 rounded-lg flex items-center justify-center">
+                          <svg className="w-4 h-4 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                          </svg>
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-gray-400">API</div>
+                          <div className="text-xs text-gray-500">Coming Soon</div>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Enhanced Tools Dropdown */}
@@ -242,7 +258,49 @@ const Header: React.FC = () => {
                 </motion.div>
               </motion.button>
               
-
+              {/* Tools Dropdown Content */}
+              <AnimatePresence>
+                {showToolsDropdown && (
+                  <motion.div
+                    className="absolute top-full left-0 mt-4 w-64 bg-gray-800/95 backdrop-blur-xl border border-gray-700/50 rounded-xl shadow-2xl"
+                    style={{ zIndex: 9999999 }}
+                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <div className="p-2">
+                      <Link href="/audit" className="flex items-center space-x-3 p-3 hover:bg-blue-500/20 rounded-lg transition-all duration-200 group">
+                        <div className="w-8 h-8 bg-yellow-500/20 rounded-lg flex items-center justify-center group-hover:bg-yellow-500/30 transition-colors duration-200">
+                          <FiZap className="w-4 h-4 text-yellow-400" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-gray-200 group-hover:text-yellow-300 transition-colors duration-200">Smart Audit</div>
+                          <div className="text-xs text-gray-400">Contract security analysis</div>
+                        </div>
+                      </Link>
+                      <Link href="/whale-watcher" className="flex items-center space-x-3 p-3 hover:bg-blue-500/20 rounded-lg transition-all duration-200 group">
+                        <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center group-hover:bg-blue-500/30 transition-colors duration-200">
+                          <FaUsers className="w-4 h-4 text-blue-400" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-gray-200 group-hover:text-blue-300 transition-colors duration-200">Whale Watcher</div>
+                          <div className="text-xs text-gray-400">Track large transactions</div>
+                        </div>
+                      </Link>
+                      <Link href="/smart-money" className="flex items-center space-x-3 p-3 hover:bg-blue-500/20 rounded-lg transition-all duration-200 group opacity-50">
+                        <div className="w-8 h-8 bg-green-500/20 rounded-lg flex items-center justify-center group-hover:bg-green-500/30 transition-colors duration-200">
+                          <FaBolt className="w-4 h-4 text-green-400" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-gray-200 group-hover:text-green-300 transition-colors duration-200">Smart Money</div>
+                          <div className="text-xs text-gray-400">Coming soon</div>
+                        </div>
+                      </Link>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </nav>
 
@@ -296,7 +354,7 @@ const Header: React.FC = () => {
                 {/* Enhanced Mobile Navigation Links with Dropdowns */}
                 <div className="space-y-2">
                   {/* Trade Link */}
-                  <Link href="/token-scanner" className="flex items-center space-x-3 p-3 hover:bg-blue-500/20 rounded-lg transition-colors" prefetch={true}>
+                  <Link href="/trade" className="flex items-center space-x-3 p-3 hover:bg-blue-500/20 rounded-lg transition-colors" prefetch={true}>
                     <FiTrendingUp className="w-5 h-5 text-green-400" />
                     <span className="text-gray-200">Trade</span>
                   </Link>
@@ -313,31 +371,32 @@ const Header: React.FC = () => {
                     <span className="text-gray-200">Calendar</span>
                   </Link>
                   
-                  {/* News Link */}
-                  <Link href="/base-chain-news" className="flex items-center space-x-3 p-3 hover:bg-blue-500/20 rounded-lg transition-colors" prefetch={true}>
+                  {/* Insights Link */}
+                  <Link href="/insights" className="flex items-center space-x-3 p-3 hover:bg-blue-500/20 rounded-lg transition-colors" prefetch={true}>
                     <FaNewspaper className="w-5 h-5 text-green-400" />
-                    <span className="text-gray-200">News</span>
+                    <span className="text-gray-200">Insights</span>
                   </Link>
                   
-                  {/* Marketplace Link */}
-                  <Link href="/marketplace" className="flex items-center space-x-3 p-3 hover:bg-blue-500/20 rounded-lg transition-colors" prefetch={true}>
-                    <FaShoppingBag className="w-5 h-5 text-purple-400" />
-                    <span className="text-gray-200">Marketplace</span>
-                  </Link>
+
+                  
+
+                  
+
 
                   {/* Explorer Section */}
                   <div className="space-y-1">
                     <div className="flex items-center justify-between p-3 hover:bg-blue-500/20 rounded-lg transition-colors cursor-pointer" onClick={() => setShowExplorerDropdown(!showExplorerDropdown)}>
                       <div className="flex items-center space-x-3">
                         <FaSearch className="w-5 h-5 text-blue-400" />
-                        <span className="text-gray-200">Explorer</span>
+                        <span className="text-gray-200">Developers</span>
                       </div>
                       <ChevronDownIcon className={`w-4 h-4 text-gray-400 transition-transform ${showExplorerDropdown ? 'rotate-180' : ''}`} />
                     </div>
                     {showExplorerDropdown && (
                       <div className="ml-4 space-y-1">
-                        <Link href="/explorer" className="block p-2 text-sm text-gray-300 hover:text-blue-400 transition-colors" prefetch={true}>Search</Link>
+
                         <Link href="/explorer/latest/block" className="block p-2 text-sm text-gray-300 hover:text-blue-400 transition-colors" prefetch={true}>Blocks</Link>
+                        <div className="block p-2 text-sm text-gray-500 opacity-50 cursor-not-allowed">API (Soon)</div>
                       </div>
                     )}
                   </div>
@@ -353,7 +412,7 @@ const Header: React.FC = () => {
                     </div>
                     {showToolsDropdown && (
                       <div className="ml-4 space-y-1">
-                        <Link href="/honeypot-scanner" className="block p-2 text-sm text-gray-300 hover:text-blue-400 transition-colors" prefetch={true}>Smart Audit</Link>
+                        <Link href="/audit" className="block p-2 text-sm text-gray-300 hover:text-blue-400 transition-colors" prefetch={true}>Smart Audit</Link>
                         <Link href="/whale-watcher" className="block p-2 text-sm text-gray-300 hover:text-blue-400 transition-colors" prefetch={true}>Whale Watcher</Link>
                         <Link href="/smart-money" className="block p-2 text-sm text-gray-300 hover:text-blue-400 transition-colors opacity-50" prefetch={true}>Smart Money (Coming Soon)</Link>
                       </div>
@@ -376,81 +435,7 @@ const Header: React.FC = () => {
       currentPoints={points || 0}
     />
     
-    {/* Desktop Dropdowns rendered at root level */}
-    <AnimatePresence>
-      {showExplorerDropdown && (
-        <motion.div
-          className="fixed top-20 right-40 w-64 bg-gray-800/95 backdrop-blur-xl border border-gray-700/50 rounded-xl shadow-2xl"
-          style={{ zIndex: 999999 }}
-          initial={{ opacity: 0, y: -10, scale: 0.95 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -10, scale: 0.95 }}
-          transition={{ duration: 0.2 }}
-        >
-          <div className="p-2">
-            <Link href="/explorer" className="flex items-center space-x-3 p-3 hover:bg-blue-500/20 rounded-lg transition-all duration-200 group">
-              <div className="w-8 h-8 bg-green-500/20 rounded-lg flex items-center justify-center group-hover:bg-green-500/30 transition-colors duration-200">
-                <FiSearch className="w-4 h-4 text-green-400" />
-              </div>
-              <div>
-                <div className="text-sm font-medium text-gray-200 group-hover:text-green-300 transition-colors duration-200">Search</div>
-                <div className="text-xs text-gray-400">Find addresses & transactions</div>
-              </div>
-            </Link>
-            <Link href="/explorer/latest/block" className="flex items-center space-x-3 p-3 hover:bg-blue-500/20 rounded-lg transition-all duration-200 group">
-              <div className="w-8 h-8 bg-purple-500/20 rounded-lg flex items-center justify-center group-hover:bg-purple-500/30 transition-colors duration-200">
-                <FiBarChart className="w-4 h-4 text-purple-400" />
-              </div>
-              <div>
-                <div className="text-sm font-medium text-gray-200 group-hover:text-purple-300 transition-colors duration-200">Blocks</div>
-                <div className="text-xs text-gray-400">Latest blocks & mining info</div>
-              </div>
-            </Link>
-          </div>
-        </motion.div>
-      )}
-      
-      {showToolsDropdown && (
-        <motion.div
-          className="fixed top-20 right-16 w-64 bg-gray-800/95 backdrop-blur-xl border border-gray-700/50 rounded-xl shadow-2xl"
-          style={{ zIndex: 999999 }}
-          initial={{ opacity: 0, y: -10, scale: 0.95 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -10, scale: 0.95 }}
-          transition={{ duration: 0.2 }}
-        >
-          <div className="p-2">
-            <Link href="/honeypot-scanner" className="flex items-center space-x-3 p-3 hover:bg-blue-500/20 rounded-lg transition-all duration-200 group">
-              <div className="w-8 h-8 bg-yellow-500/20 rounded-lg flex items-center justify-center group-hover:bg-yellow-500/30 transition-colors duration-200">
-                <FiZap className="w-4 h-4 text-yellow-400" />
-              </div>
-              <div>
-                <div className="text-sm font-medium text-gray-200 group-hover:text-yellow-300 transition-colors duration-200">Smart Audit</div>
-                <div className="text-xs text-gray-400">Contract security analysis</div>
-              </div>
-            </Link>
-            <Link href="/whale-watcher" className="flex items-center space-x-3 p-3 hover:bg-blue-500/20 rounded-lg transition-all duration-200 group">
-              <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center group-hover:bg-blue-500/30 transition-colors duration-200">
-                <FaUsers className="w-4 h-4 text-blue-400" />
-              </div>
-              <div>
-                <div className="text-sm font-medium text-gray-200 group-hover:text-blue-300 transition-colors duration-200">Whale Watcher</div>
-                <div className="text-xs text-gray-400">Track large transactions</div>
-              </div>
-            </Link>
-            <Link href="/smart-money" className="flex items-center space-x-3 p-3 hover:bg-blue-500/20 rounded-lg transition-all duration-200 group opacity-50">
-              <div className="w-8 h-8 bg-green-500/20 rounded-lg flex items-center justify-center group-hover:bg-green-500/30 transition-colors duration-200">
-                <FaBolt className="w-4 h-4 text-green-400" />
-              </div>
-              <div>
-                <div className="text-sm font-medium text-gray-200 group-hover:text-green-300 transition-colors duration-200">Smart Money</div>
-                <div className="text-xs text-gray-400">Coming soon</div>
-              </div>
-            </Link>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+
     
     {/* Wallet Dropdown rendered at root level */}
     <WalletDropdown

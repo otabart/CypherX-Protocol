@@ -603,7 +603,7 @@ export default function BaseAiIndex() {
     }
     
     if (!walletAddress) {
-      toast.error('Please create or connect your XWallet to vote');
+              toast.error('Please create or connect your wallet to vote');
       return;
     }
     

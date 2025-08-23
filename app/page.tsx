@@ -236,7 +236,10 @@ export default function Page() {
       <div className="min-h-screen flex flex-col bg-gray-950 overflow-x-hidden">
         <Header />
 
-        <main className="flex-1 text-gray-200 relative overflow-x-hidden">
+        {/* Separator line between header and content */}
+        <div className="border-b border-gray-800/50"></div>
+
+        <main className="flex-1 text-gray-200 relative overflow-x-hidden" style={{ overflowY: 'visible' }}>
           {/* Enhanced Background with Multiple Layers */}
           <div className="fixed inset-0 bg-gray-950 -z-10"></div>
           
@@ -253,7 +256,7 @@ export default function Page() {
           
           {/* Enhanced Hero Section */}
           <motion.div 
-            className="relative w-full min-h-[60vh] sm:min-h-[60vh] flex items-center justify-center overflow-hidden pt-8 sm:pt-0"
+            className="relative w-full min-h-[60vh] sm:min-h-[60vh] flex items-center justify-center overflow-visible pt-8 sm:pt-0"
             variants={heroVariants}
             initial="hidden"
             animate="visible"
@@ -422,10 +425,11 @@ export default function Page() {
               {/* Enhanced Global Search Bar */}
               <motion.div
                 variants={itemVariants}
-                className="mb-8 sm:mb-6 max-w-2xl mx-auto"
+                className="mb-8 sm:mb-6 max-w-2xl mx-auto relative"
+                style={{ overflow: 'visible' }}
               >
                 <GlobalSearch 
-                  placeholder="Search for tokens, addresses, txs, news, events, or blocks..."
+                  placeholder="Search for tokens, addresses, txs, insights, events, or blocks..."
                   variant="homepage"
                 />
                 {/* Small status text */}
@@ -445,7 +449,7 @@ export default function Page() {
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  onClick={() => window.location.href = '/token-scanner'}
+                  onClick={() => window.location.href = '/trade'}
                   className="group relative px-6 sm:px-8 py-3 sm:py-4 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 border border-blue-500/30 hover:border-blue-400/50 w-full sm:w-auto min-w-[160px]"
                 >
                   <div className="absolute inset-0 bg-gradient-to-r from-blue-400/20 to-blue-600/20 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
@@ -460,7 +464,7 @@ export default function Page() {
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  onClick={() => window.location.href = '/docs'}
+                  onClick={() => window.open('https://cypherx.gitbook.io', '_blank')}
                   className="group relative px-6 sm:px-8 py-3 sm:py-4 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 border border-purple-500/30 hover:border-purple-400/50 w-full sm:w-auto min-w-[160px]"
                 >
                   <div className="absolute inset-0 bg-gradient-to-r from-purple-400/20 to-purple-600/20 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
@@ -471,6 +475,7 @@ export default function Page() {
                     Documentation
                   </span>
                 </motion.button>
+
               </motion.div>
 
               {/* Enhanced Stats Section */}
@@ -616,19 +621,30 @@ function LatestNews({ articles, isMobile, loading, error }: { articles: NewsArti
       className="w-full bg-gray-900 rounded-xl shadow-lg p-4 sm:p-6 border border-blue-500/30 flex flex-col"
       {...fadeInUp(0)}
     >
-      <div className="flex justify-between items-center mb-4 sm:mb-6">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-xl flex items-center justify-center border border-blue-500/30">
-            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+              <div className="flex justify-between items-center mb-4 sm:mb-6">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-600/50 rounded-xl flex items-center justify-center border border-gray-500/30">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-200">Insights</h2>
+              <p className="text-xs sm:text-sm text-gray-400">Stay updated with the latest Base Chain developments</p>
+            </div>
+          </div>
+          
+          {/* CTA Button */}
+          <Link
+            href="/insights"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-700/50 hover:bg-gray-600/50 text-gray-300 hover:text-white font-medium rounded-lg transition-all duration-200 transform hover:scale-105 border border-gray-600/50"
+          >
+            <span className="text-sm">View All</span>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
-          </div>
-          <div>
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-200">Latest News</h2>
-            <p className="text-xs sm:text-sm text-gray-400">Stay updated with the latest Base Chain developments</p>
-          </div>
+          </Link>
         </div>
-      </div>
       <div className="space-y-4">
         {articles.slice(0, 3).map((article) => (
           <motion.div
@@ -638,16 +654,39 @@ function LatestNews({ articles, isMobile, loading, error }: { articles: NewsArti
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}
           >
-            <div className={`flex ${isMobile ? "flex-col gap-3" : "gap-4 items-center"} mb-3`}>
+                        <div className={`flex ${isMobile ? "flex-col gap-3" : "gap-4 items-center"} mb-3`}>
               <div className="flex-1">
                 <h3 className="text-base sm:text-lg font-bold text-blue-400 line-clamp-1 hover:text-blue-300 transition-colors">
                   {article.title}
                 </h3>
                 <p className="text-sm sm:text-base mt-2 text-gray-400 line-clamp-2">{article.content}</p>
+                
+                {/* Author, Views, and Reading Time */}
+                <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
+                  <div className="flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    <span>{article.author || 'GL1TCHXBT'}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    <span>0</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>5 min read</span>
+                  </div>
+                </div>
               </div>
               <div className={`flex ${isMobile ? "flex-row gap-2" : "items-center gap-3"}`}>
                 <Link
-                  href={`/base-chain-news/${article.slug}`}
+                  href={`/insights/${article.slug}`}
                   className="flex items-center gap-1 p-2 bg-green-500/20 hover:bg-green-500/40 border border-green-500/30 rounded-md text-green-400 transition-all duration-200 hover:scale-105"
                   aria-label="Read article"
                 >
@@ -855,6 +894,14 @@ const MemescopeWidget = () => {
     const priceChange24h = formatPriceChange(token.priceChange?.h24);
     const buyPercentage = getBuyPercentage();
 
+    // Handle card click to navigate to token chart
+    const handleCardClick = () => {
+      const poolAddress = token.poolAddress || token.address;
+      if (poolAddress) {
+        window.location.href = `/trade/${poolAddress}/chart`;
+      }
+    };
+
     return (
       <motion.div
         className="bg-gray-800/30 border-b border-gray-700/50 p-2.5 hover:bg-gray-700/30 transition-all duration-200 cursor-pointer group"
@@ -862,6 +909,7 @@ const MemescopeWidget = () => {
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.3, ease: "easeOut" }}
+        onClick={handleCardClick}
       >
         <div className="flex items-center gap-3 mb-2">
           <Image

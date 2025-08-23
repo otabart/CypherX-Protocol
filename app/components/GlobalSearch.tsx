@@ -375,9 +375,9 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
     switch (type) {
       case "token":
         if (result.poolAddress) {
-          router.push(`/token-scanner/${result.poolAddress}/chart`);
+          router.push(`/trade/${result.poolAddress}/chart`);
         } else {
-          router.push(`/token-scanner/${result.address}/chart`);
+          router.push(`/trade/${result.address}/chart`);
         }
         break;
       case "wallet":
@@ -390,10 +390,10 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
         router.push(`/explorer/latest/block/${result.number}`);
         break;
       case "news":
-        router.push(`/base-chain-news/${result.slug}`);
+        router.push(`/insights/${result.slug}`);
         break;
       case "index":
-        router.push(`/token-scanner/${result.tokenAddress}/chart`);
+        router.push(`/trade/${result.tokenAddress}/chart`);
         break;
       case "calendar":
         router.push(`/calendar`);
@@ -458,7 +458,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
   };
 
   return (
-    <div ref={searchRef} className={`relative ${className}`}>
+    <div ref={searchRef} className={`relative ${className} ${variant === "homepage" ? "z-[9999999]" : ""}`}>
       {/* Search Input */}
       <div className="relative group">
         <input
@@ -518,11 +518,14 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
         {showResults && (query.length >= 2 || totalResults > 0) && (
           <motion.div
             className={`absolute top-full left-0 right-0 mt-2 bg-gray-800/95 backdrop-blur-xl border border-blue-500/30 rounded-xl shadow-2xl overflow-hidden flex flex-col ${
-              variant === "homepage" ? "w-full max-h-[50vh]" : "w-full max-w-2xl max-h-[60vh]"
+              variant === "homepage" ? "w-full max-h-[300px]" : "w-full max-w-2xl max-h-[60vh]"
             }`}
             style={{
               top: variant === "header" ? "calc(100% + 12px)" : "100%",
-              zIndex: variant === "header" ? 999999 : 99999
+              zIndex: variant === "homepage" ? 9999999 : 999999,
+              maxHeight: variant === "homepage" ? "300px" : "auto",
+              width: variant === "header" ? "600px" : "100%",
+              position: variant === "homepage" ? "absolute" : "absolute"
             }}
             initial={{ opacity: 0, y: -10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -553,7 +556,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
 
             {/* Results Summary */}
             {!isLoading && !error && totalResults > 0 && (
-              <div className="px-4 py-2 bg-gray-700/30 border-b border-gray-600/50 sticky top-0 z-20">
+              <div className="px-4 py-2 bg-gray-700/30 border-b border-gray-600/50 sticky top-0 z-20 flex-shrink-0">
                 <div className="text-xs text-gray-400">
                   Found {totalResults} result{totalResults !== 1 ? 's' : ''} for "{query}"
                 </div>
@@ -563,8 +566,8 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
             {/* Results Container */}
             <div 
               ref={resultsRef}
-              className={`overflow-y-auto pr-2 scrollbar-hide flex-1 transition-all duration-200 ${
-                variant === "homepage" ? "min-h-0" : "max-h-[400px]"
+              className={`overflow-y-auto pr-2 scrollbar-hide transition-all duration-200 ${
+                variant === "homepage" ? "h-[250px]" : "max-h-[400px]"
               } ${isMouseInResults ? 'ring-1 ring-blue-400/30' : ''}`}
               style={{
                 scrollBehavior: 'smooth',
@@ -577,7 +580,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
                  {/* Tokens */}
                  {results.tokens.length > 0 && (
                    <div className="mb-2">
-                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 sticky top-0 bg-gray-800/95 backdrop-blur-sm z-10">
+                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 bg-gray-800/95 backdrop-blur-sm z-10">
                        Tokens ({results.tokens.length})
                      </div>
                      <div>
@@ -587,7 +590,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
                          
                          return (
                            <motion.div
-                             key={token.address}
+                             key={`${token.address}-${token.poolAddress || 'nopool'}`}
                              initial={{ opacity: 0, x: -20 }}
                              animate={{ opacity: 1, x: 0 }}
                              transition={{ delay: index * 0.05 }}
@@ -636,6 +639,19 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
                                          {parseFloat(token.priceChange.h24.toString()) > 0 ? '+' : ''}{parseFloat(token.priceChange.h24.toString()).toFixed(2)}%
                                        </span>
                                      )}
+                                     {token.dexId && (
+                                       <span
+                                         className={`text-xs px-2 py-1 rounded-md font-medium border uppercase ${
+                                                                                                                               token.dexId?.toLowerCase() === 'aerodrome'
+                                            ? 'bg-blue-500/40 text-white border-blue-400/50'
+                                            : (token.dexId?.toLowerCase() === 'uniswap' || token.dexId?.toLowerCase() === 'uniswap_v3')
+                                              ? 'bg-pink-500/40 text-white border-pink-400/50'
+                                               : 'bg-gray-500/20 text-gray-300 border-gray-500/30'
+                                         }`}
+                                       >
+                                         {token.dexId}
+                                       </span>
+                                     )}
                                      {token.metrics && token.metrics.buyRatio24h > 0 && (
                                        <span className={`text-xs px-2 py-1 rounded-md font-medium ${
                                          token.metrics.buyRatio24h > 0.6 ? 'bg-green-500/20 text-green-400' : 
@@ -661,6 +677,9 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
                                      {token.volume?.h24 && (
                                        <span>Vol: ${formatNumber(token.volume.h24)}</span>
                                      )}
+                                     {token.liquidity?.usd !== undefined && (
+                                       <span>Liq: ${formatNumber(token.liquidity.usd)}</span>
+                                     )}
                                      {token.txns?.h24 && (
                                        <span>{token.txns.h24.buys + token.txns.h24.sells} txns</span>
                                      )}
@@ -685,7 +704,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
                  {/* Wallets */}
                  {results.wallets.length > 0 && (
                    <div className="mb-2">
-                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 sticky top-0 bg-gray-800/95 backdrop-blur-sm z-10">
+                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 bg-gray-800/95 backdrop-blur-sm z-10">
                        Wallets ({results.wallets.length})
                      </div>
                      <div>
@@ -734,7 +753,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
                  {/* Transactions */}
                  {results.transactions.length > 0 && (
                    <div className="mb-2">
-                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 sticky top-0 bg-gray-800/95 backdrop-blur-sm z-10">
+                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 bg-gray-800/95 backdrop-blur-sm z-10">
                        Transactions ({results.transactions.length})
                      </div>
                      <div>
@@ -783,7 +802,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
                  {/* Blocks */}
                  {results.blocks.length > 0 && (
                    <div className="mb-2">
-                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 sticky top-0 bg-gray-800/95 backdrop-blur-sm z-10">
+                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 bg-gray-800/95 backdrop-blur-sm z-10">
                        Blocks ({results.blocks.length})
                      </div>
                      <div>
@@ -832,7 +851,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
                  {/* News Articles */}
                  {results.news.length > 0 && (
                    <div className="mb-2">
-                                         <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 sticky top-0 bg-gray-800/95 backdrop-blur-sm z-10">
+                                         <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 bg-gray-800/95 backdrop-blur-sm z-10">
                        News ({results.news.length})
                      </div>
                      <div>
@@ -881,7 +900,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
                  {/* Index Data */}
                  {results.indexes.length > 0 && (
                    <div className="mb-2">
-                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 sticky top-0 bg-gray-800/95 backdrop-blur-sm z-10">
+                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 bg-gray-800/95 backdrop-blur-sm z-10">
                        Index Tokens ({results.indexes.length})
                      </div>
                      <div>
@@ -957,7 +976,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
                  {/* Calendar Events */}
                  {results.calendar.length > 0 && (
                    <div className="mb-2">
-                                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 sticky top-0 bg-gray-800/95 backdrop-blur-sm z-10">
+                                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 bg-gray-800/95 backdrop-blur-sm z-10">
                        Events ({results.calendar.length})
                      </div>
                      <div>
@@ -1000,7 +1019,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
             
             {/* Scroll Indicator */}
             {!isLoading && !error && totalResults > 0 && (
-              <div className="px-4 py-2 bg-gradient-to-t from-gray-800/50 to-transparent border-t border-gray-700/30">
+              <div className="px-4 py-2 bg-gradient-to-t from-gray-800/50 to-transparent border-t border-gray-700/30 flex-shrink-0">
                 <div className="text-xs text-gray-400 text-center">
                   {isMouseInResults ? "Scroll to see more results" : "Hover to scroll results"}
                 </div>

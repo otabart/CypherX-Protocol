@@ -17,6 +17,7 @@ interface TokenData {
   source: string;
   dexName: string;
   poolAddress?: string;
+  secondaryPoolAddress?: string;
   description: string;
   website: string;
   telegram: string;
@@ -149,7 +150,8 @@ export async function GET(request: Request) {
         mediaContent: data.mediaContent || "",
         source: data.source || "unknown",
         dexName: data.dexName || "unknown",
-        poolAddress: data.pool || "",
+        poolAddress: data.pool || data.pair || "",
+        secondaryPoolAddress: data.pool2 || data.pair2 || "",
         description: data.description || "",
         website: data.website || "",
         telegram: data.telegram || "",

@@ -75,8 +75,86 @@ export async function POST(
             await db.collection('users').doc(userSnapshot.docs[0].id).update({
               likedArticles: FieldValue.arrayUnion(slug)
             });
-            points = 5;
+            
+            // PYRAMID REWARDS:
+            // 1. Reward the person giving the like (micro-participation)
             activityAction = 'like_article';
+            
+            // Use the earn points API to handle daily limits and clever messages
+            try {
+              const earnResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/points/earn`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  userId,
+                  walletAddress,
+                  action: 'like_article',
+                  metadata: { articleSlug: slug }
+                })
+              });
+              
+              const earnData = await earnResponse.json();
+              points = earnData.pointsEarned || 0;
+              
+              // Return the clever message if limit reached
+              if (earnData.limitReached) {
+                return NextResponse.json({
+                  success: true,
+                  message: earnData.message,
+                  limitReached: true,
+                  points: 0
+                });
+              }
+            } catch (error) {
+              console.error('Error earning points for like:', error);
+              points = 0;
+            }
+            
+            // 2. Reward the article author for receiving engagement (significant reward)
+            const articleData = articleDoc.data();
+            if (articleData?.author && articleData.author !== userId) {
+              try {
+                const authorQuery = db.collection('users').where('uid', '==', articleData.author);
+                const authorSnapshot = await authorQuery.get();
+                
+                if (!authorSnapshot.empty) {
+                  const authorWalletAddress = authorSnapshot.docs[0].data().walletAddress;
+                  
+                  // Use earn points API for author reward
+                  const authorEarnResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/points/earn`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      userId: articleData.author,
+                      walletAddress: authorWalletAddress,
+                      action: 'receive_like',
+                      metadata: { 
+                        articleSlug: slug,
+                        likedBy: userId 
+                      }
+                    })
+                  });
+                  
+                  const authorEarnData = await authorEarnResponse.json();
+                  const authorPoints = authorEarnData.pointsEarned || 0;
+                  
+                  // Update author's leaderboard if points were earned
+                  if (authorPoints > 0) {
+                    const authorLeaderboardQuery = db.collection('leaderboard').where('userId', '==', articleData.author);
+                    const authorLeaderboardSnapshot = await authorLeaderboardQuery.get();
+                    
+                    if (!authorLeaderboardSnapshot.empty) {
+                      await db.collection('leaderboard').doc(authorLeaderboardSnapshot.docs[0].id).update({
+                        points: FieldValue.increment(authorPoints),
+                        lastUpdated: FieldValue.serverTimestamp(),
+                      });
+                    }
+                  }
+                }
+              } catch (error) {
+                console.warn('Error rewarding article author for like:', error);
+              }
+            }
           }
         }
         break;

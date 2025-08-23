@@ -4,6 +4,7 @@ import { collection, getDocs } from "firebase/firestore";
 
 export interface TokenData {
   poolAddress: string;
+  secondaryPoolAddress?: string;
   tokenAddress: string;
   symbol: string;
   name: string; // Optional for now
@@ -75,7 +76,8 @@ export const fetchAllTokenData = async (): Promise<TokenData[]> => {
       const data = doc.data();
       console.log("Raw Firebase token data:", data); // Debug log
       return {
-        poolAddress: data.pool as string || "",
+        poolAddress: (data.pool as string) || (data.pair as string) || "",
+        secondaryPoolAddress: (data.pool2 as string) || (data.pair2 as string) || "",
         tokenAddress: data.address as string || "",
         symbol: data.symbol as string || "",
         name: data.name as string || data.symbol || "Unknown", // Fallback to symbol if name is missing
@@ -162,7 +164,24 @@ export const fetchAllTokenData = async (): Promise<TokenData[]> => {
 };
 
 export const getTopPerformingCoins = (tokens: TokenData[]): TokenData[] => {
-  return [...tokens]
+  // Group by tokenAddress and select the pool with highest liquidity
+  const bestByToken = new Map<string, TokenData>();
+  for (const t of tokens) {
+    const key = t.tokenAddress?.toLowerCase();
+    if (!key) continue;
+    const current = bestByToken.get(key);
+    if (!current) {
+      bestByToken.set(key, t);
+      continue;
+    }
+    const currLiq = current.liquidity?.usd || 0;
+    const nextLiq = t.liquidity?.usd || 0;
+    if (nextLiq > currLiq) {
+      bestByToken.set(key, t);
+    }
+  }
+  const deduped = Array.from(bestByToken.values());
+  return deduped
     .sort((a, b) => (b.priceChange?.h24 || 0) - (a.priceChange?.h24 || 0))
     .slice(0, 10);
 };

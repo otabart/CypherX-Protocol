@@ -7,6 +7,7 @@ interface LeaderboardEntry {
   rank?: number;
   lastUpdated?: Date | string;
   createdAt?: Date | string;
+  alias?: string;
 }
 
 interface FirestoreTimestamp {
@@ -71,11 +72,26 @@ export async function GET(request: Request) {
     const querySnapshot = await leaderboardQuery.get();
     const leaderboard: LeaderboardEntry[] = [];
     
+    // Fetch aliases for all users
+    const walletAddresses = querySnapshot.docs.map(doc => doc.data().walletAddress);
+    const usersQuery = db.collection('users').where('walletAddress', 'in', walletAddresses);
+    const usersSnapshot = await usersQuery.get();
+    
+    // Create a map of wallet addresses to aliases
+    const aliasMap = new Map<string, string>();
+    usersSnapshot.docs.forEach(doc => {
+      const userData = doc.data();
+      if (userData.alias) {
+        aliasMap.set(userData.walletAddress, userData.alias);
+      }
+    });
+    
     querySnapshot.docs.forEach((doc, index: number) => {
       const data = doc.data() as LeaderboardEntry;
       leaderboard.push({
         ...data,
         rank: index + 1,
+        alias: aliasMap.get(data.walletAddress),
         lastUpdated: typeof data.lastUpdated === 'object' && data.lastUpdated !== null && 'toDate' in data.lastUpdated 
           ? (data.lastUpdated as FirestoreTimestamp).toDate().toISOString() 
           : data.lastUpdated,

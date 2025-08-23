@@ -177,10 +177,31 @@ export default function BlockDetails() {
   const gasUsedPercentage = block ? Math.round((parseInt(block.gasUsed) / parseInt(block.gasLimit)) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 flex flex-col">
+    <div className="h-screen bg-gray-950 flex flex-col overflow-hidden">
+      <style jsx>{`
+        .scrollbar-thin::-webkit-scrollbar {
+          width: 6px;
+        }
+        .scrollbar-thin::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+          background: #4B5563;
+          border-radius: 3px;
+        }
+        .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+          background: #6B7280;
+        }
+        .scrollbar-track-transparent::-webkit-scrollbar-track {
+          background: transparent;
+        }
+      `}</style>
       <Header />
       
-      <main className="flex-1 container mx-auto px-4 py-8">
+      {/* Separator line between header and main content */}
+      <div className="h-px bg-gray-800"></div>
+      
+      <main className="flex-1 container mx-auto px-4 py-8 pb-8 overflow-hidden">
         {/* Header Section */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -447,7 +468,7 @@ export default function BlockDetails() {
               </div>
 
               {block.transactionList && block.transactionList.length > 0 ? (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
                   <table className="w-full">
                     <thead>
                       <tr className="bg-gray-800/50 text-gray-300 text-sm">
@@ -461,7 +482,7 @@ export default function BlockDetails() {
                       <AnimatePresence>
                         {block.transactionList.map((tx, index) => (
                           <motion.tr
-                            key={index}
+                            key={tx.hash}
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: index * 0.05 }}
@@ -541,7 +562,10 @@ export default function BlockDetails() {
         )}
       </main>
 
-      <Footer />
+      {/* Footer - Fixed at bottom */}
+      <div className="flex-shrink-0">
+        <Footer />
+      </div>
     </div>
   );
 }

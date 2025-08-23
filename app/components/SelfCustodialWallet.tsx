@@ -17,6 +17,8 @@ import {
   FaEye,
   FaEyeSlash
 } from "react-icons/fa";
+import { auth, db } from "@/lib/firebase";
+import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 
 interface WalletData {
   address: string;
@@ -93,6 +95,9 @@ const SelfCustodialWallet: React.FC = () => {
             tokenBalance: "0.0"
           });
           
+          // Sync wallet address to user database record
+          syncWalletAddressToDatabase(wallet.address);
+          
           fetchWalletData(wallet.address);
         } catch (error) {
           console.error("Error loading wallet:", error);
@@ -133,6 +138,9 @@ const SelfCustodialWallet: React.FC = () => {
         tokenBalance: "0.0"
       });
       
+      // Sync wallet address to user database record
+      syncWalletAddressToDatabase(wallet.address);
+      
       toast.success("New wallet created successfully!");
     } catch (error) {
       console.error("Error creating wallet:", error);
@@ -141,6 +149,29 @@ const SelfCustodialWallet: React.FC = () => {
       setWalletLoading(false);
     }
   }, [setSelfCustodialWallet, setWalletLoading]);
+
+  // Function to sync wallet address to user database
+  const syncWalletAddressToDatabase = async (walletAddress: string) => {
+    try {
+      // Get current user from auth context
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        console.log("No authenticated user found for wallet sync");
+        return;
+      }
+
+      // Update user document with wallet address
+      const userDocRef = doc(db, "users", currentUser.uid);
+      await updateDoc(userDocRef, {
+        walletAddress: walletAddress,
+        lastUpdated: serverTimestamp()
+      });
+
+      console.log("✅ Wallet address synced to database:", walletAddress);
+    } catch (error) {
+      console.error("Error syncing wallet address to database:", error);
+    }
+  };
 
   const fetchWalletData = useCallback(async (address: string) => {
     if (!address) return;
@@ -153,7 +184,7 @@ const SelfCustodialWallet: React.FC = () => {
       const ethBalanceFormatted = ethers.formatEther(ethBalance);
       
       // Get ETH price for USD conversion
-      const ethPriceResponse = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd");
+              const ethPriceResponse = await fetch("/api/price/eth");
       const ethPriceData = await ethPriceResponse.json();
       const ethPrice = ethPriceData.ethereum?.usd || 0;
       
@@ -300,7 +331,7 @@ const SelfCustodialWallet: React.FC = () => {
             <FaWallet className="w-5 h-5 text-blue-400" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-gray-200">CypherX Wallet</h2>
+            <h2 className="text-xl font-bold text-gray-200">Wallet</h2>
             <p className="text-sm text-gray-400">Self-custodial trading wallet</p>
           </div>
         </div>

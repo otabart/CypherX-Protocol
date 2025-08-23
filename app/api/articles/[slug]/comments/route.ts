@@ -40,14 +40,29 @@ export async function POST(
       return NextResponse.json({ error: 'Database connection failed' }, { status: 500 });
     }
 
-    // Calculate points based on comment type
-    let points = 15; // Base points for commenting
-    if (annotation) {
-      points += 10; // Bonus points for section annotations
+    // Check for duplicate comments (same user, same content, within last 30 seconds)
+    try {
+      const thirtySecondsAgo = new Date(Date.now() - 30 * 1000);
+      const duplicateQuery = db.collection('comments')
+        .where('articleSlug', '==', slug)
+        .where('userId', '==', userId)
+        .where('content', '==', content.trim())
+        .where('createdAt', '>', thirtySecondsAgo);
+      
+      const duplicateSnapshot = await duplicateQuery.get();
+      if (!duplicateSnapshot.empty) {
+        return NextResponse.json({ 
+          error: 'Duplicate comment detected',
+          details: 'Please wait a moment before posting the same comment again'
+        }, { status: 429 });
+      }
+    } catch (error) {
+      console.warn('Error checking for duplicate comments:', error);
+      // Continue with comment creation even if duplicate check fails
     }
-    if (parentCommentId) {
-      points += 5; // Bonus points for replies
-    }
+
+    // Comments don't earn points immediately - they earn through engagement
+    let points = 0; // No immediate points for posting
 
     // Create comment data
     const commentData = {
@@ -154,18 +169,43 @@ export async function POST(
       // Don't fail the entire request if leaderboard update fails
     }
 
-    // Get the created comment with ID
+    // Get article data to include author ID
+    let articleAuthorId = null;
+    try {
+      const articleQuery = db.collection('articles').where('slug', '==', slug);
+      const articleSnapshot = await articleQuery.get();
+      if (!articleSnapshot.empty) {
+        const articleData = articleSnapshot.docs[0].data();
+        articleAuthorId = articleData.author || null;
+      }
+    } catch (error) {
+      console.warn('Could not fetch article author ID:', error);
+    }
+
+    // Get the created comment with ID (without server timestamp)
     const createdComment = {
       id: commentRef.id,
-      ...commentData,
-      createdAt: new Date().toISOString(),
+      articleSlug: slug,
+      userId,
+      walletAddress,
+      content: content.trim(),
+      sectionId: sectionId || 'general',
+      parentCommentId,
+      annotation,
+      likes: [],
+      dislikes: [],
+      replies: [],
+      createdAt: new Date().toISOString(), // Use current time for immediate response
+      points,
+      isPinned: false,
+      articleAuthorId,
     };
 
     return NextResponse.json({
       success: true,
       comment: createdComment,
       pointsEarned: points,
-      message: `Comment posted! +${points} points earned!`
+      message: `Comment posted! Earn points through engagement!`
     });
 
   } catch (error) {

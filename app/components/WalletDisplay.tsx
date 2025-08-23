@@ -113,9 +113,9 @@ const WalletDisplay: React.FC<WalletDisplayProps> = ({
     return (
       <button
         onClick={onToggleDropdown}
-        className="flex items-center space-x-3 px-3 py-2 rounded-xl bg-blue-400/20 backdrop-blur-sm border border-blue-400/50 hover:bg-blue-400/30 transition-all duration-200"
+        className="flex items-center space-x-3 px-3 py-2 rounded-xl bg-gray-800/50 backdrop-blur-sm border border-gray-600/50 hover:bg-gray-700/50 transition-all duration-200"
       >
-        <FaWallet className="w-4 h-4 text-blue-400 hidden sm:block" />
+        <FaWallet className="w-4 h-4 icon-blue-gradient hidden sm:block" />
         <div className="flex items-center space-x-2">
           <span className="text-gray-300 text-sm font-medium hidden sm:block">Connect</span>
           <span className="text-gray-300 text-sm font-medium sm:hidden">Connect</span>
@@ -128,10 +128,10 @@ const WalletDisplay: React.FC<WalletDisplayProps> = ({
   return (
     <button
       onClick={onToggleDropdown}
-      className="flex items-center space-x-3 px-3 py-2 rounded-xl bg-blue-400/20 backdrop-blur-sm border border-blue-400/50 hover:bg-blue-400/30 transition-all duration-200"
+      className="flex items-center space-x-3 px-3 py-2 rounded-xl bg-gray-800/50 backdrop-blur-sm border border-gray-600/50 hover:bg-gray-700/50 transition-all duration-200"
     >
       {/* Wallet Icon - Hidden on Mobile */}
-      <FaWallet className="w-4 h-4 text-blue-400 hidden sm:block" />
+      <FaWallet className="w-4 h-4 icon-blue-gradient hidden sm:block" />
       
       {/* Separator - Hidden on Mobile */}
       <div className="w-px h-4 bg-gray-600 hidden sm:block"></div>

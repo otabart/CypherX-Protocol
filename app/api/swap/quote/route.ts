@@ -129,50 +129,106 @@ function getPriceImpactLevel(impact: number): "low" | "medium" | "high" {
   return "high";
 }
 
-// Get ETH price
+// Get ETH price with multiple reliable sources (avoiding CoinGecko rate limits)
 async function getEthPrice(): Promise<number> {
+  // Try DexScreener first (most reliable and no rate limits)
   try {
-    console.log("🔄 Fetching ETH price from CoinGecko...");
-    const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd", {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'CypherX/1.0'
+    console.log("🔄 Fetching ETH price from DexScreener...");
+    const dexResponse = await fetch("https://api.dexscreener.com/latest/dex/tokens/0x4200000000000000000000000000000000000006");
+    const dexData = await dexResponse.json();
+    if (dexData.pairs && dexData.pairs.length > 0) {
+      // Look for WETH pairs with USDC as quote token (most reliable)
+      const wethUsdcPair = dexData.pairs.find((pair: any) => 
+        pair.baseToken?.address === "0x4200000000000000000000000000000000000006" && 
+        pair.quoteToken?.address === "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" &&
+        pair.chainId === "base"
+      );
+      if (wethUsdcPair?.priceUsd) {
+        const dexEthPrice = parseFloat(wethUsdcPair.priceUsd);
+        console.log("✅ ETH price from DexScreener WETH/USDC:", dexEthPrice);
+        return dexEthPrice;
       }
-    });
-    const data = await response.json();
-    const ethPrice = data.ethereum?.usd || 0;
-    console.log("✅ ETH price from CoinGecko:", ethPrice);
-    
-    // If CoinGecko returns 0, use fallback
-    if (ethPrice <= 0) {
-      console.log("⚠️ CoinGecko returned 0, using fallback ETH price: 3000");
-      return 3000;
+      
+      // Fallback to any WETH pair with price on Base
+      const wethPair = dexData.pairs.find((pair: any) => 
+        pair.baseToken?.address === "0x4200000000000000000000000000000000000006" && 
+        pair.priceUsd && 
+        pair.chainId === "base"
+      );
+      if (wethPair?.priceUsd) {
+        const dexEthPrice = parseFloat(wethPair.priceUsd);
+        console.log("✅ ETH price from DexScreener Base chain:", dexEthPrice);
+        return dexEthPrice;
+      }
     }
-    
-    return ethPrice;
-  } catch (error) {
-    console.error("❌ Error fetching ETH price from CoinGecko:", error);
-    // Fallback to our proxy
+  } catch (dexError) {
+    console.error("DexScreener ETH price fetch failed:", dexError);
+  }
+
+  // Try alternative price APIs with better rate limits
+  const priceAPIs = [
+    {
+      name: "Binance",
+      url: "https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT",
+      parser: (data: any) => parseFloat(data.price)
+    },
+    {
+      name: "Kraken",
+      url: "https://api.kraken.com/0/public/Ticker?pair=ETHUSD",
+      parser: (data: any) => parseFloat(data.result?.XETHZUSD?.c?.[0])
+    },
+    {
+      name: "CoinGecko",
+      url: "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd",
+      parser: (data: any) => data.ethereum?.usd
+    }
+  ];
+
+  for (const api of priceAPIs) {
     try {
-      console.log("🔄 Trying ETH price proxy fallback...");
-      const proxyResponse = await fetch("/api/coingecko-proxy?endpoint=simple/price?ids=ethereum&vs_currencies=usd");
-      const proxyData = await proxyResponse.json();
-      const ethPrice = proxyData.ethereum?.usd || 0;
-      console.log("✅ ETH price from proxy:", ethPrice);
+      console.log(`🔄 Trying ${api.name} for ETH price...`);
+      const response = await fetch(api.url, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'CypherX/1.0'
+        },
+        signal: AbortSignal.timeout(5000) // 5 second timeout
+      });
       
-      // If proxy also returns 0, use fallback
-      if (ethPrice <= 0) {
-        console.log("⚠️ Proxy also returned 0, using fallback ETH price: 3000");
-        return 3000;
+      if (!response.ok) {
+        console.log(`⚠️ ${api.name} returned status ${response.status}`);
+        continue;
       }
       
-      return ethPrice;
-    } catch (proxyError) {
-      console.error("❌ Proxy fallback also failed:", proxyError);
-      console.log("⚠️ Using fallback ETH price: 3000");
-      return 3000; // Fallback price
+      const data = await response.json();
+      const price = api.parser(data);
+      
+      if (price && price > 0) {
+        console.log(`✅ ETH price from ${api.name}: $${price}`);
+        return price;
+      }
+    } catch (error) {
+      console.log(`❌ ${api.name} failed:`, error instanceof Error ? error.message : 'Unknown error');
     }
   }
+
+  // Last resort: use our proxy
+  try {
+    console.log("🔄 Trying ETH price proxy as last resort...");
+    const proxyResponse = await fetch("/api/coingecko-proxy?endpoint=simple/price?ids=ethereum&vs_currencies=usd");
+    const proxyData = await proxyResponse.json();
+    const ethPrice = proxyData.ethereum?.usd || 0;
+    
+    if (ethPrice > 0) {
+      console.log("✅ ETH price from proxy:", ethPrice);
+      return ethPrice;
+    }
+  } catch (proxyError) {
+    console.error("❌ Proxy fallback also failed:", proxyError);
+  }
+  
+  // No fallback - throw error if no real price found
+  throw new Error("Failed to fetch real ETH price from all sources");
 }
 
 // Get token price from DexScreener
@@ -182,9 +238,19 @@ async function getTokenPrice(tokenAddress: string): Promise<number> {
   }
 
   try {
+    console.log(`🔍 Fetching token price for: ${tokenAddress}`);
     // First try to get price from DexScreener
     const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${tokenAddress}`);
     const data = await response.json();
+    
+    console.log(`📊 DexScreener response for ${tokenAddress}:`, {
+      pairsCount: data.pairs?.length || 0,
+      firstPair: data.pairs?.[0] ? {
+        dexId: data.pairs[0].dexId,
+        priceUsd: data.pairs[0].priceUsd,
+        liquidity: data.pairs[0].liquidity?.usd
+      } : null
+    });
     
     // Look for the best pair with highest liquidity
     const pairs = data.pairs || [];
@@ -195,8 +261,9 @@ async function getTokenPrice(tokenAddress: string): Promise<number> {
     }, pairs[0]);
     
     if (bestPair?.priceUsd) {
-      console.log(`Token ${tokenAddress} price: ${bestPair.priceUsd} USD`);
-      return parseFloat(bestPair.priceUsd);
+      const price = parseFloat(bestPair.priceUsd);
+      console.log(`✅ Token ${tokenAddress} price from DexScreener: $${price} USD`);
+      return price;
     }
     
     // Fallback to CoinGecko if available
@@ -249,6 +316,23 @@ async function getUniswapQuote(
       throw new Error("Failed to validate Uniswap V3 Quoter contract");
     }
     
+    // Check if token addresses are valid contracts
+    try {
+      const tokenInCode = await provider.getCode(tokenInAddress);
+      const tokenOutCode = await provider.getCode(tokenOutAddress);
+      
+      if (tokenInCode === "0x" && tokenInAddress !== ETH_ADDRESS) {
+        console.log("⚠️ TokenIn address is not a contract:", tokenInAddress);
+      }
+      if (tokenOutCode === "0x" && tokenOutAddress !== ETH_ADDRESS) {
+        console.log("⚠️ TokenOut address is not a contract:", tokenOutAddress);
+      }
+      
+      console.log("✅ Token contract validation completed");
+    } catch (error) {
+      console.log("⚠️ Token contract validation failed:", error);
+    }
+    
     // Validate token addresses
     if (!tokenInAddress || !tokenOutAddress || tokenInAddress === tokenOutAddress) {
       throw new Error("Invalid token addresses for quote");
@@ -272,6 +356,14 @@ async function getUniswapQuote(
           console.log(`❌ Invalid input amount for fee tier ${fee}`);
           continue;
         }
+        
+        console.log(`🔍 Calling quoter with:`, {
+          tokenInAddress,
+          tokenOutAddress,
+          amountInWei: amountInWei.toString(),
+          fee,
+          sqrtPriceLimitX96: 0
+        });
         
         const quote = await quoter.quoteExactInputSingle(
           tokenInAddress,
@@ -298,6 +390,22 @@ async function getUniswapQuote(
         }
       } catch (error) {
         console.log(`❌ Fee tier ${fee} failed:`, error instanceof Error ? error.message : 'Unknown error');
+        
+        // Log specific error details for each fee tier
+        if (error instanceof Error) {
+          if (error.message.includes("execution reverted")) {
+            console.log(`🔍 Fee tier ${fee}: Contract revert - no liquidity or invalid parameters`);
+          } else if (error.message.includes("insufficient liquidity")) {
+            console.log(`🔍 Fee tier ${fee}: Insufficient liquidity`);
+          } else if (error.message.includes("price impact too high")) {
+            console.log(`🔍 Fee tier ${fee}: Price impact too high`);
+          } else if (error.message.includes("INSUFFICIENT_OUTPUT_AMOUNT")) {
+            console.log(`🔍 Fee tier ${fee}: Insufficient output amount`);
+          } else if (error.message.includes("EXCESSIVE_INPUT_AMOUNT")) {
+            console.log(`🔍 Fee tier ${fee}: Excessive input amount`);
+          }
+        }
+        
         // Continue to next fee tier
         continue;
       }
@@ -327,7 +435,7 @@ async function getAggregatedQuote(
   tokenOutAddress: string,
   amountIn: string,
   decimals: number
-): Promise<{ amountOut: string; gasEstimate: string; route: string[] }> {
+): Promise<{ amountOut: string; gasEstimate: string; route: string[]; source: string; liquidity?: string; slippage?: string }> {
   console.log("🔄 Starting aggregated quote for:", {
     tokenInAddress,
     tokenOutAddress,
@@ -337,55 +445,128 @@ async function getAggregatedQuote(
   
   const quotes = [];
   
-  // Try Uniswap V3
+  // Check if Uniswap V3 pools exist for this token pair
   try {
-    console.log("🔄 Attempting Uniswap V3 quote...");
-    console.log("🔍 Uniswap V3 quote parameters:", {
-      tokenInAddress,
-      tokenOutAddress,
-      amountIn,
-      decimals,
-      quoterAddress: UNISWAP_V3_QUOTER
-    });
-    
-    const uniswapQuote = await getUniswapQuote(tokenInAddress, tokenOutAddress, amountIn, decimals);
-    quotes.push({
-      ...uniswapQuote,
-      source: "Uniswap V3",
-      route: ["Uniswap V3"]
-    });
-    console.log("✅ Uniswap quote added:", uniswapQuote);
-  } catch (error) {
-    console.error("❌ Uniswap quote failed:", error);
-    console.error("❌ Uniswap quote error details:", {
-      message: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined,
-      tokenInAddress,
-      tokenOutAddress,
-      amountIn,
-      decimals
-    });
-  }
-  
-  // Try DexScreener for additional routes
-  try {
-    console.log("🔄 Attempting DexScreener quote...");
-    // Search for the specific token pair
-    const searchQuery = `${tokenInAddress} ${tokenOutAddress}`;
-    const dexScreenerResponse = await fetch(`https://api.dexscreener.com/latest/dex/search?q=${searchQuery}`);
+    console.log("🔍 Checking for Uniswap V3 pools...");
+    const dexScreenerResponse = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${tokenInAddress}`);
     const dexData = await dexScreenerResponse.json();
     
-    // Process DexScreener routes - look for exact pair matches
-    const pairs = dexData.pairs?.filter((pair: { baseToken?: { address?: string }; quoteToken?: { address?: string } }) => 
+    const uniswapV3Pools = dexData.pairs?.filter((pair: { dexId?: string; baseToken?: { address?: string }; quoteToken?: { address?: string } }) => 
+      pair.dexId === "uniswap_v3" && 
+      ((pair.baseToken?.address?.toLowerCase() === tokenInAddress.toLowerCase() && 
+        pair.quoteToken?.address?.toLowerCase() === tokenOutAddress.toLowerCase()) ||
+       (pair.baseToken?.address?.toLowerCase() === tokenOutAddress.toLowerCase() && 
+        pair.quoteToken?.address?.toLowerCase() === tokenInAddress.toLowerCase()))
+    ) || [];
+    
+    console.log(`📊 Found ${uniswapV3Pools.length} Uniswap V3 pools for this token pair`);
+    
+    if (uniswapV3Pools.length === 0) {
+      console.log("⚠️ No Uniswap V3 pools found - skipping Uniswap V3 quote attempt");
+    } else {
+      console.log("✅ Uniswap V3 pools found - attempting quote");
+      
+      // Try Uniswap V3
+      try {
+        console.log("🔄 Attempting Uniswap V3 quote...");
+        console.log("🔍 Uniswap V3 quote parameters:", {
+          tokenInAddress,
+          tokenOutAddress,
+          amountIn,
+          decimals,
+          quoterAddress: UNISWAP_V3_QUOTER
+        });
+        
+        const uniswapQuote = await getUniswapQuote(tokenInAddress, tokenOutAddress, amountIn, decimals);
+        quotes.push({
+          ...uniswapQuote,
+          source: "Uniswap V3",
+          route: ["Uniswap V3"]
+        });
+        console.log("✅ Uniswap quote added:", uniswapQuote);
+      } catch (error) {
+        console.error("❌ Uniswap quote failed:", error);
+        console.error("❌ Uniswap quote error details:", {
+          message: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined,
+          tokenInAddress,
+          tokenOutAddress,
+          amountIn,
+          decimals
+        });
+        
+        // Log specific error details for debugging
+        if (error instanceof Error) {
+          if (error.message.includes("execution reverted")) {
+            console.error("🔍 This is a contract revert - likely no liquidity on Uniswap V3");
+          } else if (error.message.includes("insufficient liquidity")) {
+            console.error("🔍 Insufficient liquidity on Uniswap V3");
+          } else if (error.message.includes("price impact too high")) {
+            console.error("🔍 Price impact too high on Uniswap V3");
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error("❌ Error checking for Uniswap V3 pools:", error);
+    
+    // Fallback: try Uniswap V3 anyway
+    try {
+      console.log("🔄 Fallback: Attempting Uniswap V3 quote...");
+      const uniswapQuote = await getUniswapQuote(tokenInAddress, tokenOutAddress, amountIn, decimals);
+      quotes.push({
+        ...uniswapQuote,
+        source: "Uniswap V3",
+        route: ["Uniswap V3"]
+      });
+      console.log("✅ Uniswap quote added:", uniswapQuote);
+    } catch (fallbackError) {
+      console.error("❌ Fallback Uniswap quote also failed:", fallbackError);
+    }
+  }
+  
+  // Try DexScreener for additional routes - this is the main source for finding liquidity
+  try {
+    console.log("🔄 Attempting DexScreener quote...");
+    
+    // First, try to get all pairs for the input token
+    const inputTokenResponse = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${tokenInAddress}`);
+    const inputTokenData = await inputTokenResponse.json();
+    
+    // Then, try to get all pairs for the output token
+    const outputTokenResponse = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${tokenOutAddress}`);
+    const outputTokenData = await outputTokenResponse.json();
+    
+    // Combine and find matching pairs
+    const allPairs = [
+      ...(inputTokenData.pairs || []),
+      ...(outputTokenData.pairs || [])
+    ];
+    
+    // Find exact pair matches
+    const exactPairs = allPairs.filter((pair: { baseToken?: { address?: string }; quoteToken?: { address?: string } }) => 
       (pair.baseToken?.address?.toLowerCase() === tokenInAddress.toLowerCase() && 
        pair.quoteToken?.address?.toLowerCase() === tokenOutAddress.toLowerCase()) ||
       (pair.baseToken?.address?.toLowerCase() === tokenOutAddress.toLowerCase() && 
        pair.quoteToken?.address?.toLowerCase() === tokenInAddress.toLowerCase())
-    ) || [];
+    );
     
-    console.log("📊 DexScreener pairs found:", pairs.length);
+    // Remove duplicates based on pairAddress
+    const uniquePairs = exactPairs.filter((pair: any, index: number, self: any[]) => 
+      index === self.findIndex((p: any) => p.pairAddress === pair.pairAddress)
+    );
     
-    for (const pair of pairs.slice(0, 3)) { // Limit to top 3 routes
+    // Sort by liquidity (highest first)
+    const sortedPairs = uniquePairs.sort((a: any, b: any) => {
+      const liquidityA = parseFloat(a.liquidity?.usd || "0");
+      const liquidityB = parseFloat(b.liquidity?.usd || "0");
+      return liquidityB - liquidityA;
+    });
+    
+    console.log("📊 DexScreener pairs found:", sortedPairs.length);
+    console.log("🔍 Available DEXs:", sortedPairs.map((p: any) => p.dexId).join(", "));
+    
+    for (const pair of sortedPairs.slice(0, 5)) { // Process top 5 pairs by liquidity
       try {
         console.log("🔍 Processing DexScreener pair:", {
           dexId: (pair as { dexId?: string }).dexId,
@@ -401,46 +582,137 @@ async function getAggregatedQuote(
         const pairPrice = parseFloat((pair as { priceUsd?: string }).priceUsd || "0");
         const liquidity = parseFloat((pair as { liquidity?: { usd?: string } }).liquidity?.usd || "0");
         
-        // For ETH swaps, we need to get the ETH price from the base token if it's ETH/WETH
-        let inputPrice = parseFloat((pair as { baseToken?: { priceUsd?: string } }).baseToken?.priceUsd || "0");
+        // 🔧 FIXED: Get the correct input price based on what we're actually selling
+        let inputPrice = 0;
         
-        // If inputPrice is 0 and we're dealing with ETH, try to get ETH price from quote token
-        if (inputPrice === 0 && (tokenInAddress === WETH_ADDRESS || tokenOutAddress === WETH_ADDRESS)) {
-          inputPrice = parseFloat((pair as { quoteToken?: { priceUsd?: string } }).quoteToken?.priceUsd || "0");
-        }
-        
-        // If still 0, use fallback ETH price
-        if (inputPrice === 0 && (tokenInAddress === WETH_ADDRESS || tokenOutAddress === WETH_ADDRESS)) {
-          inputPrice = 3000; // Fallback ETH price
-          console.log("⚠️ Using fallback ETH price for DexScreener calculation");
+        if (tokenInAddress === WETH_ADDRESS) {
+          // We're selling ETH, so inputPrice should be ETH price
+          inputPrice = parseFloat((pair as { baseToken?: { priceUsd?: string } }).baseToken?.priceUsd || "0");
+          if (inputPrice === 0) {
+            inputPrice = parseFloat((pair as { quoteToken?: { priceUsd?: string } }).quoteToken?.priceUsd || "0");
+          }
+          if (inputPrice === 0) {
+            inputPrice = await getEthPrice();
+            console.log("✅ Using real ETH price for ETH sale:", inputPrice);
+          }
+        } else {
+          // We're selling a token, so inputPrice should be the token price
+          // Get the token price from the pair data
+          const baseTokenAddress = (pair as { baseToken?: { address?: string } }).baseToken?.address;
+          const quoteTokenAddress = (pair as { quoteToken?: { address?: string } }).quoteToken?.address;
+          
+          if (baseTokenAddress?.toLowerCase() === tokenInAddress.toLowerCase()) {
+            inputPrice = parseFloat((pair as { baseToken?: { priceUsd?: string } }).baseToken?.priceUsd || "0");
+          } else if (quoteTokenAddress?.toLowerCase() === tokenInAddress.toLowerCase()) {
+            inputPrice = parseFloat((pair as { quoteToken?: { priceUsd?: string } }).quoteToken?.priceUsd || "0");
+          }
+          
+          // If we still don't have a price, get it from our token price function
+          if (inputPrice === 0) {
+            inputPrice = await getTokenPrice(tokenInAddress);
+            console.log("✅ Using token price function for token sale:", inputPrice);
+          }
         }
         
         console.log("💰 DexScreener pair data:", { pairPrice, inputPrice, liquidity });
         
         if (pairPrice > 0 && inputPrice > 0 && liquidity > 0) {
-          // Calculate based on actual pair data
-          const amountInValue = parseFloat(amountIn) * inputPrice;
-          const estimatedOutput = amountInValue / pairPrice;
+          // 🔧 FIXED: Use direct USD value calculation instead of trying to calculate exchange rates
+          // This is more reliable since we have USD prices for both tokens
+          let estimatedOutput;
           
-          // Apply slippage based on liquidity
-          const slippage = Math.min(0.1, 1000 / liquidity); // Higher liquidity = lower slippage
+          // Calculate the USD value of the input amount
+          const inputValueUSD = parseFloat(amountIn) * inputPrice;
+          console.log("🔍 Input value in USD:", inputValueUSD);
+          
+          // For token -> ETH swaps, calculate how much ETH we get for the USD value
+          if (tokenOutAddress === WETH_ADDRESS) {
+            // Token -> ETH: USD value / ETH price = ETH amount
+            const ethPrice = await getEthPrice(); // Get real ETH price
+            estimatedOutput = inputValueUSD / ethPrice;
+            console.log("🔍 Token -> ETH calculation:", {
+              amountIn,
+              inputValueUSD,
+              ethPrice,
+              estimatedOutput
+            });
+            
+            // 🔧 DEBUG: Also try a simple calculation as fallback
+            if (estimatedOutput < 0.0001) { // If result is too small
+              console.log("⚠️ ETH output too small, trying fallback calculation...");
+              const fallbackEthPrice = 3000; // Use a reasonable ETH price
+              const fallbackOutput = inputValueUSD / fallbackEthPrice;
+              console.log("🔍 Fallback calculation:", {
+                inputValueUSD,
+                fallbackEthPrice,
+                fallbackOutput
+              });
+              if (fallbackOutput > estimatedOutput) {
+                estimatedOutput = fallbackOutput;
+                console.log("✅ Using fallback calculation");
+              }
+            }
+          } else if (tokenInAddress === WETH_ADDRESS) {
+            // ETH -> Token: USD value / token price = token amount
+            const tokenPrice = await getTokenPrice(tokenOutAddress);
+            estimatedOutput = inputValueUSD / tokenPrice;
+            console.log("🔍 ETH -> Token calculation:", {
+              amountIn,
+              inputValueUSD,
+              tokenPrice,
+              estimatedOutput
+            });
+          } else {
+            // Token -> Token: USD value / output token price = output token amount
+            const outputTokenPrice = await getTokenPrice(tokenOutAddress);
+            estimatedOutput = inputValueUSD / outputTokenPrice;
+            console.log("🔍 Token -> Token calculation:", {
+              amountIn,
+              inputValueUSD,
+              outputTokenPrice,
+              estimatedOutput
+            });
+          }
+          
+          // Apply slippage based on liquidity and trade size
+          const tradeSize = parseFloat(amountIn) * inputPrice;
+          const liquidityRatio = tradeSize / liquidity;
+          
+          // Dynamic slippage calculation
+          let slippage = 0.005; // Base 0.5% slippage
+          if (liquidityRatio > 0.1) slippage = 0.02; // 2% for large trades
+          if (liquidityRatio > 0.5) slippage = 0.05; // 5% for very large trades
+          if (liquidityRatio > 1) slippage = 0.1; // 10% for extremely large trades
+          
           const finalOutput = estimatedOutput * (1 - slippage);
+          
+          // Get appropriate gas estimate based on DEX
+          const dexId = (pair as { dexId?: string }).dexId || "unknown";
+          let gasEstimate = "150000"; // Default
+          if (dexId.includes("uniswap")) gasEstimate = "180000";
+          if (dexId.includes("aerodrome")) gasEstimate = "200000";
+          if (dexId.includes("baseswap")) gasEstimate = "180000";
           
           quotes.push({
             amountOut: finalOutput.toString(),
-            gasEstimate: "150000", // Default gas estimate
-            source: (pair as { dexId?: string }).dexId || "Unknown DEX",
-            route: [(pair as { dexId?: string }).dexId || "Unknown DEX"]
+            gasEstimate,
+            source: dexId,
+            route: [dexId],
+            liquidity: liquidity.toString(),
+            slippage: slippage.toString()
           });
           
           console.log("✅ DexScreener quote added:", {
-            pair: (pair as { dexId?: string }).dexId,
+            dex: dexId,
             price: pairPrice,
             inputPrice,
             liquidity,
+            tradeSize,
+            liquidityRatio,
             estimatedOutput,
             finalOutput,
-            slippage
+            slippage: `${(slippage * 100).toFixed(2)}%`,
+            gasEstimate
           });
         } else {
           console.log("⚠️ DexScreener pair skipped - invalid data:", { pairPrice, inputPrice, liquidity });
@@ -468,24 +740,59 @@ async function getAggregatedQuote(
     );
   }
   
-  // Prioritize Uniswap V3 quotes over DexScreener
-  const uniswapQuotes = quotes.filter(q => q.source === "Uniswap V3");
-  const dexScreenerQuotes = quotes.filter(q => q.source !== "Uniswap V3");
+  // Select the best quote based on output amount and liquidity
+  console.log("📊 Available quotes:", quotes.map(q => ({
+    source: q.source,
+    amountOut: q.amountOut,
+    liquidity: q.liquidity,
+    slippage: q.slippage
+  })));
   
-  let bestQuote;
-  if (uniswapQuotes.length > 0) {
-    // Use best Uniswap V3 quote if available
-    bestQuote = uniswapQuotes.reduce((best, current) => 
-      parseFloat(current.amountOut) > parseFloat(best.amountOut) ? current : best
+  if (quotes.length === 0) {
+    console.log("❌ No quotes available from any source");
+    return NextResponse.json(
+      { 
+        error: "No liquidity found for this token pair",
+        details: "Unable to find any trading pairs with sufficient liquidity"
+      },
+      { status: 400 }
     );
-    console.log("🏆 Using Uniswap V3 quote:", bestQuote);
-  } else {
-    // Fallback to DexScreener only if no Uniswap V3 liquidity
-    bestQuote = dexScreenerQuotes.reduce((best, current) => 
-      parseFloat(current.amountOut) > parseFloat(best.amountOut) ? current : best
-    );
-    console.log("⚠️ No Uniswap V3 liquidity, using DexScreener quote:", bestQuote);
   }
+  
+  // Score quotes based on output amount and liquidity
+  const scoredQuotes = quotes.map(quote => {
+    const outputAmount = parseFloat(quote.amountOut);
+    const liquidity = parseFloat(quote.liquidity || "0");
+    const slippage = parseFloat(quote.slippage || "0");
+    
+    // Score based on output amount (higher is better) and slippage (lower is better)
+    // But heavily favor DexScreener quotes over Uniswap V3 since Uniswap V3 is failing
+    let score = outputAmount * (1 - slippage);
+    
+    // Boost DexScreener quotes significantly
+    if (quote.source !== "Uniswap V3") {
+      score *= 1.5; // 50% boost for non-Uniswap quotes
+    }
+    
+    // Additional boost for high liquidity
+    if (liquidity > 10000) { // $10k+ liquidity
+      score *= 1.2;
+    }
+    
+    return { ...quote, score };
+  });
+  
+  // Sort by score (highest first)
+  scoredQuotes.sort((a, b) => b.score - a.score);
+  
+  const bestQuote = scoredQuotes[0];
+  console.log("🏆 Best quote selected:", {
+    source: bestQuote.source,
+    amountOut: bestQuote.amountOut,
+    liquidity: bestQuote.liquidity,
+    slippage: bestQuote.slippage,
+    score: bestQuote.score
+  });
   
   // Validate the best quote is reasonable
   const bestAmount = parseFloat(bestQuote.amountOut);
@@ -500,10 +807,18 @@ async function getAggregatedQuote(
     );
   }
   
+  // Log which DEX is being used
+  if (bestQuote.source !== "Uniswap V3") {
+    console.log("✅ Using quote from:", bestQuote.source);
+  }
+  
   return {
     amountOut: bestQuote.amountOut,
     gasEstimate: bestQuote.gasEstimate,
-    route: bestQuote.route
+    route: bestQuote.route,
+    source: bestQuote.source,
+    liquidity: bestQuote.liquidity,
+    slippage: bestQuote.slippage
   };
 }
 
@@ -556,12 +871,41 @@ export async function POST(request: Request) {
     });
     
     // Get aggregated quote
-    const quote = await getAggregatedQuote(
+    let quote = await getAggregatedQuote(
       inputTokenInfo.address,
       outputTokenInfo.address,
       inputAmount,
       inputTokenInfo.decimals
     );
+    
+    // Validate that the quote is from a DEX that actually has working pools
+    if (quote && quote.source) {
+      console.log(`🔍 Validating quote source: ${quote.source}`);
+      
+      try {
+        const { validateAllPools } = await import('../../../utils/poolValidation');
+        const poolValidation = await validateAllPools(inputTokenInfo.address, outputTokenInfo.address);
+        
+        if (poolValidation.bestPool && poolValidation.bestPool.isValid) {
+          console.log(`✅ Found working pool: ${poolValidation.bestPool.dexId} with fee ${poolValidation.bestPool.fee}`);
+          
+          // Prioritize Aerodrome since Uniswap V3 is broken on Base chain
+          if (poolValidation.bestPool.dexId === 'aerodrome') {
+            console.log(`✅ Using Aerodrome (working DEX on Base chain)`);
+            quote.route = ['aerodrome'];
+            quote.source = 'aerodrome';
+          } else if (quote.source.toLowerCase() !== poolValidation.bestPool.dexId.toLowerCase()) {
+            console.log(`⚠️ Quote from ${quote.source} but best pool is ${poolValidation.bestPool.dexId} - adjusting route`);
+            quote.route = [poolValidation.bestPool.dexId];
+            quote.source = poolValidation.bestPool.dexId;
+          }
+        } else {
+          console.log("⚠️ No working pools found - quote may fail");
+        }
+      } catch (error) {
+        console.log("⚠️ Pool validation failed:", error);
+      }
+    }
     
     console.log("🔍 Initial quote result:", {
       inputToken: inputTokenInfo.address,

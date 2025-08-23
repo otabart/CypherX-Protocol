@@ -1,4 +1,4 @@
-@import url('https://use.typekit.net/xyz.css'); /* Replace with the actual Geist font CDN */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600;700&display=swap');
 
 /* Tailwind CSS directives - these are valid and processed by Tailwind */
 @tailwind base;
@@ -6,13 +6,47 @@
 @tailwind utilities;
 
 body {
-  font-family: 'Geist', sans-serif;
+  font-family: 'Inter', sans-serif;
   /* Tailwind @apply directive - valid and processed by Tailwind */
   @apply bg-gray-900 text-gray-200 font-sans antialiased;
 }
 
 /* Custom utilities for text truncation and overflow */
 @layer utilities {
+  /* CypherX Brand Typography */
+  .font-cypherx {
+    font-family: 'Orbitron', monospace;
+    font-weight: 900;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  
+  .font-cypherx-glow {
+    font-family: 'Orbitron', monospace;
+    font-weight: 900;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    text-shadow: 0 0 10px rgba(59, 130, 246, 0.5), 0 0 20px rgba(59, 130, 246, 0.3);
+  }
+  
+  .font-cypherx-gradient {
+    font-family: 'Orbitron', monospace;
+    font-weight: 900;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: linear-gradient(135deg, #1e40af 0%, #3b82f6 50%, #60a5fa 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  .icon-blue-gradient {
+    color: #3b82f6;
+  }
+  
+  .icon-blue-gradient:hover {
+    color: #60a5fa;
+  }
   .text-ellipsis {
     text-overflow: ellipsis;
   }
@@ -69,6 +103,30 @@ body {
       transform: scale(1);
       opacity: 1;
     }
+  }
+
+  /* Custom scrollbar styles */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #4b5563 #1f2937;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: #1f2937;
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #4b5563;
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
   }
   
   @media (max-width: 768px) {

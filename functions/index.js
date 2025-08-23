@@ -5,6 +5,24 @@ admin.initializeApp();
 exports.processTransfer = functions.https.onRequest(async (req, res) => {
   const event = req.body; // Adjust based on your trigger
   const db = admin.firestore();
+  
+  // Check if transaction already exists to prevent duplicates
+  try {
+    const existingTxQuery = db.collection('whaleTransactions')
+      .where('hash', '==', event.hash)
+      .limit(1);
+    const existingTxSnapshot = await existingTxQuery.get();
+    
+    if (!existingTxSnapshot.empty) {
+      console.log(`Transaction ${event.hash} already exists, skipping duplicate`);
+      res.status(200).send(`Transaction already exists: ${event.hash}`);
+      return;
+    }
+  } catch (error) {
+    console.error(`Error checking for existing transaction ${event.hash}:`, error);
+    // Continue with save attempt even if check fails
+  }
+  
   const transferData = {
     tokenSymbol: event.tokenSymbol,
     tokenName: event.tokenName,

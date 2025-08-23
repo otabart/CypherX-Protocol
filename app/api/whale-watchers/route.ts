@@ -289,6 +289,22 @@ async function saveTransaction(tx: WhaleTransaction) {
     return;
   }
 
+  // Check if transaction already exists to prevent duplicates
+  try {
+    const existingTxQuery = adminDb.collection("whaleTransactions")
+      .where("hash", "==", tx.hash)
+      .limit(1);
+    const existingTxSnapshot = await existingTxQuery.get();
+    
+    if (!existingTxSnapshot.empty) {
+      console.log(`Transaction ${tx.hash} already exists, skipping duplicate`);
+      return;
+    }
+  } catch (err) {
+    console.error(`Error checking for existing transaction ${tx.hash}:`, err);
+    // Continue with save attempt even if check fails
+  }
+
   let retries = 0;
   while (retries < MAX_FIRESTORE_RETRIES) {
     try {
@@ -415,71 +431,48 @@ async function processSwapEvent(
     }
 
     const { sender, recipient, amount0, amount1 } = parsed.args;
-    const isToken0In = amount0 > 0;
-    const tokenInAddr = isToken0In ? token1Address : token0Address;
-    const tokenOutAddr = isToken0In ? token0Address : token1Address;
+    const tokenIn = amount0 > 0 ? token0Address : token1Address;
+    const tokenOut = amount0 > 0 ? token1Address : token0Address;
+    const amountIn = Math.abs(Number(amount0));
+    const amountOut = Math.abs(Number(amount1));
 
-    const tokenIn = tokens[tokenInAddr] || {
-      symbol: WELL_KNOWN_TOKENS.find((t) => t.address.toLowerCase() === tokenInAddr)?.symbol || "UNKNOWN",
-      address: tokenInAddr,
-      name: WELL_KNOWN_TOKENS.find((t) => t.address.toLowerCase() === tokenInAddr)?.name || "Unknown Token",
-      pool: "",
-    };
-    const tokenOut = tokens[tokenOutAddr] || {
-      symbol: WELL_KNOWN_TOKENS.find((t) => t.address.toLowerCase() === tokenOutAddr)?.symbol || "UNKNOWN",
-      address: tokenOutAddr,
-      name: WELL_KNOWN_TOKENS.find((t) => t.address.toLowerCase() === tokenOutAddr)?.name || "Unknown Token",
-      pool: "",
-    };
+    const tokenInData = tokens[tokenIn];
+    const tokenOutData = tokens[tokenOut];
 
-    const metadataIn = await getTokenMetadata(tokenInAddr);
-    const metadataOut = await getTokenMetadata(tokenOutAddr);
-    const amountIn = Number(ethers.formatUnits(isToken0In ? amount1 : amount0, metadataIn.decimals));
-    const amountOut = Number(ethers.formatUnits(isToken0In ? amount0 : amount1, metadataOut.decimals));
+    if (!tokenInData && !tokenOutData) {
+      console.log(`Skipping swap: neither token in Firestore`);
+      return;
+    }
 
-    const priceIn = await getTokenPrice(tokenInAddr);
-    const priceOut = await getTokenPrice(tokenOutAddr);
-    const amountInUSD = amountIn * priceIn;
-    const amountOutUSD = amountOut * priceOut;
-    const amountUSD = Math.max(amountInUSD, amountOutUSD);
-
-    const percentSupplyIn = Number(metadataIn.totalSupply) > 0
-      ? (amountIn / Number(metadataIn.totalSupply)) * 100
-      : 0;
-    const percentSupplyOut = Number(metadataOut.totalSupply) > 0
-      ? (amountOut / Number(metadataOut.totalSupply)) * 100
+    const tokenData = tokenInData || tokenOutData;
+    const metadata = await getTokenMetadata(tokenIn);
+    const amount = Number(ethers.formatUnits(amountIn.toString(), metadata.decimals));
+    const price = await getTokenPrice(tokenIn);
+    const amountUSD = amount * price;
+    const percentSupply = Number(metadata.totalSupply) > 0
+      ? (Number(amountIn) / Number(metadata.totalSupply)) * 100
       : 0;
 
     const percentSupplyThreshold = getDynamicPercentSupplyThreshold(amountUSD);
     if (
-      amountUSD < MIN_SWAP_USD_VALUE ||
-      (percentSupplyIn < percentSupplyThreshold && percentSupplyOut < percentSupplyThreshold) ||
-      Number.isNaN(amountUSD)
+      amountUSD < MIN_TRANSFER_USD_VALUE ||
+      percentSupply < percentSupplyThreshold ||
+      Number.isNaN(amountUSD) ||
+      Number.isNaN(percentSupply)
     ) {
       console.log(
-        `Swap of ${amountIn} ${tokenIn.symbol} for ${amountOut} ${tokenOut.symbol} ($${amountUSD.toFixed(2)}) does not meet thresholds`
+        `Swap of ${amount} ${tokenData.symbol} ($${amountUSD.toFixed(2)}, ${percentSupply.toFixed(2)}%) does not meet thresholds (${
+          MIN_TRANSFER_USD_VALUE
+        }, ${percentSupplyThreshold}%)`
       );
       return;
     }
 
-    let swapType: "Buy" | "Sell" | "Swap";
-    const stablecoinSymbols = WELL_KNOWN_TOKENS.map((t) => t.symbol);
-    if (stablecoinSymbols.includes(tokenIn.symbol)) {
-      swapType = "Buy";
-    } else if (stablecoinSymbols.includes(tokenOut.symbol)) {
-      swapType = "Sell";
-    } else {
-      swapType = "Swap";
-    }
-
-    const primaryToken = tokens[tokenOutAddr] ? tokenOut : tokenIn;
-    const primaryPercentSupply = tokens[tokenOutAddr] ? percentSupplyOut : percentSupplyIn;
-
     const tx: WhaleTransaction = {
-      tokenSymbol: primaryToken.symbol,
-      tokenName: primaryToken.name,
-      tokenAddress: primaryToken.address,
-      amountToken: tokens[tokenOutAddr] ? amountOut : amountIn,
+      tokenSymbol: tokenData.symbol,
+      tokenName: tokenData.name,
+      tokenAddress: tokenIn,
+      amountToken: amount,
       amountUSD,
       blockNumber,
       fromAddress: sender,
@@ -488,94 +481,12 @@ async function processSwapEvent(
       timestamp: Date.now(),
       hash: log.transactionHash,
       eventType: "Swap",
-      swapType,
-      swapDetails: {
-        amountIn,
-        amountOut,
-        tokenIn: tokenIn.symbol,
-        tokenOut: tokenOut.symbol,
-      },
-      percentSupply: primaryPercentSupply,
+      percentSupply,
     };
 
-    console.log(
-      `Processing ${swapType}: ${amountIn} ${tokenIn.symbol} -> ${amountOut} ${tokenOut.symbol} ($${amountUSD.toFixed(2)}, ${primaryPercentSupply.toFixed(2)}%) on ${source}`
-    );
+    console.log(`Processing Swap: ${amount} ${tokenData.symbol} ($${amountUSD.toFixed(2)}, ${percentSupply.toFixed(2)}%)`);
     await saveTransaction(tx);
   } catch (err) {
     console.error(`Error processing Swap event for ${poolAddress}:`, err);
-  }
-}
-
-// Monitor blockchain events
-async function monitorWhaleTransactions() {
-  let isMonitoring = false;
-
-  const processBlockRange = async (fromBlock: number, toBlock: number) => {
-    if (isMonitoring) return;
-    isMonitoring = true;
-
-    try {
-      console.log(`Processing blocks ${fromBlock} to ${toBlock}`);
-      const tokens = await getTokensFromFirestore();
-      const filter = {
-        fromBlock,
-        toBlock,
-        topics: [[TRANSFER_EVENT_TOPIC, UNISWAP_V3_SWAP_TOPIC, AERODROME_SWAP_TOPIC]],
-      };
-      const logs = await provider.getLogs(filter);
-      console.log(`Fetched ${logs.length} logs`);
-
-      for (const log of logs) {
-        if (log.topics[0] === TRANSFER_EVENT_TOPIC) {
-          await processTransferEvent(log, tokens, log.blockNumber);
-        } else if (log.topics[0] === UNISWAP_V3_SWAP_TOPIC || log.topics[0] === AERODROME_SWAP_TOPIC) {
-          await processSwapEvent(log, tokens, log.blockNumber);
-        }
-        await delay(100); // Rate limiting
-      }
-    } catch (err) {
-      console.error(`Error processing blocks ${fromBlock} to ${toBlock}:`, err);
-    } finally {
-      isMonitoring = false;
-    }
-  };
-
-  const poll = async () => {
-    try {
-      const latestBlock = await provider.getBlockNumber();
-      const fromBlock = latestBlock - MAX_BLOCKS_PER_CYCLE + 1;
-      await processBlockRange(fromBlock, latestBlock);
-    } catch (err) {
-      console.error("Polling error:", err);
-    }
-  };
-
-  await poll();
-  const intervalId = setInterval(poll, POLLING_INTERVAL);
-  console.log(`Started polling every ${POLLING_INTERVAL / 1000} seconds`);
-
-  provider.on("error", (err) => {
-    console.error("Provider error:", err);
-  });
-
-  process.on("SIGINT", () => {
-    clearInterval(intervalId);
-    console.log("Stopped polling");
-    process.exit();
-  });
-}
-
-// POST handler to start monitoring
-export async function POST() {
-  try {
-    await monitorWhaleTransactions();
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Error starting whale transaction monitoring:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to start monitoring" },
-      { status: 500 }
-    );
   }
 }

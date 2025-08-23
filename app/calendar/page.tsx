@@ -13,6 +13,7 @@ import {
   addDoc,
   arrayUnion,
   arrayRemove,
+  increment,
   Timestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -86,20 +87,20 @@ interface Event {
 
 interface UserProfile {
   uid: string;
-  points: number;
   email: string;
   badges: string[];
-  interactions: {
+  projectEngagement: {
     [projectId: string]: {
-      viewed?: boolean;
-      liked?: boolean;
-      disliked?: boolean;
-      commented?: boolean;
-      rsvped?: boolean;
+      eventsAttended: number;
+      eventsRSVPd: number;
+      totalEngagement: number;
+      lastEngagement: string;
+      engagementStreak: number;
+      favoriteProject?: boolean;
     };
   };
   rsvpedEvents: string[];
-  attendedEvents?: Array<{
+  attendedEvents: Array<{
     eventId: string;
     eventTitle: string;
     attendanceTime: string;
@@ -153,8 +154,7 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState<string>("");
-    const [commentText, setCommentText] = useState("");
-  const [userPoints, setUserPoints] = useState(0);
+  const [commentText, setCommentText] = useState("");
   const [userBadges, setUserBadges] = useState<string[]>([]);
   const [userRsvpedEvents, setUserRsvpedEvents] = useState<string[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -210,10 +210,9 @@ export default function CalendarPage() {
         const userDoc = await getDoc(doc(db, "users", user.uid));
         if (userDoc.exists()) {
           const userData = userDoc.data() as UserProfile;
-          setUserPoints(userData.points || 0);
           setUserBadges(userData.badges || []);
           setUserRsvpedEvents(userData.rsvpedEvents || []);
-          setFollowedProjects(userData.interactions ? Object.keys(userData.interactions) : []);
+          setFollowedProjects(userData.projectEngagement ? Object.keys(userData.projectEngagement) : []);
           setUserProfile(userData); // Set userProfile state
         }
 
@@ -304,7 +303,7 @@ export default function CalendarPage() {
 
   const handleVerifyOwnership = async () => {
     if (!walletAddress) {
-      toast.error("Please create or connect your XWallet first");
+              toast.error("Please create or connect your wallet first");
       return;
     }
 
@@ -333,7 +332,7 @@ export default function CalendarPage() {
 
   const handleAddEvent = async () => {
     if (!user || !walletAddress) {
-      toast.error("Please log in and create or connect your XWallet to add events");
+              toast.error("Please log in and create or connect your wallet to add events");
       return;
     }
 
@@ -364,26 +363,14 @@ export default function CalendarPage() {
       // Add event to Firestore
       const eventRef = await addDoc(collection(db, "projectEvents"), eventData);
       
-      // Award points for creating event
-      const pointsResponse = await fetch('/api/points/calendar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          walletAddress,
-          userId: user.uid,
-          eventId: eventRef.id,
-          action: 'create_event',
-          eventTitle: newEvent.title
-        })
+      // Track engagement for creating event
+      await updateDoc(doc(db, "users", user.uid), {
+        [`projectEngagement.${newEvent.projectId}.eventsCreated`]: arrayUnion(eventRef.id),
+        [`projectEngagement.${newEvent.projectId}.totalEngagement`]: increment(10),
+        [`projectEngagement.${newEvent.projectId}.lastEngagement`]: new Date().toISOString(),
       });
 
-      if (pointsResponse.ok) {
-        const pointsData = await pointsResponse.json();
-        setUserPoints(prev => prev + pointsData.pointsEarned);
-        toast.success(`Event submitted for approval! +${pointsData.pointsEarned} points`);
-      } else {
-        toast.success("Event submitted for approval!");
-      }
+      toast.success("Event submitted for approval!");
 
       setShowAddEventModal(false);
       setNewEvent({
@@ -477,43 +464,21 @@ export default function CalendarPage() {
 
   const handleEngagement = async (event: Event, action: "like" | "dislike") => {
     if (!user || !walletAddress) {
-      toast.error("Please log in and create or connect your XWallet to interact with events");
+      toast.error("Please log in and create or connect your wallet to interact with events");
       return;
     }
 
     try {
-      // Call points API for calendar engagement
-      const pointsResponse = await fetch('/api/points/calendar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          walletAddress,
-          userId: user.uid,
-          eventId: event.id,
-          action,
-          eventTitle: event.title
-        })
+      // Track engagement
+      const engagementValue = action === 'like' ? 5 : -2;
+      
+      await updateDoc(doc(db, "users", user.uid), {
+        [`projectEngagement.${event.projectId}.totalEngagement`]: increment(engagementValue),
+        [`projectEngagement.${event.projectId}.lastEngagement`]: new Date().toISOString(),
       });
 
-      if (!pointsResponse.ok) {
-        const errorData = await pointsResponse.json();
-        if (errorData.error?.includes('Daily limit')) {
-          toast.error(`Daily limit reached for ${action}`);
-        } else if (errorData.alreadyPerformed) {
-          toast.error(errorData.error);
-        } else {
-          toast.error("Failed to process engagement");
-        }
-        return;
-      }
-
-      const pointsData = await pointsResponse.json();
-      
-      // Update local state
-      setUserPoints(prev => prev + pointsData.pointsEarned);
       const actionText = action === 'like' ? 'Liked' : 'Disliked';
-      const pointsText = pointsData.pointsEarned >= 0 ? `+${pointsData.pointsEarned}` : `${pointsData.pointsEarned}`;
-      toast.success(`${actionText}! ${pointsText} points`);
+      toast.success(`${actionText}! Engagement tracked`);
 
       // Update Firestore event reactions
       const eventRef = doc(db, "projectEvents", event.id);
@@ -575,7 +540,7 @@ export default function CalendarPage() {
 
   const handleCommentSubmit = async (event: Event) => {
     if (!user || !walletAddress) {
-      toast.error("Please log in and create or connect your XWallet to comment");
+              toast.error("Please log in and create or connect your wallet to comment");
       return;
     }
 
@@ -625,10 +590,15 @@ export default function CalendarPage() {
         "reactions.comments": arrayUnion(newComment),
       });
       
+      // Track engagement for commenting
+      await updateDoc(doc(db, "users", user.uid), {
+        [`projectEngagement.${event.projectId}.totalEngagement`]: increment(8),
+        [`projectEngagement.${event.projectId}.lastEngagement`]: new Date().toISOString(),
+      });
+
       // Update local state and show success message
-      setUserPoints(prev => prev + pointsData.pointsEarned);
       setCommentText("");
-      toast.success(`Comment posted! +${pointsData.pointsEarned} points`);
+      toast.success("Comment posted! Engagement tracked");
 
       // Refresh events
       const eventsQuery = query(collection(db, "projectEvents"), where("status", "==", "approved"));
@@ -672,7 +642,7 @@ export default function CalendarPage() {
 
   const handleRSVP = async (event: Event) => {
     if (!user || !walletAddress) {
-      toast.error("Please log in and create or connect your XWallet to RSVP");
+      toast.error("Please log in and create or connect your wallet to RSVP");
       return;
     }
 
@@ -682,34 +652,7 @@ export default function CalendarPage() {
       const isGoing = event.reactions.rsvps.includes(uid);
 
       if (isGoing) {
-        // Remove RSVP with point deduction
-        const pointsResponse = await fetch('/api/points/calendar', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            walletAddress,
-            userId: user.uid,
-            eventId: event.id,
-            action: 'unrsvp',
-            eventTitle: event.title
-          })
-        });
-
-        if (!pointsResponse.ok) {
-          const errorData = await pointsResponse.json();
-          if (errorData.error?.includes('Daily limit')) {
-            toast.error("Daily un-RSVP limit reached");
-          } else if (errorData.alreadyPerformed) {
-            toast.error(errorData.error);
-          } else {
-            toast.error("Failed to un-RSVP");
-          }
-          return;
-        }
-
-        const pointsData = await pointsResponse.json();
-        
-        // Update Firestore
+        // Remove RSVP
         try {
           await updateDoc(eventRef, {
             "reactions.rsvps": arrayRemove(uid),
@@ -725,7 +668,6 @@ export default function CalendarPage() {
         
         // Update local state
         setUserRsvpedEvents(prev => prev.filter(id => id !== event.id));
-        setUserPoints(prev => prev + pointsData.pointsEarned);
         
         // Update local events state to reflect the un-RSVP
         setEvents(prevEvents => 
@@ -736,43 +678,22 @@ export default function CalendarPage() {
           )
         );
         
-        const pointsText = pointsData.pointsEarned >= 0 ? `+${pointsData.pointsEarned}` : `${pointsData.pointsEarned}`;
-        toast.success(`RSVP removed! ${pointsText} points`);
+        toast.success("RSVP removed!");
       } else {
-        // Add RSVP with points
-        const pointsResponse = await fetch('/api/points/calendar', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            walletAddress,
-            userId: user.uid,
-            eventId: event.id,
-            action: 'rsvp',
-            eventTitle: event.title
-          })
-        });
-
-        if (!pointsResponse.ok) {
-          const errorData = await pointsResponse.json();
-          if (errorData.error?.includes('Daily limit')) {
-            toast.error("Daily RSVP limit reached");
-          } else if (errorData.alreadyPerformed) {
-            toast.error(errorData.error);
-          } else {
-            toast.error("Failed to RSVP");
-          }
-          return;
-        }
-
-        const pointsData = await pointsResponse.json();
-        
-        // Update Firestore
+        // Add RSVP
         try {
           await updateDoc(eventRef, {
             "reactions.rsvps": arrayUnion(uid),
           });
           await updateDoc(doc(db, "users", user.uid), {
             rsvpedEvents: arrayUnion(event.id)
+          });
+          
+          // Track engagement for RSVP
+          await updateDoc(doc(db, "users", user.uid), {
+            [`projectEngagement.${event.projectId}.eventsRSVPd`]: increment(1),
+            [`projectEngagement.${event.projectId}.totalEngagement`]: increment(15),
+            [`projectEngagement.${event.projectId}.lastEngagement`]: new Date().toISOString(),
           });
         } catch (error) {
           console.error("Error updating Firestore for RSVP:", error);
@@ -782,7 +703,6 @@ export default function CalendarPage() {
         
         // Update local state
         setUserRsvpedEvents(prev => [...prev, event.id]);
-        setUserPoints(prev => prev + pointsData.pointsEarned);
         
         // Update local events state to reflect the RSVP
         setEvents(prevEvents => 
@@ -793,17 +713,8 @@ export default function CalendarPage() {
           )
         );
         
-        toast.success(`RSVP confirmed! +${pointsData.pointsEarned} points`);
+        toast.success("RSVP confirmed! Engagement tracked");
       }
-
-      // Remove the unnecessary events refresh that was causing events to disappear
-      // const eventsQuery = query(collection(db, "projectEvents"), where("status", "==", "approved"));
-      // const eventsSnapshot = await getDocs(eventsQuery);
-      // const eventsData = eventsSnapshot.docs.map(doc => ({
-      //   id: doc.id,
-      //   ...doc.data(),
-      // })) as Event[];
-      // setEvents(eventsData);
     } catch (error) {
       console.error("Error handling RSVP:", error);
       toast.error("Failed to update RSVP");
@@ -813,7 +724,7 @@ export default function CalendarPage() {
   // ─── Handle Event Attendance ───
   const handleEventAttendance = async (event: Event) => {
     if (!user || !walletAddress) {
-      toast.error("Please log in and create or connect your XWallet to track attendance");
+              toast.error("Please log in and create or connect your wallet to track attendance");
       return;
     }
 
@@ -832,60 +743,45 @@ export default function CalendarPage() {
       const timeDifference = now.getTime() - eventDateTime.getTime();
       const minutesDifference = timeDifference / (1000 * 60);
       
-      let action: 'attend' | 'attend_late';
-      let message: string;
+      let attendanceValue: number;
       
       if (minutesDifference <= 15) {
         // On time (within 15 minutes of event start)
-        action = 'attend';
-        message = "Great! You're on time! +30 points";
+        attendanceValue = 30;
       } else if (minutesDifference <= 60) {
         // Late but within 1 hour
-        action = 'attend_late';
-        message = "You're a bit late, but still welcome! +20 points";
+        attendanceValue = 20;
       } else {
         // Too late (more than 1 hour late)
         toast.error("You're too late for this event. Please RSVP to future events on time.");
         return;
       }
 
-      // Track attendance with points
-      const pointsResponse = await fetch('/api/points/calendar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          walletAddress,
-          userId: user.uid,
-          eventId: event.id,
-          action,
-          eventTitle: event.title,
-          eventTime: eventDateTime.toISOString(),
-          attendanceTime
-        })
-      });
-
-      if (!pointsResponse.ok) {
-        const errorData = await pointsResponse.json();
-        if (errorData.error?.includes('Daily limit')) {
-          toast.error("Daily attendance limit reached");
-        } else if (errorData.alreadyPerformed) {
-          toast.error("You have already attended this event");
-        } else {
-          toast.error("Failed to track attendance");
-        }
+      // Track attendance with engagement
+      try {
+        await updateDoc(doc(db, "users", user.uid), {
+          [`projectEngagement.${event.projectId}.eventsAttended`]: increment(1),
+          [`projectEngagement.${event.projectId}.totalEngagement`]: increment(attendanceValue),
+          [`projectEngagement.${event.projectId}.lastEngagement`]: new Date().toISOString(),
+        });
+      } catch (error) {
+        console.error("Error tracking attendance:", error);
+        toast.error("Failed to track attendance");
         return;
       }
 
-      const pointsData = await pointsResponse.json();
-      
-      // Update user points
-      setUserPoints(prev => prev + pointsData.pointsEarned);
+      // Track engagement for attendance
+      await updateDoc(doc(db, "users", user.uid), {
+        [`projectEngagement.${event.projectId}.eventsAttended`]: increment(1),
+        [`projectEngagement.${event.projectId}.totalEngagement`]: increment(attendanceValue),
+        [`projectEngagement.${event.projectId}.lastEngagement`]: new Date().toISOString(),
+      });
       
       // Show appropriate message
       if (minutesDifference <= 15) {
-        toast.success(message);
+        toast.success("Great! You're on time! Engagement tracked");
       } else if (minutesDifference <= 60) {
-        toast.success(message);
+        toast.success("You're a bit late, but still welcome! Engagement tracked");
       }
       
       // Update attendance tracking in Firestore
@@ -994,8 +890,9 @@ export default function CalendarPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 flex flex-col">
+      <div className="min-h-screen bg-gray-950 flex flex-col">
         <Header />
+        <div className="border-b border-gray-800/50"></div>
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
@@ -1008,30 +905,52 @@ export default function CalendarPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 flex flex-col">
+    <div className="min-h-screen bg-gray-950 flex flex-col">
       <Header />
+      
+      {/* Separator line */}
+      <div className="border-b border-gray-800/50"></div>
+      
       <Toaster position="top-right" />
       
-      <main className="flex-1 container mx-auto px-4 py-4 sm:py-8">
+      <main className="flex-1 container mx-auto px-4 py-4">
+        
+        {/* Page Header with Blue Streak */}
+        <motion.div 
+          className="mb-4"
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+        >
+          <div className="flex items-center mb-2">
+            <div className="w-1 h-6 bg-blue-500 rounded-full mr-3"></div>
+            <h1 className="text-2xl font-bold text-white">
+              Calendar
+            </h1>
+          </div>
+          <p className="text-gray-400 text-sm ml-4">
+            Discover and join upcoming crypto events, AMAs, launches, and community gatherings. RSVP to events and track your engagement with projects.
+          </p>
+        </motion.div>
 
 
 
 
         {/* Enhanced Controls Section */}
-        <div className="bg-gray-800/30 backdrop-blur-sm rounded-xl border border-gray-700 p-6 mb-8">
+        <div className="bg-gray-900/30 backdrop-blur-sm rounded-xl border border-gray-700/50 p-4 mb-4">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-center">
             {/* Navigation Controls */}
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setCurrentWeek(prev => prev - 1)}
-                className="p-3 bg-gray-700 rounded-lg text-gray-300 hover:bg-gray-600 transition-all duration-200 hover:scale-105"
+                className="p-3 bg-gray-800/50 rounded-lg text-gray-300 hover:bg-gray-700/50 transition-all duration-200 hover:scale-105 border border-gray-700/50"
               >
                 <FiChevronLeft className="w-5 h-5" />
               </button>
               <span className="text-white font-medium px-4">Week {currentWeek + 1}</span>
               <button
                 onClick={() => setCurrentWeek(prev => prev + 1)}
-                className="p-3 bg-gray-700 rounded-lg text-gray-300 hover:bg-gray-600 transition-all duration-200 hover:scale-105"
+                className="p-3 bg-gray-800/50 rounded-lg text-gray-300 hover:bg-gray-700/50 transition-all duration-200 hover:scale-105 border border-gray-700/50"
               >
                 <FiChevronRight className="w-5 h-5" />
               </button>
@@ -1042,7 +961,7 @@ export default function CalendarPage() {
               <select
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value)}
-                className="flex-1 px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
+                className="flex-1 px-4 py-3 bg-gray-800/50 border border-gray-700/50 rounded-lg text-white text-sm focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
               >
                 <option value="all">All Events</option>
                 <option value="followed">Followed Projects</option>
@@ -1057,7 +976,7 @@ export default function CalendarPage() {
                 placeholder="Search events..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 text-sm focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
+                className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700/50 rounded-lg text-white placeholder-gray-400 text-sm focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
               />
             </div>
 
@@ -1083,7 +1002,7 @@ export default function CalendarPage() {
         </div>
 
         {/* Enhanced Calendar Grid */}
-        <div className="bg-gray-800/30 backdrop-blur-sm rounded-xl border border-gray-700 p-6 mb-8">
+        <div className="bg-gray-900/30 backdrop-blur-sm rounded-xl border border-gray-700/50 p-4 mb-4">
           <div className="grid grid-cols-7 gap-3">
             {/* Day Headers */}
             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
@@ -1109,7 +1028,7 @@ export default function CalendarPage() {
                       ? "bg-blue-600/20 text-white shadow-xl border-2 border-blue-400/50"
                       : isToday
                       ? "bg-green-600/20 text-white shadow-lg border-2 border-green-400/50"
-                      : "bg-gray-800/80 text-gray-300 hover:bg-gray-700/80 hover:scale-105 hover:shadow-lg border border-gray-600/50 hover:border-gray-500/50"
+                      : "bg-gray-800/50 text-gray-300 hover:bg-gray-700/50 hover:scale-105 hover:shadow-lg border border-gray-700/50 hover:border-gray-600/50"
                   }`}
                   whileHover={{ 
                     scale: 1.03,
@@ -1208,9 +1127,9 @@ export default function CalendarPage() {
         </div>
 
         {/* Enhanced Events Display */}
-        <div className="bg-gray-800/30 backdrop-blur-sm rounded-xl border border-gray-700 p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-white">
+        <div className="bg-gray-900/30 backdrop-blur-sm rounded-xl border border-gray-700/50 p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-white">
               Events for {format(parseISO(selectedDate), "EEEE, MMMM d, yyyy")}
             </h2>
             <div className="text-sm text-gray-400">
@@ -1513,86 +1432,121 @@ export default function CalendarPage() {
 
       {/* Add Event Modal */}
       {showAddEventModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-gray-800 rounded-lg p-4 sm:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            className="bg-gray-900/95 backdrop-blur-sm rounded-xl border border-gray-700/50 p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl"
           >
-            <h3 className="text-lg sm:text-xl font-bold text-white mb-4">Add New Event</h3>
-            <div className="space-y-3 sm:space-y-4">
-              <select
-                value={newEvent.projectId}
-                onChange={(e) => setNewEvent({ ...newEvent, projectId: e.target.value })}
-                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base"
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold text-white">Add New Event</h3>
+              <button
+                onClick={() => setShowAddEventModal(false)}
+                className="p-2 hover:bg-gray-800/50 rounded-lg text-gray-400 hover:text-white transition-colors"
               >
-                <option value="">Select Project</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name} ({project.ticker})
-                  </option>
-                ))}
-              </select>
+                <FiX className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Project</label>
+                <select
+                  value={newEvent.projectId}
+                  onChange={(e) => setNewEvent({ ...newEvent, projectId: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700/50 rounded-lg text-white text-sm focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
+                >
+                  <option value="">Select Project</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name} ({project.ticker})
+                    </option>
+                  ))}
+                </select>
+              </div>
               
-              <input
-                type="text"
-                placeholder="Event Title"
-                value={newEvent.title}
-                onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
-                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base"
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Event Title</label>
+                <input
+                  type="text"
+                  placeholder="Enter event title"
+                  value={newEvent.title}
+                  onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700/50 rounded-lg text-white text-sm focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
+                />
+              </div>
               
-              <textarea
-                placeholder="Event Description"
-                value={newEvent.description}
-                onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
-                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white h-20 sm:h-24 text-sm sm:text-base"
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
+                <textarea
+                  placeholder="Describe your event"
+                  value={newEvent.description}
+                  onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700/50 rounded-lg text-white text-sm focus:ring-2 focus:ring-blue-500/50 focus:border-transparent resize-none"
+                  rows={4}
+                />
+              </div>
               
-              <input
-                type="date"
-                value={newEvent.date}
-                onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })}
-                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base"
-              />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Date</label>
+                  <input
+                    type="date"
+                    value={newEvent.date}
+                    onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700/50 rounded-lg text-white text-sm focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Time</label>
+                  <input
+                    type="time"
+                    value={newEvent.time}
+                    onChange={(e) => setNewEvent({ ...newEvent, time: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700/50 rounded-lg text-white text-sm focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
+                  />
+                </div>
+              </div>
               
-              <input
-                type="time"
-                value={newEvent.time}
-                onChange={(e) => setNewEvent({ ...newEvent, time: e.target.value })}
-                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base"
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Event Type</label>
+                <select
+                  value={newEvent.eventType}
+                  onChange={(e) => setNewEvent({ ...newEvent, eventType: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700/50 rounded-lg text-white text-sm focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
+                >
+                  <option value="general">General</option>
+                  <option value="ama">AMA</option>
+                  <option value="giveaway">Giveaway</option>
+                  <option value="update">Update</option>
+                  <option value="launch">Launch</option>
+                </select>
+              </div>
               
-              <select
-                value={newEvent.eventType}
-                onChange={(e) => setNewEvent({ ...newEvent, eventType: e.target.value })}
-                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base"
-              >
-                <option value="general">General</option>
-                <option value="ama">AMA</option>
-                <option value="giveaway">Giveaway</option>
-                <option value="update">Update</option>
-                <option value="launch">Launch</option>
-              </select>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Event Link (Optional)</label>
+                <input
+                  type="url"
+                  placeholder="https://..."
+                  value={newEvent.link}
+                  onChange={(e) => setNewEvent({ ...newEvent, link: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700/50 rounded-lg text-white text-sm focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
+                />
+              </div>
               
-              <input
-                type="url"
-                placeholder="Event Link (optional)"
-                value={newEvent.link}
-                onChange={(e) => setNewEvent({ ...newEvent, link: e.target.value })}
-                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base"
-              />
-              
-              <div className="flex gap-3 sm:gap-4">
+              <div className="flex gap-3 pt-4">
                 <button
                   onClick={handleAddEvent}
-                  className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 text-sm sm:text-base"
+                  className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white py-3 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 font-medium"
                 >
+                  <FiPlus className="w-4 h-4 inline mr-2" />
                   Add Event
                 </button>
                 <button
                   onClick={() => setShowAddEventModal(false)}
-                  className="flex-1 bg-gray-600 text-white py-2 rounded-lg hover:bg-gray-700 text-sm sm:text-base"
+                  className="flex-1 bg-gray-800/50 text-gray-300 py-3 rounded-lg hover:bg-gray-700/50 transition-all duration-200 font-medium border border-gray-700/50"
                 >
                   Cancel
                 </button>
@@ -1620,8 +1574,8 @@ export default function CalendarPage() {
                 <div className={`w-2 h-2 rounded-full ${walletAddress ? 'bg-green-500' : 'bg-red-500'}`}></div>
                 <span className="text-sm">
                   {walletAddress 
-                    ? `XWallet Connected: ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
-                    : 'Please create or connect your XWallet to submit a project'
+                    ? `Wallet Connected: ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
+                    : 'Please create or connect your wallet to submit a project'
                   }
                 </span>
               </div>
@@ -1687,10 +1641,10 @@ export default function CalendarPage() {
                     : isVerifyingOwnership 
                       ? 'Verifying...' 
                       : !walletAddress 
-                        ? 'Create XWallet First'
+                        ? 'Create Wallet First'
                         : !newProject.contractAddress.trim()
                           ? 'Enter Contract Address First'
-                          : '🔐 Verify Ownership with XWallet'
+                          : '🔐 Verify Ownership with Wallet'
                   }
                 </button>
                 {signature && (

@@ -15,6 +15,28 @@ export async function POST(request: Request) {
       throw new Error('Firebase database not initialized');
     }
 
+    // Check if transaction already exists to prevent duplicates
+    if (transaction.hash) {
+      try {
+        const existingTxQuery = db.collection('wallet_transactions')
+          .where('hash', '==', transaction.hash)
+          .limit(1);
+        const existingTxSnapshot = await existingTxQuery.get();
+        
+        if (!existingTxSnapshot.empty) {
+          console.log(`Wallet transaction ${transaction.hash} already exists, skipping duplicate`);
+          return NextResponse.json({
+            success: true,
+            message: 'Transaction already exists',
+            transactionId: existingTxSnapshot.docs[0].id
+          });
+        }
+      } catch (err) {
+        console.error(`Error checking for existing wallet transaction ${transaction.hash}:`, err);
+        // Continue with save attempt even if check fails
+      }
+    }
+
     // Store the transaction in Firestore
     const transactionRef = await db.collection('wallet_transactions').add({
       walletAddress,

@@ -708,7 +708,7 @@ export default function WhaleWatcherPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {paginatedData.map((transaction) => (
                 <TransactionCard
-                  key={transaction.id}
+                  key={transaction.hash}
                   transaction={transaction}
                   onViewDetails={handleViewDetails}
                   onShare={handleShare}

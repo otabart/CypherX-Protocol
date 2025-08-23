@@ -6,6 +6,7 @@ import { useAccount } from "wagmi";
 import toast from "react-hot-toast";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import PointTransactionModal from "./PointTransactionModal";
 
 interface IndexVotingModalProps {
   isOpen: boolean;
@@ -70,6 +71,30 @@ export default function IndexVotingModal({
     weight: number;
   }>>([]);
   const [selectedIndex, setSelectedIndex] = useState(indexName);
+  
+  // Point transaction modal state
+  const [showTransactionModal, setShowTransactionModal] = useState(false);
+  const [pendingVotes, setPendingVotes] = useState<any[]>([]);
+  const [userPoints, setUserPoints] = useState<number>(0);
+
+  // Fetch user points on component mount
+  useEffect(() => {
+    const fetchUserPoints = async () => {
+      if (!walletAddress) return;
+      
+      try {
+        const response = await fetch(`/api/user/stats?walletAddress=${walletAddress}`);
+        if (response.ok) {
+          const data = await response.json();
+          setUserPoints(data.points || 0);
+        }
+      } catch (error) {
+        console.error('Error fetching user points:', error);
+      }
+    };
+
+    fetchUserPoints();
+  }, [walletAddress]);
 
   // Fetch voting data
   useEffect(() => {
@@ -313,38 +338,46 @@ export default function IndexVotingModal({
       return;
     }
 
+    // Prepare batch vote data
+    const tokensToUse = currentTokens.length > 0 ? currentTokens : fetchedTokens;
+    const votes = tokensToUse.map(token => {
+      const action = tokenVotes[token.address];
+      return {
+        tokenAddress: token.address,
+        action: action === 'keep' ? 'add' : action === 'remove' ? 'remove' : 'weight_change',
+        weight: action === 'weight_change' ? tokenWeights[token.address] : undefined,
+      };
+    });
+
+    // Add new token data for removed tokens
+    const newTokenVotes = removedTokens.map(token => {
+      const newToken = newTokens[token.address];
+      return {
+        tokenAddress: newToken.address,
+        action: 'add',
+        weight: newToken.weight,
+        dexScreenerData: newToken.dexScreenerData,
+        replacingToken: token.address
+      };
+    });
+
+    // Combine all votes
+    const allVotes = [...votes, ...newTokenVotes];
+
+    // Set pending votes and show transaction modal
+    setPendingVotes(allVotes);
+    setShowTransactionModal(true);
+  };
+
+  const handleConfirmVoteTransaction = async () => {
+    if (!walletAddress || !pendingVotes.length) return;
+
     setLoading(true);
     try {
       // Show submission confirmation
       toast.loading('Submitting your votes...', { id: 'vote-submission' });
       
-      // Prepare batch vote data
-      const tokensToUse = currentTokens.length > 0 ? currentTokens : fetchedTokens;
-      const votes = tokensToUse.map(token => {
-        const action = tokenVotes[token.address];
-        return {
-          tokenAddress: token.address,
-          action: action === 'keep' ? 'add' : action === 'remove' ? 'remove' : 'weight_change',
-          weight: action === 'weight_change' ? tokenWeights[token.address] : undefined,
-        };
-      });
-
-      // Add new token data for removed tokens
-      const newTokenVotes = removedTokens.map(token => {
-        const newToken = newTokens[token.address];
-        return {
-          tokenAddress: newToken.address,
-          action: 'add',
-          weight: newToken.weight,
-          dexScreenerData: newToken.dexScreenerData,
-          replacingToken: token.address
-        };
-      });
-
-      // Combine all votes
-      const allVotes = [...votes, ...newTokenVotes];
-
-      console.log('Submitting votes:', { votes, totalVotes: votes.length });
+      console.log('Submitting votes:', { votes: pendingVotes, totalVotes: pendingVotes.length });
 
       // Submit batch vote
       const response = await fetch('/api/indexes/voting/batch', {
@@ -355,7 +388,7 @@ export default function IndexVotingModal({
         body: JSON.stringify({
           walletAddress,
           indexName: selectedIndex,
-          votes: allVotes,
+          votes: pendingVotes,
         }),
       });
 
@@ -385,6 +418,7 @@ export default function IndexVotingModal({
         }, 1000);
         
         fetchVotingData(); // Refresh voting data
+        setPendingVotes([]);
         onClose();
       } else {
         // Show detailed error message
@@ -871,6 +905,27 @@ export default function IndexVotingModal({
             </div>
           </motion.div>
         </motion.div>
+      )}
+
+      {/* Point Transaction Modal */}
+      {pendingVotes.length > 0 && (
+        <PointTransactionModal
+          isOpen={showTransactionModal}
+          onClose={() => setShowTransactionModal(false)}
+          onConfirm={handleConfirmVoteTransaction}
+          transaction={{
+            action: 'index_vote',
+            points: 25,
+            description: `Submit votes for ${selectedIndex} index (${pendingVotes.length} votes)`,
+            metadata: {
+              indexName: selectedIndex,
+              voteCount: pendingVotes.length,
+              votes: pendingVotes
+            }
+          }}
+          userPoints={userPoints}
+          walletAddress={walletAddress}
+        />
       )}
     </AnimatePresence>
   );

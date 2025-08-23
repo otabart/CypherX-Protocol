@@ -212,7 +212,11 @@ export async function GET(request: Request) {
           mediaContent: data.mediaContent || "",
           source: data.source || "screener",
           dexName: data.dexName || "unknown",
-          pairAddress: data.pool || "",
+          pairAddress: data.pool || data.pair || "",
+          // Expose second pair for clients that need it
+          // Note: keeping naming consistent with existing fields
+          // without breaking consumers
+          pairAddress2: data.pool2 || data.pair2 || "",
           description: data.description || "",
           website: data.website || "",
           telegram: data.telegram || "",
@@ -260,7 +264,7 @@ export async function GET(request: Request) {
             
             const data: any[] = await res.json();
             
-            // Enhance tokens with DexScreener data
+            // Enhance tokens with DexScreener data, keeping highest-liquidity pair per token
             data.forEach((pair) => {
               if (pair && pair.baseToken && pair.baseToken.address) {
                 const tokenIndex = validScreenerTokens.findIndex(
@@ -269,25 +273,24 @@ export async function GET(request: Request) {
                 
                 if (tokenIndex !== -1) {
                   const token = validScreenerTokens[tokenIndex];
-                  // Update with DexScreener data
-                  token.pairAddress = pair.poolAddress || token.pairAddress || "";
-                  token.priceUsd = pair.priceUsd || "0";
-                  token.priceChange = pair.priceChange || { m5: 0, h1: 0, h6: 0, h24: 0 };
-                  token.volume = pair.volume || { h1: 0, h24: 0 };
-                  token.liquidity = pair.liquidity || { usd: 0 };
-                  token.marketCap = pair.marketCap || token.marketCap || 0;
-                  token.info = pair.info ? { imageUrl: pair.info.imageUrl } : undefined;
-                  token.txns = pair.txns || { h1: { buys: 0, sells: 0 }, h6: { buys: 0, sells: 0 }, h24: { buys: 0, sells: 0 } };
-                  
-                  // Add DEX information
-                  token.dexId = pair.dexId || token.dexId || "unknown";
-                  token.dexName = pair.dexId || token.dexName || "Unknown DEX";
-                  
+                  const currentLiq = parseFloat(String(token.liquidity?.usd || '0')) || 0;
+                  const newLiq = parseFloat(String(pair.liquidity?.usd || '0')) || 0;
 
-                  
-                  // Update volume24h with DexScreener data if available
-                  if (pair.volume && pair.volume.h24) {
-                    token.volume24h = pair.volume.h24;
+                  // Only replace if this pair has higher liquidity
+                  if (newLiq >= currentLiq) {
+                    token.pairAddress = pair.poolAddress || token.pairAddress || "";
+                    token.priceUsd = pair.priceUsd || "0";
+                    token.priceChange = pair.priceChange || { m5: 0, h1: 0, h6: 0, h24: 0 };
+                    token.volume = pair.volume || { h1: 0, h24: 0 };
+                    token.liquidity = pair.liquidity || { usd: 0 };
+                    token.marketCap = pair.marketCap || token.marketCap || 0;
+                    token.info = pair.info ? { imageUrl: pair.info.imageUrl } : undefined;
+                    token.txns = pair.txns || { h1: { buys: 0, sells: 0 }, h6: { buys: 0, sells: 0 }, h24: { buys: 0, sells: 0 } };
+                    token.dexId = pair.dexId || token.dexId || "unknown";
+                    token.dexName = pair.dexId || token.dexName || "Unknown DEX";
+                    if (pair.volume && pair.volume.h24) {
+                      token.volume24h = pair.volume.h24;
+                    }
                   }
                 }
               }

@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import Header from "../components/Header";
 import Footer from "../components/Footer";
 import { useLoading, PageLoader } from "../components/LoadingProvider";
@@ -12,11 +13,7 @@ const StarIcon = ({ filled }: { filled: boolean }) => (
   </svg>
 );
 
-const CloseIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-  </svg>
-);
+
 
 // Tag logic functions
 function getTokenTags(token: {
@@ -221,11 +218,13 @@ const DexIcon = ({ dexId }: { dexId?: string }) => {
 
 
 export default function RadarPage() {
+  const router = useRouter();
   const [tokens, setTokens] = useState<Array<{
     id?: string;
     name: string;
     symbol: string;
     address: string;
+    pairAddress?: string;
     marketCap?: string | number;
     volume24h?: string | number;
     uniqueHolders?: string | number;
@@ -262,7 +261,6 @@ export default function RadarPage() {
   const [selectedTag, setSelectedTag] = useState("");
   
   // UI State
-  const [selectedToken, setSelectedToken] = useState<any>(null);
   const [watchlist, setWatchlist] = useState<string[]>([]);
   const [showWatchlistOnly, setShowWatchlistOnly] = useState(false);
   const [sortBy, setSortBy] = useState("createdAt");
@@ -474,151 +472,7 @@ export default function RadarPage() {
     console.log(`🔍 Token ${index + 1}:`, token.name, "Tags:", token.tags);
   });
 
-  const TokenModal = ({ token, onClose }: { token: any; onClose: () => void }) => (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
-          <div className="flex justify-between items-start mb-6">
-            <div className="flex items-center gap-4">
-              <Image
-                src={token.mediaContent?.previewImage?.small || `https://dexscreener.com/base/${token.address}/logo.png`}
-                alt={token.symbol || "Token"}
-                width={64}
-                height={64}
-                className="rounded-full bg-blue-900"
-                onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
-                  e.currentTarget.src = `https://dexscreener.com/base/${token.address}/logo.png`;
-                }}
-              />
-              <div>
-                <h2 className="text-2xl font-bold text-blue-200">{token.name}</h2>
-                <p className="text-gray-400">{token.symbol}</p>
-                <p className="text-xs text-gray-500">{token.address}</p>
-                {token.tags && token.tags.length > 0 && (
-                  <div className="flex gap-2 mt-2">
-                    {token.tags.map((tag: string) => (
-                      <TagBadge key={tag} tag={tag} />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-white">
-              <CloseIcon />
-            </button>
-          </div>
-          
-          {/* Price and Price Changes */}
-          {token.priceUsd && (
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="bg-gray-800 rounded-lg p-4">
-                <div className="text-sm text-gray-400">Current Price</div>
-                <div className="text-lg font-bold text-blue-300">${parseFloat(token.priceUsd).toFixed(6)}</div>
-              </div>
-              <div className="bg-gray-800 rounded-lg p-4">
-                <div className="text-sm text-gray-400">24h Change</div>
-                <div className={`text-lg font-bold ${token.priceChange?.h24 >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {token.priceChange?.h24 ? `${token.priceChange.h24 >= 0 ? '+' : ''}${token.priceChange.h24.toFixed(2)}%` : '-'}
-                </div>
-              </div>
-            </div>
-          )}
-          
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="bg-gray-800 rounded-lg p-4">
-              <div className="text-sm text-gray-400">Market Cap</div>
-              <div className="text-lg font-bold text-blue-300">{formatNumber(token.marketCap)}</div>
-            </div>
-            <div className="bg-gray-800 rounded-lg p-4">
-              <div className="text-sm text-gray-400">24h Volume</div>
-              <div className="text-lg font-bold text-blue-300">{formatNumber(token.volume24h)}</div>
-            </div>
-            <div className="bg-gray-800 rounded-lg p-4">
-              <div className="text-sm text-gray-400">Holders</div>
-              <div className="text-lg font-bold text-blue-300">{token.uniqueHolders?.toLocaleString() || "-"}</div>
-            </div>
-            <div className="bg-gray-800 rounded-lg p-4">
-              <div className="text-sm text-gray-400">Created</div>
-              <div className="text-lg font-bold text-blue-300">{token.createdAt ? getAgeFromTimestamp(token.createdAt) : "Unknown"}</div>
-            </div>
-          </div>
-          
-          {/* DexScreener Enhanced Data */}
-          {token.txns && (
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <div className="bg-gray-800 rounded-lg p-4">
-                <div className="text-sm text-gray-400">1h Transactions</div>
-                <div className="text-lg font-bold text-blue-300">
-                  {token.txns.h1?.buys || 0} buys / {token.txns.h1?.sells || 0} sells
-          </div>
-        </div>
-              <div className="bg-gray-800 rounded-lg p-4">
-                <div className="text-sm text-gray-400">6h Transactions</div>
-                <div className="text-lg font-bold text-blue-300">
-                  {token.txns.h6?.buys || 0} buys / {token.txns.h6?.sells || 0} sells
-      </div>
-    </div>
-              <div className="bg-gray-800 rounded-lg p-4">
-                <div className="text-sm text-gray-400">24h Buy Ratio</div>
-                <div className="text-lg font-bold text-blue-300">
-                  {token.txns.h24 ? `${((token.txns.h24.buys / (token.txns.h24.buys + token.txns.h24.sells)) * 100).toFixed(1)}%` : '-'}
-            </div>
-          </div>
-          </div>
-          )}
 
-          {/* Price Changes */}
-          {token.priceChange && (
-            <div className="grid grid-cols-4 gap-4 mb-6">
-              <div className="bg-gray-800 rounded-lg p-4">
-                <div className="text-sm text-gray-400">5m Change</div>
-                <div className={`text-lg font-bold ${token.priceChange.m5 >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {token.priceChange.m5 ? `${token.priceChange.m5 >= 0 ? '+' : ''}${token.priceChange.m5.toFixed(2)}%` : '-'}
-            </div>
-          </div>
-              <div className="bg-gray-800 rounded-lg p-4">
-                <div className="text-sm text-gray-400">1h Change</div>
-                <div className={`text-lg font-bold ${token.priceChange.h1 >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {token.priceChange.h1 ? `${token.priceChange.h1 >= 0 ? '+' : ''}${token.priceChange.h1.toFixed(2)}%` : '-'}
-                    </div>
-                  </div>
-              <div className="bg-gray-800 rounded-lg p-4">
-                <div className="text-sm text-gray-400">6h Change</div>
-                <div className={`text-lg font-bold ${token.priceChange.h6 >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {token.priceChange.h6 ? `${token.priceChange.h6 >= 0 ? '+' : ''}${token.priceChange.h6.toFixed(2)}%` : '-'}
-                </div>
-                </div>
-              <div className="bg-gray-800 rounded-lg p-4">
-                <div className="text-sm text-gray-400">24h Change</div>
-                <div className={`text-lg font-bold ${token.priceChange.h24 >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {token.priceChange.h24 ? `${token.priceChange.h24 >= 0 ? '+' : ''}${token.priceChange.h24.toFixed(2)}%` : '-'}
-                </div>
-              </div>
-                        </div>
-                      )}
-          
-          <div className="flex gap-3">
-                        <a
-                          href={`https://dexscreener.com/base/${token.address}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-              className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-center transition"
-                        >
-              View on DexScreener
-                        </a>
-                        <a
-                          href={`https://baseswap.fi/swap?inputCurrency=0x4200000000000000000000000000000000000006&outputCurrency=${token.address}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-              className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold text-center transition"
-            >
-              Buy on BaseSwap
-            </a>
-                      </div>
-                  </div>
-              </div>
-            </div>
-  );
 
   const TokenCard = ({ token }: { token: any }) => {
     // Helper function to format price change with color
@@ -644,12 +498,17 @@ export default function RadarPage() {
     const priceChange24h = formatPriceChange(token.priceChange?.h24);
     const buyPercentage = getBuyPercentage();
 
+    // Navigate to chart page
+    const handleTokenClick = () => {
+      router.push(`/trade/${token.pairAddress || token.address}/chart`);
+    };
+
     return (
       <div
         className="bg-gray-800/30 border-b border-gray-700/50 p-2.5 hover:bg-gray-700/30 transition-all duration-200 cursor-pointer group"
         style={{ minHeight: '80px' }}
-                      onClick={() => setSelectedToken(token)}
-                    >
+        onClick={handleTokenClick}
+      >
         <div className="flex items-center gap-3 mb-2">
                           <Image
             src={token.info?.imageUrl || token.mediaContent?.previewImage?.small || `https://dexscreener.com/base/${token.address}/logo.png`}
@@ -752,11 +611,11 @@ export default function RadarPage() {
       {pageLoading && <PageLoader />}
       
       {/* Compact Header */}
-      <div className="border-b border-gray-700/50 bg-gray-800/50">
+      <div className="bg-gray-800/50">
         <div className="w-full px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-                              <h1 className="text-xl font-bold text-blue-200">Radar</h1>
+                              <h1 className="text-xl font-bold font-cypherx-gradient">Radar</h1>
               <div className="flex items-center gap-2 text-sm">
                 <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
                 <span className="text-gray-400">{filteredAndSortedTokens.length} tokens</span>
@@ -811,11 +670,14 @@ export default function RadarPage() {
                         </button>
                       </div>
                         </div>
-                          </div>
-                      </div>
-                      
-      {/* 3-Column Layout - Full Width */}
-      <div className="w-full flex-1 flex items-center justify-center" style={{ height: 'calc(100vh - 140px)' }}>
+                                                  </div>
+                        </div>
+                       
+        {/* Separator Line */}
+        <div className="w-full border-b border-gray-700/50"></div>
+                       
+        {/* 3-Column Layout - Full Width */}
+      <div className="w-full flex-1 flex items-center justify-center" style={{ height: 'calc(100vh - 155px)' }}>
         {loading ? (
           <div className="text-gray-400 text-sm">Loading tokens...</div>
         ) : error ? (
@@ -833,8 +695,8 @@ export default function RadarPage() {
             {/* New Tokens Column */}
             <div className="flex flex-col h-full relative">
               <ColumnHeader title="New Pairs" count={newTokens.length} color="bg-green-400" />
-              <div className="overflow-y-auto scrollbar-hide hover:scrollbar-default transition-all duration-300" style={{ height: 'calc(100vh - 220px)' }}>
-                {newTokens.slice(0, 12).map((token) => (
+              <div className="overflow-y-auto scrollbar-hide transition-all duration-300" style={{ height: 'calc(100vh - 215px)' }}>
+                {newTokens.slice(0, 10).map((token) => (
                   <TokenCard key={token.address} token={token} />
                 ))}
                 {newTokens.length === 0 && (
@@ -849,8 +711,8 @@ export default function RadarPage() {
             {/* Surging Tokens Column */}
             <div className="flex flex-col h-full relative">
               <ColumnHeader title="Surging" count={surgingTokens.length} color="bg-red-400" />
-              <div className="overflow-y-auto scrollbar-hide hover:scrollbar-default transition-all duration-300" style={{ height: 'calc(100vh - 220px)' }}>
-                {surgingTokens.slice(0, 12).map((token) => (
+              <div className="overflow-y-auto scrollbar-hide transition-all duration-300" style={{ height: 'calc(100vh - 215px)' }}>
+                {surgingTokens.slice(0, 10).map((token) => (
                   <TokenCard key={token.address} token={token} />
                 ))}
                 {surgingTokens.length === 0 && (
@@ -865,8 +727,8 @@ export default function RadarPage() {
             {/* Gainer Tokens Column */}
             <div className="flex flex-col h-full">
               <ColumnHeader title="Top Gainers" count={gainerTokens.length} color="bg-blue-400" />
-              <div className="overflow-y-auto scrollbar-hide hover:scrollbar-default transition-all duration-300" style={{ height: 'calc(100vh - 220px)' }}>
-                {gainerTokens.slice(0, 12).map((token) => (
+              <div className="overflow-y-auto scrollbar-hide transition-all duration-300" style={{ height: 'calc(100vh - 215px)' }}>
+                {gainerTokens.slice(0, 10).map((token) => (
                   <TokenCard key={token.address} token={token} />
                 ))}
                 {gainerTokens.length === 0 && (
@@ -882,14 +744,6 @@ export default function RadarPage() {
 
       {/* Main Footer */}
       <Footer />
-
-      {/* Token Modal */}
-      {selectedToken && (
-        <TokenModal
-          token={selectedToken}
-          onClose={() => setSelectedToken(null)}
-        />
-      )}
     </div>
   );
 } 
