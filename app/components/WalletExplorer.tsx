@@ -344,8 +344,10 @@ function TransactionTable({
           className="w-full bg-gray-800 text-gray-200 border border-blue-500/30 p-3 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50 uppercase transition-all duration-200"
         >
           <option value="all">All Types</option>
+          <option value="buy">Buy Orders</option>
+          <option value="sell">Sell Orders</option>
           <option value="Transfer">Transfer</option>
-          <option value="Swap">Swap</option>
+          <option value="Swap">All Swaps</option>
           <option value="Contract Interaction">Contract Interaction</option>
           <option value="Unknown">Unknown</option>
         </select>

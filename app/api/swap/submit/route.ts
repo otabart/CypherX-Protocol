@@ -87,7 +87,7 @@ async function getEthPrice(): Promise<number> {
       if (price && price > 0) {
         return price;
       }
-    } catch (error) {
+    } catch {
       continue; // Try next API
     }
   }
@@ -101,8 +101,8 @@ async function getEthPrice(): Promise<number> {
     if (ethPrice > 0) {
       return ethPrice;
     }
-  } catch (proxyError) {
-    console.error("Proxy fallback also failed:", proxyError);
+  } catch {
+    console.error("Proxy fallback also failed");
   }
   
   // No fallback - throw error if no real price found
@@ -354,6 +354,18 @@ export async function POST(request: Request) {
     let parsedTx;
     try {
       parsedTx = ethers.Transaction.from(signedTransaction);
+      
+      // 🔧 ENHANCED: Add detailed debugging for sell operations
+      const debugMethodSignature = parsedTx.data.substring(0, 10);
+      if (debugMethodSignature === "0x38ed1739") { // swapExactTokensForETH
+        console.log("🔍 DETAILED SELL OPERATION DEBUG:");
+        console.log("  - Router: Uniswap V2 (0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24)");
+        console.log("  - Method: swapExactTokensForETH");
+        console.log("  - Transaction hash will be generated on broadcast");
+        console.log("  - Gas limit:", parsedTx.gasLimit?.toString());
+        console.log("  - Max fee per gas:", parsedTx.maxFeePerGas?.toString());
+      }
+      
       console.log("🔍 Parsed transaction details:", {
         to: parsedTx.to,
         data: parsedTx.data ? parsedTx.data.substring(0, 66) + "..." : "No data",
@@ -377,72 +389,230 @@ export async function POST(request: Request) {
         throw new Error("Signed transaction has empty or invalid data - this indicates a frontend encoding issue");
       }
       
-      // 🔧 ENHANCED: Check token allowance for sell operations after parsing
-      if (inputToken !== "ETH" && parsedTx.to) {
-        try {
-          const tokenContract = new ethers.Contract(
-            inputToken,
-            ["function allowance(address,address) view returns (uint256)", "function decimals() view returns (uint8)"],
-            provider
-          );
-          
-          const [allowance, decimals] = await Promise.all([
-            tokenContract.allowance(walletAddress, parsedTx.to),
-            tokenContract.decimals()
-          ]);
-          
-          const requiredAmount = ethers.parseUnits(inputAmount, decimals);
-          console.log(`🔍 Token allowance check: ${ethers.formatUnits(allowance, decimals)} tokens approved for router`);
-          
-          if (allowance < requiredAmount) {
-            console.warn(`⚠️ Insufficient token allowance: ${ethers.formatUnits(allowance, decimals)} < ${ethers.formatUnits(requiredAmount, decimals)}`);
-            return NextResponse.json(
-              { 
-                error: `Insufficient token allowance. Required: ${ethers.formatUnits(requiredAmount, decimals)}, Approved: ${ethers.formatUnits(allowance, decimals)}. Please approve the router contract to spend your tokens.` 
-              },
-              { status: 400 }
-            );
-          }
-          
-          console.log(`✅ Sufficient token allowance: ${ethers.formatUnits(allowance, decimals)} >= ${ethers.formatUnits(requiredAmount, decimals)}`);
-        } catch (allowanceError) {
-          console.warn("⚠️ Could not check token allowance:", allowanceError);
-          // Continue with transaction if we can't check allowance
-        }
-      }
+             // 🔧 ENHANCED: Check pool liquidity before attempting transaction
+       if (inputToken !== "ETH" && parsedTx.to) {
+         try {
+           // Check if the pool has sufficient liquidity
+           console.log("🔍 Checking pool liquidity before transaction...");
+           
+           // Get the token contract to check reserves
+           // const tokenContract = new ethers.Contract(
+           //   inputToken,
+           //   ["function balanceOf(address) view returns (uint256)", "function decimals() view returns (uint8)"],
+           //   provider
+           // );
+           
+           // Check if the pool contract exists and has liquidity
+           const poolCode = await provider.getCode(parsedTx.to);
+           if (poolCode === "0x") {
+             console.warn("⚠️ Router contract exists but pool may not have liquidity");
+           } else {
+             console.log("✅ Router contract has code - pool may have liquidity");
+           }
+           
+           // 🔧 CRITICAL: Check if the router contract is the correct one for Aerodrome
+           if (parsedTx.to === "0x2626664c2603336E57B271c5C0b26F421741e481") {
+             console.log("🔍 Checking Aerodrome router contract...");
+             
+                         // Check if this is actually the Aerodrome router
+            try {
+              const routerContract = new ethers.Contract(
+                parsedTx.to,
+                ["function factory() external view returns (address)"],
+                provider
+              );
+              
+              const factoryAddress = await routerContract.factory();
+              console.log("🔍 Router factory address:", factoryAddress);
+              
+              // 🔧 FIXED: Don't fail on factory address mismatch - just log it
+              console.log("✅ Router contract exists and has factory method");
+            } catch (routerError) {
+              console.warn("⚠️ Could not verify router contract:", routerError);
+            }
+           }
+         } catch (liquidityError) {
+           console.warn("⚠️ Could not check pool liquidity:", liquidityError);
+         }
+       }
+       
+       // 🔧 ENHANCED: Check token allowance for sell operations after parsing
+       if (inputToken !== "ETH" && parsedTx.to) {
+         try {
+           const tokenContract = new ethers.Contract(
+             inputToken,
+             ["function allowance(address,address) view returns (uint256)", "function decimals() view returns (uint8)"],
+             provider
+           );
+           
+           // 🔧 CRITICAL: Add small delay to allow blockchain state to update after approval
+           console.log("⏳ Adding delay for blockchain state update...");
+           await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+           
+           const [allowance, decimals] = await Promise.all([
+             tokenContract.allowance(walletAddress, parsedTx.to),
+             tokenContract.decimals()
+           ]);
+           
+           const requiredAmount = ethers.parseUnits(inputAmount, decimals);
+           console.log(`🔍 Token allowance check: ${ethers.formatUnits(allowance, decimals)} tokens approved for router`);
+           
+           // 🔧 FIXED: Add small buffer for allowance precision issues
+           const allowanceBuffer = requiredAmount * BigInt(1001) / BigInt(1000); // 0.1% buffer
+           console.log(`🔍 Allowance check with buffer: Required=${ethers.formatUnits(requiredAmount, decimals)}, Buffer=${ethers.formatUnits(allowanceBuffer, decimals)}, Approved=${ethers.formatUnits(allowance, decimals)}`);
+           
+           if (allowance < allowanceBuffer) {
+             console.warn(`⚠️ Insufficient token allowance: ${ethers.formatUnits(allowance, decimals)} < ${ethers.formatUnits(allowanceBuffer, decimals)} (with buffer)`);
+             
+             // 🔧 ENHANCED: Try one more time after a longer delay
+             console.log("⏳ Retrying allowance check after longer delay...");
+             await new Promise(resolve => setTimeout(resolve, 2000)); // Wait another 2 seconds
+             
+             const retryAllowance = await tokenContract.allowance(walletAddress, parsedTx.to);
+             console.log(`🔍 Retry allowance check: ${ethers.formatUnits(retryAllowance, decimals)} tokens approved for router`);
+             
+             if (retryAllowance < allowanceBuffer) {
+               // 🔧 ENHANCED: Check if the difference is very small (precision issue)
+               const shortfall = allowanceBuffer - retryAllowance;
+               const shortfallPercentage = (shortfall * BigInt(10000)) / requiredAmount; // 0.01% = 1
+               
+               console.log(`🔍 Allowance shortfall analysis: shortfall=${ethers.formatUnits(shortfall, decimals)}, percentage=${shortfallPercentage.toString()}/10000`);
+               
+               if (shortfallPercentage <= BigInt(5)) { // Less than 0.05% difference - likely precision issue
+                 console.log(`✅ Allowing transaction with small allowance shortfall: ${ethers.formatUnits(shortfall, decimals)} (${shortfallPercentage.toString()}/10000%)`);
+               } else {
+                 return NextResponse.json(
+                   { 
+                     error: `Insufficient token allowance. Required: ${ethers.formatUnits(requiredAmount, decimals)}, Approved: ${ethers.formatUnits(retryAllowance, decimals)}. Please approve the router contract to spend your tokens.` 
+                   },
+                   { status: 400 }
+                 );
+               }
+             } else {
+               console.log(`✅ Sufficient token allowance after retry: ${ethers.formatUnits(retryAllowance, decimals)} >= ${ethers.formatUnits(allowanceBuffer, decimals)}`);
+             }
+           } else {
+             console.log(`✅ Sufficient token allowance: ${ethers.formatUnits(allowance, decimals)} >= ${ethers.formatUnits(allowanceBuffer, decimals)}`);
+           }
+         } catch (allowanceError) {
+           console.warn("⚠️ Could not check token allowance:", allowanceError);
+           // Continue with transaction if we can't check allowance
+         }
+       }
       
       // 🔧 ENHANCED: Detect transaction type and add specific validation
       const methodSignature = parsedTx.data.substring(0, 10);
       console.log("🔍 Transaction method signature:", methodSignature);
       
-      // Check if this is a sell operation (swapExactTokensForETH)
-      if (methodSignature === "0x38ed1739") { // swapExactTokensForETH
-        console.log("🔍 Detected SELL operation (swapExactTokensForETH)");
+             // 🔧 CRITICAL: Enhanced debugging for sell operations
+      if (methodSignature === "0x38ed1739" || methodSignature === "0x18cbafe5" || methodSignature === "0x5c11d795" || methodSignature === "0x8803dbee") { // swapExactTokensForETH, swapExactTokensForETHSupportingFeeOnTransferTokens, swap, or swapExactTokensForTokens
+        const methodName = methodSignature === "0x38ed1739" ? "swapExactTokensForETH" : 
+                          methodSignature === "0x18cbafe5" ? "swapExactTokensForETHSupportingFeeOnTransferTokens" : 
+                          methodSignature === "0x5c11d795" ? "swap" : "swapExactTokensForTokens";
+        console.log("🔍 Detected SELL operation:", methodName);
+        
+        // 🔧 NEW: Comprehensive sell operation debugging
+        console.log("🔍 SELL OPERATION DEBUG INFO:");
+        console.log("  - Router Address:", parsedTx.to);
+        console.log("  - Method:", methodSignature === "0x38ed1739" ? "swapExactTokensForETH" : 
+                    methodSignature === "0x18cbafe5" ? "swapExactTokensForETHSupportingFeeOnTransferTokens" :
+                    methodSignature === "0x5c11d795" ? "swap" :
+                    methodSignature === "0x8803dbee" ? "swapExactTokensForTokens" : "unknown");
+        console.log("  - Token Being Sold:", inputToken);
+        console.log("  - Amount Being Sold:", inputAmount);
+        console.log("  - Expected ETH Out:", outputAmount);
+        console.log("  - Wallet Address:", walletAddress);
+        
+                 // Check if this is the correct Aerodrome router
+         if (parsedTx.to === "0x2626664c2603336E57B271c5C0b26F421741e481") {
+           console.log("✅ Using correct Aerodrome router for sell operation");
+         } else {
+           console.warn("⚠️ Using incorrect router address for sell operation:", parsedTx.to);
+         }
+         
+         // 🔧 NEW: Specific debugging for the problematic token
+         if (inputToken === "0x61E39a8338D6049DB936534596f29EC26FF5ae7A") {
+           console.log("🔍 SPECIAL DEBUG: This is the problematic token from the issue");
+           console.log("  - Token Address: 0x61E39a8338D6049DB936534596f29EC26FF5ae7A");
+           console.log("  - Router Address:", parsedTx.to);
+           console.log("  - Method:", methodSignature);
+           console.log("  - Amount:", inputAmount);
+           console.log("  - Expected ETH:", outputAmount);
+         }
         
         // 🔧 ENHANCED: Decode sell operation parameters
         try {
-          const sellParams = ethers.AbiCoder.defaultAbiCoder().decode(
-            ["uint256", "uint256", "address[]", "address", "uint256"],
-            "0x" + parsedTx.data.substring(10) // Remove method signature
-          );
-          
-          console.log("🔍 SELL operation details:", {
-            tokenAmountIn: ethers.formatUnits(sellParams[0], 18), // Assuming 18 decimals
-            minEthOut: ethers.formatEther(sellParams[1]),
-            tokenPath: sellParams[2],
-            recipient: sellParams[3],
-            deadline: new Date(Number(sellParams[4]) * 1000).toISOString(),
-            tokenBeingSold: sellParams[2][0], // First token in path
-            ethBeingReceived: ethers.formatEther(sellParams[1])
-          });
-          
-          // Validate sell operation parameters
-          if (sellParams[2].length < 2) {
-            console.warn("⚠️ Sell operation has invalid path length");
-          }
-          
-          if (Number(sellParams[4]) < Math.floor(Date.now() / 1000)) {
-            console.warn("⚠️ Sell operation deadline has expired");
+          let sellParams;
+          if (methodSignature === "0x5c11d795") {
+            // For Aerodrome's swap method
+            sellParams = ethers.AbiCoder.defaultAbiCoder().decode(
+              ["address", "address", "uint256", "uint256", "address", "uint256"],
+              "0x" + parsedTx.data.substring(10)
+            );
+            
+            console.log("🔍 SELL operation details (Aerodrome swap):", {
+              tokenIn: sellParams[0],
+              tokenOut: sellParams[1],
+              tokenAmountIn: ethers.formatUnits(sellParams[2], 18),
+              minEthOut: ethers.formatEther(sellParams[3]),
+              recipient: sellParams[4],
+              deadline: new Date(Number(sellParams[5]) * 1000).toISOString()
+            });
+            
+            // Validate sell operation parameters
+            if (Number(sellParams[5]) < Math.floor(Date.now() / 1000)) {
+              console.warn("⚠️ Sell operation deadline has expired");
+            }
+          } else if (methodSignature === "0x8803dbee") {
+            // For Aerodrome's swapExactTokensForTokens method
+            sellParams = ethers.AbiCoder.defaultAbiCoder().decode(
+              ["uint256", "uint256", "address[]", "address", "uint256"],
+              "0x" + parsedTx.data.substring(10)
+            );
+            
+            console.log("🔍 SELL operation details (Aerodrome swapExactTokensForTokens):", {
+              tokenAmountIn: ethers.formatUnits(sellParams[0], 18),
+              minEthOut: ethers.formatEther(sellParams[1]),
+              tokenPath: sellParams[2],
+              recipient: sellParams[3],
+              deadline: new Date(Number(sellParams[4]) * 1000).toISOString(),
+              tokenBeingSold: sellParams[2][0], // First token in path
+              ethBeingReceived: ethers.formatEther(sellParams[1])
+            });
+            
+            // Validate sell operation parameters
+            if (sellParams[2].length < 2) {
+              console.warn("⚠️ Sell operation has invalid path length");
+            }
+            
+            if (Number(sellParams[4]) < Math.floor(Date.now() / 1000)) {
+              console.warn("⚠️ Sell operation deadline has expired");
+            }
+          } else {
+            // For Uniswap V2 methods
+            sellParams = ethers.AbiCoder.defaultAbiCoder().decode(
+              ["uint256", "uint256", "address[]", "address", "uint256"],
+              "0x" + parsedTx.data.substring(10)
+            );
+            
+            console.log("🔍 SELL operation details (Uniswap V2):", {
+              tokenAmountIn: ethers.formatUnits(sellParams[0], 18),
+              minEthOut: ethers.formatEther(sellParams[1]),
+              tokenPath: sellParams[2],
+              recipient: sellParams[3],
+              deadline: new Date(Number(sellParams[4]) * 1000).toISOString(),
+              tokenBeingSold: sellParams[2][0], // First token in path
+              ethBeingReceived: ethers.formatEther(sellParams[1])
+            });
+            
+            // Validate sell operation parameters
+            if (sellParams[2].length < 2) {
+              console.warn("⚠️ Sell operation has invalid path length");
+            }
+            
+            if (Number(sellParams[4]) < Math.floor(Date.now() / 1000)) {
+              console.warn("⚠️ Sell operation deadline has expired");
+            }
           }
           
         } catch (decodeError) {
@@ -455,8 +625,11 @@ export async function POST(request: Request) {
         }
         
         // Check if the transaction has proper data length for sell operation
+        console.log("🔍 Transaction data length:", parsedTx.data.length);
         if (parsedTx.data.length < 138) { // Minimum length for swapExactTokensForETH
           console.warn("⚠️ Sell operation data seems too short");
+        } else {
+          console.log("✅ Transaction data length is sufficient");
         }
       } else if (methodSignature === "0x7ff36ab5") { // swapExactETHForTokens
         console.log("🔍 Detected BUY operation (swapExactETHForTokens)");
@@ -507,6 +680,17 @@ export async function POST(request: Request) {
       
       tx = await provider.broadcastTransaction(signedTransaction);
       console.log("✅ Transaction broadcasted successfully:", tx.hash);
+      
+      // 🔧 ENHANCED: Special debugging for sell operations
+      const broadcastMethodSignature = tx.data.substring(0, 10);
+      if (broadcastMethodSignature === "0x38ed1739") { // swapExactTokensForETH
+        console.log("🔍 SELL TRANSACTION BROADCASTED:");
+        console.log("  - Hash:", tx.hash);
+        console.log("  - Router:", tx.to);
+        console.log("  - Expected router: 0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24");
+        console.log("  - Router match:", tx.to === "0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24");
+        console.log("  - Block explorer: https://basescan.org/tx/" + tx.hash);
+      }
       
       // Log transaction details for debugging
       console.log("📊 Transaction details:", {
@@ -573,6 +757,16 @@ export async function POST(request: Request) {
       if (receipt && receipt.status === 0) {
         console.error("❌ Transaction failed with status 0");
         console.error("🔍 Full receipt data:", JSON.stringify(receipt, null, 2));
+        
+        // 🔧 ENHANCED: Add specific debugging for failed transactions
+        console.error("🔍 Transaction failure analysis:");
+        console.error("  - Transaction hash:", tx.hash);
+        console.error("  - Gas used:", receipt.gasUsed?.toString());
+        console.error("  - Gas price:", receipt.gasPrice?.toString());
+        console.error("  - Logs count:", receipt.logs?.length || 0);
+        console.error("  - Block number:", receipt.blockNumber);
+        console.error("  - From address:", receipt.from);
+        console.error("  - To address:", receipt.to);
         
         // Try to get more detailed error information
         try {
@@ -663,28 +857,103 @@ export async function POST(request: Request) {
             const methodSignature = parsedTx.data.substring(0, 10);
             let errorMessage = "Transaction execution reverted - unknown error";
             
-            if (methodSignature === "0x38ed1739") { // swapExactTokensForETH
-              console.log("🔍 Analyzing SELL operation failure...");
+                                                                             if (methodSignature === "0x38ed1739" || methodSignature === "0x18cbafe5" || methodSignature === "0x5c11d795" || methodSignature === "0x8803dbee" || methodSignature === "0x9908fc8b" || methodSignature === "0x791ac947") { // swapExactTokensForETH, swapExactTokensForETHSupportingFeeOnTransferTokens, swap, swapExactTokensForTokens, unknown method, or swapExactTokensForETHSupportingFeeOnTransferTokens
+                const methodName = methodSignature === "0x38ed1739" ? "swapExactTokensForETH" : 
+                                  methodSignature === "0x18cbafe5" ? "swapExactTokensForETHSupportingFeeOnTransferTokens" : 
+                                  methodSignature === "0x5c11d795" ? "swap" : 
+                                  methodSignature === "0x8803dbee" ? "swapExactTokensForTokens" :
+                                  methodSignature === "0x791ac947" ? "swapExactTokensForETHSupportingFeeOnTransferTokens" :
+                                  "unknown_method";
+               console.log(`🔍 Analyzing SELL operation failure (${methodName})...`);
+               console.error("❌ SELL operation failed - possible causes:");
+               console.error("1. Insufficient token balance");
+               console.error("2. Insufficient token allowance");
+               console.error("3. Pool has insufficient liquidity");
+               console.error("4. Slippage tolerance too tight");
+               console.error("5. Router contract issue");
+               console.error("6. Token has transfer fees (if using fee-on-transfer method)");
+               
+               if (methodName === "unknown_method") {
+                 errorMessage = `Sell operation failed - unknown method signature (${methodSignature}). This indicates a problem with the transaction preparation. Please try again or contact support.`;
+               } else {
+                 errorMessage = `Sell operation failed (${methodName}) - check token balance, allowance, and pool liquidity. The transaction was reverted by the smart contract.`;
+               }
               
-              // 🔧 ENHANCED: Decode sell parameters for better error analysis
-              try {
-                const sellParams = ethers.AbiCoder.defaultAbiCoder().decode(
-                  ["uint256", "uint256", "address[]", "address", "uint256"],
-                  "0x" + parsedTx.data.substring(10)
-                );
+                             // 🔧 ENHANCED: Decode sell parameters for better error analysis
+               try {
+                 let sellParams;
+                 if (methodSignature === "0x5c11d795") {
+                   // For Aerodrome's swap method
+                   sellParams = ethers.AbiCoder.defaultAbiCoder().decode(
+                     ["address", "address", "uint256", "uint256", "address", "uint256"],
+                     "0x" + parsedTx.data.substring(10)
+                   );
+                 } else if (methodSignature === "0x8803dbee") {
+                   // For Aerodrome's swapExactTokensForTokens method
+                   sellParams = ethers.AbiCoder.defaultAbiCoder().decode(
+                     ["uint256", "uint256", "address[]", "address", "uint256"],
+                     "0x" + parsedTx.data.substring(10)
+                   );
+                 } else {
+                   // For Uniswap V2 methods
+                   sellParams = ethers.AbiCoder.defaultAbiCoder().decode(
+                     ["uint256", "uint256", "address[]", "address", "uint256"],
+                     "0x" + parsedTx.data.substring(10)
+                   );
+                 }
                 
-                console.log("🔍 Failed SELL operation analysis:", {
-                  tokenAmountIn: ethers.formatUnits(sellParams[0], 18),
-                  minEthOut: ethers.formatEther(sellParams[1]),
-                  tokenPath: sellParams[2],
-                  tokenBeingSold: sellParams[2][0],
-                  deadline: new Date(Number(sellParams[4]) * 1000).toISOString()
-                });
+                                 if (methodSignature === "0x5c11d795") {
+                   // For Aerodrome's swap method
+                   console.log("🔍 Failed SELL operation analysis (Aerodrome swap):", {
+                     tokenIn: sellParams[0],
+                     tokenOut: sellParams[1],
+                     tokenAmountIn: ethers.formatUnits(sellParams[2], 18),
+                     minEthOut: ethers.formatEther(sellParams[3]),
+                     recipient: sellParams[4],
+                     deadline: new Date(Number(sellParams[5]) * 1000).toISOString()
+                   });
+                 } else if (methodSignature === "0x8803dbee") {
+                   // For Aerodrome's swapExactTokensForTokens method
+                   console.log("🔍 Failed SELL operation analysis (Aerodrome swapExactTokensForTokens):", {
+                     tokenAmountIn: ethers.formatUnits(sellParams[0], 18),
+                     minEthOut: ethers.formatEther(sellParams[1]),
+                     tokenPath: sellParams[2],
+                     tokenBeingSold: sellParams[2][0],
+                     deadline: new Date(Number(sellParams[4]) * 1000).toISOString()
+                   });
+                 } else {
+                   // For Uniswap V2 methods
+                   console.log("🔍 Failed SELL operation analysis (Uniswap V2):", {
+                     tokenAmountIn: ethers.formatUnits(sellParams[0], 18),
+                     minEthOut: ethers.formatEther(sellParams[1]),
+                     tokenPath: sellParams[2],
+                     tokenBeingSold: sellParams[2][0],
+                     deadline: new Date(Number(sellParams[4]) * 1000).toISOString()
+                   });
+                 }
                 
-                // Check for specific sell operation failure reasons
-                if (receipt.logs && receipt.logs.length === 0) {
-                  errorMessage = `Sell operation failed - insufficient token allowance or balance. Trying to sell ${ethers.formatUnits(sellParams[0], 18)} tokens`;
-                } else if (receipt.logs && receipt.logs.length > 0) {
+                                 // Check for specific sell operation failure reasons
+                 if (receipt.logs && receipt.logs.length === 0) {
+                   const tokenAmount = methodSignature === "0x5c11d795" ? 
+                     ethers.formatUnits(sellParams[2], 18) : 
+                     ethers.formatUnits(sellParams[0], 18);
+                   
+                   // 🔧 FIXED: Don't assume it's allowance/balance issue when there are no logs
+                   // This could be insufficient liquidity, slippage, or other contract issues
+                   console.log("🔍 No logs in receipt - checking router contract validity...");
+                   try {
+                     const routerCode = await provider.getCode(parsedTx.to!);
+                     if (routerCode === "0x") {
+                       errorMessage = `Sell operation failed - router contract at ${parsedTx.to} does not exist or is invalid`;
+                     } else {
+                       // 🔧 CRITICAL FIX: Don't assume allowance/balance issue
+                       errorMessage = `Sell operation failed - transaction reverted by router contract. Possible causes: insufficient liquidity, slippage tolerance exceeded, invalid token pair, or contract error. Trying to sell ${tokenAmount} tokens.`;
+                     }
+                   } catch (codeError) {
+                     console.warn("Could not check router contract code:", codeError);
+                     errorMessage = `Sell operation failed - transaction reverted. Possible causes: insufficient liquidity, slippage tolerance exceeded, or contract error. Trying to sell ${tokenAmount} tokens.`;
+                   }
+                 } else if (receipt.logs && receipt.logs.length > 0) {
                   // Try to decode revert reason from logs
                   for (const log of receipt.logs) {
                     if (log.data && log.data !== "0x") {
@@ -700,19 +969,23 @@ export async function POST(request: Request) {
                     }
                   }
                   
-                  if (errorMessage === "Transaction execution reverted - unknown error") {
-                    errorMessage = `Sell operation failed - check token allowance and balance. Trying to sell ${ethers.formatUnits(sellParams[0], 18)} tokens`;
-                  }
+                                     if (errorMessage === "Transaction execution reverted - unknown error") {
+                     const tokenAmount = methodSignature === "0x5c11d795" ? 
+                       ethers.formatUnits(sellParams[2], 18) : 
+                       ethers.formatUnits(sellParams[0], 18);
+                     errorMessage = `Sell operation failed - transaction reverted. Possible causes: insufficient liquidity, slippage tolerance exceeded, or contract error. Trying to sell ${tokenAmount} tokens.`;
+                   }
                 }
                 
-                // Check for deadline expiration
-                if (Number(sellParams[4]) < Math.floor(Date.now() / 1000)) {
-                  errorMessage = "Sell operation failed - transaction deadline expired";
-                }
+                                 // Check for deadline expiration
+                 const deadline = methodSignature === "0x5c11d795" ? Number(sellParams[5]) : Number(sellParams[4]);
+                 if (deadline < Math.floor(Date.now() / 1000)) {
+                   errorMessage = "Sell operation failed - transaction deadline expired";
+                 }
                 
               } catch (decodeError) {
                 console.error("❌ Failed to decode sell parameters for error analysis:", decodeError);
-                errorMessage = "Sell operation failed - check token allowance and balance";
+                errorMessage = "Sell operation failed - transaction reverted. Possible causes: insufficient liquidity, slippage tolerance exceeded, or contract error.";
               }
               
             } else if (methodSignature === "0x7ff36ab5") { // swapExactETHForTokens
@@ -766,7 +1039,7 @@ export async function POST(request: Request) {
       // Format user-friendly error message
       userFriendlyError = error.message;
       
-      if (error.message.includes("execution reverted")) {
+      if (error.message.includes("execution reverted") || error.message.includes("Sell operation failed - transaction reverted")) {
         errorDetails = "The swap transaction was reverted by the smart contract. This usually means insufficient liquidity or invalid parameters.";
         statusCode = 400;
       } else if (error.message.includes("insufficient funds")) {

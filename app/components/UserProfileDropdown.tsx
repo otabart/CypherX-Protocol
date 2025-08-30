@@ -3,14 +3,16 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { signOut, type Auth } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
-import { auth as firebaseAuth, db } from "@/lib/firebase";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { auth as firebaseAuth, db, storage } from "@/lib/firebase";
 import { useAuth, useWalletSystem, useVotingModal } from "@/app/providers";
+import { useUserSettings } from "@/app/hooks/useUserSettings";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiAward, FiTrendingUp, FiUser, FiLogOut, FiCopy, FiGift, FiInfo, FiClock } from "react-icons/fi";
-import { HiOutlineSparkles, HiOutlineCog } from "react-icons/hi";
-import { FaShoppingBag } from "react-icons/fa";
+import { FiUser, FiInfo, FiX, FiCheck, FiAlertCircle } from "react-icons/fi";
+import { toast } from "react-toastify";
 import Link from "next/link";
+import Image from "next/image";
 import { createPortal } from "react-dom";
 import TierProgressionModal from "./TierProgressionModal";
 import PointsHistoryModal from "./PointsHistoryModal";
@@ -22,24 +24,55 @@ const UserProfileDropdown: React.FC = () => {
   const { user } = useAuth();
   const { selfCustodialWallet } = useWalletSystem();
   const { setShowVotingModal, setSelectedIndexForVoting } = useVotingModal();
+  const { 
+    settings, 
+    updateAlias, 
+    generateReferralCode, 
+    applyReferralCode, 
+    loading: settingsLoading 
+  } = useUserSettings();
   const walletAddress = selfCustodialWallet?.address;
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [points, setPoints] = useState<number | null>(null);
   const [tier, setTier] = useState<string>('normie');
-  const [badges, setBadges] = useState<string[]>([]);
   const [progress, setProgress] = useState<number>(0);
   const [nextTier, setNextTier] = useState<string | null>(null);
   const [pointsToNextTier, setPointsToNextTier] = useState<number>(0);
-  const [referralCode, setReferralCode] = useState<string>("");
-  const [referralEarnings, setReferralEarnings] = useState<number>(0);
-  const [referralCount, setReferralCount] = useState<number>(0);
-  const [copied, setCopied] = useState(false);
+
   const [showTierModal, setShowTierModal] = useState(false);
   const [showPointsHistory, setShowPointsHistory] = useState(false);
   const [isAuthor, setIsAuthor] = useState(false);
   const [showAliasModal, setShowAliasModal] = useState(false);
+  const [showAccountSettingsModal, setShowAccountSettingsModal] = useState(false);
+  const [showAuthorDashboardModal, setShowAuthorDashboardModal] = useState(false);
   const [alias, setAlias] = useState<string>("");
-  const [isUpdatingAlias, setIsUpdatingAlias] = useState(false);
+
+  const [profilePicture, setProfilePicture] = useState<string>("");
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [uploadMessage, setUploadMessage] = useState('');
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsStatus, setSettingsStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [settingsMessage, setSettingsMessage] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [notifications, setNotifications] = useState({
+    email: true,
+    push: true,
+    trading: true,
+    news: false
+  });
+  const [privacy, setPrivacy] = useState({
+    showProfile: true,
+    showTrades: true,
+    showBalance: false
+  });
+  
+  // Referral system states
+  const [showReferralModal, setShowReferralModal] = useState(false);
+  const [showApplyReferralModal, setShowApplyReferralModal] = useState(false);
+  const [referralCodeToApply, setReferralCodeToApply] = useState('');
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 
   // Debug logging for Points History
@@ -52,15 +85,11 @@ const UserProfileDropdown: React.FC = () => {
   // Fetch user stats from API
   useEffect(() => {
     const fetchUserStats = async () => {
-      if (!user || !walletAddress) {
-        setPoints(null);
-        setTier('normie');
-        setBadges([]);
-        setReferralCode("");
-        setReferralEarnings(0);
-        setReferralCount(0);
-        return;
-      }
+              if (!user || !walletAddress) {
+          setPoints(null);
+          setTier('normie');
+          return;
+        }
 
       try {
         // Fetch user stats from our new API
@@ -69,7 +98,6 @@ const UserProfileDropdown: React.FC = () => {
           const statsData = await statsResponse.json();
           setPoints(statsData.points || 0);
           setTier(statsData.tier || 'normie');
-          setBadges(statsData.badges || []);
           setProgress(statsData.progress || 0);
           setNextTier(statsData.nextTier);
           setPointsToNextTier(statsData.pointsToNextTier || 0);
@@ -82,17 +110,9 @@ const UserProfileDropdown: React.FC = () => {
             const userData = userDoc.data();
             setPoints(userData.points ?? 0);
             setTier(userData.tier ?? 'normie');
-            setBadges(userData.badges ?? []);
-            setReferralCode(userData.referralCode ?? "");
-            setReferralEarnings(userData.referralEarnings ?? 0);
-            setReferralCount(userData.referralCount ?? 0);
           } else {
             setPoints(0);
             setTier('normie');
-            setBadges([]);
-            setReferralCode("");
-            setReferralEarnings(0);
-            setReferralCount(0);
           }
         }
 
@@ -103,11 +123,21 @@ const UserProfileDropdown: React.FC = () => {
           setIsAuthor(authorData.isAuthor);
           setAlias(authorData.authorData?.alias || "");
         }
+
+        // Fetch user profile data
+        if (user || walletAddress) {
+          const documentId = walletAddress || user.uid;
+          const userDocRef = doc(db, "users", documentId);
+          const userDoc = await getDoc(userDocRef);
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            setProfilePicture(userData.profilePicture || userData.photoURL || "");
+          }
+        }
       } catch (error) {
         console.error("Error fetching user stats:", error);
         setPoints(0);
         setTier('normie');
-        setBadges([]);
       }
     };
 
@@ -135,38 +165,69 @@ const UserProfileDropdown: React.FC = () => {
     setShowAccountModal(false);
   }
 
-  const handleUpdateAlias = async () => {
-    if (!user || !walletAddress || !alias.trim()) return;
-    
-    setIsUpdatingAlias(true);
-    try {
-      const response = await fetch('/api/user/update-alias', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          walletAddress,
-          alias: alias.trim(),
-        }),
-      });
 
-      if (response.ok) {
-        setShowAliasModal(false);
-        // Refresh user data by re-fetching
-        const statsResponse = await fetch(`/api/tiers?walletAddress=${walletAddress}`);
-        if (statsResponse.ok) {
-          const statsData = await statsResponse.json();
-          setPoints(statsData.points || 0);
-          setTier(statsData.tier || 'normie');
-        }
-      } else {
-        console.error('Failed to update alias');
+
+  const handleSaveSettings = async () => {
+    if (!user) return;
+    
+    setSavingSettings(true);
+    setSettingsStatus('idle');
+    setSettingsMessage('');
+    
+    try {
+      // Use user.uid as document ID for consistency
+      const documentId = user.uid;
+      if (!documentId) {
+        setSettingsStatus('error');
+        setSettingsMessage('No user ID found');
+        return;
       }
+      // Start with just displayName to test if basic save works
+      const settingsData = {
+        displayName: displayName.trim(),
+        updatedAt: new Date(),
+      };
+
+      await updateDoc(doc(db, "users", documentId), settingsData);
+      
+      setSettingsStatus('success');
+      setSettingsMessage('Settings saved successfully!');
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setSettingsStatus('idle');
+        setSettingsMessage('');
+      }, 3000);
+      
     } catch (error) {
-      console.error('Error updating alias:', error);
+      console.error('Error saving settings:', error);
+      console.error('Error details:', {
+        code: error instanceof Error ? error.message : String(error),
+        documentId: user?.uid || '',
+        user: !!user
+      });
+      
+      let errorMessage = 'Failed to save settings. Please try again.';
+      if (error instanceof Error) {
+        if (error.message.includes('permission-denied')) {
+          errorMessage = 'Permission denied. Please check your authentication.';
+        } else if (error.message.includes('not-found')) {
+          errorMessage = 'User document not found.';
+        } else {
+          errorMessage = `Save failed: ${error.message}`;
+        }
+      }
+      
+      setSettingsStatus('error');
+      setSettingsMessage(errorMessage);
+      
+      // Clear error message after 5 seconds
+      setTimeout(() => {
+        setSettingsStatus('idle');
+        setSettingsMessage('');
+      }, 5000);
     } finally {
-      setIsUpdatingAlias(false);
+      setSavingSettings(false);
     }
   };
 
@@ -192,18 +253,146 @@ const UserProfileDropdown: React.FC = () => {
     return gradients[tier as keyof typeof gradients] || 'from-gray-500 to-gray-600';
   };
 
-  const copyReferralCode = async () => {
-    if (referralCode) {
-      await navigator.clipboard.writeText(referralCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
+
 
   const handleVoteAndEarn = () => {
     setShowAccountModal(false); // Close the profile dropdown
     setSelectedIndexForVoting('CDEX'); // Default to CDEX index
     setShowVotingModal(true);
+  };
+
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !user) {
+      console.log("No file or user found:", { file: !!file, user: !!user });
+      setUploadStatus('error');
+      setUploadMessage('No file selected or user not authenticated');
+      return;
+    }
+
+    console.log("Starting image upload:", {
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type,
+      userId: user.uid
+    });
+
+    // Validate file type and size
+    if (!file.type.startsWith('image/')) {
+      setUploadStatus('error');
+      setUploadMessage('Please select a valid image file (JPG, PNG, GIF, etc.)');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) { // 5MB limit
+      setUploadStatus('error');
+      setUploadMessage('Image size must be less than 5MB');
+      return;
+    }
+
+    setUploadingImage(true);
+    setUploadStatus('idle');
+    setUploadMessage('Uploading image...');
+
+    try {
+      console.log("Creating storage reference...");
+      // Try the profile path first, fallback to public path if needed
+      const storageRef = ref(storage, `users/${user.uid}/profile/${Date.now()}-${file.name}`);
+      console.log("Storage reference created:", storageRef.fullPath);
+      console.log("User ID:", user.uid);
+      console.log("User authenticated:", !!user);
+      
+      console.log("Uploading bytes...");
+      let snapshot;
+      try {
+        snapshot = await uploadBytes(storageRef, file);
+        console.log("Upload completed:", snapshot);
+      } catch {
+        console.log("Profile path upload failed, trying public path...");
+        // Fallback to public path if profile path fails
+        const publicRef = ref(storage, `public/profile-pictures/${user.uid}/${Date.now()}-${file.name}`);
+        console.log("Trying public path:", publicRef.fullPath);
+        snapshot = await uploadBytes(publicRef, file);
+        console.log("Public path upload completed:", snapshot);
+      }
+      
+      console.log("Getting download URL...");
+      const downloadURL = await getDownloadURL(snapshot.ref);
+      console.log("Download URL obtained:", downloadURL);
+      
+      setProfilePicture(downloadURL);
+      
+      // Save to Firestore
+      try {
+        // Use user.uid as document ID for consistency
+        const documentId = user.uid;
+        console.log("Saving profile picture to Firestore for user:", documentId);
+        console.log("Download URL:", downloadURL);
+        
+        await updateDoc(doc(db, "users", documentId), {
+          profilePicture: downloadURL,
+          photoURL: downloadURL, // Also save to photoURL for compatibility
+          updatedAt: new Date(),
+        });
+        console.log("Profile picture saved to Firestore successfully");
+      } catch (firestoreError) {
+        console.error("Error saving to Firestore:", firestoreError);
+        console.error("Firestore error details:", {
+          code: firestoreError instanceof Error ? firestoreError.message : 'Unknown error',
+          userId: walletAddress || user.uid,
+          downloadURL: downloadURL
+        });
+        // Don't fail the upload if Firestore save fails
+      }
+      
+      setUploadStatus('success');
+      setUploadMessage('Profile picture updated successfully!');
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setUploadStatus('idle');
+        setUploadMessage('');
+      }, 3000);
+      
+    } catch (error) {
+      console.error("Error uploading image:", error);
+      console.error("Error details:", {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        storage: !!storage,
+        user: !!user,
+        storageBucket: storage?.app?.options?.storageBucket
+      });
+      
+      let errorMessage = 'Failed to upload image';
+      if (error instanceof Error) {
+        if (error.message.includes('storage/unauthorized')) {
+          errorMessage = 'Upload failed: Permission denied. Please try again.';
+        } else if (error.message.includes('storage/quota-exceeded')) {
+          errorMessage = 'Upload failed: Storage quota exceeded.';
+        } else if (error.message.includes('storage/network-request-failed')) {
+          errorMessage = 'Upload failed: Network error. Please check your connection.';
+        } else if (error.message.includes('storage/bucket-not-found')) {
+          errorMessage = 'Upload failed: Storage bucket not found.';
+        } else if (error.message.includes('storage/object-not-found')) {
+          errorMessage = 'Upload failed: Storage object not found.';
+        } else {
+          errorMessage = `Upload failed: ${error.message}`;
+        }
+      }
+      
+      setUploadStatus('error');
+      setUploadMessage(errorMessage);
+      
+      // Clear error message after 5 seconds
+      setTimeout(() => {
+        setUploadStatus('idle');
+        setUploadMessage('');
+      }, 5000);
+      
+    } finally {
+      setUploadingImage(false);
+    }
   };
 
   const [buttonRef, setButtonRef] = useState<HTMLButtonElement | null>(null);
@@ -218,8 +407,18 @@ const UserProfileDropdown: React.FC = () => {
         className="flex items-center focus:outline-none focus:ring-2 focus:ring-blue-500/50 rounded-full hover:scale-105 transform transition-all duration-200"
         aria-label={user ? "Account" : "Sign In"}
       >
-        <div className="relative w-9 h-9 rounded-full bg-gray-800/50 backdrop-blur-sm flex items-center justify-center transition-all duration-300 hover:bg-gray-700/50 shadow-lg border border-gray-600/50 hover:border-gray-500">
-          <FiUser className="w-4 h-4 icon-blue-gradient" />
+        <div className="relative w-9 h-9 rounded-full bg-gray-800/50 backdrop-blur-sm flex items-center justify-center transition-all duration-300 hover:bg-gray-700/50 shadow-lg border border-gray-600/50 hover:border-gray-500 overflow-hidden">
+          {profilePicture ? (
+            <Image
+              src={profilePicture}
+              alt="Profile"
+              width={36}
+              height={36}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <FiUser className="w-4 h-4 icon-blue-gradient" />
+          )}
           {user && (
             <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-gray-900"></div>
           )}
@@ -229,38 +428,48 @@ const UserProfileDropdown: React.FC = () => {
       {showAccountModal && buttonRef && createPortal(
         <AnimatePresence>
           <motion.div
-            initial={{ opacity: 0, y: -10, scale: 0.95 }}
+            initial={{ opacity: 0, y: -8, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -10, scale: 0.95 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
+            exit={{ opacity: 0, y: -8, scale: 0.98 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
             ref={modalRef}
-            className="fixed w-96 bg-gray-900/95 backdrop-blur-xl rounded-2xl border border-gray-700/50 shadow-2xl overflow-hidden z-[9999]"
+            className="fixed w-80 bg-gray-900/95 backdrop-blur-sm rounded-lg border border-gray-700/60 shadow-2xl overflow-hidden z-[9999]"
             style={{
-              top: buttonRef.getBoundingClientRect().bottom + 12,
+              top: buttonRef.getBoundingClientRect().bottom + 16,
               right: window.innerWidth - buttonRef.getBoundingClientRect().right,
             }}
           >
             {/* Header with gradient background */}
-            <div className={`bg-gradient-to-r ${getTierGradient(tier)} p-6 relative overflow-hidden`}>
+            <div className={`bg-gradient-to-r ${getTierGradient(tier)} p-4 relative overflow-hidden`}>
               <div className="absolute inset-0 bg-black/20"></div>
               <div className="relative z-10">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-12 h-12 rounded-full bg-blue-400/20 backdrop-blur-sm flex items-center justify-center">
-                      <FiUser className="w-6 h-6 text-blue-400" />
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center space-x-2.5">
+                    <div className="w-10 h-10 rounded-full bg-blue-400/20 backdrop-blur-sm flex items-center justify-center overflow-hidden">
+                      {profilePicture ? (
+                        <Image
+                          src={profilePicture}
+                          alt="Profile"
+                          width={40}
+                          height={40}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <FiUser className="w-5 h-5 text-blue-400" />
+                      )}
                     </div>
                     <div>
-                      <h3 className="text-white font-semibold text-lg">
+                      <h3 className="text-white font-semibold text-base">
                         {user ? 'My Profile' : 'Welcome'}
                       </h3>
-                      <p className="text-white/80 text-sm capitalize">
+                      <p className="text-white/80 text-xs capitalize">
                         {tier} • {points !== null ? `${points.toLocaleString()} pts` : "—"}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
                     <div 
-                      className="w-4 h-4 rounded-full shadow-lg"
+                      className="w-3 h-3 rounded-full shadow-lg"
                       style={{ backgroundColor: getTierColor(tier) }}
                     ></div>
                   </div>
@@ -268,20 +477,20 @@ const UserProfileDropdown: React.FC = () => {
 
                 {/* Progress to next tier */}
                 {nextTier && (
-                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-white/90 text-sm font-medium">Progress to {nextTier}</span>
-                      <span className="text-white/90 text-sm font-semibold">{progress}%</span>
+                  <div className="bg-white/10 backdrop-blur-sm rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-white/90 text-xs font-medium">Progress to {nextTier}</span>
+                      <span className="text-white/90 text-xs font-semibold">{progress}%</span>
                     </div>
-                    <div className="w-full bg-white/20 rounded-full h-2 overflow-hidden">
+                    <div className="w-full bg-white/20 rounded-full h-1.5 overflow-hidden">
                       <motion.div
                         initial={{ width: 0 }}
                         animate={{ width: `${progress}%` }}
                         transition={{ duration: 0.8, ease: "easeOut" }}
-                        className="bg-white h-2 rounded-full shadow-sm"
+                        className="bg-white h-1.5 rounded-full shadow-sm"
                       ></motion.div>
                     </div>
-                    <p className="text-white/70 text-xs mt-2">
+                    <p className="text-white/70 text-xs mt-1.5">
                       {pointsToNextTier} points to next tier
                     </p>
                   </div>
@@ -289,230 +498,112 @@ const UserProfileDropdown: React.FC = () => {
               </div>
             </div>
 
-            {/* Content */}
-            <div className="p-6 space-y-6">
-              {/* Stats Grid */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
-                      <FiTrendingUp className="w-5 h-5 text-blue-400" />
-                    </div>
-                                         <div>
-                       <div className="flex items-center gap-2">
-                         <p className="text-gray-400 text-xs">Total Points</p>
-                         <button
-                           onClick={() => setShowTierModal(true)}
-                           className="p-1 hover:bg-blue-500/20 rounded transition-colors"
-                           title="View Tier Progression"
-                         >
-                           <FiInfo className="w-3 h-3 text-blue-400" />
-                         </button>
-                       </div>
-                       <p className="text-white font-semibold text-lg">
-                         {points !== null ? points.toLocaleString() : "—"}
-                       </p>
-                     </div>
-                  </div>
-                </div>
-
-                <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 rounded-lg bg-yellow-500/20 flex items-center justify-center">
-                      <FiAward className="w-5 h-5 text-yellow-400" />
-                    </div>
-                    <div>
-                      <p className="text-gray-400 text-xs">Badges</p>
-                      <p className="text-white font-semibold text-lg">{badges.length}</p>
-                    </div>
-                  </div>
+                        {/* Content */}
+            <div className="p-4 space-y-4">
+              {/* Quick Stats */}
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-400">Points</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-white font-medium">{points !== null ? points.toLocaleString() : "—"}</span>
+                  <button
+                    onClick={() => setShowTierModal(true)}
+                    className="p-0.5 hover:bg-blue-500/20 rounded transition-colors"
+                    title="View Tier Progression"
+                  >
+                    <FiInfo className="w-3 h-3 text-blue-400" />
+                  </button>
                 </div>
               </div>
+              
 
-              {/* Badges Section */}
-              {badges.length > 0 && (
-                <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
-                  <div className="flex items-center space-x-2 mb-3">
-                    <HiOutlineSparkles className="w-5 h-5 text-yellow-400" />
-                    <h4 className="text-white font-medium">Recent Badges</h4>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {badges.slice(0, 4).map((badge, index) => (
-                      <motion.div
-                        key={index}
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: index * 0.1 }}
-                        className="px-3 py-1.5 bg-yellow-500/20 text-yellow-300 text-xs rounded-full border border-yellow-500/30 font-medium"
-                      >
-                        {badge.replace(/_/g, ' ')}
-                      </motion.div>
-                    ))}
-                    {badges.length > 4 && (
-                      <div className="px-3 py-1.5 bg-gray-600/50 text-gray-300 text-xs rounded-full font-medium">
-                        +{badges.length - 4} more
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Referral Section */}
-              {referralCode && (
-                <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
-                  <div className="flex items-center space-x-2 mb-3">
-                    <FiGift className="w-5 h-5 text-green-400" />
-                    <h4 className="text-white font-medium">Referral Program</h4>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-400 text-sm">Your Code</span>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-white font-mono text-sm bg-gray-700/50 px-2 py-1 rounded">
-                          {referralCode}
-                        </span>
-                        <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={copyReferralCode}
-                          className="p-1.5 bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/40 transition-colors"
-                        >
-                          <FiCopy className="w-4 h-4" />
-                        </motion.button>
-                      </div>
-                    </div>
-                    
-                    {copied && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="text-green-400 text-xs text-center"
-                      >
-                        Copied to clipboard!
-                      </motion.div>
-                    )}
-
-                    <div className="grid grid-cols-2 gap-4 pt-2">
-                      <div className="text-center">
-                        <p className="text-gray-400 text-xs">Referrals</p>
-                        <p className="text-white font-semibold">{referralCount}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-gray-400 text-xs">Earnings</p>
-                        <p className="text-green-400 font-semibold">{referralEarnings} pts</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {/* Navigation Links */}
-              <div className="space-y-2">
+              <div className="space-y-1 pt-2">
                 <button
                   onClick={() => {
                     setShowPointsHistory(true);
-                    setShowAccountModal(false); // Close profile dropdown
+                    setShowAccountModal(false);
                   }}
-                  className="flex items-center space-x-3 w-full p-3 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-xl transition-all duration-200 group"
+                  className="flex items-center w-full p-2 text-gray-300 hover:text-white hover:bg-gray-800/80 rounded-md transition-all duration-200"
                 >
-                  <div className="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center group-hover:bg-green-500/30 transition-colors">
-                    <FiClock className="w-4 h-4 text-green-400" />
-                  </div>
-                  <span className="font-medium">Points History</span>
+                  <span className="font-medium text-sm">Points History</span>
                 </button>
 
                 {isAuthor && (
-                  <Link
-                    href="/author/dashboard"
-                    className="flex items-center space-x-3 w-full p-3 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-xl transition-all duration-200 group"
-                    onClick={() => setShowAccountModal(false)}
+                  <button
+                    onClick={() => {
+                      setShowAuthorDashboardModal(true);
+                      setShowAccountModal(false);
+                    }}
+                    className="flex items-center w-full p-2 text-gray-300 hover:text-white hover:bg-gray-800/80 rounded-md transition-all duration-200"
                   >
-                    <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center group-hover:bg-purple-500/30 transition-colors">
-                      <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                    </div>
-                    <span className="font-medium">Author Dashboard</span>
-                  </Link>
+                    <span className="font-medium text-sm">Author Dashboard</span>
+                  </button>
                 )}
 
                 <button
                   onClick={handleVoteAndEarn}
-                  className="flex items-center space-x-3 w-full p-3 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-xl transition-all duration-200 group"
+                  className="flex items-center w-full p-2 text-gray-300 hover:text-white hover:bg-gray-800/80 rounded-md transition-all duration-200"
                 >
-                  <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center group-hover:bg-blue-500/30 transition-colors">
-                    <FiTrendingUp className="w-4 h-4 text-blue-400" />
-                  </div>
-                  <span className="font-medium">Vote & Earn</span>
+                  <span className="font-medium text-sm">Vote & Earn</span>
                 </button>
 
-                <Link
-                  href="/marketplace"
-                  className="flex items-center space-x-3 w-full p-3 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-xl transition-all duration-200 group"
-                  onClick={() => setShowAccountModal(false)}
+                <button
+                  onClick={() => {
+                    setShowAccountSettingsModal(true);
+                    setShowAccountModal(false);
+                  }}
+                  className="flex items-center w-full p-2 text-gray-300 hover:text-white hover:bg-gray-800/80 rounded-md transition-all duration-200"
                 >
-                  <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center group-hover:bg-purple-500/30 transition-colors">
-                    <FaShoppingBag className="w-4 h-4 text-purple-400" />
-                  </div>
-                  <span className="font-medium">Marketplace</span>
-                </Link>
+                  <span className="font-medium text-sm">Account Settings</span>
+                </button>
 
                 <button
                   onClick={() => setShowAliasModal(true)}
-                  className="flex items-center space-x-3 w-full p-3 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-xl transition-all duration-200 group"
+                  className="flex items-center w-full p-2 text-gray-300 hover:text-white hover:bg-gray-800/80 rounded-md transition-all duration-200"
                 >
-                  <div className="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center group-hover:bg-green-500/30 transition-colors">
-                    <FiUser className="w-4 h-4 text-green-400" />
-                  </div>
-                  <span className="font-medium">Set Alias</span>
+                  <span className="font-medium text-sm">Set Alias</span>
                 </button>
 
-                <Link
-                  href="/account"
-                  className="flex items-center space-x-3 w-full p-3 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-xl transition-all duration-200 group"
-                  onClick={() => setShowAccountModal(false)}
+                <button
+                  onClick={() => setShowReferralModal(true)}
+                  className="flex items-center w-full p-2 text-gray-300 hover:text-white hover:bg-gray-800/80 rounded-md transition-all duration-200"
                 >
-                  <div className="w-8 h-8 rounded-lg bg-gray-500/20 flex items-center justify-center group-hover:bg-gray-500/30 transition-colors">
-                    <HiOutlineCog className="w-4 h-4 text-gray-400" />
-                  </div>
-                  <span className="font-medium">Account Settings</span>
-                </Link>
+                  <span className="font-medium text-sm">Referral Program</span>
+                </button>
+
+                {!settings?.referredBy && (
+                  <button
+                    onClick={() => setShowApplyReferralModal(true)}
+                    className="flex items-center w-full p-2 text-gray-300 hover:text-white hover:bg-gray-800/80 rounded-md transition-all duration-200"
+                  >
+                    <span className="font-medium text-sm">Apply Referral Code</span>
+                  </button>
+                )}
               </div>
 
               {/* Logout Section */}
-              <div className="pt-4 border-t border-gray-700/50">
+              <div className="pt-3 border-t border-gray-700/50">
                 {user ? (
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={handleSignOut}
-                    className="flex items-center space-x-3 w-full p-3 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-all duration-200 group"
+                    className="flex items-center w-full p-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-md transition-all duration-200"
                   >
-                    <div className="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center group-hover:bg-red-500/30 transition-colors">
-                      <FiLogOut className="w-4 h-4 text-red-400" />
-                    </div>
-                    <span className="font-medium">Sign Out</span>
+                    <span className="font-medium text-sm">Sign Out</span>
                   </motion.button>
                 ) : (
                   <Link
                     href="/login"
-                    className="flex items-center space-x-3 w-full p-3 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded-xl transition-all duration-200 group"
+                    className="flex items-center w-full p-2 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded-md transition-all duration-200"
                     onClick={() => setShowAccountModal(false)}
                   >
-                    <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center group-hover:bg-blue-500/30 transition-colors">
-                      <FiUser className="w-4 h-4 text-blue-400" />
-                    </div>
-                    <span className="font-medium">Sign In</span>
+                    <span className="font-medium text-sm">Sign In</span>
                   </Link>
                 )}
               </div>
-
-                             {/* Footer */}
-               <div className="text-center pt-4">
-                 <p className="text-gray-500 text-xs">Powered by Base</p>
-               </div>
-             </div>
+            </div>
            </motion.div>
          </AnimatePresence>
                , document.body
@@ -575,11 +666,550 @@ const UserProfileDropdown: React.FC = () => {
                 Cancel
               </button>
               <button
-                onClick={handleUpdateAlias}
-                disabled={!alias.trim() || isUpdatingAlias}
+                onClick={async () => {
+                  if (alias.trim()) {
+                    await updateAlias(alias.trim());
+                    setShowAliasModal(false);
+                    setAlias('');
+                  }
+                }}
+                disabled={!alias.trim() || settingsLoading}
                 className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {isUpdatingAlias ? 'Updating...' : 'Update Alias'}
+                {settingsLoading ? 'Updating...' : 'Update Alias'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      , document.body
+      )}
+
+      {/* Account Settings Modal */}
+      {showAccountSettingsModal && createPortal(
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="bg-gray-900 rounded-xl w-full max-w-[500px] flex flex-col border border-gray-700 max-h-[85vh]"
+          >
+            <div className="flex items-center justify-between p-4 border-b border-gray-700">
+              <h3 className="text-white text-xl font-semibold">Account Settings</h3>
+              <button
+                onClick={() => setShowAccountSettingsModal(false)}
+                className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                <FiX className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {/* Profile Section */}
+              <div className="bg-gray-800/50 rounded-lg p-3">
+                <h4 className="text-white font-medium mb-2">Profile Information</h4>
+                <div className="space-y-2">
+                  {/* Profile Picture */}
+                  <div className="flex items-center space-x-4">
+                    <div className="relative">
+                      <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-700 border-2 border-gray-600">
+                        {profilePicture ? (
+                          <Image
+                            src={profilePicture}
+                            alt="Profile"
+                            width={64}
+                            height={64}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <FiUser className="w-8 h-8 text-gray-400" />
+                          </div>
+                        )}
+                        {uploadingImage && (
+                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingImage}
+                        className="absolute -bottom-1 -right-1 w-6 h-6 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-full flex items-center justify-center transition-colors"
+                      >
+                        {uploadingImage ? (
+                          <div className="animate-spin rounded-full h-3 w-3 border-b border-white"></div>
+                        ) : (
+                          <FiUser className="w-3 h-3" />
+                        )}
+                      </button>
+                    </div>
+                    <div className="flex-1">
+                      <h5 className="text-white font-medium text-sm">Profile Picture</h5>
+                      <p className="text-gray-400 text-xs mb-2">
+                        Upload a profile picture to personalize your account
+                      </p>
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingImage}
+                        className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 rounded text-xs transition-colors"
+                      >
+                        {uploadingImage ? 'Uploading...' : 'Upload Image'}
+                      </button>
+                      
+                      {/* Status Messages */}
+                      {uploadStatus !== 'idle' && uploadMessage && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className={`mt-2 p-2 rounded-lg text-xs flex items-center space-x-2 ${
+                            uploadStatus === 'success' 
+                              ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                              : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                          }`}
+                        >
+                          {uploadStatus === 'success' ? (
+                            <FiCheck className="w-3 h-3" />
+                          ) : (
+                            <FiAlertCircle className="w-3 h-3" />
+                          )}
+                          <span>{uploadMessage}</span>
+                        </motion.div>
+                      )}
+                    </div>
+                  </div>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                  />
+
+                  <div>
+                    <label className="block text-gray-300 text-sm mb-1">Display Name</label>
+                    <input
+                      type="text"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      placeholder="Enter your display name"
+                    />
+                  </div>
+
+                </div>
+              </div>
+
+              {/* Notifications Section */}
+              <div className="bg-gray-800/50 rounded-lg p-3">
+                <h4 className="text-white font-medium mb-2">Notifications</h4>
+                <div className="space-y-2">
+                  <label className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-700/50 transition-colors cursor-pointer">
+                    <span className="text-gray-300 text-sm font-medium">Email Notifications</span>
+                    <div className="relative">
+                      <input
+                        type="checkbox"
+                        checked={notifications.email}
+                        onChange={(e) => setNotifications(prev => ({ ...prev, email: e.target.checked }))}
+                        className="sr-only"
+                      />
+                      <div className={`w-10 h-6 rounded-full transition-colors duration-200 flex items-center ${
+                        notifications.email ? 'bg-blue-600' : 'bg-gray-600'
+                      }`}>
+                        <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
+                          notifications.email ? 'translate-x-5' : 'translate-x-1'
+                        }`}></div>
+                      </div>
+                    </div>
+                  </label>
+                  <label className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-700/50 transition-colors cursor-pointer">
+                    <span className="text-gray-300 text-sm font-medium">Push Notifications</span>
+                    <div className="relative">
+                      <input
+                        type="checkbox"
+                        checked={notifications.push}
+                        onChange={(e) => setNotifications(prev => ({ ...prev, push: e.target.checked }))}
+                        className="sr-only"
+                      />
+                      <div className={`w-10 h-6 rounded-full transition-colors duration-200 flex items-center ${
+                        notifications.push ? 'bg-blue-600' : 'bg-gray-600'
+                      }`}>
+                        <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
+                          notifications.push ? 'translate-x-5' : 'translate-x-1'
+                        }`}></div>
+                      </div>
+                    </div>
+                  </label>
+                  <label className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-700/50 transition-colors cursor-pointer">
+                    <span className="text-gray-300 text-sm font-medium">Trading Notifications</span>
+                    <div className="relative">
+                      <input
+                        type="checkbox"
+                        checked={notifications.trading}
+                        onChange={(e) => setNotifications(prev => ({ ...prev, trading: e.target.checked }))}
+                        className="sr-only"
+                      />
+                      <div className={`w-10 h-6 rounded-full transition-colors duration-200 flex items-center ${
+                        notifications.trading ? 'bg-blue-600' : 'bg-gray-600'
+                      }`}>
+                        <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
+                          notifications.trading ? 'translate-x-5' : 'translate-x-1'
+                        }`}></div>
+                      </div>
+                    </div>
+                  </label>
+                  <label className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-700/50 transition-colors cursor-pointer">
+                    <span className="text-gray-300 text-sm font-medium">News Notifications</span>
+                    <div className="relative">
+                      <input
+                        type="checkbox"
+                        checked={notifications.news}
+                        onChange={(e) => setNotifications(prev => ({ ...prev, news: e.target.checked }))}
+                        className="sr-only"
+                      />
+                      <div className={`w-10 h-6 rounded-full transition-colors duration-200 flex items-center ${
+                        notifications.news ? 'bg-blue-600' : 'bg-gray-600'
+                      }`}>
+                        <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
+                          notifications.news ? 'translate-x-5' : 'translate-x-1'
+                        }`}></div>
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Privacy Section */}
+              <div className="bg-gray-800/50 rounded-lg p-3">
+                <h4 className="text-white font-medium mb-2">Privacy</h4>
+                <div className="space-y-2">
+                  <label className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-700/50 transition-colors cursor-pointer">
+                    <span className="text-gray-300 text-sm font-medium">Show Profile</span>
+                    <div className="relative">
+                      <input
+                        type="checkbox"
+                        checked={privacy.showProfile}
+                        onChange={(e) => setPrivacy(prev => ({ ...prev, showProfile: e.target.checked }))}
+                        className="sr-only"
+                      />
+                      <div className={`w-10 h-6 rounded-full transition-colors duration-200 flex items-center ${
+                        privacy.showProfile ? 'bg-blue-600' : 'bg-gray-600'
+                      }`}>
+                        <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
+                          privacy.showProfile ? 'translate-x-5' : 'translate-x-1'
+                        }`}></div>
+                      </div>
+                    </div>
+                  </label>
+                  <label className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-700/50 transition-colors cursor-pointer">
+                    <span className="text-gray-300 text-sm font-medium">Show Trades</span>
+                    <div className="relative">
+                      <input
+                        type="checkbox"
+                        checked={privacy.showTrades}
+                        onChange={(e) => setPrivacy(prev => ({ ...prev, showTrades: e.target.checked }))}
+                        className="sr-only"
+                      />
+                      <div className={`w-10 h-6 rounded-full transition-colors duration-200 flex items-center ${
+                        privacy.showTrades ? 'bg-blue-600' : 'bg-gray-600'
+                      }`}>
+                        <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
+                          privacy.showTrades ? 'translate-x-5' : 'translate-x-1'
+                        }`}></div>
+                      </div>
+                    </div>
+                  </label>
+                  <label className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-700/50 transition-colors cursor-pointer">
+                    <span className="text-gray-300 text-sm font-medium">Show Balance</span>
+                    <div className="relative">
+                      <input
+                        type="checkbox"
+                        checked={privacy.showBalance}
+                        onChange={(e) => setPrivacy(prev => ({ ...prev, showBalance: e.target.checked }))}
+                        className="sr-only"
+                      />
+                      <div className={`w-10 h-6 rounded-full transition-colors duration-200 flex items-center ${
+                        privacy.showBalance ? 'bg-blue-600' : 'bg-gray-600'
+                      }`}>
+                        <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
+                          privacy.showBalance ? 'translate-x-5' : 'translate-x-1'
+                        }`}></div>
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Settings Status Messages */}
+              {settingsStatus !== 'idle' && settingsMessage && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={`p-3 rounded-lg text-sm flex items-center space-x-2 ${
+                    settingsStatus === 'success' 
+                      ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                      : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                  }`}
+                >
+                  {settingsStatus === 'success' ? (
+                    <FiCheck className="w-4 h-4" />
+                  ) : (
+                    <FiAlertCircle className="w-4 h-4" />
+                  )}
+                  <span>{settingsMessage}</span>
+                </motion.div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-3 p-4 border-t border-gray-700">
+                <button
+                  onClick={() => setShowAccountSettingsModal(false)}
+                  className="flex-1 px-4 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveSettings}
+                  disabled={savingSettings}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
+                >
+                  {savingSettings ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>Save Changes</span>
+                  )}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      , document.body
+      )}
+
+      {/* Author Dashboard Modal */}
+      {showAuthorDashboardModal && createPortal(
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="bg-gray-900 rounded-xl p-6 w-[700px] max-h-[80vh] overflow-y-auto border border-gray-700"
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-white text-xl font-semibold">Author Dashboard</h3>
+              <button
+                onClick={() => setShowAuthorDashboardModal(false)}
+                className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                <FiX className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {/* Stats Overview */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-gray-800/50 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-blue-400">0</div>
+                  <div className="text-gray-400 text-sm">Total Posts</div>
+                </div>
+                <div className="bg-gray-800/50 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-green-400">0</div>
+                  <div className="text-gray-400 text-sm">Total Views</div>
+                </div>
+                <div className="bg-gray-800/50 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-purple-400">0</div>
+                  <div className="text-gray-400 text-sm">Total Earnings</div>
+                </div>
+              </div>
+
+              {/* Quick Actions */}
+              <div className="bg-gray-800/50 rounded-lg p-4">
+                <h4 className="text-white font-medium mb-3">Quick Actions</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                    Create New Post
+                  </button>
+                  <button className="px-4 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors">
+                    View Analytics
+                  </button>
+                </div>
+              </div>
+
+              {/* Recent Activity */}
+              <div className="bg-gray-800/50 rounded-lg p-4">
+                <h4 className="text-white font-medium mb-3">Recent Activity</h4>
+                <div className="text-gray-400 text-sm text-center py-8">
+                  No recent activity
+                </div>
+              </div>
+
+              {/* Close Button */}
+              <div className="flex justify-end pt-4">
+                <button
+                  onClick={() => setShowAuthorDashboardModal(false)}
+                  className="px-4 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      , document.body
+      )}
+
+      {/* Referral Program Modal */}
+      {showReferralModal && createPortal(
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="bg-gray-900 rounded-xl p-6 w-[500px] max-h-[80vh] overflow-y-auto border border-gray-700"
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-white text-xl font-semibold">Referral Program</h3>
+              <button
+                onClick={() => setShowReferralModal(false)}
+                className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                <FiX className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {/* Your Referral Code */}
+              <div className="bg-gray-800/50 rounded-lg p-4">
+                <h4 className="text-white font-medium mb-3">Your Referral Code</h4>
+                {settings?.referralCode ? (
+                  <div className="flex items-center space-x-3">
+                    <input
+                      type="text"
+                      value={settings.referralCode}
+                      readOnly
+                      className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-center font-mono"
+                    />
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(settings.referralCode);
+                        toast.success('Referral code copied!', { position: 'bottom-left' });
+                      }}
+                      className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-center">
+                    <p className="text-gray-400 text-sm mb-3">Generate a referral code to start earning rewards</p>
+                    <button
+                      onClick={generateReferralCode}
+                      disabled={settingsLoading}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                    >
+                      {settingsLoading ? 'Generating...' : 'Generate Code'}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Referral Stats */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gray-800/50 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-blue-400">{settings?.totalReferrals || 0}</div>
+                  <div className="text-gray-400 text-sm">Total Referrals</div>
+                </div>
+                <div className="bg-gray-800/50 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-green-400">${(settings?.totalReferralEarnings || 0).toFixed(2)}</div>
+                  <div className="text-gray-400 text-sm">Total Earnings</div>
+                </div>
+              </div>
+
+              {/* Swap Fee Discount */}
+              {settings?.swapFeeDiscount && settings.swapFeeDiscount > 0 && (
+                <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
+                  <h4 className="text-green-400 font-medium mb-2">Active Discount</h4>
+                  <p className="text-green-300 text-sm">
+                    You have a {settings.swapFeeDiscount}% swap fee discount from using a referral code!
+                  </p>
+                </div>
+              )}
+
+              {/* How It Works */}
+              <div className="bg-gray-800/50 rounded-lg p-4">
+                <h4 className="text-white font-medium mb-3">How It Works</h4>
+                <div className="space-y-2 text-sm text-gray-300">
+                  <p>• Share your referral code with friends</p>
+                  <p>• They get 5% off swap fees when they sign up</p>
+                  <p>• You earn rewards when they complete their first swap</p>
+                  <p>• Track your earnings and referral status here</p>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      , document.body
+      )}
+
+      {/* Apply Referral Code Modal */}
+      {showApplyReferralModal && createPortal(
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="bg-gray-900 rounded-xl p-6 w-96 border border-gray-700"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white text-lg font-semibold">Apply Referral Code</h3>
+              <button
+                onClick={() => setShowApplyReferralModal(false)}
+                className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                <FiX className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            
+            <p className="text-gray-400 text-sm mb-4">
+              Enter a referral code to get 5% off swap fees and help your friend earn rewards.
+            </p>
+            
+            <div className="mb-4">
+              <label className="block text-gray-300 text-sm font-medium mb-2">
+                Referral Code
+              </label>
+              <input
+                type="text"
+                value={referralCodeToApply}
+                onChange={(e) => setReferralCodeToApply(e.target.value.toUpperCase())}
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-center font-mono"
+                placeholder="Enter 6-character code"
+                maxLength={6}
+              />
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowApplyReferralModal(false)}
+                className="flex-1 px-4 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (referralCodeToApply.trim()) {
+                    await applyReferralCode(referralCodeToApply.trim());
+                    setShowApplyReferralModal(false);
+                    setReferralCodeToApply('');
+                  }
+                }}
+                disabled={!referralCodeToApply.trim() || settingsLoading}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {settingsLoading ? 'Applying...' : 'Apply Code'}
               </button>
             </div>
           </motion.div>

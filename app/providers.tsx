@@ -4,12 +4,15 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import { auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import type { User } from "firebase/auth";
+import { doc, setDoc, getDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { WagmiProvider } from "wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RainbowKitProvider } from "@rainbow-me/rainbowkit";
 import { config } from "@/lib/wagmi";
 import "@rainbow-me/rainbowkit/styles.css";
 import { LoadingProvider } from "./components/LoadingProvider";
+import { Toaster } from "react-hot-toast";
 
 // Create a new query client
 const queryClient = new QueryClient();
@@ -98,12 +101,103 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [selectedIndexForVoting, setSelectedIndexForVoting] = useState('');
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        // Create or update user document in Firestore
+        try {
+          const userDocRef = doc(db, "users", user.uid);
+          const userDoc = await getDoc(userDocRef);
+          
+          if (!userDoc.exists()) {
+            // Create new user document
+            await setDoc(userDocRef, {
+              uid: user.uid,
+              email: user.email,
+              displayName: user.displayName || '',
+              photoURL: user.photoURL || '',
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              theme: 'dark',
+              notifications: {
+                email: true,
+                push: true,
+                trading: true,
+                news: false,
+              },
+              privacy: {
+                showProfile: true,
+                showTrades: true,
+                showBalance: false,
+              },
+              security: {
+                twoFactorEnabled: false,
+                sessionTimeout: 30,
+              },
+              // Events-specific fields
+              interests: [],
+              followedProjects: [],
+              followedKOLs: [],
+              reputation: {
+                totalScore: 0,
+                votingPower: 1,
+                canVoteOnEvents: true,
+              },
+              votingHistory: {},
+              projectEngagement: {},
+              rsvpedEvents: [],
+              attendedEvents: [],
+              badges: [],
+            });
+            console.log('✅ User document created successfully');
+          } else {
+            // Update existing user document with latest auth data and ensure Events fields exist
+            const existingData = userDoc.data();
+            await setDoc(userDocRef, {
+              email: user.email,
+              displayName: user.displayName || '',
+              photoURL: user.photoURL || '',
+              updatedAt: new Date(),
+              // Ensure Events fields exist for existing users
+              interests: existingData.interests || [],
+              followedProjects: existingData.followedProjects || [],
+              followedKOLs: existingData.followedKOLs || [],
+              reputation: existingData.reputation || {
+                totalScore: 0,
+                votingPower: 1,
+                canVoteOnEvents: true,
+              },
+              votingHistory: existingData.votingHistory || {},
+              projectEngagement: existingData.projectEngagement || {},
+              rsvpedEvents: existingData.rsvpedEvents || [],
+              attendedEvents: existingData.attendedEvents || [],
+              badges: existingData.badges || [],
+            }, { merge: true });
+            console.log('✅ User document updated successfully');
+          }
+        } catch (error) {
+          console.error('❌ Error creating/updating user document:', error);
+        }
+      }
+      
       setUser(user);
       setLoading(false);
     });
 
     return () => unsubscribe();
+  }, []);
+
+
+
+  // Handle wallet loading state
+  useEffect(() => {
+    // Check if wallet exists in localStorage
+    if (typeof window !== "undefined") {
+      const storedWallet = localStorage.getItem("cypherx_wallet");
+      if (!storedWallet) {
+        // No wallet exists, set loading to false
+        setWalletLoading(false);
+      }
+    }
   }, []);
 
   return (
@@ -131,6 +225,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
                   }}
                 >
                   {children}
+                  <Toaster 
+                    position="bottom-left" 
+                    toastOptions={{
+                      style: {
+                        zIndex: 99999999,
+                      },
+                    }}
+                  />
                 </VotingModalContext.Provider>
               </WalletSystemContext.Provider>
             </AuthContext.Provider>

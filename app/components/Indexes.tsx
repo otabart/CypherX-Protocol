@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -99,6 +99,24 @@ const cardVariants = {
   tap: { scale: 0.98 },
 };
 
+const viewModeVariants = {
+  enter: {
+    opacity: 0,
+    x: 20,
+    transition: { duration: 0.3, ease: "easeOut" }
+  },
+  center: {
+    opacity: 1,
+    x: 0,
+    transition: { duration: 0.3, ease: "easeOut" }
+  },
+  exit: {
+    opacity: 0,
+    x: -20,
+    transition: { duration: 0.2, ease: "easeIn" }
+  }
+};
+
 // ====== ICONS ======
 function RefreshIcon() {
   return (
@@ -171,13 +189,11 @@ const MemoIndexSection = React.memo(function IndexSection({
   tokens,
   stats,
   isMobile,
-  onVoteClick,
 }: {
   name: string;
   tokens: (BaseAiToken & { data?: TokenData })[];
   stats: IndexStats;
   isMobile: boolean;
-  onVoteClick: (indexName: string) => void;
 }) {
   const getIndexDescription = (name: string) => {
     switch (name) {
@@ -209,7 +225,7 @@ const MemoIndexSection = React.memo(function IndexSection({
     }
   };
 
-  const { text, bg } = getColorScheme(name);
+  const { text } = getColorScheme(name);
 
   return (
     <td
@@ -222,30 +238,9 @@ const MemoIndexSection = React.memo(function IndexSection({
             {getIndexDescription(name)}
           </h3>
           <p className="text-xs text-gray-400">Re-weighted bi-weekly via community voting</p>
-          <div className="flex justify-center space-x-2 mt-2">
-            <span
-              data-tooltip-id={`tooltip-${name}-invest`}
-              className={`px-3 py-1 ${bg} text-gray-400 rounded-md cursor-pointer hover:bg-blue-500/40`}
-            >
-              Invest
-            </span>
-            <Tooltip
-              id={`tooltip-${name}-invest`}
-              place="top"
-              content="Available in v2: By holding this index, you can receive airdrops from coins in this index and earn monthly dividends. Stakers get high % allocation of airdrops."
-              className="bg-gray-800 text-white p-2 rounded max-w-xs"
-              delayShow={300}
-            />
-            <button
-              onClick={() => onVoteClick(name)}
-              className={`px-3 py-1 ${bg} text-gray-400 rounded-md cursor-pointer hover:bg-blue-500/40 transition-all duration-200 hover:text-blue-300`}
-            >
-              Vote
-            </button>
-          </div>
         </div>
         <motion.div
-          className="p-3 shadow-md border border-blue-500/20 bg-gradient-to-br from-gray-800 to-gray-700 mt-0 rounded-md"
+          className="p-3 shadow-md border border-gray-600 bg-gray-800/80 mt-0 rounded-md"
           variants={cardVariants}
           whileHover="hover"
           whileTap="tap"
@@ -618,10 +613,10 @@ export default function BaseAiIndex() {
 
   if (loading) {
     return (
-      <div className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl border border-blue-500/30 p-4 sm:p-6">
+      <div className="w-full bg-gray-900 rounded-xl border border-gray-800 p-4 sm:p-6">
         <div className="flex justify-between items-center mb-4 sm:mb-6">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500/30 to-blue-600/30 rounded-xl flex items-center justify-center border border-blue-500/30">
+            <div className="w-10 h-10 bg-blue-500/20 rounded-xl flex items-center justify-center border border-blue-500/30">
               <svg className="w-5 h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
@@ -656,10 +651,10 @@ export default function BaseAiIndex() {
 
   if (error) {
     return (
-      <div className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl border border-blue-500/30 p-4 sm:p-6">
+      <div className="w-full bg-gray-900 rounded-xl border border-gray-800 p-4 sm:p-6">
         <div className="flex justify-between items-center mb-4 sm:mb-6">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500/30 to-blue-600/30 rounded-xl flex items-center justify-center border border-blue-500/30">
+            <div className="w-10 h-10 bg-blue-500/20 rounded-xl flex items-center justify-center border border-blue-500/30">
               <svg className="w-5 h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
@@ -685,7 +680,7 @@ export default function BaseAiIndex() {
 
   return (
     <motion.div
-      className="w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl border border-blue-500/30 p-4 sm:p-6"
+      className="w-full bg-gray-900 rounded-xl border border-gray-800 p-4 sm:p-6"
       variants={containerVariants}
       initial="hidden"
       whileInView="visible"
@@ -694,7 +689,7 @@ export default function BaseAiIndex() {
       <motion.div ref={indexRef} className="w-full">
         <div className="flex justify-between items-center mb-3 sm:mb-4">
           <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500/30 to-blue-600/30 rounded-xl flex items-center justify-center border border-blue-500/30">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-500/20 rounded-xl flex items-center justify-center border border-blue-500/30">
               <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
@@ -864,7 +859,15 @@ export default function BaseAiIndex() {
           </div>
         )}
         
-        {viewMode === 'overview' && (
+        <AnimatePresence mode="wait">
+          {viewMode === 'overview' && (
+            <motion.div
+              key="overview"
+              variants={viewModeVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+            >
           <>
             {isMobile ? (
               <div className="relative">
@@ -920,7 +923,6 @@ export default function BaseAiIndex() {
                         }
                       }
                       isMobile={isMobile}
-                      onVoteClick={handleVoteClick}
                     />
                   </div>
                   <button className="carousel-button left" onClick={handlePrevIndex} aria-label="Previous Index">
@@ -964,7 +966,6 @@ export default function BaseAiIndex() {
                               }
                             }
                             isMobile={isMobile}
-                            onVoteClick={handleVoteClick}
                           />
                         </td>
                       ))}
@@ -974,10 +975,17 @@ export default function BaseAiIndex() {
               </div>
             )}
           </>
-        )}
-        
-        {/* Voting View */}
-        {viewMode === 'voting' && (
+            </motion.div>
+          )}
+          
+          {viewMode === 'voting' && (
+            <motion.div
+              key="voting"
+              variants={viewModeVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+            >
           <div className="py-2 sm:py-4">
             {/* Header Section */}
             <div className="text-center mb-3 sm:mb-4">
@@ -994,7 +1002,7 @@ export default function BaseAiIndex() {
 
             {/* Voting Stats */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
-              <div className="bg-gradient-to-br from-blue-500/10 to-blue-600/10 rounded-xl border border-blue-500/20 p-4 sm:p-6">
+              <div className="bg-gray-800/60 rounded-xl border border-gray-600 p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-3 sm:mb-4">
                   <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
                     <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1009,7 +1017,7 @@ export default function BaseAiIndex() {
 
 
 
-              <div className="bg-gradient-to-br from-purple-500/10 to-purple-600/10 rounded-xl border border-purple-500/20 p-4 sm:p-6">
+              <div className="bg-gray-800/60 rounded-xl border border-gray-600 p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-3 sm:mb-4">
                   <div className="w-8 h-8 sm:w-10 sm:h-10 bg-purple-500/20 rounded-lg flex items-center justify-center">
                     <svg className="w-4 h-4 sm:w-5 sm:h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1033,9 +1041,7 @@ export default function BaseAiIndex() {
                 }, 0) / index.tokens.length;
 
                 return (
-                  <div key={index.name} className="group relative bg-gradient-to-br from-gray-800/50 to-gray-900/50 rounded-xl border border-gray-700/50 p-4 sm:p-6 hover:border-blue-500/30 transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/10">
-                    {/* Background Pattern */}
-                    <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  <div key={index.name} className="group relative bg-gray-900/80 rounded-xl border border-gray-700 p-4 sm:p-6 hover:border-blue-500/30 transition-all duration-300 hover:shadow-lg">
                     
                     <div className="relative z-10">
                       {/* Header */}
@@ -1069,7 +1075,7 @@ export default function BaseAiIndex() {
                       {/* Action Button */}
                       <button
                         onClick={() => handleVoteClick(index.name)}
-                        className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold py-2.5 sm:py-3 px-3 sm:px-4 rounded-lg transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center space-x-2 text-sm sm:text-base"
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 sm:py-3 px-3 sm:px-4 rounded-lg transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center space-x-2 text-sm sm:text-base"
                       >
                         <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1083,7 +1089,7 @@ export default function BaseAiIndex() {
             </div>
 
             {/* Info Section */}
-            <div className="mt-6 sm:mt-8 bg-gradient-to-r from-gray-800/50 to-gray-900/50 rounded-xl border border-gray-700/50 p-4 sm:p-6">
+            <div className="mt-6 sm:mt-8 bg-gray-800/40 rounded-xl border border-gray-600 p-4 sm:p-6">
               <h4 className="text-base sm:text-lg font-semibold text-gray-100 mb-3 sm:mb-4 flex items-center">
                 <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1114,14 +1120,21 @@ export default function BaseAiIndex() {
               </div>
             </div>
           </div>
-        )}
-        
-        {/* Analytics View */}
-        {viewMode === 'analytics' && (
+            </motion.div>
+          )}
+          
+          {viewMode === 'analytics' && (
+            <motion.div
+              key="analytics"
+              variants={viewModeVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+            >
           <div className="py-2 sm:py-4">
             {/* Header Section */}
             <div className="text-center mb-3 sm:mb-4">
-              <div className="inline-flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-green-500/20 to-teal-500/20 rounded-full mb-2 sm:mb-3">
+              <div className="inline-flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 bg-green-500/20 rounded-full mb-2 sm:mb-3">
                 <svg className="w-5 h-5 sm:w-6 sm:h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                 </svg>
@@ -1134,7 +1147,7 @@ export default function BaseAiIndex() {
 
             {/* Overall Performance Summary */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
-              <div className="bg-gradient-to-br from-blue-500/10 to-blue-600/10 rounded-xl border border-blue-500/20 p-4 sm:p-6">
+              <div className="bg-gray-900 rounded-xl border border-gray-700 p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-3 sm:mb-4">
                   <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
                     <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1149,7 +1162,7 @@ export default function BaseAiIndex() {
                 <p className="text-xs sm:text-sm text-gray-400">24h change across all indexes</p>
               </div>
 
-              <div className="bg-gradient-to-br from-green-500/10 to-green-600/10 rounded-xl border border-green-500/20 p-4 sm:p-6">
+              <div className="bg-gray-900 rounded-xl border border-gray-700 p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-3 sm:mb-4">
                   <div className="w-8 h-8 sm:w-10 sm:h-10 bg-green-500/20 rounded-lg flex items-center justify-center">
                     <svg className="w-4 h-4 sm:w-5 sm:h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1164,7 +1177,7 @@ export default function BaseAiIndex() {
                 <p className="text-xs sm:text-sm text-gray-400">Combined 24h volume</p>
               </div>
 
-              <div className="bg-gradient-to-br from-purple-500/10 to-purple-600/10 rounded-xl border border-purple-500/20 p-4 sm:p-6">
+              <div className="bg-gray-900 rounded-xl border border-gray-700 p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-3 sm:mb-4">
                   <div className="w-8 h-8 sm:w-10 sm:h-10 bg-purple-500/20 rounded-lg flex items-center justify-center">
                     <svg className="w-4 h-4 sm:w-5 sm:h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1182,7 +1195,7 @@ export default function BaseAiIndex() {
                 <p className="text-xs sm:text-sm text-gray-400">Combined market cap</p>
               </div>
 
-              <div className="bg-gradient-to-br from-orange-500/10 to-orange-600/10 rounded-xl border border-orange-500/20 p-4 sm:p-6">
+              <div className="bg-gray-900 rounded-xl border border-gray-700 p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-3 sm:mb-4">
                   <div className="w-8 h-8 sm:w-10 sm:h-10 bg-orange-500/20 rounded-lg flex items-center justify-center">
                     <svg className="w-4 h-4 sm:w-5 sm:h-5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1206,10 +1219,9 @@ export default function BaseAiIndex() {
                 const volatilityColor = volatility === 'High' ? 'text-red-400' : 
                                       volatility === 'Medium' ? 'text-yellow-400' : 'text-green-400';
                 const volumePerToken = stats.totalVolume / stats.totalPairs;
-                const marketCapPerToken = stats.totalMarketCap / stats.totalPairs;
 
                 return (
-                  <div key={stats.name} className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 rounded-xl border border-gray-700/50 p-4 sm:p-6">
+                  <div key={stats.name} className="bg-gray-900/90 rounded-xl border border-gray-700 p-4 sm:p-6">
                     {/* Header */}
                     <div className="flex items-center justify-between mb-4 sm:mb-6">
                       <div>
@@ -1225,7 +1237,7 @@ export default function BaseAiIndex() {
 
                     {/* Key Metrics */}
                     <div className="grid grid-cols-2 gap-4 mb-6">
-                      <div className="bg-gray-800/50 rounded-lg p-4">
+                      <div className="bg-gray-800 rounded-lg p-4">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-gray-400 text-sm">24h Change</span>
                           <span className={`font-semibold ${stats.overallPriceChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -1240,7 +1252,7 @@ export default function BaseAiIndex() {
                         </div>
                       </div>
 
-                      <div className="bg-gray-800/50 rounded-lg p-4">
+                      <div className="bg-gray-800 rounded-lg p-4">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-gray-400 text-sm">Volatility</span>
                           <span className={`font-semibold ${volatilityColor}`}>{volatility}</span>
@@ -1278,16 +1290,7 @@ export default function BaseAiIndex() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-gray-400 text-sm">Avg Market Cap/Token</p>
-                          <p className="text-gray-200 font-semibold">${(marketCapPerToken / 1000000).toFixed(1)}M</p>
-                        </div>
-                        <div>
-                          <p className="text-gray-400 text-sm">Liquidity</p>
-                          <p className="text-gray-200 font-semibold">${(stats.totalLiquidity / 1000000).toFixed(1)}M</p>
-                        </div>
-                      </div>
+
                     </div>
 
                     {/* Performance Indicator */}
@@ -1314,7 +1317,7 @@ export default function BaseAiIndex() {
             </div>
 
             {/* Market Insights */}
-            <div className="mt-8 bg-gradient-to-r from-gray-800/50 to-gray-900/50 rounded-xl border border-gray-700/50 p-6">
+            <div className="mt-8 bg-gray-900 rounded-xl border border-gray-700 p-6">
               <h4 className="text-lg font-semibold text-gray-100 mb-4 flex items-center">
                 <svg className="w-5 h-5 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
@@ -1355,10 +1358,10 @@ export default function BaseAiIndex() {
               </div>
             </div>
           </div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
-      
-
     </motion.div>
   );
 }

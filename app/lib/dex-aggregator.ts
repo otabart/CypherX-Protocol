@@ -4,7 +4,7 @@ import { ethers } from "ethers";
 // Similar to how Definitive Edge, Axiom, and Padre handle swaps
 
 const BASE_RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://base-mainnet.g.alchemy.com/v2/8KR6qwxbLlIISgrMCZfsrYeMmn6-S-bN";
-const WETH_ADDRESS = "0x4200000000000000000000000000000000000006";
+
 
 // Direct DEX Integration (Professional Approach)
 const DEX_CONFIGS = {
@@ -56,7 +56,7 @@ export async function discoverPoolsDirectly(
 
   // 1. Direct Uniswap V3 Pool Discovery
   for (const [dexId, config] of Object.entries(DEX_CONFIGS)) {
-    if (config.version === "v3") {
+    if (config.version === "v3" && 'feeTiers' in config) {
       for (const fee of config.feeTiers) {
         try {
           const factory = new ethers.Contract(config.factory, [

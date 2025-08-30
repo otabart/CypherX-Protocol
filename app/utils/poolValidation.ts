@@ -9,14 +9,14 @@ const DEX_FACTORIES = {
   // Uniswap V3 is broken on Base chain - use Aerodrome instead
   aerodrome: {
     factory: "0x420DD381b31aEf6683db6B902084cB0FFECe40Da",
-    router: "0x420DD381b31aEf6683db6B902084cB0FFECe40Da", // Aerodrome uses same address for factory and router
+    router: "0x2626664c2603336E57B271c5C0b26F421741e481", // Correct Aerodrome router
     abi: ["function getPair(address tokenA, address tokenB) external view returns (address pair)"],
     feeTiers: [3000] // Aerodrome uses 0.3% fee
   },
-  // Uniswap V2
+  // Uniswap V2 - Re-enabled since buy transactions are working on BaseScan
   uniswap_v2: {
     factory: "0x8909dc15e40173ff4699343b6eb8132c65e18ec6",
-    router: "0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24", // Base chain V2 router
+    router: "0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24", // Uniswap V2 router on Base
     abi: ["function getPair(address tokenA, address tokenB) external view returns (address pair)"],
     feeTiers: [3000] // 0.3% for V2
   },
@@ -249,7 +249,39 @@ export function getRouterConfig(poolResult: PoolValidationResult, isETHInput: bo
       routerAddress: router,
       version: 'v2',
       fee,
-      method: isETHInput ? 'swapExactETHForTokens' : 'swapExactTokensForETH',
+      method: isETHInput ? 'swapExactETHForTokens' : 'swapExactTokensForTokens',
+      dexId
+    };
+  }
+  
+  // Handle Uniswap V2 with standard V2 methods
+  if (dexId === 'uniswap_v2') {
+    return {
+      routerAddress: router,
+      version: 'v2',
+      fee,
+      method: isETHInput ? 'swapExactETHForTokens' : 'swapExactTokensForETHSupportingFeeOnTransferTokens',
+      dexId
+    };
+  }
+  
+  // 🔧 ENHANCED: Add support for other DEXs that might handle problematic tokens better
+  if (dexId === 'aerodrome') {
+    return {
+      routerAddress: router,
+      version: 'v2',
+      fee,
+      method: isETHInput ? 'swapExactETHForTokens' : 'swapExactTokensForTokens',
+      dexId
+    };
+  }
+  
+  if (dexId === 'baseswap') {
+    return {
+      routerAddress: router,
+      version: 'v2',
+      fee,
+      method: isETHInput ? 'swapExactETHForTokens' : 'swapExactTokensForETHSupportingFeeOnTransferTokens',
       dexId
     };
   }

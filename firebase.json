@@ -1,12 +1,4 @@
 {
-  "emulators": {
-    "dataconnect": {
-      "dataDir": "dataconnect/.dataconnect/pgliteData"
-    }
-  },
-  "dataconnect": {
-    "source": "dataconnect"
-  },
   "hosting": {
     "source": ".",
     "ignore": [
@@ -18,12 +10,7 @@
       "region": "us-central1"
     }
   },
-  "functions": [
-    {
-      "source": "functions",
-      "codebase": "default"
-    }
-  ],
+
   "storage": {
     "rules": "storage.rules"
   },

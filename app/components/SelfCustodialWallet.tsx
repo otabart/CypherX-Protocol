@@ -91,8 +91,8 @@ const SelfCustodialWallet: React.FC = () => {
           setSelfCustodialWallet({
             address: wallet.address,
             isConnected: true,
-            ethBalance: "0.0",
-            tokenBalance: "0.0"
+                    ethBalance: "",
+        tokenBalance: ""
           });
           
           // Sync wallet address to user database record
@@ -112,7 +112,7 @@ const SelfCustodialWallet: React.FC = () => {
     };
 
     loadWallet();
-  }, [setSelfCustodialWallet, setWalletLoading]);
+  }, []); // Remove dependencies to prevent infinite loop
 
   const createNewWallet = useCallback(() => {
     try {
@@ -134,8 +134,8 @@ const SelfCustodialWallet: React.FC = () => {
       setSelfCustodialWallet({
         address: wallet.address,
         isConnected: true,
-        ethBalance: "0.0",
-        tokenBalance: "0.0"
+        ethBalance: "",
+        tokenBalance: ""
       });
       
       // Sync wallet address to user database record
@@ -148,7 +148,7 @@ const SelfCustodialWallet: React.FC = () => {
     } finally {
       setWalletLoading(false);
     }
-  }, [setSelfCustodialWallet, setWalletLoading]);
+  }, []); // Remove dependencies to prevent infinite loop
 
   // Function to sync wallet address to user database
   const syncWalletAddressToDatabase = async (walletAddress: string) => {
@@ -206,7 +206,7 @@ const SelfCustodialWallet: React.FC = () => {
         address: address,
         isConnected: true,
         ethBalance: ethBalanceFormatted,
-        tokenBalance: "0.0"
+        tokenBalance: ""
       });
       
     } catch (error) {
@@ -504,7 +504,7 @@ const SelfCustodialWallet: React.FC = () => {
                       type="number"
                       value={swapForm.inputAmount}
                       onChange={(e) => setSwapForm(prev => ({ ...prev, inputAmount: e.target.value }))}
-                      placeholder="0.0"
+                      placeholder=""
                       className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-gray-200 placeholder-gray-500 focus:outline-none focus:border-blue-500"
                     />
                     <select
@@ -530,7 +530,7 @@ const SelfCustodialWallet: React.FC = () => {
                     <input
                       type="text"
                       value={swapQuote?.outputAmount || ""}
-                      placeholder="0.0"
+                      placeholder=""
                       readOnly
                       className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-gray-200 placeholder-gray-500 focus:outline-none focus:border-blue-500"
                     />

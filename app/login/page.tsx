@@ -300,7 +300,6 @@ function LoginContent() {
         if (errorCode === "auth/invalid-credential") userMessage = "Invalid email or password.";
         else if (errorCode === "auth/user-not-found") userMessage = "No account found with this email.";
         else if (errorCode === "auth/email-already-in-use") userMessage = "This email is already registered.";
-        else if (errorCode === "firestore/permission-denied") userMessage = "Permission denied. Check input or contact support.";
         else if (typeof errorMessage === "string" && errorMessage.trim() !== "") userMessage = errorMessage;
       }
       setErrorMsg(userMessage);
@@ -319,19 +318,119 @@ function LoginContent() {
   if (user) return null;
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-blue-950 via-gray-950 to-blue-900 relative overflow-hidden text-gray-200 font-sans">
-      {/* Decorative background shapes */}
+    <div className="min-h-screen w-full flex items-center justify-center bg-gray-950 relative overflow-hidden text-gray-200 font-sans">
+      {/* Enhanced background with animated orbs */}
       <div className="absolute inset-0 pointer-events-none z-0">
-        <div className="absolute -top-32 -left-32 w-96 h-96 bg-blue-800 opacity-30 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 right-0 w-80 h-80 bg-blue-400 opacity-20 rounded-full blur-2xl" />
+        {/* Animated gradient orbs */}
+        <div className="absolute -top-32 -left-32 w-96 h-96 bg-blue-800/20 rounded-full blur-3xl animate-float"></div>
+        <div className="absolute bottom-0 right-0 w-80 h-80 bg-blue-400/15 rounded-full blur-2xl animate-float-reverse" style={{ animationDelay: '2s' }}></div>
+        <div className="absolute top-1/2 left-1/4 w-64 h-64 bg-cyan-600/10 rounded-full blur-2xl animate-float-slow" style={{ animationDelay: '4s' }}></div>
+        <div className="absolute top-1/3 right-1/4 w-48 h-48 bg-blue-600/15 rounded-full blur-xl animate-float-fast" style={{ animationDelay: '1s' }}></div>
+        
+        {/* Subtle grid pattern */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(59,130,246,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(59,130,246,0.03)_1px,transparent_1px)] bg-[size:50px_50px]"></div>
       </div>
-      <div className="relative z-10 w-full max-w-md mx-auto px-2 sm:px-0">
-        <div className="bg-gray-900/95 shadow-2xl rounded-2xl px-4 py-8 sm:px-8 sm:py-10 border border-blue-500/20 flex flex-col items-center w-full max-w-sm sm:max-w-md mx-auto">
+
+      <style jsx>{`
+        @keyframes float {
+          0%, 100% {
+            transform: translateY(0px) translateX(0px) scale(1);
+            opacity: 0.2;
+          }
+          25% {
+            transform: translateY(-20px) translateX(10px) scale(1.05);
+            opacity: 0.3;
+          }
+          50% {
+            transform: translateY(-10px) translateX(-15px) scale(0.95);
+            opacity: 0.25;
+          }
+          75% {
+            transform: translateY(15px) translateX(5px) scale(1.1);
+            opacity: 0.35;
+          }
+        }
+        
+        @keyframes float-reverse {
+          0%, 100% {
+            transform: translateY(0px) translateX(0px) scale(1);
+            opacity: 0.15;
+          }
+          25% {
+            transform: translateY(20px) translateX(-10px) scale(1.1);
+            opacity: 0.25;
+          }
+          50% {
+            transform: translateY(10px) translateX(15px) scale(0.9);
+            opacity: 0.2;
+          }
+          75% {
+            transform: translateY(-15px) translateX(-5px) scale(1.05);
+            opacity: 0.3;
+          }
+        }
+        
+        @keyframes float-slow {
+          0%, 100% {
+            transform: translateY(0px) translateX(0px) scale(1);
+            opacity: 0.1;
+          }
+          33% {
+            transform: translateY(-15px) translateX(20px) scale(1.08);
+            opacity: 0.15;
+          }
+          66% {
+            transform: translateY(10px) translateX(-10px) scale(0.92);
+            opacity: 0.12;
+          }
+        }
+        
+        @keyframes float-fast {
+          0%, 100% {
+            transform: translateY(0px) translateX(0px) scale(1);
+            opacity: 0.15;
+          }
+          20% {
+            transform: translateY(-25px) translateX(15px) scale(1.15);
+            opacity: 0.25;
+          }
+          40% {
+            transform: translateY(20px) translateX(-20px) scale(0.85);
+            opacity: 0.2;
+          }
+          60% {
+            transform: translateY(-10px) translateX(25px) scale(1.2);
+            opacity: 0.3;
+          }
+          80% {
+            transform: translateY(15px) translateX(-15px) scale(0.9);
+            opacity: 0.18;
+          }
+        }
+        
+        .animate-float {
+          animation: float 8s ease-in-out infinite;
+        }
+        
+        .animate-float-reverse {
+          animation: float-reverse 10s ease-in-out infinite;
+        }
+        
+        .animate-float-slow {
+          animation: float-slow 12s ease-in-out infinite;
+        }
+        
+        .animate-float-fast {
+          animation: float-fast 6s ease-in-out infinite;
+        }
+      `}</style>
+             <div className="relative z-10 w-full max-w-md mx-auto px-4 sm:px-6 lg:px-8">
+         <div className="bg-gray-900/95 shadow-2xl rounded-2xl px-4 py-8 sm:px-8 sm:py-10 border border-gray-800/20 flex flex-col items-center w-full max-w-sm sm:max-w-md mx-auto">
           {/* Logo/Brand */}
           <div className="flex flex-col items-center mb-8">
-            <div className="mb-2 shadow-lg">
-              <Image
-                src="/cypherx-logo.svg"
+                         <div className="mb-2">
+               <Image
+                 src="https://i.imgur.com/MtLzgOQ.png"
                 alt="CypherX Logo"
                 width={48}
                 height={48}

@@ -15,6 +15,7 @@ import IndexVotingModal from "./components/IndexVotingModal";
 
 import toast from "react-hot-toast"; // Added for error toasts
 
+
 // Dynamically import components
 const BaseAiIndex = dynamic(() => import("./components/Indexes"), {
   ssr: false,
@@ -415,7 +416,7 @@ export default function Page() {
                   variants={itemVariants}
                 >
                   Advanced analytics, real-time insights, and{" "}
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400 font-semibold">
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-700 via-blue-500 to-blue-300 font-semibold">
                     AI-powered intelligence
                   </span>{" "}
                   for the next generation of decentralized trading
@@ -441,7 +442,7 @@ export default function Page() {
                 </div>
               </motion.div>
 
-              {/* CTA Buttons */}
+              {/* CTA Buttons - Mobile Optimized */}
               <motion.div
                 variants={itemVariants}
                 className="flex flex-col sm:flex-row gap-4 sm:gap-6 justify-center items-center mb-8 sm:mb-6 max-w-2xl mx-auto"
@@ -450,14 +451,20 @@ export default function Page() {
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => window.location.href = '/trade'}
-                  className="group relative px-6 sm:px-8 py-3 sm:py-4 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 border border-blue-500/30 hover:border-blue-400/50 w-full sm:w-auto min-w-[160px]"
+                  className={`group relative bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 font-semibold shadow-lg hover:shadow-xl transition-all duration-300 border border-blue-500/30 hover:border-blue-400/50 ${
+                    isMobile 
+                      ? 'px-4 py-2.5 rounded-xl text-sm w-full max-w-xs' 
+                      : 'px-6 sm:px-8 py-3 sm:py-4 rounded-2xl w-full sm:w-auto min-w-[160px]'
+                  }`}
                 >
-                  <div className="absolute inset-0 bg-gradient-to-r from-blue-400/20 to-blue-600/20 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <div className={`absolute inset-0 bg-gradient-to-r from-blue-400/20 to-blue-600/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${
+                    isMobile ? 'rounded-xl' : 'rounded-2xl'
+                  }`}></div>
                   <span className="relative flex items-center justify-center">
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className={`${isMobile ? 'w-4 h-4 mr-1.5' : 'w-5 h-5 mr-2'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
-                    Explore Tokens
+                    {isMobile ? 'Explore' : 'Explore Tokens'}
                   </span>
                 </motion.button>
 
@@ -465,14 +472,20 @@ export default function Page() {
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => window.open('https://cypherx.gitbook.io', '_blank')}
-                  className="group relative px-6 sm:px-8 py-3 sm:py-4 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 border border-purple-500/30 hover:border-purple-400/50 w-full sm:w-auto min-w-[160px]"
+                  className={`group relative bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-semibold shadow-lg hover:shadow-xl transition-all duration-300 border border-purple-500/30 hover:border-purple-400/50 ${
+                    isMobile 
+                      ? 'px-4 py-2.5 rounded-xl text-sm w-full max-w-xs' 
+                      : 'px-6 sm:px-8 py-3 sm:py-4 rounded-2xl w-full sm:w-auto min-w-[160px]'
+                  }`}
                 >
-                  <div className="absolute inset-0 bg-gradient-to-r from-purple-400/20 to-purple-600/20 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <div className={`absolute inset-0 bg-gradient-to-r from-purple-400/20 to-purple-600/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${
+                    isMobile ? 'rounded-xl' : 'rounded-2xl'
+                  }`}></div>
                   <span className="relative flex items-center justify-center">
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className={`${isMobile ? 'w-4 h-4 mr-1.5' : 'w-5 h-5 mr-2'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    Documentation
+                    {isMobile ? 'Docs' : 'Documentation'}
                   </span>
                 </motion.button>
 
@@ -546,6 +559,8 @@ export default function Page() {
 
         <Footer />
       </div>
+
+
 
       {/* Global Voting Modal */}
       {showVotingModal && selectedIndexForVoting && (
@@ -621,53 +636,62 @@ function LatestNews({ articles, isMobile, loading, error }: { articles: NewsArti
       className="w-full bg-gray-900 rounded-xl shadow-lg p-4 sm:p-6 border border-blue-500/30 flex flex-col"
       {...fadeInUp(0)}
     >
-              <div className="flex justify-between items-center mb-4 sm:mb-6">
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-600/50 rounded-xl flex items-center justify-center border border-gray-500/30">
-              <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
-              </svg>
-            </div>
-            <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-gray-200">Insights</h2>
-              <p className="text-xs sm:text-sm text-gray-400">Stay updated with the latest Base Chain developments</p>
-            </div>
-          </div>
-          
-          {/* CTA Button */}
-          <Link
-            href="/insights"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-700/50 hover:bg-gray-600/50 text-gray-300 hover:text-white font-medium rounded-lg transition-all duration-200 transform hover:scale-105 border border-gray-600/50"
-          >
-            <span className="text-sm">View All</span>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+      {/* Header Section - Optimized for Mobile */}
+      <div className={`flex ${isMobile ? 'flex-col gap-3' : 'justify-between items-center'} mb-4 sm:mb-6`}>
+        <div className="flex items-center space-x-3">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-600/50 rounded-xl flex items-center justify-center border border-gray-500/30">
+            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
             </svg>
-          </Link>
+          </div>
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-200">Insights</h2>
+            <p className="text-xs sm:text-sm text-gray-400">Stay updated with the latest Base Chain developments</p>
+          </div>
         </div>
-      <div className="space-y-4">
-        {articles.slice(0, 3).map((article) => (
+        
+        {/* CTA Button - Mobile Optimized */}
+        <Link
+          href="/insights"
+          className={`inline-flex items-center gap-2 px-4 py-2 bg-gray-700/50 hover:bg-gray-600/50 text-gray-300 hover:text-white font-medium rounded-lg transition-all duration-200 transform hover:scale-105 border border-gray-600/50 ${isMobile ? 'w-full justify-center' : ''}`}
+        >
+          <span className="text-sm">View All</span>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </Link>
+      </div>
+
+      {/* Articles Section - Mobile Optimized */}
+      <div className="space-y-3 sm:space-y-4">
+        {articles.slice(0, isMobile ? 2 : 3).map((article) => (
           <motion.div
             key={article.slug}
-            className="bg-gray-800 rounded-lg shadow-md p-4 border border-blue-500/30 hover:shadow-xl transition-all duration-300"
+            className="bg-gray-800 rounded-lg shadow-md p-3 sm:p-4 border border-blue-500/30 hover:shadow-xl transition-all duration-300"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}
           >
-                        <div className={`flex ${isMobile ? "flex-col gap-3" : "gap-4 items-center"} mb-3`}>
-              <div className="flex-1">
-                <h3 className="text-base sm:text-lg font-bold text-blue-400 line-clamp-1 hover:text-blue-300 transition-colors">
+            {/* Article Content - Mobile Optimized Layout */}
+            <div className={`${isMobile ? "space-y-3" : "flex gap-4 items-start"}`}>
+              <div className="flex-1 min-w-0">
+                {/* Title - Mobile Optimized */}
+                <h3 className={`font-bold text-blue-400 line-clamp-2 hover:text-blue-300 transition-colors ${isMobile ? 'text-sm' : 'text-base sm:text-lg'}`}>
                   {article.title}
                 </h3>
-                <p className="text-sm sm:text-base mt-2 text-gray-400 line-clamp-2">{article.content}</p>
                 
-                {/* Author, Views, and Reading Time */}
-                <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
+                {/* Content - Mobile Optimized */}
+                <p className={`mt-2 text-gray-400 line-clamp-2 ${isMobile ? 'text-xs' : 'text-sm sm:text-base'}`}>
+                  {article.content}
+                </p>
+                
+                {/* Meta Information - Mobile Optimized */}
+                <div className={`flex items-center gap-3 mt-3 text-gray-500 ${isMobile ? 'text-xs flex-wrap' : 'text-xs'}`}>
                   <div className="flex items-center gap-1">
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
-                    <span>{article.author || 'GL1TCHXBT'}</span>
+                    <span className="truncate">{article.author || 'GL1TCHXBT'}</span>
                   </div>
                   <div className="flex items-center gap-1">
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -682,54 +706,93 @@ function LatestNews({ articles, isMobile, loading, error }: { articles: NewsArti
                     </svg>
                     <span>5 min read</span>
                   </div>
+                  <div className="text-gray-500">
+                    {new Date(article.publishedAt).toLocaleDateString()}
+                  </div>
                 </div>
               </div>
-              <div className={`flex ${isMobile ? "flex-row gap-2" : "items-center gap-3"}`}>
+
+              {/* Action Buttons - Mobile Optimized */}
+              <div className={`flex ${isMobile ? 'justify-between gap-2' : 'items-center gap-3'} ${isMobile ? 'mt-3' : ''}`}>
+                {/* Read Button - Mobile Optimized */}
                 <Link
                   href={`/insights/${article.slug}`}
-                  className="flex items-center gap-1 p-2 bg-green-500/20 hover:bg-green-500/40 border border-green-500/30 rounded-md text-green-400 transition-all duration-200 hover:scale-105"
+                  className={`flex items-center gap-1 bg-green-500/20 hover:bg-green-500/40 border border-green-500/30 rounded-md text-green-400 transition-all duration-200 hover:scale-105 ${isMobile ? 'flex-1 justify-center py-2 px-3' : 'p-2'}`}
                   aria-label="Read article"
                 >
-                  <svg className="w-4 sm:w-5 h-4 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                   </svg>
+                  {isMobile && <span className="text-xs font-medium">Read</span>}
                 </Link>
-                <button
-                  onClick={() => shareToX(article)}
-                  className="flex items-center gap-1 p-2 bg-blue-500/20 hover:bg-blue-500/40 border border-blue-500/30 rounded-md text-blue-400 transition-all duration-200 hover:scale-105"
-                  aria-label="Share on X"
-                >
-                  <svg className="w-4 sm:w-5 h-4 sm:h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => shareToTelegram(article)}
-                  className="flex items-center gap-1 p-2 bg-teal-500/20 hover:bg-teal-500/40 border border-teal-500/30 rounded-md text-teal-400 transition-all duration-200 hover:scale-105"
-                  aria-label="Share on Telegram"
-                >
-                  <svg className="w-4 sm:w-5 h-4 sm:h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M9.417 15.181l-.397 5.584c.568 0 .814-.244 1.109-.537l2.663-2.545 5.518 4.041c.1.564 1.725.267 2.02-.421L23.99 4.477c.392-1.178-.484-1.71-1.297-1.34L2.705 12.441c-1.178.392-.803 1.586 .098 1.965l5.51.717 12.785-8.01c.392-.244.814-.098 .491.392z" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => copyLink(article)}
-                  className="flex items-center gap-1 p-2 bg-purple-500/20 hover:bg-purple-500/40 border border-purple-500/30 rounded-md text-purple-400 transition-all duration-200 hover:scale-105"
-                  aria-label="Copy link"
-                >
-                  <svg className="w-4 sm:w-5 h-4 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                    />
-                  </svg>
-                </button>
+
+                {/* Share Buttons - Mobile Optimized */}
+                {!isMobile && (
+                  <>
+                    <button
+                      onClick={() => shareToX(article)}
+                      className="flex items-center gap-1 p-2 bg-blue-500/20 hover:bg-blue-500/40 border border-blue-500/30 rounded-md text-blue-400 transition-all duration-200 hover:scale-105"
+                      aria-label="Share on X"
+                    >
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => shareToTelegram(article)}
+                      className="flex items-center gap-1 p-2 bg-teal-500/20 hover:bg-teal-500/40 border border-teal-500/30 rounded-md text-teal-400 transition-all duration-200 hover:scale-105"
+                      aria-label="Share on Telegram"
+                    >
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M9.417 15.181l-.397 5.584c.568 0 .814-.244 1.109-.537l2.663-2.545 5.518 4.041c.1.564 1.725.267 2.02-.421L23.99 4.477c.392-1.178-.484-1.71-1.297-1.34L2.705 12.441c-1.178.392-.803 1.586 .098 1.965l5.51.717 12.785-8.01c.392-.244.814-.098 .491.392z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => copyLink(article)}
+                      className="flex items-center gap-1 p-2 bg-purple-500/20 hover:bg-purple-500/40 border border-purple-500/30 rounded-md text-purple-400 transition-all duration-200 hover:scale-105"
+                      aria-label="Copy link"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                        />
+                      </svg>
+                    </button>
+                  </>
+                )}
+
+                {/* Mobile Share Menu */}
+                {isMobile && (
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => shareToX(article)}
+                      className="p-2 bg-blue-500/20 hover:bg-blue-500/40 border border-blue-500/30 rounded-md text-blue-400 transition-all duration-200"
+                      aria-label="Share on X"
+                    >
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => copyLink(article)}
+                      className="p-2 bg-purple-500/20 hover:bg-purple-500/40 border border-purple-500/30 rounded-md text-purple-400 transition-all duration-200"
+                      aria-label="Copy link"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                )}
               </div>
-            </div>
-            <div className="text-xs text-gray-500 mt-2">
-              {new Date(article.publishedAt).toLocaleDateString()}
             </div>
           </motion.div>
         ))}
@@ -999,13 +1062,56 @@ const MemescopeWidget = () => {
     >
       <div className="flex justify-between items-center mb-3 sm:mb-6">
         <div className="flex items-center space-x-2 sm:space-x-3">
-          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-500/30 rounded-xl flex items-center justify-center border border-blue-500/30">
-            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
+          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-900 rounded-xl flex items-center justify-center border border-blue-500/30 relative overflow-hidden">
+            {/* Faint background grid */}
+            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400/20 absolute inset-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {/* Horizontal grid lines */}
+              <line x1="0" y1="4" x2="24" y2="4" stroke="currentColor" strokeWidth="0.3"/>
+              <line x1="0" y1="8" x2="24" y2="8" stroke="currentColor" strokeWidth="0.3"/>
+              <line x1="0" y1="12" x2="24" y2="12" stroke="currentColor" strokeWidth="0.3"/>
+              <line x1="0" y1="16" x2="24" y2="16" stroke="currentColor" strokeWidth="0.3"/>
+              <line x1="0" y1="20" x2="24" y2="20" stroke="currentColor" strokeWidth="0.3"/>
+              {/* Vertical grid lines */}
+              <line x1="4" y1="0" x2="4" y2="24" stroke="currentColor" strokeWidth="0.3"/>
+              <line x1="8" y1="0" x2="8" y2="24" stroke="currentColor" strokeWidth="0.3"/>
+              <line x1="12" y1="0" x2="12" y2="24" stroke="currentColor" strokeWidth="0.3"/>
+              <line x1="16" y1="0" x2="16" y2="24" stroke="currentColor" strokeWidth="0.3"/>
+              <line x1="20" y1="0" x2="20" y2="24" stroke="currentColor" strokeWidth="0.3"/>
             </svg>
+            
+            {/* Classic Radar Display */}
+            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {/* Grid circles */}
+              <circle cx="12" cy="12" r="11" stroke="currentColor" strokeWidth="0.5" fill="none" opacity="0.4"/>
+              <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="0.5" fill="none" opacity="0.5"/>
+              <circle cx="12" cy="12" r="5" stroke="currentColor" strokeWidth="0.5" fill="none" opacity="0.6"/>
+              <circle cx="12" cy="12" r="2" stroke="currentColor" strokeWidth="0.5" fill="none" opacity="0.7"/>
+              {/* Radial lines */}
+              <line x1="12" y1="12" x2="12" y2="2" stroke="currentColor" strokeWidth="0.5" opacity="0.3"/>
+              <line x1="12" y1="12" x2="12" y2="22" stroke="currentColor" strokeWidth="0.5" opacity="0.3"/>
+              <line x1="12" y1="12" x2="2" y2="12" stroke="currentColor" strokeWidth="0.5" opacity="0.3"/>
+              <line x1="12" y1="12" x2="22" y2="12" stroke="currentColor" strokeWidth="0.5" opacity="0.3"/>
+              {/* Center dot */}
+              <circle cx="12" cy="12" r="0.5" fill="currentColor"/>
+            </svg>
+
+            {/* Sweeping radar wedge */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 origin-center" style={{
+                animation: 'radar-sweep 3s linear infinite',
+                transformOrigin: 'center'
+              }}>
+                <div className="w-full h-full bg-gradient-to-r from-blue-400/80 via-blue-400/40 to-transparent rounded-full" 
+                     style={{
+                       clipPath: 'polygon(50% 50%, 50% 0%, 100% 0%, 100% 100%, 50% 100%)',
+                       transform: 'rotate(-45deg)'
+                     }}>
+                </div>
+              </div>
+            </div>
           </div>
           <div>
-            <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-200">Memescope</h2>
+            <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-200">Radar</h2>
             <p className="text-xs sm:text-sm text-gray-400">Discover trending tokens</p>
           </div>
         </div>

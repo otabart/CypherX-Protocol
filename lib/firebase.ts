@@ -23,50 +23,33 @@ interface FirebaseError extends Error {
   code?: string;
 }
 
-// Client-side Firebase config
+// Client-side Firebase config with fallbacks
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID!,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET!,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID!,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyC-K5MMV2Bh2s1GJblOw2Ji-d8S1rccqso",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "homebase-dapp.firebaseapp.com",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "homebase-dapp",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "homebase-dapp.firebasestorage.app",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "492562110747",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:492562110747:web:db9b97a1f3bcb763b05bbe",
 };
 
-// Log + validate client env vars
-const logEnvStatus = (key: string, value: string | undefined) =>
-  value ? `${key}: Set` : `${key}: Missing`;
-
-console.log("Firebase Client Config:", {
-  apiKey: logEnvStatus("NEXT_PUBLIC_FIREBASE_API_KEY", process.env.NEXT_PUBLIC_FIREBASE_API_KEY),
-  authDomain: logEnvStatus("NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN", process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN),
-  projectId: logEnvStatus("NEXT_PUBLIC_FIREBASE_PROJECT_ID", process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID),
-  storageBucket: logEnvStatus("NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET", process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET),
-  messagingSenderId: logEnvStatus("NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID", process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID),
-  appId: logEnvStatus("NEXT_PUBLIC_FIREBASE_APP_ID", process.env.NEXT_PUBLIC_FIREBASE_APP_ID),
-});
-
-const missingClientEnvVars = Object.entries({
-  NEXT_PUBLIC_FIREBASE_API_KEY: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  NEXT_PUBLIC_FIREBASE_PROJECT_ID: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  NEXT_PUBLIC_FIREBASE_APP_ID: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-}).filter(([, value]) => !value);
+// Only log in development
+if (process.env.NODE_ENV === 'development') {
+  console.log("Firebase Client Config:", {
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ? "Set" : "Using fallback",
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ? "Set" : "Using fallback",
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ? "Set" : "Using fallback",
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ? "Set" : "Using fallback",
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ? "Set" : "Using fallback",
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID ? "Set" : "Using fallback",
+  });
+}
 
 // Initialize client-side Firebase app
 let clientApp;
-if (missingClientEnvVars.length > 0) {
-  console.error(
-    `Missing client-side Firebase environment variables: ${missingClientEnvVars
-      .map(([key]) => key)
-      .join(", ")}`
-  );
-  throw new Error("Firebase initialization failed: Missing environment variables");
-} else {
-  try {
-    clientApp = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+try {
+  clientApp = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+  if (process.env.NODE_ENV === 'development') {
     console.log(
       "Client-side Firebase app initialized:",
       clientApp.name,
@@ -75,24 +58,24 @@ if (missingClientEnvVars.length > 0) {
       "Storage Bucket:",
       clientApp.options.storageBucket
     );
-  } catch (error: unknown) {
-    console.error("Client-side Firebase initialization error:", {
-      message: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-    });
-    throw new Error("Firebase initialization failed: Client-side app setup error");
   }
+} catch (error: unknown) {
+  console.error("Client-side Firebase initialization error:", {
+    message: error instanceof Error ? error.message : String(error),
+  });
+  throw new Error("Firebase initialization failed: Client-side app setup error");
 }
 
 // Initialize client-side services
 let clientDb: Firestore;
 try {
   clientDb = getClientFirestore(clientApp);
-  console.log("Client-side Firestore initialized: Success");
+  if (process.env.NODE_ENV === 'development') {
+    console.log("Client-side Firestore initialized: Success");
+  }
 } catch (error: unknown) {
   console.error("Client-side Firestore initialization failed:", {
     message: error instanceof Error ? error.message : String(error),
-    stack: error instanceof Error ? error.stack : undefined,
   });
   throw new Error("Firestore initialization failed: Client-side Firestore setup error");
 }
@@ -100,26 +83,28 @@ try {
 let auth: Auth;
 try {
   auth = getAuth(clientApp);
-  console.log("Client-side Auth initialized: Success");
+  if (process.env.NODE_ENV === 'development') {
+    console.log("Client-side Auth initialized: Success");
+  }
 } catch (error: unknown) {
   console.error("Client-side Auth initialization failed:", {
     message: error instanceof Error ? error.message : String(error),
-    stack: error instanceof Error ? error.stack : undefined,
   });
   throw new Error("Auth initialization failed: Client-side Auth setup error");
 }
 
 let storage: FirebaseStorage;
 try {
-  storage = getStorage(clientApp, process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET!);
-  console.log(
-    "Client-side Storage initialized: Success, Bucket:",
-    process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
-  );
+  storage = getStorage(clientApp, firebaseConfig.storageBucket);
+  if (process.env.NODE_ENV === 'development') {
+    console.log(
+      "Client-side Storage initialized: Success, Bucket:",
+      firebaseConfig.storageBucket
+    );
+  }
 } catch (error: unknown) {
   console.error("Client-side Storage initialization failed:", {
     message: error instanceof Error ? error.message : String(error),
-    stack: error instanceof Error ? error.stack : undefined,
   });
   throw new Error("Storage initialization failed: Client-side Storage setup error");
 }
@@ -202,8 +187,9 @@ const listenToAuthState = (
 let adminDb: AdminFirestore;
 let adminStorage: Storage;
 let adminApp: App;
+let adminInitialized = false;
 
-if (typeof window === "undefined") {
+if (typeof window === "undefined" && !adminInitialized) {
   (async () => {
     try {
       console.log("Starting Firebase Admin initialization...");
@@ -278,9 +264,14 @@ if (typeof window === "undefined") {
       console.log("Admin Firestore initialized: Success");
 
       // Enable ignoreUndefinedProperties to prevent undefined value errors
-      adminDb.settings({
-        ignoreUndefinedProperties: true
-      });
+      // Only set settings if not already set
+      try {
+        adminDb.settings({
+          ignoreUndefinedProperties: true
+        });
+      } catch (error) {
+        console.log("Firestore settings already configured, skipping...");
+      }
 
       adminStorage = getAdminStorage(adminApp);
       console.log("Admin Storage initialized: Success, Bucket:", adminStorage.bucket().name);
@@ -292,6 +283,9 @@ if (typeof window === "undefined") {
         initializedBy: "firebase.ts",
       });
       console.log("Admin SDK connectivity test: Firestore write successful");
+
+      // Mark as initialized
+      adminInitialized = true;
 
       // Test Storage connectivity
       console.log("Testing Storage connectivity...");
@@ -318,6 +312,8 @@ if (typeof window === "undefined") {
         message: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
       });
+      // Mark as initialized to prevent retries
+      adminInitialized = true;
       throw new Error("Firebase Admin initialization failed: " + (error instanceof Error ? error.message : String(error)));
     }
   })();

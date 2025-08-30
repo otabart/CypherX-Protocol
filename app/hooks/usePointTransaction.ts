@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useAuth, useWalletSystem } from '@/app/providers';
+import { useWalletSystem } from '@/app/providers';
 
 interface TransactionConfig {
   action: string;
@@ -21,7 +21,7 @@ interface UsePointTransactionReturn {
 }
 
 export const usePointTransaction = (): UsePointTransactionReturn => {
-  const { user } = useAuth();
+
   const { selfCustodialWallet } = useWalletSystem();
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [transaction, setTransaction] = useState<TransactionConfig | null>(null);

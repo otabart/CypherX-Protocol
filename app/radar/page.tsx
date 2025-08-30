@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import Header from "../components/Header";
 import Footer from "../components/Footer";
 import { useLoading, PageLoader } from "../components/LoadingProvider";
+import { FiPlus, FiTrendingUp, FiZap, FiSettings } from "react-icons/fi";
+import { SiEthereum } from "react-icons/si";
+import { useWatchlists } from "../hooks/useWatchlists";
 
 // Icons
 const StarIcon = ({ filled }: { filled: boolean }) => (
@@ -38,12 +41,12 @@ function getTokenTags(token: {
   const liquidity = typeof token.liquidity?.usd === 'string' ? parseFloat(token.liquidity.usd) : (token.liquidity?.usd || 0);
   const marketCapDelta24h = typeof token.marketCapDelta24h === 'string' ? parseFloat(token.marketCapDelta24h) : (token.marketCapDelta24h || 0);
   
-  // NEW tag - if created in last 24 hours
+  // NEW tag - if created in last 10 days
   if (token.createdAt) {
     const created = new Date(token.createdAt);
     const now = new Date();
-    const hoursDiff = (now.getTime() - created.getTime()) / (1000 * 60 * 60);
-    if (hoursDiff <= 24) {
+    const daysDiff = (now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24);
+    if (daysDiff <= 10) {
       tags.push("NEW");
     }
   }
@@ -257,30 +260,62 @@ export default function RadarPage() {
   const { isLoading: pageLoading } = useLoading();
   
   // Compact filters
-  const [search, setSearch] = useState("");
+  const [search] = useState("");
   const [selectedTag, setSelectedTag] = useState("");
   
   // UI State
-  const [watchlist, setWatchlist] = useState<string[]>([]);
   const [showWatchlistOnly, setShowWatchlistOnly] = useState(false);
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortOrder] = useState<"asc" | "desc">("desc");
   
-  // Load watchlist from localStorage
+  // Use the new favorites and watchlists hooks
+
+  const { watchlists, addToWatchlist, removeFromWatchlist } = useWatchlists();
+  
+  // Individual column filter states
+  const [newPairsFilter, setNewPairsFilter] = useState("");
+  const [surgingFilter, setSurgingFilter] = useState("");
+  const [gainersFilter, setGainersFilter] = useState("");
+  
+  // Individual column filter amount states
+  const [newPairsFilterAmount, setNewPairsFilterAmount] = useState("");
+  const [surgingFilterAmount, setSurgingFilterAmount] = useState("");
+  const [gainersFilterAmount, setGainersFilterAmount] = useState("");
+  
+  // Filter dropdown states
+  const [showTagDropdown, setShowTagDropdown] = useState(false);
+  
+  // Close dropdowns when clicking outside
   useEffect(() => {
-    const saved = localStorage.getItem("radar-watchlist");
-    if (saved) {
-      setWatchlist(JSON.parse(saved));
-    }
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!(event.target as Element).closest('.filter-dropdown')) {
+        setShowTagDropdown(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
   
-  // Save watchlist to localStorage
+  // Helper function to check if token is in any watchlist
+  const isInAnyWatchlist = (address: string) => {
+    return watchlists.some(watchlist => watchlist.tokens.includes(address));
+  };
+
+  // Toggle watchlist using the new hook
   const toggleWatchlist = (address: string) => {
-    const newWatchlist = watchlist.includes(address)
-      ? watchlist.filter(addr => addr !== address)
-      : [...watchlist, address];
-    setWatchlist(newWatchlist);
-          localStorage.setItem("radar-watchlist", JSON.stringify(newWatchlist));
+    if (isInAnyWatchlist(address)) {
+      // Remove from the first watchlist that contains it
+      const watchlistWithToken = watchlists.find(w => w.tokens.includes(address));
+      if (watchlistWithToken) {
+        removeFromWatchlist(watchlistWithToken.id, address);
+      }
+    } else {
+      // Add to the first watchlist if available
+      if (watchlists.length > 0) {
+        addToWatchlist(watchlists[0].id, address);
+      }
+    }
   };
 
   useEffect(() => {
@@ -288,14 +323,14 @@ export default function RadarPage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch("/api/cypherscope-tokens");
+        // Add cache-busting parameter to ensure fresh data
+        const res = await fetch(`/api/cypherscope-tokens?t=${Date.now()}`);
         const data = await res.json();
         console.log("🔍 API Response:", data);
         console.log("🔍 Tokens from API:", data.tokens?.length || 0);
         
         const tokensWithTags = (data.tokens || []).map((token: any) => {
           const tags = getTokenTags(token);
-          console.log("🔍 Token:", token.name, "Tags:", tags);
           return {
             ...token,
             tags: tags
@@ -312,12 +347,17 @@ export default function RadarPage() {
       }
     }
     fetchTokens();
+    
+    // Refresh data every 5 minutes
+    const interval = setInterval(fetchTokens, 5 * 60 * 1000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   // Filtering and sorting
   const filteredAndSortedTokens = tokens
     .filter((token) => {
-      if (showWatchlistOnly && !watchlist.includes(token.address)) {
+      if (showWatchlistOnly && !isInAnyWatchlist(token.address)) {
         return false;
       }
       
@@ -371,28 +411,28 @@ export default function RadarPage() {
     token.tags?.includes("NEW")
   );
 
-  // Get surging tokens based on quick movements and relative performance
+  // Get surging tokens based on actual surging behavior
   let surgingTokens = filteredAndSortedTokens
     .filter(token => {
-      // Include tokens with SURGING tag
+      // Exclude new pairs from surging section
+      if (token.tags?.includes("NEW")) return false;
+      
+      // Must have SURGING tag from API
       if (token.tags?.includes("SURGING")) return true;
       
-      // Include tokens with high volume relative to market cap (indicating active trading)
-      if (token.volume24h && token.marketCap) {
-        const volumeToMC = parseFloat(String(token.volume24h)) / parseFloat(String(token.marketCap));
-        if (volumeToMC > 0.3) return true; // Volume > 30% of market cap
-      }
+      // OR must meet strict surging criteria:
+      // 1. Significant positive price movement (15-100% gain)
+      const hasGoodGain = token.priceChange?.h24 && token.priceChange.h24 >= 15 && token.priceChange.h24 <= 100;
       
-      // Include tokens with moderate but consistent gains (not extreme outliers)
-      if (token.priceChange?.h24 && token.priceChange.h24 > 5 && token.priceChange.h24 < 50) return true;
+      // 2. High volume relative to market cap (indicating real activity)
+      const hasHighActivity = token.volume24h && token.marketCap && 
+        (parseFloat(String(token.volume24h)) / parseFloat(String(token.marketCap))) > 0.2;
       
-      // Include newer tokens with high activity (age < 7 days)
-      if (token.createdAt) {
-        const ageInDays = (Date.now() - new Date(token.createdAt).getTime()) / (1000 * 60 * 60 * 24);
-        if (ageInDays < 7 && token.volume24h && parseFloat(String(token.volume24h)) > 10000) return true;
-      }
+      // 3. Recent activity (not old stagnant tokens)
+      const isRecent = token.createdAt && 
+        ((Date.now() - new Date(token.createdAt).getTime()) / (1000 * 60 * 60 * 24)) < 14;
       
-      return false;
+      return hasGoodGain && hasHighActivity && isRecent;
     })
     .sort((a, b) => {
       // Primary sort: Volume to market cap ratio (activity level)
@@ -423,42 +463,19 @@ export default function RadarPage() {
       return bChange - aChange; // Sort by highest gains first
     });
 
-  // Ensure each column has at least 5 tokens by filling with remaining tokens
-  const tokensPerColumn = 5;
-  
-  // If any column has fewer than 5 tokens, fill with remaining tokens
-  if (newTokens.length < tokensPerColumn) {
+  // Ensure surging column always has at least 5 tokens by filling with best performers
+  if (surgingTokens.length < 5) {
     const remainingTokens = filteredAndSortedTokens.filter(token => 
       !newTokens.includes(token) && !surgingTokens.includes(token) && !gainerTokens.includes(token)
     );
-    const needed = tokensPerColumn - newTokens.length;
-    newTokens = [...newTokens, ...remainingTokens.slice(0, needed)];
-  }
-  
-  if (surgingTokens.length < tokensPerColumn) {
-    const remainingTokens = filteredAndSortedTokens.filter(token => 
-      !newTokens.includes(token) && !surgingTokens.includes(token) && !gainerTokens.includes(token)
-    );
-    const needed = tokensPerColumn - surgingTokens.length;
+    const needed = 5 - surgingTokens.length;
     surgingTokens = [...surgingTokens, ...remainingTokens.slice(0, needed)];
   }
   
-  if (gainerTokens.length < tokensPerColumn) {
-    const remainingTokens = filteredAndSortedTokens.filter(token => 
-      !newTokens.includes(token) && !surgingTokens.includes(token) && !gainerTokens.includes(token)
-    );
-    const needed = tokensPerColumn - gainerTokens.length;
-    gainerTokens = [...gainerTokens, ...remainingTokens.slice(0, needed)];
-  }
-  
-  // Fallback: if still not enough tokens, distribute evenly
-  if (newTokens.length === 0 && surgingTokens.length === 0 && gainerTokens.length === 0) {
-    console.log("🔍 No tokens matched specific tags, using fallback categorization...");
-    
-    newTokens = filteredAndSortedTokens.slice(0, tokensPerColumn);
-    surgingTokens = filteredAndSortedTokens.slice(tokensPerColumn, tokensPerColumn * 2);
-    gainerTokens = filteredAndSortedTokens.slice(tokensPerColumn * 2, tokensPerColumn * 3);
-  }
+  // Cap each column at 10 tokens for better UX
+  newTokens = newTokens.slice(0, 10);
+  surgingTokens = surgingTokens.slice(0, 10);
+  gainerTokens = gainerTokens.slice(0, 10);
 
   // Debug categorization
   console.log("🔍 Categorization Debug:");
@@ -503,10 +520,16 @@ export default function RadarPage() {
       router.push(`/trade/${token.pairAddress || token.address}/chart`);
     };
 
+    // Handle quick buy
+    const handleQuickBuy = (token: any, amount: number) => {
+      // Navigate to swap page with pre-filled amount
+      router.push(`/swap?token=${token.address}&amount=${amount}`);
+    };
+
     return (
       <div
-        className="bg-gray-800/30 border-b border-gray-700/50 p-2.5 hover:bg-gray-700/30 transition-all duration-200 cursor-pointer group"
-        style={{ minHeight: '80px' }}
+        className="bg-gray-800/30 border-b border-gray-700/50 p-2 md:p-2.5 hover:bg-gray-700/30 transition-all duration-200 cursor-pointer group"
+        style={{ minHeight: '70px' }}
         onClick={handleTokenClick}
       >
         <div className="flex items-center gap-3 mb-2">
@@ -539,16 +562,16 @@ export default function RadarPage() {
                             toggleWatchlist(token.address);
                           }}
             className={`p-1 rounded transition ${
-                            watchlist.includes(token.address)
+                            isInAnyWatchlist(token.address)
                               ? "text-yellow-400 hover:text-yellow-300"
                               : "text-gray-400 hover:text-yellow-400"
                           }`}
                         >
-                          <StarIcon filled={watchlist.includes(token.address)} />
+                          <StarIcon filled={isInAnyWatchlist(token.address)} />
                         </button>
                       </div>
                       
-        <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+        <div className="grid grid-cols-2 gap-1 md:gap-2 text-xs mb-2">
           <div>
             <span className="text-gray-400">MC:</span>
             <span className="text-gray-200 ml-1">{formatNumber(token.marketCap)}</span>
@@ -568,107 +591,235 @@ export default function RadarPage() {
                         </div>
         
         {/* DEX Row */}
-        <div className="flex items-center justify-between text-xs mb-2">
+        <div className="flex items-center justify-between text-xs mb-1 md:mb-2">
           <DexIcon dexId={token.dexId} />
                       </div>
                       
                       {token.tags && token.tags.length > 0 && (
-          <div className="flex gap-1 flex-wrap">
-            {token.tags.slice(0, 2).map((tag: string) => (
-                            <TagBadge key={tag} tag={tag} />
-                          ))}
-                        </div>
+          <div className="flex items-center justify-between">
+            <div className="flex gap-1 flex-wrap">
+              {token.tags.slice(0, 2).map((tag: string) => (
+                <TagBadge key={tag} tag={tag} />
+              ))}
+            </div>
+            
+            {/* Quick Buy Buttons */}
+            <div className="flex items-center gap-1.5">
+              {[0.01, 0.025, 0.05, 0.1].map((amount) => (
+                <button
+                  key={amount}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleQuickBuy(token, amount);
+                  }}
+                  className="flex items-center gap-1 px-3 py-1.5 text-sm bg-gray-700/20 border border-gray-600/30 rounded-full hover:bg-gray-600/30 transition text-gray-300 hover:text-gray-200"
+                >
+                  <SiEthereum className="w-3 h-3 text-gray-400" />
+                  <span>{amount}</span>
+                </button>
+              ))}
+            </div>
+          </div>
                       )}
       </div>
     );
   };
 
-  const ColumnHeader = ({ title, count, color }: { title: string; count: number; color: string }) => (
-    <div className="flex items-center justify-between p-3 bg-gray-800/50 border-b border-gray-700/50">
-      <div className="flex items-center gap-2">
-        <div className={`w-3 h-3 rounded-full ${color}`}></div>
-        <h2 className="text-lg font-bold text-gray-200">{title}</h2>
-                      </div>
-      <div className="flex items-center gap-2">
-        <span className="text-sm text-gray-400">{count}</span>
-        {count > 5 && (
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-gray-500">(scroll for more)</span>
-            <svg className="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-            </svg>
-              </div>
+  const ColumnHeader = ({ title, count, icon, filterValue, onFilterChange, filterAmount, onFilterAmountChange }: { 
+    title: string; 
+    count: number; 
+    icon: React.ReactNode;
+    filterValue: string;
+    onFilterChange: (value: string) => void;
+    filterAmount: string;
+    onFilterAmountChange: (value: string) => void;
+  }) => (
+    <div className="p-3 bg-gray-800/50 border-b border-gray-700/50">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          {icon}
+          <h2 className="text-lg font-bold text-gray-200">{title}</h2>
+          <div className="flex items-center gap-2">
+            <select
+              value={filterValue}
+              onChange={(e) => onFilterChange(e.target.value)}
+              className="bg-gray-700/50 border border-gray-600/50 rounded-lg px-2 py-1 text-xs text-gray-200 focus:border-blue-400 focus:outline-none w-20"
+            >
+              <option value="">All</option>
+              <option value="age">Age</option>
+              <option value="liquidity">Liq</option>
+              <option value="priceChange">Price</option>
+              <option value="holders">Hold</option>
+              <option value="volume">Vol</option>
+              <option value="marketCap">MC</option>
+            </select>
+            {filterValue && (
+              <input
+                type="number"
+                value={filterAmount}
+                onChange={(e) => onFilterAmountChange(e.target.value)}
+                className="bg-gray-700/50 border border-gray-600/50 rounded-lg px-2 py-1 text-xs text-gray-200 focus:border-blue-400 focus:outline-none w-16"
+              />
             )}
-                </div>
-                            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-400">{count}</span>
+          {count > 5 && (
+            <div className="hidden md:flex items-center gap-1">
+              <span className="text-xs text-gray-500">(scroll for more)</span>
+              <svg className="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+              </svg>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-950 via-gray-950 to-blue-900 text-gray-200 font-sans flex flex-col">
+    <div className="h-screen bg-gray-950 text-gray-200 font-sans flex flex-col overflow-hidden">
       <Header />
       
       {/* Page Loader */}
       {pageLoading && <PageLoader />}
       
       {/* Compact Header */}
-      <div className="bg-gray-800/50">
+      <div className="bg-gray-800/50 flex-shrink-0">
         <div className="w-full px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-                              <h1 className="text-xl font-bold font-cypherx-gradient">Radar</h1>
-              <div className="flex items-center gap-2 text-sm">
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                <span className="text-gray-400">{filteredAndSortedTokens.length} tokens</span>
-                <span className="text-blue-400">•</span>
-                <span className="text-gray-400">{watchlist.length} watchlisted</span>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div className="flex items-center justify-between md:justify-start gap-4">
+              <div className="flex items-center gap-4">
+                <h1 className="text-xl font-bold text-gray-200">Radar</h1>
+                <div className="hidden md:flex items-center gap-2 text-sm">
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                  <span className="text-gray-400">{filteredAndSortedTokens.length} tokens</span>
+                  <span className="text-blue-400">•</span>
+                  <span className="text-gray-400">{watchlists.reduce((total, w) => total + w.tokens.length, 0)} watchlisted</span>
+                </div>
+                <div className="md:hidden flex items-center gap-2 text-xs">
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                  <span className="text-gray-400">{filteredAndSortedTokens.length} tokens</span>
+                </div>
+              </div>
+              
+              {/* Mobile Filter Icons - Inline with title */}
+              <div className="flex items-center gap-2 md:hidden">
+                {/* Combined Filter Button */}
+                <div className="relative filter-dropdown">
+                  <button
+                    onClick={() => setShowTagDropdown(!showTagDropdown)}
+                    className="p-2 bg-gray-700/50 border border-gray-600/50 rounded-lg text-gray-300 hover:bg-gray-600/50 transition"
+                  >
+                    <FiSettings className="w-4 h-4" />
+                  </button>
+                  {showTagDropdown && (
+                    <div className="absolute top-full right-0 mt-1 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50">
+                      <div className="p-2 space-y-2">
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Tag Filter</label>
+                          <select
+                            value={selectedTag}
+                            onChange={(e) => setSelectedTag(e.target.value)}
+                            className="w-full p-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-200 focus:border-blue-400 focus:outline-none"
+                          >
+                            <option value="">All Tags</option>
+                            <option value="NEW">New</option>
+                            <option value="SPIKE">Spike</option>
+                            <option value="VOLUME">Volume</option>
+                            <option value="RUNNER">Runner</option>
+                            <option value="GAINER">Gainer</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Sort By</label>
+                          <select
+                            value={sortBy}
+                            onChange={(e) => setSortBy(e.target.value)}
+                            className="w-full p-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-200 focus:border-blue-400 focus:outline-none"
+                          >
+                            <option value="createdAt">Age</option>
+                            <option value="marketCap">Market Cap</option>
+                            <option value="volume24h">Volume</option>
+                            <option value="uniqueHolders">Holders</option>
+                          </select>
+                        </div>
                       </div>
-                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                <button
+                  onClick={() => setShowWatchlistOnly(!showWatchlistOnly)}
+                  className={`p-2 rounded-lg transition ${
+                    showWatchlistOnly 
+                      ? "bg-yellow-600/20 text-yellow-300 border border-yellow-500/30" 
+                      : "bg-gray-700/50 text-gray-300 border border-gray-600/50 hover:bg-gray-600/50"
+                  }`}
+                >
+                  <StarIcon filled={showWatchlistOnly} />
+                </button>
+              </div>
+            </div>
                       
-            {/* Compact Filters */}
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                placeholder="Search tokens..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="bg-gray-700/50 border border-gray-600/50 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-400 focus:border-blue-400 focus:outline-none w-48"
-              />
-              
-              <select
-                value={selectedTag}
-                onChange={(e) => setSelectedTag(e.target.value)}
-                className="bg-gray-700/50 border border-gray-600/50 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-blue-400 focus:outline-none"
-              >
-                <option value="">All Tags</option>
-                <option value="NEW">New</option>
-                <option value="SPIKE">Spike</option>
-                <option value="VOLUME">Volume</option>
-                <option value="RUNNER">Runner</option>
-                <option value="GAINER">Gainer</option>
-              </select>
-              
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="bg-gray-700/50 border border-gray-600/50 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-blue-400 focus:outline-none"
-              >
-                <option value="createdAt">Age</option>
-                <option value="marketCap">Market Cap</option>
-                <option value="volume24h">Volume</option>
-                <option value="uniqueHolders">Holders</option>
-              </select>
+            {/* Desktop Compact Filters */}
+            <div className="hidden md:flex items-center justify-end gap-2">
+              {/* Combined Filter Button */}
+              <div className="relative filter-dropdown">
+                <button
+                  onClick={() => setShowTagDropdown(!showTagDropdown)}
+                  className="p-2 bg-gray-700/50 border border-gray-600/50 rounded-lg text-gray-300 hover:bg-gray-600/50 transition"
+                >
+                  <FiSettings className="w-4 h-4" />
+                </button>
+                {showTagDropdown && (
+                  <div className="absolute top-full right-0 mt-1 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50">
+                    <div className="p-2 space-y-2">
+                      <div>
+                        <label className="text-xs text-gray-400 mb-1 block">Tag Filter</label>
+                        <select
+                          value={selectedTag}
+                          onChange={(e) => setSelectedTag(e.target.value)}
+                          className="w-full p-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-200 focus:border-blue-400 focus:outline-none"
+                        >
+                          <option value="">All Tags</option>
+                          <option value="NEW">New</option>
+                          <option value="SPIKE">Spike</option>
+                          <option value="VOLUME">Volume</option>
+                          <option value="RUNNER">Runner</option>
+                          <option value="GAINER">Gainer</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-400 mb-1 block">Sort By</label>
+                        <select
+                          value={sortBy}
+                          onChange={(e) => setSortBy(e.target.value)}
+                          className="w-full p-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-200 focus:border-blue-400 focus:outline-none"
+                        >
+                          <option value="createdAt">Age</option>
+                          <option value="marketCap">Market Cap</option>
+                          <option value="volume24h">Volume</option>
+                          <option value="uniqueHolders">Holders</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
                         
-                        <button
+              <button
                 onClick={() => setShowWatchlistOnly(!showWatchlistOnly)}
-                          className={`p-2 rounded-lg transition ${
+                className={`p-2 rounded-lg transition ${
                   showWatchlistOnly 
                     ? "bg-yellow-600/20 text-yellow-300 border border-yellow-500/30" 
                     : "bg-gray-700/50 text-gray-300 border border-gray-600/50 hover:bg-gray-600/50"
                 }`}
               >
                 <StarIcon filled={showWatchlistOnly} />
-                        </button>
-                      </div>
+              </button>
+            </div>
                         </div>
                                                   </div>
                         </div>
@@ -677,7 +828,7 @@ export default function RadarPage() {
         <div className="w-full border-b border-gray-700/50"></div>
                        
         {/* 3-Column Layout - Full Width */}
-      <div className="w-full flex-1 flex items-center justify-center" style={{ height: 'calc(100vh - 155px)' }}>
+      <div className="flex-1 md:overflow-hidden overflow-auto">
         {loading ? (
           <div className="text-gray-400 text-sm">Loading tokens...</div>
         ) : error ? (
@@ -691,53 +842,83 @@ export default function RadarPage() {
                         </button>
                       </div>
         ) : (
-          <div className="grid grid-cols-3 h-full w-full">
+          <div className="grid grid-cols-1 md:grid-cols-3 w-full h-full gap-4 md:gap-0" style={{ height: 'calc(100vh - 200px)' }}>
             {/* New Tokens Column */}
-            <div className="flex flex-col h-full relative">
-              <ColumnHeader title="New Pairs" count={newTokens.length} color="bg-green-400" />
-              <div className="overflow-y-auto scrollbar-hide transition-all duration-300" style={{ height: 'calc(100vh - 215px)' }}>
-                {newTokens.slice(0, 10).map((token) => (
-                  <TokenCard key={token.address} token={token} />
-                ))}
-                {newTokens.length === 0 && (
-                  <div className="text-center py-8 text-gray-500 text-sm">
-                    No new tokens found
-              </div>
-            )}
+            <div className="flex flex-col md:h-full relative">
+              <ColumnHeader 
+                title="New Pairs" 
+                count={newTokens.length} 
+                icon={<FiPlus className="w-4 h-4 text-green-400" />}
+                filterValue={newPairsFilter}
+                onFilterChange={setNewPairsFilter}
+                filterAmount={newPairsFilterAmount}
+                onFilterAmountChange={setNewPairsFilterAmount}
+              />
+              <div className="flex-1 overflow-hidden">
+                <div className="h-full overflow-y-auto scrollbar-hide" style={{ minHeight: '400px' }}>
+                  {newTokens.map((token) => (
+                    <TokenCard key={token.address} token={token} />
+                  ))}
+                  {newTokens.length === 0 && (
+                    <div className="text-center py-8 text-gray-500 text-sm">
+                      No new tokens found
+                    </div>
+                  )}
                 </div>
-              <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-700/50"></div>
-                        </div>
+              </div>
+              <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-700/50 hidden md:block"></div>
+            </div>
                         
             {/* Surging Tokens Column */}
-            <div className="flex flex-col h-full relative">
-              <ColumnHeader title="Surging" count={surgingTokens.length} color="bg-red-400" />
-              <div className="overflow-y-auto scrollbar-hide transition-all duration-300" style={{ height: 'calc(100vh - 215px)' }}>
-                {surgingTokens.slice(0, 10).map((token) => (
-                  <TokenCard key={token.address} token={token} />
-                ))}
-                {surgingTokens.length === 0 && (
-                  <div className="text-center py-8 text-gray-500 text-sm">
-                    No surging tokens found
-                          </div>
-                        )}
+            <div className="flex flex-col md:h-full relative">
+              <ColumnHeader 
+                title="Surging" 
+                count={surgingTokens.length} 
+                icon={<FiZap className="w-4 h-4 text-red-400" />}
+                filterValue={surgingFilter}
+                onFilterChange={setSurgingFilter}
+                filterAmount={surgingFilterAmount}
+                onFilterAmountChange={setSurgingFilterAmount}
+              />
+              <div className="flex-1 overflow-hidden">
+                <div className="h-full overflow-y-auto scrollbar-hide" style={{ minHeight: '400px' }}>
+                  {surgingTokens.map((token) => (
+                    <TokenCard key={token.address} token={token} />
+                  ))}
+                  {surgingTokens.length === 0 && (
+                    <div className="text-center py-8 text-gray-500 text-sm">
+                      No surging tokens found
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-700/50"></div>
-                      </div>
+              <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-700/50 hidden md:block"></div>
+            </div>
                       
             {/* Gainer Tokens Column */}
-            <div className="flex flex-col h-full">
-              <ColumnHeader title="Top Gainers" count={gainerTokens.length} color="bg-blue-400" />
-              <div className="overflow-y-auto scrollbar-hide transition-all duration-300" style={{ height: 'calc(100vh - 215px)' }}>
-                {gainerTokens.slice(0, 10).map((token) => (
-                  <TokenCard key={token.address} token={token} />
-                ))}
-                {gainerTokens.length === 0 && (
-                  <div className="text-center py-8 text-gray-500 text-sm">
-                    No gainer tokens found
-                        </div>
-                      )}
-                      </div>
+            <div className="flex flex-col md:h-full">
+              <ColumnHeader 
+                title="Top Gainers" 
+                count={gainerTokens.length} 
+                icon={<FiTrendingUp className="w-4 h-4 text-blue-400" />}
+                filterValue={gainersFilter}
+                onFilterChange={setGainersFilter}
+                filterAmount={gainersFilterAmount}
+                onFilterAmountChange={setGainersFilterAmount}
+              />
+              <div className="flex-1 overflow-hidden">
+                <div className="h-full overflow-y-auto scrollbar-hide" style={{ minHeight: '400px' }}>
+                  {gainerTokens.map((token) => (
+                    <TokenCard key={token.address} token={token} />
+                  ))}
+                  {gainerTokens.length === 0 && (
+                    <div className="text-center py-8 text-gray-500 text-sm">
+                      No gainer tokens found
+                    </div>
+                  )}
                 </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

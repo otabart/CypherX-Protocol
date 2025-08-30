@@ -67,12 +67,7 @@ interface WalletData {
   mostActivePeriod?: string;
 }
 
-interface Ad {
-  createdAt: string;
-  destinationUrl: string;
-  imageUrl: string;
-  type: "banner" | "sidebar";
-}
+
 
 // Utility functions
 const formatAddress = (address: string) => {
@@ -128,7 +123,7 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [ethPrice, setEthPrice] = useState<number>(0);
-  const [ads, setAds] = useState<Ad[]>([]);
+
   const [activeTab, setActiveTab] = useState<'overview' | 'tokens' | 'transactions'>('tokens');
   const [copied, setCopied] = useState(false);
   const [tokenLogos, setTokenLogos] = useState<Record<string, string>>({});
@@ -205,38 +200,7 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
         }
       }
 
-      // Fallback to CoinGecko
-      const coinGeckoUrl = `https://api.coingecko.com/api/v3/coins/base/contract/${contractAddress}`;
-      console.log('Trying CoinGecko:', coinGeckoUrl);
-      const geckoResponse = await fetch(coinGeckoUrl);
-      
-      if (geckoResponse.ok) {
-        const geckoData = await geckoResponse.json();
-        console.log('CoinGecko response:', geckoData);
-        if (geckoData.image?.small) {
-          console.log(`Found logo on CoinGecko: ${geckoData.image.small}`);
-          return geckoData.image.small;
-        }
-      }
-
-      // If both fail, try CoinGecko by symbol (less reliable)
-      const symbolUrl = `https://api.coingecko.com/api/v3/search?query=${symbol}`;
-      console.log('Trying CoinGecko symbol search:', symbolUrl);
-      const symbolResponse = await fetch(symbolUrl);
-      
-      if (symbolResponse.ok) {
-        const symbolData = await symbolResponse.json();
-        if (symbolData.coins && symbolData.coins.length > 0) {
-          const coin = symbolData.coins.find((c: any) => 
-            c.symbol.toLowerCase() === symbol.toLowerCase() && 
-            c.platforms && c.platforms.base
-          );
-          if (coin) {
-            console.log(`Found logo by symbol: ${coin.thumb}`);
-            return coin.thumb;
-          }
-        }
-      }
+      // CoinGecko API calls removed to prevent CORS errors
 
       console.log(`No logo found for ${symbol}`);
       return null;
@@ -334,8 +298,8 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
       try {
         const response = await fetch('/api/ads');
         if (response.ok) {
-          const data = await response.json();
-          setAds(data.ads || []);
+          await response.json();
+
         }
       } catch (error) {
         console.error('Error fetching ads:', error);

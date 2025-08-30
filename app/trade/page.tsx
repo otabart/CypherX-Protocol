@@ -11,7 +11,7 @@ import {
   FaBolt,
   FaStar,
   FaBell,
-  FaList,
+
   FaTrash,
   FaCheck,
   FaArrowUp,
@@ -34,26 +34,13 @@ import { onAuthStateChanged } from "firebase/auth";
 
 import type { User } from "firebase/auth";
 
-import {
-  collection,
-  query,
-  onSnapshot,
-  addDoc,
-  deleteDoc,
-  doc,
-  serverTimestamp,
-  setDoc,
-  getDoc,
-  updateDoc,
-  arrayUnion,
-  arrayRemove,
-} from "firebase/firestore";
-
-import type { Auth } from "firebase/auth";
-
-import type { Firestore } from "firebase/firestore";
-
 import { auth, db } from "@/lib/firebase";
+
+import { useFavorites } from "@/app/hooks/useFavorites";
+
+import { useWatchlists } from "@/app/hooks/useWatchlists";
+
+import { collection, onSnapshot, query, addDoc, deleteDoc, doc, serverTimestamp, setDoc, updateDoc, arrayUnion, arrayRemove, getDoc } from "firebase/firestore";
 
 import { ToastContainer, toast as reactToast } from "react-toastify";
 
@@ -78,11 +65,9 @@ const PULL_TO_REFRESH_THRESHOLD = 80;
 
 
 
-// Explicitly type auth and db
+// Use the new hooks
 
-const firebaseAuth: Auth = auth;
-
-const firestoreDb: Firestore = db;
+const firebaseAuth = auth;
 
 // DexScreenerPair type
 
@@ -129,7 +114,7 @@ const TokenRow = React.memo(({ token, index, style, onTokenClick, favorites, onT
   style: React.CSSProperties;
   onTokenClick: (pool: string) => void;
   favorites: string[];
-  onToggleFavorite: (poolAddress: string) => void;
+  onToggleFavorite: (poolAddress: string) => Promise<void>;
   formatPrice: (price: string | number) => string;
   getColorClass: (value: number) => string;
   getAge: (createdAt?: number) => string;
@@ -149,7 +134,7 @@ const TokenRow = React.memo(({ token, index, style, onTokenClick, favorites, onT
         >
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center space-x-2">
-              <DexIcon dexId={token.dexId} />
+              <DexIcon dexId={token.dexId} symbol={token.symbol} />
               {token.info?.imageUrl && (
                 <Image src={token.info.imageUrl} alt={token.symbol} width={24} height={24} className="w-6 h-6 rounded-full" />
               )}
@@ -209,7 +194,7 @@ const TokenRow = React.memo(({ token, index, style, onTokenClick, favorites, onT
           {token.boosted && <MarketingIcon />}
         </div>
         <div className="flex items-center space-x-3 w-32">
-          <DexIcon dexId={token.dexId} />
+          <DexIcon dexId={token.dexId} symbol={token.symbol} />
           {token.info?.imageUrl && (
             <Image src={token.info.imageUrl} alt={token.symbol} width={24} height={24} className="w-6 h-6 rounded-full" />
           )}
@@ -358,52 +343,69 @@ function formatPrice(price: string | number): string {
 
 function computeTrending(token: TokenData, boostValue: number): number {
   const txns = getTxns24h(token);
-  // Remove hardcoded transaction thresholds - use pure logarithmic scoring
-  const txnScore = Math.log10(txns + 1) * 1.5;
-  const volumeScore = Math.log10((token.volume?.h24 || 0) + 1) * 0.5;
-  const liquidityScore = Math.log10((token.liquidity?.usd || 0) + 1) * 0.3;
+  const volume24h = token.volume?.h24 || 0;
+  const liquidity = token.liquidity?.usd || 0;
+  const marketCap = token.marketCap || 0;
+  
+  // Base requirements - tokens must meet minimum thresholds
+  if (volume24h < 1000 || liquidity < 5000 || txns < 10) {
+    return 0; // Exclude low-quality tokens entirely
+  }
+  
+  // Volume score (most important) - logarithmic scaling with higher weight
+  const volumeScore = Math.log10(volume24h + 1) * 3.0;
+  
+  // Liquidity score - important for stability
+  const liquidityScore = Math.log10(liquidity + 1) * 2.0;
+  
+  // Transaction score - but with diminishing returns and quality checks
+  const txnScore = Math.min(Math.log10(txns + 1) * 1.0, 5.0); // Cap at 5 points
+  
+  // Price movement scoring - only reward significant positive movements
   const priceChange1h = token.priceChange?.h1 ?? 0;
   const priceChange6h = token.priceChange?.h6 ?? 0;
   const priceChange24h = token.priceChange?.h24 ?? 0;
-  const priceMovementScore =
-    (priceChange1h > 0 ? Math.log10(Math.abs(priceChange1h) + 1) * 2 : 0) +
-    (priceChange6h > 0 ? Math.log10(Math.abs(priceChange6h) + 1) * 2 : 0) +
-    (priceChange24h > 0 ? Math.log10(Math.abs(priceChange24h) + 1) * 2 : 0);
-  const consistencyBonus = priceChange1h > 0 && priceChange6h > 0 && priceChange24h > 0 ? 10 : 0;
-  const volumeToMarketCap = token.marketCap ? (token.volume?.h24 || 0) / token.marketCap : 0;
-  const volumeMarketCapScore = Math.log10(volumeToMarketCap + 1) * 2;
+  
+  // Only reward positive price movements above 5%
+  const priceMovementScore = 
+    (priceChange1h > 5 ? Math.min(priceChange1h * 0.5, 15) : 0) +
+    (priceChange6h > 5 ? Math.min(priceChange6h * 0.3, 10) : 0) +
+    (priceChange24h > 5 ? Math.min(priceChange24h * 0.2, 8) : 0);
+  
+  // Volume to market cap ratio - reward high volume relative to market cap
+  const volumeToMarketCap = marketCap > 0 ? volume24h / marketCap : 0;
+  const volumeMarketCapScore = Math.min(Math.log10(volumeToMarketCap + 1) * 2.5, 10);
+  
+  // Consistency bonus - reward tokens with sustained positive movement
+  const consistencyBonus = (priceChange1h > 5 && priceChange6h > 5 && priceChange24h > 5) ? 15 : 0;
+  
+  // Market cap penalty - penalize very small market caps (potential manipulation)
+  const marketCapPenalty = marketCap < 10000 ? -10 : 0;
+  
+  // Volume spike bonus - reward sudden volume increases (but not too much)
+  const volumeSpikeBonus = token.volume?.h1 ? 
+    Math.min(Math.log10((volume24h / (token.volume.h1 * 24 + 1)) + 1) * 1.5, 8) : 0;
+  
+  // Boost score from marketing
   const boostScore = boostValue || 0;
   
-  // Freshness bonus for new tokens (removed age logic)
-  const freshnessBonus = 0;
-  
-  // Volume spike bonus - reward sudden volume increases
-  const volumeSpikeBonus = token.volume?.h24 && token.volume?.h1 ? 
-    Math.max(0, Math.log10(token.volume.h24 / (token.volume.h1 * 24 + 1)) * 3) : 0;
-  
-  // Price momentum bonus - reward consistent positive price movement
-  const priceMomentumBonus = (priceChange1h > 0 && priceChange6h > 0 && priceChange24h > 0) ? 
-    Math.min(20, (priceChange1h + priceChange6h + priceChange24h) / 3) : 0;
-  
-  // Liquidity growth bonus - reward tokens with increasing liquidity
-  const liquidityGrowthBonus = token.liquidity?.usd ? 
-    Math.log10(token.liquidity.usd + 1) * 0.2 : 0;
+  // Quality score - reward tokens with good volume/liquidity ratios
+  const qualityScore = liquidity > 0 ? Math.min((volume24h / liquidity) * 2, 5) : 0;
   
   const baseScore =
-    txnScore +
     volumeScore +
     liquidityScore +
+    txnScore +
     priceMovementScore +
-    consistencyBonus +
     volumeMarketCapScore +
-    boostScore +
-    freshnessBonus +
+    consistencyBonus +
+    marketCapPenalty +
     volumeSpikeBonus +
-    priceMomentumBonus +
-    liquidityGrowthBonus;
+    boostScore +
+    qualityScore;
   
-  // Return base score without age decay
-  return baseScore;
+  // Apply minimum score threshold
+  return Math.max(baseScore, 0);
 }
 
 
@@ -419,8 +421,19 @@ function getTrophy(rank: number): JSX.Element | null {
 }
 
 // DEX Icon component
-const DexIcon = ({ dexId }: { dexId?: string }) => {
+const DexIcon = ({ dexId, symbol }: { dexId?: string; symbol?: string }) => {
   const getDexIcon = (dexId: string) => {
+    // Special case for CBBTC - show Base logo
+    if (symbol?.toUpperCase() === 'CBBTC') {
+      return (
+        <img
+          src="https://i.imgur.com/ym7T9MN.png"
+          alt="Base"
+          className="w-4 h-4 rounded-full object-cover"
+        />
+      );
+    }
+    
     switch (dexId?.toLowerCase()) {
       case 'baseswap':
         return (
@@ -482,57 +495,7 @@ function MarketingIcon(): JSX.Element {
   );
 }
 
-function SkeletonRow(): JSX.Element {
-  return (
-    <tr className="border-b border-blue-500/30">
-      <td className="p-3">
-        <div className="h-6 bg-gray-900 rounded animate-pulse w-12"></div>
-      </td>
-      <td className="p-3">
-        <div className="flex items-center space-x-2">
-          <div className="w-6 h-6 bg-gray-900 rounded-full animate-pulse"></div>
-          <div className="h-6 bg-gray-900 rounded animate-pulse w-24"></div>
-        </div>
-      </td>
-      <td className="p-3 text-right">
-        <div className="h-6 bg-gray-900 rounded animate-pulse w-16 ml-auto"></div>
-      </td>
-      <td className="p-3 text-right">
-        <div className="h-6 bg-gray-900 rounded animate-pulse w-16 ml-auto"></div>
-      </td>
-      <td className="p-3 text-right">
-        <div className="h-6 bg-gray-900 rounded animate-pulse w-16 ml-auto"></div>
-      </td>
-      <td className="p-3 text-right">
-        <div className="h-6 bg-gray-900 rounded animate-pulse w-16 ml-auto"></div>
-      </td>
-      <td className="p-3 text-right">
-        <div className="h-6 bg-gray-900 rounded animate-pulse w-16 ml-auto"></div>
-      </td>
-      <td className="p-3 text-right">
-        <div className="h-6 bg-gray-900 rounded animate-pulse w-16 ml-auto"></div>
-      </td>
-      <td className="p-3 text-right">
-        <div className="h-6 bg-gray-900 rounded animate-pulse w-16 ml-auto"></div>
-      </td>
-      <td className="p-3 text-right">
-        <div className="h-6 bg-gray-900 rounded animate-pulse w-20 ml-auto"></div>
-      </td>
-      <td className="p-3 text-right">
-        <div className="h-6 bg-gray-900 rounded animate-pulse w-20 ml-auto"></div>
-      </td>
-      <td className="p-3 text-right">
-        <div className="h-6 bg-gray-900 rounded animate-pulse w-20 ml-auto"></div>
-      </td>
-      <td className="p-3 text-center">
-        <div className="h-6 bg-gray-900 rounded animate-pulse w-12 mx-auto"></div>
-      </td>
-      <td className="p-3 text-center">
-        <div className="h-6 bg-gray-900 rounded animate-pulse w-12 mx-auto"></div>
-      </td>
-    </tr>
-  );
-}
+
 
 function getBellColor(alerts: Alert[]): string {
   if (alerts.length === 0) return "text-gray-400";
@@ -642,8 +605,8 @@ export default function TokenScreener() {
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [user, setUser] = useState<User | null>(null);
-  const [favorites, setFavorites] = useState<string[]>([]);
-  const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
+  const { favorites, toggleFavorite } = useFavorites();
+  const { watchlists, deleteWatchlist } = useWatchlists();
   const [selectedWatchlist, setSelectedWatchlist] = useState<string>("");
   const [customAlerts, setCustomAlerts] = useState<CustomAlert[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -956,33 +919,13 @@ export default function TokenScreener() {
     }
   }, [tokens, isMobile, loading]);
 
-  // Check Authentication & fetch favorites, watchlists, custom alerts
+  // Check Authentication & fetch custom alerts
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(firebaseAuth, (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        // Combine snapshots for optimization
-        const favoritesRef = collection(firestoreDb, `users/${currentUser.uid}/favorites`);
-        const watchlistsRef = collection(firestoreDb, `users/${currentUser.uid}/watchlists`);
-        const customAlertsRef = collection(firestoreDb, `users/${currentUser.uid}/customAlerts`);
-        const unsubFavs = onSnapshot(favoritesRef, (snapshot) => {
-          const favs = snapshot.docs.map((doc) => doc.id);
-          setFavorites(favs);
-          setWatchlists((prev) => {
-            const updated = prev.filter((wl) => wl.id !== "favorites");
-            return [{ id: "favorites", name: "Favorites", tokens: favs }, ...updated];
-          });
-        });
-        const unsubWatchlists = onSnapshot(watchlistsRef, (snapshot) => {
-          const wls = snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          })) as Watchlist[];
-          setWatchlists((prev) => {
-            const favorites = prev.find((wl) => wl.id === "favorites") || { id: "favorites", name: "Favorites", tokens: [] };
-            return [favorites, ...wls];
-          });
-        });
+        // Fetch custom alerts
+        const customAlertsRef = collection(db, `users/${currentUser.uid}/customAlerts`);
         const unsubCustomAlerts = onSnapshot(customAlertsRef, (snapshot) => {
           const cas = snapshot.docs.map((doc) => ({
             id: doc.id,
@@ -991,13 +934,9 @@ export default function TokenScreener() {
           setCustomAlerts(cas);
         });
         return () => {
-          unsubFavs();
-          unsubWatchlists();
           unsubCustomAlerts();
         };
       } else {
-        setFavorites([]);
-        setWatchlists([]);
         setCustomAlerts([]);
       }
     });
@@ -1008,7 +947,7 @@ export default function TokenScreener() {
   useEffect(() => {
     setLoading(true);
     setError("");
-    const unsubscribe = onSnapshot(collection(firestoreDb, "tokens"), async (snapshot) => {
+            const unsubscribe = onSnapshot(collection(db, "tokens"), async (snapshot) => {
       try {
         const tokenList = snapshot.docs.map((doc) => ({
           poolAddress: doc.data().pool as string || "",
@@ -1094,7 +1033,7 @@ export default function TokenScreener() {
 
   // Fetch Alerts from Firestore and Clean Up
   useEffect(() => {
-    const alertsQuery = query(collection(firestoreDb, "notifications"));
+    const alertsQuery = query(collection(db, "notifications"));
     const unsubscribe = onSnapshot(
       alertsQuery,
       (snapshot) => {
@@ -1172,7 +1111,7 @@ export default function TokenScreener() {
           };
           if (now >= pageLoadTime) {
             newAlerts.push(alert);
-            addDoc(collection(firestoreDb, "notifications"), {
+            addDoc(collection(db, "notifications"), {
               ...alert,
               createdAt: serverTimestamp(),
             }).catch((err) => console.error(`Failed to save volume alert for ${symbol}:`, err));
@@ -1207,7 +1146,7 @@ export default function TokenScreener() {
           };
           if (now >= pageLoadTime) {
             newAlerts.push(alert);
-            addDoc(collection(firestoreDb, "notifications"), {
+            addDoc(collection(db, "notifications"), {
               ...alert,
               createdAt: serverTimestamp(),
             }).catch((err) => console.error(`Failed to save price alert for ${symbol}:`, err));
@@ -1240,7 +1179,7 @@ export default function TokenScreener() {
           };
           if (now >= pageLoadTime) {
             newAlerts.push(alert);
-            addDoc(collection(firestoreDb, "notifications"), {
+            addDoc(collection(db, "notifications"), {
               ...alert,
               createdAt: serverTimestamp(),
             }).catch((err) => console.error(`Failed to save long-term price alert for ${symbol}:`, err));
@@ -1287,11 +1226,11 @@ export default function TokenScreener() {
                   priceChangePercent: changePercent,
                 };
                 newAlerts.push(alert);
-                addDoc(collection(firestoreDb, "notifications"), {
+                addDoc(collection(db, "notifications"), {
                   ...alert,
                   createdAt: serverTimestamp(),
                 }).catch((err) => console.error(`Failed to save custom alert for ${symbol}:`, err));
-                updateDoc(doc(firestoreDb, `users/${user.uid}/customAlerts`, ca.id!), { notified: true });
+                updateDoc(doc(db, `users/${user.uid}/customAlerts`, ca.id!), { notified: true });
                 setNotificationCount((prev) => prev + 1);
                 reactToast(message, getAlertToastOptions(alert));
               }
@@ -1305,11 +1244,11 @@ export default function TokenScreener() {
     checkPriceAndVolume();
     const interval = setInterval(checkPriceAndVolume, PRICE_CHECK_INTERVAL);
     return () => clearInterval(interval);
-  }, [tokens, previousPrices, lastAlertTimes, notificationCount, alerts, customAlerts, user, pageLoadTime]);
+  }, [pageLoadTime]);
 
   // Boost Alerts - Real-time with onSnapshot and expiration
   useEffect(() => {
-    const boostsQuery = query(collection(firestoreDb, "boosts"));
+    const boostsQuery = query(collection(db, "boosts"));
     const unsubscribe = onSnapshot(boostsQuery, (snapshot) => {
       const now = new Date();
       const boostMap: { [poolAddress: string]: number } = {};
@@ -1351,7 +1290,7 @@ export default function TokenScreener() {
           };
           if (Date.now() >= pageLoadTime) {
             newBoostAlerts.push(alert);
-            addDoc(collection(firestoreDb, "notifications"), {
+            addDoc(collection(db, "notifications"), {
               ...alert,
               createdAt: serverTimestamp(),
             }).catch((err) => console.error(`Failed to save boost alert for ${symbol}:`, err));
@@ -1372,7 +1311,7 @@ export default function TokenScreener() {
       }
     });
     return () => unsubscribe();
-  }, [tokens, notificationCount, lastAlertTimes, alerts, pageLoadTime]);
+  }, [pageLoadTime]);
 
   // Top Movers and Losers Alerts
   useEffect(() => {
@@ -1399,7 +1338,7 @@ export default function TokenScreener() {
           };
           if (Date.now() >= pageLoadTime) {
             newAlerts.push(alert);
-            addDoc(collection(firestoreDb, "notifications"), {
+            addDoc(collection(db, "notifications"), {
               ...alert,
               createdAt: serverTimestamp(),
             }).catch((err) =>
@@ -1427,7 +1366,7 @@ export default function TokenScreener() {
           };
           if (Date.now() >= pageLoadTime) {
             newAlerts.push(alert);
-            addDoc(collection(firestoreDb, "notifications"), {
+            addDoc(collection(db, "notifications"), {
               ...alert,
               createdAt: serverTimestamp(),
             }).catch((err) =>
@@ -1447,7 +1386,7 @@ export default function TokenScreener() {
       }
     }, TOP_MOVERS_LOSERS_INTERVAL);
     return () => clearInterval(interval);
-  }, [tokens, notificationCount, alerts, pageLoadTime]);
+  }, [pageLoadTime]);
 
 
 
@@ -1456,7 +1395,7 @@ export default function TokenScreener() {
     let address = token.tokenAddress;
     if (!address) {
       try {
-        const tokenDoc = await getDoc(doc(firestoreDb, "tokens", token.docId!));
+        const tokenDoc = await getDoc(doc(db, "tokens", token.docId!));
         if (tokenDoc.exists()) {
           address = tokenDoc.data().address || "";
         }
@@ -1503,36 +1442,16 @@ export default function TokenScreener() {
     }
   }, []);
 
-  const toggleFavorite = useCallback(
+  const handleToggleFavorite = useCallback(
     async (poolAddress: string) => {
+      console.log("🔍 handleToggleFavorite called with user:", user?.uid, "authenticated:", !!user);
       if (!user) {
         setShowFavoritePopup(true);
         return;
       }
-      const isFavorited = favorites.includes(poolAddress);
-      try {
-        const favoriteDocRef = doc(firestoreDb, `users/${user.uid}/favorites`, poolAddress);
-        if (isFavorited) {
-          setFavorites((prev) => prev.filter((fav) => fav !== poolAddress));
-          await deleteDoc(favoriteDocRef);
-          reactToast.success("Removed from favorites", { position: "bottom-left" });
-        } else {
-          setFavorites((prev) => [...prev, poolAddress]);
-          await setDoc(favoriteDocRef, {
-            poolAddress,
-            createdAt: serverTimestamp(),
-          });
-          reactToast.success("Added to favorites", { position: "bottom-left" });
-        }
-      } catch (err) {
-        console.error("Error toggling favorite:", err);
-        setFavorites((prev) =>
-          isFavorited ? [...prev, poolAddress] : prev.filter((fav) => fav !== poolAddress)
-        );
-        reactToast.error("Error updating favorites", { position: "bottom-left" });
-      }
+      await toggleFavorite(poolAddress);
     },
-    [user, favorites]
+    [user, toggleFavorite]
   );
 
   const handleOpenAddToWatchlist = useCallback((poolAddress: string) => {
@@ -1552,7 +1471,7 @@ export default function TokenScreener() {
         const isCurrentlyIn = wl.tokens.includes(selectedTokenForWatchlist);
         if (isSelected !== isCurrentlyIn) {
           if (wl.id === "favorites") {
-            const favoriteDocRef = doc(firestoreDb, `users/${user.uid}/favorites`, selectedTokenForWatchlist);
+            const favoriteDocRef = doc(db, `users/${user.uid}/favorites`, selectedTokenForWatchlist);
             if (isSelected) {
               await setDoc(favoriteDocRef, {
                 poolAddress: selectedTokenForWatchlist,
@@ -1562,7 +1481,7 @@ export default function TokenScreener() {
               await deleteDoc(favoriteDocRef);
             }
           } else {
-            const watchlistDocRef = doc(firestoreDb, `users/${user.uid}/watchlists`, wl.id);
+            const watchlistDocRef = doc(db, `users/${user.uid}/watchlists`, wl.id);
             await updateDoc(watchlistDocRef, {
               tokens: isSelected ? arrayUnion(selectedTokenForWatchlist) : arrayRemove(selectedTokenForWatchlist),
             });
@@ -1572,7 +1491,24 @@ export default function TokenScreener() {
       setShowAddToWatchlistModal(false);
       setSelectedTokenForWatchlist(null);
       setWatchlistSelections([]);
-      reactToast.success("Watchlists updated", { position: "bottom-left" });
+      
+      const selectedCount = watchlistSelections.length;
+      const tokenSymbol = tokens.find(t => t.poolAddress === selectedTokenForWatchlist)?.symbol || 'Token';
+      
+      if (selectedCount === 0) {
+        reactToast.info(`${tokenSymbol} removed from all watchlists`, { 
+          position: "bottom-left"
+        });
+      } else if (selectedCount === 1) {
+        const watchlistName = watchlists.find(w => w.id === watchlistSelections[0])?.name || 'Watchlist';
+        reactToast.success(`${tokenSymbol} added to ${watchlistName}`, { 
+          position: "bottom-left"
+        });
+      } else {
+        reactToast.success(`${tokenSymbol} added to ${selectedCount} watchlists`, { 
+          position: "bottom-left"
+        });
+      }
     } catch (err) {
       console.error("Error updating watchlists:", err);
       reactToast.error("Error updating watchlists", { position: "bottom-left" });
@@ -1586,7 +1522,7 @@ export default function TokenScreener() {
         reactToast.error("Invalid token address. Please try again.", { position: "bottom-left" });
         return;
       }
-      const targetUrl = `/token-scanner/${pool}/chart`;
+      const targetUrl = `/trade/${pool}/chart`;
       router.push(targetUrl);
       setTimeout(() => {
         if (window.location.pathname !== targetUrl) {
@@ -1649,7 +1585,7 @@ export default function TokenScreener() {
   const handleCreateWatchlist = useCallback(async () => {
     if (!user || !newWatchlistName) return;
     try {
-      const docRef = await addDoc(collection(firestoreDb, `users/${user.uid}/watchlists`), {
+      const docRef = await addDoc(collection(db, `users/${user.uid}/watchlists`), {
         name: newWatchlistName,
         tokens: [],
         createdAt: serverTimestamp(),
@@ -1657,7 +1593,9 @@ export default function TokenScreener() {
       setShowCreateWatchlistModal(false);
       setNewWatchlistName("");
       setSelectedWatchlist(docRef.id);
-      reactToast.success("Watchlist created", { position: "bottom-left" });
+      reactToast.success(`Watchlist "${newWatchlistName}" created successfully`, { 
+        position: "bottom-left"
+      });
     } catch (err) {
       console.error("Error creating watchlist:", err);
       reactToast.error("Error creating watchlist", { position: "bottom-left" });
@@ -1677,7 +1615,7 @@ export default function TokenScreener() {
     }
     try {
       if (editingCustomAlert && editingCustomAlert.id) {
-        const docRef = doc(firestoreDb, `users/${user.uid}/customAlerts`, editingCustomAlert.id);
+        const docRef = doc(db, `users/${user.uid}/customAlerts`, editingCustomAlert.id);
         await updateDoc(docRef, {
           poolAddress,
           type,
@@ -1691,7 +1629,7 @@ export default function TokenScreener() {
         );
         reactToast.success("Custom alert updated", { position: "bottom-left" });
       } else {
-        const docRef = await addDoc(collection(firestoreDb, `users/${user.uid}/customAlerts`), {
+        const docRef = await addDoc(collection(db, `users/${user.uid}/customAlerts`), {
           poolAddress,
           type,
           threshold: Number(threshold),
@@ -1732,7 +1670,7 @@ export default function TokenScreener() {
   const handleResetNotified = async (id: string) => {
     if (!user || !id) return;
     try {
-      const docRef = doc(firestoreDb, `users/${user.uid}/customAlerts`, id);
+      const docRef = doc(db, `users/${user.uid}/customAlerts`, id);
       await updateDoc(docRef, { notified: false });
       setCustomAlerts((prev) =>
         prev.map((ca) =>
@@ -1901,7 +1839,19 @@ export default function TokenScreener() {
           scrollbar-color: #374151 #1f2937;
         }
       `}</style>
-      <ToastContainer position="bottom-left" autoClose={2000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="dark" />
+      <ToastContainer 
+        position="bottom-left" 
+        autoClose={2000} 
+        hideProgressBar={false} 
+        newestOnTop={false} 
+        closeOnClick 
+        rtl={false} 
+        pauseOnFocusLoss 
+        draggable 
+        pauseOnHover 
+        theme="dark"
+        style={{ zIndex: 99999999 }}
+      />
       {/* Error Toast */}
       {error && (
         <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-900 text-gray-200 font-sans py-2 px-4 rounded-lg shadow-xl z-50 border border-blue-500/30 uppercase">
@@ -2225,69 +2175,198 @@ export default function TokenScreener() {
       )}
       {/* Create Watchlist Modal */}
       {showCreateWatchlistModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30 md:w-96">
-            <button onClick={() => setShowCreateWatchlistModal(false)} className="absolute top-2 right-2 text-xl font-bold">
-              ×
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="relative bg-gray-900 text-gray-200 p-6 rounded-xl shadow-2xl w-full max-w-md border border-blue-500/30"
+          >
+            <button 
+              onClick={() => setShowCreateWatchlistModal(false)} 
+              className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors p-1 rounded-full hover:bg-gray-800"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
-            <h2 className="text-xl font-bold mb-4 font-sans uppercase">Create Watchlist</h2>
-            <input
-              type="text"
-              value={newWatchlistName}
-              onChange={(e) => setNewWatchlistName(e.target.value)}
-              className="w-full border border-blue-500/30 p-2 rounded font-sans bg-gray-900 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase mb-4"
-              placeholder="Watchlist Name"
-              required
-            />
-            <div className="flex justify-end">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleCreateWatchlist}
-                className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded font-sans uppercase border border-blue-500/30"
+            
+            <div className="flex items-center space-x-3 mb-6">
+              <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
+                <svg className="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-xl font-bold font-sans text-white">Create Watchlist</h2>
+                <p className="text-sm text-gray-400">Organize your favorite tokens</p>
+              </div>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Watchlist Name</label>
+                <input
+                  type="text"
+                  value={newWatchlistName}
+                  onChange={(e) => setNewWatchlistName(e.target.value)}
+                  className="w-full border border-gray-700 p-3 rounded-lg font-sans bg-gray-800 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  placeholder="e.g., Top Performers, DeFi Gems"
+                  required
+                  maxLength={30}
+                />
+                <p className="text-xs text-gray-500 mt-1">{newWatchlistName.length}/30 characters</p>
+              </div>
+              
+              <div className="flex items-center space-x-2 text-sm text-gray-400">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>Watchlists help you track specific groups of tokens</span>
+              </div>
+            </div>
+            
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                onClick={() => setShowCreateWatchlistModal(false)}
+                className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
               >
-                Create
+                Cancel
+              </button>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleCreateWatchlist}
+                disabled={!newWatchlistName.trim()}
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white py-2 px-6 rounded-lg font-medium transition-colors"
+              >
+                Create Watchlist
               </motion.button>
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
       {/* Add to Watchlist Modal */}
       {showAddToWatchlistModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="relative bg-gray-900 text-gray-200 p-6 rounded-lg shadow-xl w-80 border border-blue-500/30 md:w-96">
-            <button onClick={() => setShowAddToWatchlistModal(false)} className="absolute top-2 right-2 text-xl font-bold">
-              ×
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="relative bg-gray-900 text-gray-200 p-6 rounded-xl shadow-2xl w-full max-w-md border border-blue-500/30"
+          >
+            <button 
+              onClick={() => setShowAddToWatchlistModal(false)} 
+              className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors p-1 rounded-full hover:bg-gray-800"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
-            <h2 className="text-xl font-bold mb-4 font-sans uppercase">Add to Watchlists</h2>
-            <div className="space-y-2">
-              {watchlists.map((wl) => (
-                <div key={wl.id} className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={watchlistSelections.includes(wl.id)}
-                    onChange={(e) => {
-                      setWatchlistSelections((prev) =>
-                        e.target.checked ? [...prev, wl.id] : prev.filter((id) => id !== wl.id)
-                      );
-                    }}
-                    className="mr-2"
-                  />
-                  <label className="font-sans uppercase">{wl.name}</label>
+            
+            <div className="flex items-center space-x-3 mb-6">
+              <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
+                <svg className="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-xl font-bold font-sans text-white">Add to Watchlists</h2>
+                <p className="text-sm text-gray-400">Select watchlists to add this token</p>
+              </div>
+            </div>
+            
+            {watchlists.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                  </svg>
                 </div>
-              ))}
-            </div>
-            <div className="flex justify-end mt-4">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleUpdateWatchlistSelections}
-                className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded font-sans uppercase border border-blue-500/30"
-              >
-                Update
-              </motion.button>
-            </div>
-          </div>
+                <p className="text-gray-400 mb-4">No watchlists found</p>
+                <button
+                  onClick={() => {
+                    setShowAddToWatchlistModal(false);
+                    setShowCreateWatchlistModal(true);
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg font-medium transition-colors"
+                >
+                  Create First Watchlist
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-3 max-h-64 overflow-y-auto scrollbar-hide">
+                  {watchlists.map((wl) => {
+                    const tokenCount = wl.tokens.length;
+                    const isSelected = watchlistSelections.includes(wl.id);
+                    return (
+                      <motion.div
+                        key={wl.id}
+                        whileHover={{ scale: 1.02 }}
+                        className={`p-3 rounded-lg border transition-all cursor-pointer ${
+                          isSelected 
+                            ? 'bg-blue-500/20 border-blue-500/50' 
+                            : 'bg-gray-800/50 border-gray-700 hover:bg-gray-800'
+                        }`}
+                        onClick={() => {
+                          setWatchlistSelections((prev) =>
+                            isSelected ? prev.filter((id) => id !== wl.id) : [...prev, wl.id]
+                          );
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors flex-shrink-0 ${
+                              isSelected 
+                                ? 'bg-blue-500 border-blue-500' 
+                                : 'border-gray-600'
+                            }`}>
+                              {isSelected && (
+                                <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-medium text-white truncate">{wl.name}</p>
+                              <p className="text-sm text-gray-400">{tokenCount} token{tokenCount !== 1 ? 's' : ''}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span className={`text-xs px-2 py-1 rounded-full ${
+                              isSelected 
+                                ? 'bg-blue-500/20 text-blue-400' 
+                                : 'bg-gray-700 text-gray-400'
+                            }`}>
+                              {isSelected ? 'Selected' : 'Add'}
+                            </span>
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+                
+                <div className="flex justify-end space-x-3 mt-6">
+                  <button
+                    onClick={() => setShowAddToWatchlistModal(false)}
+                    className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleUpdateWatchlistSelections}
+                    className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-6 rounded-lg font-medium transition-colors"
+                  >
+                    Update Watchlists
+                  </motion.button>
+                </div>
+              </>
+            )}
+          </motion.div>
         </div>
       )}
       {/* Custom Alert Modal */}
@@ -2568,28 +2647,79 @@ export default function TokenScreener() {
         {/* Watchlist Selector */}
         {viewMode === "watchlist" && (
           <div className="bg-gray-950 p-4 border-b border-gray-800 shadow-inner border-t border-gray-800">
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
-              <select
-                value={selectedWatchlist || ""}
-                onChange={(e) => setSelectedWatchlist(e.target.value)}
-                className="flex-1 bg-gray-800/50 text-gray-200 border border-blue-500/30 p-3 rounded-lg font-sans text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select Watchlist</option>
-                {watchlists.map((wl) => (
-                  <option key={wl.id} value={wl.id}>
-                    {wl.name}
-                  </option>
-                ))}
-              </select>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setShowCreateWatchlistModal(true)}
-                className="flex-1 sm:flex-none bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-3 px-4 rounded-lg font-sans text-sm uppercase border border-blue-500/30 transition-colors"
-              >
-                New Watchlist
-              </motion.button>
+            <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4">
+              <div className="flex space-x-2">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setShowCreateWatchlistModal(true)}
+                  className="bg-gray-800/50 hover:bg-gray-700/50 text-gray-200 py-3 px-4 rounded-lg font-sans text-sm transition-colors flex items-center space-x-2 border border-gray-700/50"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  <span>New Watchlist</span>
+                </motion.button>
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                <div className="w-64 relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                    </svg>
+                  </div>
+                  <select
+                    value={selectedWatchlist || ""}
+                    onChange={(e) => setSelectedWatchlist(e.target.value)}
+                    className="w-full bg-gray-800/50 text-gray-200 border border-blue-500/30 p-3 pl-10 rounded-lg font-sans text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                  >
+                    <option value="">Select a watchlist</option>
+                    {watchlists.map((wl) => (
+                      <option key={wl.id} value={wl.id}>
+                        {wl.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {selectedWatchlist && watchlists.length > 1 && (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={async () => {
+                      const watchlistName = watchlists.find(w => w.id === selectedWatchlist)?.name || 'this watchlist';
+                      if (confirm(`Are you sure you want to delete "${watchlistName}"? This action cannot be undone.`)) {
+                        await deleteWatchlist(selectedWatchlist);
+                        setSelectedWatchlist(watchlists.find(w => w.id !== selectedWatchlist)?.id || '');
+                      }
+                    }}
+                    className="bg-gray-700/50 hover:bg-gray-600/50 text-gray-200 hover:text-red-400 py-3 px-4 rounded-lg font-sans text-sm transition-colors flex items-center space-x-2 border border-gray-600/50"
+                    title="Delete watchlist"
+                  >
+                    <FaTrash className="w-4 h-4" />
+                    <span>Delete</span>
+                  </motion.button>
+                )}
+              </div>
             </div>
+            
+            {selectedWatchlist && (
+              <div className="mt-3 flex items-center justify-between text-sm text-gray-400">
+                <div className="flex items-center space-x-4">
+                  <span>
+                    {watchlists.find(w => w.id === selectedWatchlist)?.tokens.length || 0} tokens in this watchlist
+                  </span>
+                  <span>•</span>
+                  <span>Last updated: {new Date().toLocaleDateString()}</span>
+                </div>
+                <button
+                  onClick={() => setSelectedWatchlist("")}
+                  className="text-blue-400 hover:text-blue-300 transition-colors"
+                >
+                  View All Tokens
+                </button>
+              </div>
+            )}
           </div>
         )}
         {/* Main Table or Alerts Feed */}
@@ -2875,7 +3005,7 @@ export default function TokenScreener() {
                                     whileTap={{ scale: 0.95 }}
                                     onClick={() => {
                                       if (ca.id) {
-                                        deleteDoc(doc(firestoreDb, `users/${user?.uid ?? ''}/customAlerts`, ca.id));
+                                        deleteDoc(doc(db, `users/${user?.uid ?? ''}/customAlerts`, ca.id));
                                         reactToast.success("Alert removed", { position: "bottom-left" });
                                       }
                                     }}
@@ -3027,7 +3157,7 @@ export default function TokenScreener() {
                                 onClick={() => handleTokenClick(token.poolAddress)}
                                 className="flex items-center space-x-2 hover:text-blue-400 cursor-pointer transition-colors duration-150"
                               >
-                                <DexIcon dexId={token.dexId} />
+                                <DexIcon dexId={token.dexId} symbol={token.symbol} />
                                 {token.info && (
                                   <Image
                                     src={token.info.imageUrl || "/fallback.png"}
@@ -3101,7 +3231,7 @@ export default function TokenScreener() {
                                   <FaCopy className="w-4 h-4" />
                                 </button>
                                 <button
-                                  onClick={() => toggleFavorite(token.poolAddress)}
+                                  onClick={() => handleToggleFavorite(token.poolAddress)}
                                   className="p-1.5 rounded transition-colors duration-200 text-gray-400"
                                   title={
                                     favorites.includes(token.poolAddress)

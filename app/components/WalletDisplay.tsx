@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { FaWallet, FaChevronDown } from "react-icons/fa";
 import { SiEthereum } from "react-icons/si";
 import { useWalletSystem } from "@/app/providers";
@@ -22,7 +22,8 @@ const WalletDisplay: React.FC<WalletDisplayProps> = ({
 }) => {
   const { setSelfCustodialWallet, setWalletLoading } = useWalletSystem();
   const [walletData, setWalletData] = useState<WalletData | null>(null);
-  const [ethBalance, setEthBalance] = useState<string>("0.0");
+  const [ethBalance, setEthBalance] = useState<string>("");
+  const walletLoadedRef = useRef(false);
 
 
 
@@ -49,7 +50,7 @@ const WalletDisplay: React.FC<WalletDisplayProps> = ({
           address: address,
           isConnected: true,
           ethBalance: data.ethBalance,
-          tokenBalance: data.tokenBalance || "0.0"
+          tokenBalance: data.tokenBalance || ""
         });
       } else {
         throw new Error(data.error || 'Failed to fetch balance');
@@ -62,6 +63,8 @@ const WalletDisplay: React.FC<WalletDisplayProps> = ({
 
   // Load wallet from localStorage on component mount
   useEffect(() => {
+    if (walletLoadedRef.current) return;
+    
     const loadWallet = () => {
       if (typeof window !== "undefined") {
         const storedWallet = localStorage.getItem("cypherx_wallet");
@@ -76,8 +79,8 @@ const WalletDisplay: React.FC<WalletDisplayProps> = ({
             setSelfCustodialWallet({
               address: data.address,
               isConnected: true,
-              ethBalance: "0.0",
-              tokenBalance: "0.0"
+              ethBalance: "",
+              tokenBalance: ""
             });
             
             fetchBalance(data.address);
@@ -90,11 +93,12 @@ const WalletDisplay: React.FC<WalletDisplayProps> = ({
         
         // Set loading to false regardless of whether wallet was found
         setWalletLoading(false);
+        walletLoadedRef.current = true;
       }
     };
 
     loadWallet();
-  }, [setSelfCustodialWallet, setWalletLoading]);
+  }, []);
 
 
 

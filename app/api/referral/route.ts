@@ -3,11 +3,9 @@ import { adminDb } from '@/lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 
 interface ReferralRequest {
-  walletAddress: string;
   userId: string;
   referralCode: string;
   action: 'create_referral' | 'use_referral' | 'earn_referral_bonus';
-  referredWallet?: string;
   referredUserId?: string;
   swapVolumeUSD?: number;
 }
@@ -16,16 +14,14 @@ export async function POST(request: Request) {
   try {
     const body: ReferralRequest = await request.json();
     const { 
-      walletAddress, 
       userId, 
       referralCode, 
       action,
-      referredWallet,
       referredUserId,
       swapVolumeUSD
     } = body;
 
-    if (!walletAddress || !userId || !referralCode || !action) {
+    if (!userId || !referralCode || !action) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -37,14 +33,13 @@ export async function POST(request: Request) {
     switch (action) {
       case 'create_referral':
         // Generate unique referral code for user
-        const userQuery = db.collection('users').where('walletAddress', '==', walletAddress);
-        const userSnapshot = await userQuery.get();
+        const userDocRef = db.collection('users').doc(userId);
+        const userDoc = await userDocRef.get();
         
-        if (!userSnapshot.empty) {
-          const userDoc = userSnapshot.docs[0];
-          const referralCode = `REF_${walletAddress.slice(2, 8).toUpperCase()}_${Date.now().toString(36)}`;
+        if (userDoc.exists) {
+          const referralCode = `REF_${userId.slice(0, 8).toUpperCase()}_${Date.now().toString(36)}`;
           
-          await db.collection('users').doc(userDoc.id).update({
+          await userDocRef.update({
             referralCode,
             referralCount: FieldValue.increment(0),
             referralEarnings: FieldValue.increment(0),
@@ -62,8 +57,8 @@ export async function POST(request: Request) {
         break;
 
       case 'use_referral':
-        if (!referredWallet || !referredUserId) {
-          return NextResponse.json({ error: 'Referred wallet and user ID required' }, { status: 400 });
+        if (!referredUserId) {
+          return NextResponse.json({ error: 'Referred user ID required' }, { status: 400 });
         }
 
         // Find referrer by referral code
@@ -75,15 +70,14 @@ export async function POST(request: Request) {
         }
 
         const referrerDoc = referrerSnapshot.docs[0];
-        const referrerData = referrerDoc.data();
         
         // Check if user has already been referred
-        const referredUserQuery = db.collection('users').where('walletAddress', '==', referredWallet);
-        const referredUserSnapshot = await referredUserQuery.get();
+        const referredUserDocRef = db.collection('users').doc(referredUserId);
+        const referredUserDoc = await referredUserDocRef.get();
         
-        if (!referredUserSnapshot.empty) {
-          const referredUserData = referredUserSnapshot.docs[0].data();
-          if (referredUserData.referredBy) {
+        if (referredUserDoc.exists) {
+          const referredUserData = referredUserDoc.data();
+          if (referredUserData && referredUserData.referredBy) {
             return NextResponse.json({ error: 'User has already been referred' }, { status: 400 });
           }
         }
@@ -101,20 +95,17 @@ export async function POST(request: Request) {
         });
 
         // Update referred user
-        if (!referredUserSnapshot.empty) {
-          await db.collection('users').doc(referredUserSnapshot.docs[0].id).update({
-            referredBy: referrerDoc.id,
-            referredByWallet: referrerData.walletAddress,
+        if (referredUserDoc.exists) {
+          await referredUserDocRef.update({
+            referredBy: referralCode,
             points: FieldValue.increment(referredPoints),
             lastActivity: FieldValue.serverTimestamp(),
           });
         } else {
           // Create new referred user
-          await db.collection('users').add({
-            walletAddress: referredWallet,
+          await referredUserDocRef.set({
             points: referredPoints,
-            referredBy: referrerDoc.id,
-            referredByWallet: referrerData.walletAddress,
+            referredBy: referralCode,
             createdAt: FieldValue.serverTimestamp(),
             lastActivity: FieldValue.serverTimestamp(),
           });
@@ -123,11 +114,10 @@ export async function POST(request: Request) {
         // Record activities
         await db.collection('user_activities').add({
           userId: referrerDoc.id,
-          walletAddress: referrerData.walletAddress,
           action: 'referral_bonus',
           points: referrerPoints,
           metadata: {
-            referredWallet,
+            referredUserId,
             referralCode,
           },
           createdAt: FieldValue.serverTimestamp(),
@@ -135,11 +125,10 @@ export async function POST(request: Request) {
 
         await db.collection('user_activities').add({
           userId: referredUserId,
-          walletAddress: referredWallet,
           action: 'referred_user_bonus',
           points: referredPoints,
           metadata: {
-            referrerWallet: referrerData.walletAddress,
+            referrerUserId: referrerDoc.id,
             referralCode,
           },
           createdAt: FieldValue.serverTimestamp(),
@@ -161,11 +150,11 @@ export async function POST(request: Request) {
 
         const bonusPoints = Math.floor(swapVolumeUSD / 1000) * 25; // 25 points per $1000
 
-        const userQuery2 = db.collection('users').where('walletAddress', '==', walletAddress);
-        const userSnapshot2 = await userQuery2.get();
+        const userDocRef2 = db.collection('users').doc(userId);
+        const userDoc2 = await userDocRef2.get();
         
-        if (!userSnapshot2.empty) {
-          await db.collection('users').doc(userSnapshot2.docs[0].id).update({
+        if (userDoc2.exists) {
+          await userDocRef2.update({
             points: FieldValue.increment(bonusPoints),
             referralEarnings: FieldValue.increment(bonusPoints),
             lastActivity: FieldValue.serverTimestamp(),
@@ -173,7 +162,6 @@ export async function POST(request: Request) {
 
           await db.collection('user_activities').add({
             userId,
-            walletAddress,
             action: 'referral_swap_bonus',
             points: bonusPoints,
             metadata: {
@@ -206,10 +194,10 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const walletAddress = searchParams.get('walletAddress');
+    const userId = searchParams.get('userId');
 
-    if (!walletAddress) {
-      return NextResponse.json({ error: 'Wallet address required' }, { status: 400 });
+    if (!userId) {
+      return NextResponse.json({ error: 'User ID required' }, { status: 400 });
     }
 
     const db = adminDb();
@@ -217,14 +205,18 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Database connection failed' }, { status: 500 });
     }
 
-    const userQuery = db.collection('users').where('walletAddress', '==', walletAddress);
-    const userSnapshot = await userQuery.get();
+    const userDocRef = db.collection('users').doc(userId);
+    const userDoc = await userDocRef.get();
     
-    if (userSnapshot.empty) {
+    if (!userDoc.exists) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    const userData = userSnapshot.docs[0].data();
+    const userData = userDoc.data();
+    
+    if (!userData) {
+      return NextResponse.json({ error: 'User data not found' }, { status: 404 });
+    }
     
     return NextResponse.json({
       success: true,
@@ -232,7 +224,6 @@ export async function GET(request: Request) {
       referralCount: userData.referralCount || 0,
       referralEarnings: userData.referralEarnings || 0,
       referredBy: userData.referredBy || null,
-      referredByWallet: userData.referredByWallet || null,
     });
 
   } catch (error) {

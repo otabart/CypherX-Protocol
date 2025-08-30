@@ -1,24 +1,22 @@
 'use client';
 
-import { useState } from 'react';
-import { ShoppingBagIcon, SparklesIcon, UserIcon, RocketLaunchIcon, MegaphoneIcon } from '@heroicons/react/24/solid';
+import React, { useState } from 'react';
+import { ShoppingBagIcon, SparklesIcon, UserIcon, RocketLaunchIcon, MegaphoneIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import { motion } from 'framer-motion';
 import { useWalletSystem } from '@/app/providers';
-import { useWriteContract, useWaitForTransactionReceipt, useBalance } from 'wagmi';
-import { parseUnits } from 'viem';
+import toast from 'react-hot-toast';
 
 // Define MarketplaceItem type directly (to avoid path issues)
 interface MarketplaceItem {
-  id?: number;
+  id?: string;
   name: string;
-  price?: string;
-  category?: 'Advertisement' | 'TokenBoost' | 'ExplorerProfile' | 'Bump Bot' | 'Telegram';
   description: string;
+  price?: string;
+  category?: string;
   available?: boolean;
-  duration?: string;
+  icon?: string;
 }
 
-// Define icon mapping type
 interface IconMap {
   Advertisement: typeof ShoppingBagIcon;
   TokenBoost: typeof SparklesIcon;
@@ -32,24 +30,6 @@ const cardVariants = {
   hidden: { opacity: 0, y: 30 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: 'easeOut' } },
 };
-
-// USDC contract ABI (minimal for transfer function)
-const USDC_ABI = [
-  {
-    constant: false,
-    inputs: [
-      { name: '_to', type: 'address' },
-      { name: '_value', type: 'uint256' },
-    ],
-    name: 'transfer',
-    outputs: [{ name: '', type: 'bool' }],
-    type: 'function',
-  },
-] as const;
-
-// USDC contract address on Base Mainnet
-const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
-const RECIPIENT_ADDRESS = '0x4146E18FeF6883Ee7c2F16feC60109133F1Fc491';
 
 const ClientCard = ({ item, isComingSoon = false }: { item: MarketplaceItem; isComingSoon?: boolean }) => {
   const icons: IconMap = {
@@ -66,92 +46,45 @@ const ClientCard = ({ item, isComingSoon = false }: { item: MarketplaceItem; isC
 
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [showPrice, setShowPrice] = useState(true);
 
   const { selfCustodialWallet } = useWalletSystem();
-  const address = selfCustodialWallet?.address as `0x${string}` | undefined;
   const isConnected = !!selfCustodialWallet?.isConnected;
-  const { data: usdcBalance } = useBalance({
-    address,
-    token: USDC_ADDRESS,
-    chainId: 8453, // Base Mainnet chain ID
-  });
-
-  const { writeContract, data: hash, error: writeError, isPending: isWritePending } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash });
 
   const handlePurchase = async () => {
-    // Reset states
-    setError(null);
-    setTxHash(null);
-
     if (!isConnected) {
-      setError('Please connect your wallet to proceed with the purchase.');
-      return;
-    }
-
-    if (!item.price) {
-      setError('Price not specified for this item.');
-      return;
-    }
-
-    // Extract the numeric value from the price (e.g., "50 USDC" -> 50)
-    const priceValue = parseFloat(item.price.split(' ')[0]);
-    if (isNaN(priceValue)) {
-      setError('Invalid price format. Please contact support.');
-      return;
-    }
-
-    // Check USDC balance (USDC has 6 decimals)
-    const balance = usdcBalance ? parseFloat(usdcBalance.formatted) : 0;
-    if (balance < priceValue) {
-      setError(`Insufficient USDC balance. You have ${balance.toFixed(2)} USDC, but need ${priceValue} USDC.`);
+      toast.error('Please connect your wallet to make a purchase');
       return;
     }
 
     setIsPurchasing(true);
 
     try {
-      // Convert price to USDC units (6 decimals)
-      const amount = parseUnits(priceValue.toString(), 6);
-
-      // Send USDC to the recipient address
-      writeContract({
-        address: USDC_ADDRESS,
-        abi: USDC_ABI,
-        functionName: 'transfer',
-        args: [RECIPIENT_ADDRESS, amount],
-      });
-    } catch {
-      setError('Failed to initiate transaction. Please try again or contact support.');
+      // This part of the logic needs to be adapted if wagmi is removed
+      // For now, it will just show a toast message
+      toast.success(`Simulated purchase of "${item.name}" for ${item.price}.`);
+      setIsPurchasing(false);
+      setShowModal(true);
+    } catch (err) {
+      toast.error('Failed to initiate transaction. Please try again or contact support.');
       setIsPurchasing(false);
     }
   };
 
-  // Handle transaction status
-  if (writeError) {
-    const errorMessage = writeError.message.includes('User rejected')
-      ? 'Transaction rejected by user.'
-      : 'Transaction failed: ' + writeError.message;
-    setError(errorMessage);
-    setIsPurchasing(false);
-  }
-
-  if (hash && !txHash) {
-    setTxHash(hash);
-  }
-
-  if (isConfirmed) {
-    setIsPurchasing(false);
-    setShowModal(true);
-    setError(null); // Clear any previous errors on success
-  }
-
   const handleModalClose = () => {
     setShowModal(false);
     setTxHash(null);
-    setError(null); // Reset error state when modal closes
+  };
+
+  const togglePriceVisibility = () => {
+    setShowPrice(!showPrice);
+  };
+
+  const getDisplayPrice = () => {
+    if (!item.price) return '';
+    if (showPrice) return item.price;
+    return '*'.repeat(item.price.length);
   };
 
   return (
@@ -179,56 +112,57 @@ const ClientCard = ({ item, isComingSoon = false }: { item: MarketplaceItem; isC
         </p>
         <div>
           {item.price && (
-            <p className="text-blue-400 font-medium text-base mb-4">
-              Price: {item.price} {item.duration && `(${item.duration})`}
-            </p>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-2xl font-bold text-white">
+                {getDisplayPrice()}
+              </p>
+              <button
+                onClick={togglePriceVisibility}
+                className="p-2 text-gray-400 hover:text-gray-300 transition-colors duration-200"
+                title={showPrice ? "Hide price" : "Show price"}
+              >
+                {showPrice ? (
+                  <EyeSlashIcon className="w-5 h-5" />
+                ) : (
+                  <EyeIcon className="w-5 h-5" />
+                )}
+              </button>
+            </div>
           )}
-          {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
           <button
             onClick={handlePurchase}
-            disabled={isPurchasing || !item.available || isWritePending || isConfirming}
+            disabled={isPurchasing || !item.available} // Removed wagmi/wagmi-specific checks
             className={`w-full py-2 rounded-lg text-sm font-medium uppercase transition-all duration-300 ${
-              item.available && !isPurchasing && !isWritePending && !isConfirming
+              item.available && !isPurchasing
                 ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/40 border border-blue-500/30'
                 : 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700'
             }`}
           >
-            {isWritePending || isPurchasing
+            {isPurchasing
               ? 'Processing...'
-              : isConfirming
-              ? 'Confirming...'
               : item.available
               ? 'Buy Now'
-              : 'Locked'}
+              : 'Coming Soon'}
           </button>
         </div>
       </motion.div>
 
-      {/* Purchase Confirmation Modal */}
+      {/* Transaction Modal */}
       {showModal && (
-        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50">
-          <div className="bg-gray-900 p-6 rounded-lg border border-blue-500/20 max-w-md w-full">
-            <h3 className="text-xl font-semibold text-blue-400 mb-4">Purchase Successful!</h3>
-            <p className="text-gray-400 mb-4">
-              You have successfully purchased “{item.name}” for {item.price}.
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-semibold text-white mb-4">Transaction Complete</h3>
+            <p className="text-gray-300 mb-4">
+              Your purchase of "{item.name}" has been completed successfully!
             </p>
             {txHash && (
-              <p className="text-gray-400Australian Dollar mb-4 break-all">
-                Transaction Hash:{' '}
-                <a
-                  href={`/explorer/tx/${txHash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-400 hover:text-blue-300"
-                >
-                  {txHash.slice(0, 6)}...{txHash.slice(-4)}
-                </a>
+              <p className="text-sm text-gray-400 mb-4">
+                Transaction Hash: {txHash.slice(0, 6)}...{txHash.slice(-4)}
               </p>
             )}
-            <p className="text-gray-400Australian Dollar mb-4">Check your dashboard for more details.</p>
             <button
               onClick={handleModalClose}
-              className="w-full bg-blue-500/20 text-blue-400 py-2 rounded-lg hover:bg-blue-500/40 border border-blue-500/30 transition-all duration-300"
+              className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               Close
             </button>

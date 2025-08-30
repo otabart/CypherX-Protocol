@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAccount } from "wagmi";
 import toast from "react-hot-toast";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import PointTransactionModal from "./PointTransactionModal";
+import { useWalletSystem } from "@/app/providers";
 
 interface IndexVotingModalProps {
   isOpen: boolean;
@@ -57,7 +57,8 @@ export default function IndexVotingModal({
   indexName, 
   currentTokens 
 }: IndexVotingModalProps) {
-  const { address: walletAddress } = useAccount();
+  const { selfCustodialWallet } = useWalletSystem();
+  const walletAddress = selfCustodialWallet?.address;
   const [votingData, setVotingData] = useState<VotingData | null>(null);
   const [loading, setLoading] = useState(false);
   const [tokenVotes, setTokenVotes] = useState<{[key: string]: 'keep' | 'remove' | 'weight_change'}>({});
@@ -300,9 +301,11 @@ export default function IndexVotingModal({
     }
 
     // Check if all tokens have been voted on
-    const allTokensVoted = currentTokens.every(token => tokenVotes[token.address]);
+    const tokensToUse = currentTokens.length > 0 ? currentTokens : fetchedTokens;
+    const allTokensVoted = tokensToUse.every(token => tokenVotes[token.address]);
     if (!allTokensVoted) {
-      toast.error('Please vote on all tokens before submitting');
+      const remainingTokens = tokensToUse.filter(token => !tokenVotes[token.address]);
+      toast.error(`Please vote on ${remainingTokens.length} remaining token(s) before submitting`);
       return;
     }
 
@@ -339,7 +342,6 @@ export default function IndexVotingModal({
     }
 
     // Prepare batch vote data
-    const tokensToUse = currentTokens.length > 0 ? currentTokens : fetchedTokens;
     const votes = tokensToUse.map(token => {
       const action = tokenVotes[token.address];
       return {
@@ -478,16 +480,16 @@ export default function IndexVotingModal({
         >
           {/* Backdrop */}
           <motion.div
-            className="absolute inset-0 bg-gray-900/80 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
           />
           
-                     {/* Modal */}
-           <motion.div
-             className="relative bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl border border-blue-500/30 p-4 w-full max-w-lg max-h-[80vh] overflow-y-auto scrollbar-hide"
+          {/* Modal */}
+          <motion.div
+            className="relative bg-gray-950 rounded-2xl border border-gray-800 p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto scrollbar-hide"
             initial={{ scale: 0.9, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.9, opacity: 0, y: 20 }}
@@ -531,7 +533,7 @@ export default function IndexVotingModal({
 
                          {/* Voting Status */}
              {votingData && (
-               <div className="mb-3 p-3 bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-xl border border-blue-500/20">
+               <div className="mb-3 p-3 bg-gray-900 rounded-xl border border-gray-700">
                 <div className="flex items-center justify-between">
                   <div>
                     <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
@@ -560,7 +562,7 @@ export default function IndexVotingModal({
 
                          {/* User's Current Vote */}
              {votingData?.userVote && (
-               <div className="mb-3 p-3 bg-gradient-to-r from-yellow-500/10 to-orange-500/10 rounded-xl border border-yellow-500/20">
+               <div className="mb-3 p-3 bg-gray-900 rounded-xl border border-gray-700">
                  <h3 className="text-sm font-semibold text-yellow-400 mb-1">Your Current Vote</h3>
                 <div className="flex items-center justify-between">
                   <div>
@@ -842,8 +844,8 @@ export default function IndexVotingModal({
                           const tokensToUse = currentTokens.length > 0 ? currentTokens : fetchedTokens;
                           return tokensToUse.length;
                         })()
-                        ? 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800'
-                        : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800'
+                        ? 'bg-green-600 hover:bg-green-700'
+                        : 'bg-blue-600 hover:bg-blue-700'
                     }`}
                     title={`Token votes: ${Object.keys(tokenVotes).length}, Current tokens: ${currentTokens.length}, Weight valid: ${isWeightValid}`}
                   >
@@ -893,7 +895,7 @@ export default function IndexVotingModal({
             )}
 
                          {/* Info Section */}
-             <div className="mt-3 p-3 bg-gradient-to-r from-purple-500/10 to-pink-500/10 rounded-xl border border-purple-500/20">
+             <div className="mt-3 p-3 bg-gray-900 rounded-xl border border-gray-700">
                <h3 className="text-sm font-semibold text-purple-400 mb-1">How Voting Works</h3>
               <ul className="text-xs text-gray-300 space-y-1">
                 <li>• Voting periods: 1st-15th and 16th-end of month</li>

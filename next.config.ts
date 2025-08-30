@@ -41,7 +41,7 @@ const nextConfig = {
               default-src 'self';
               script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googleapis.com https://*.gstatic.com https://*.tradingview.com;
               connect-src 'self' https://*.googleapis.com https://*.dexscreener.com https://*.geckoterminal.com https://base-mainnet.g.alchemy.com wss://base-mainnet.g.alchemy.com https://api.coingecko.com http://localhost:3000 https://metamask-sdk.api.cx.metamask.io wss://metamask-sdk.api.cx.metamask.io https://*.tradingview.com https://*.walletconnect.com https://explorer-api.walletconnect.com;
-              img-src 'self' data: https://i.imgur.com https://images.typeform.com https://landing.coingecko.com https://upload.wikimedia.org https://res.cloudinary.com https://www.google.com https://img.icons8.com https://www.alchemy.com https://lh7-us.googleusercontent.com https://elitecity.io https://images.mirror-media.xyz https://www.datocms-assets.com https://www.apple.com https://assets.coingecko.com https://www.coingecko.com https://dd.dexscreener.com https://images.seeklogo.com https://firebasestorage.googleapis.com https://cdn.dexscreener.com https://scontent-iad4-1.choicecdn.com https://dexscreener.com https://tba-social.mypinata.cloud https://*.tradingview.com;
+              img-src 'self' data: https://i.imgur.com https://images.typeform.com https://landing.coingecko.com https://upload.wikimedia.org https://res.cloudinary.com https://www.google.com https://img.icons8.com https://www.alchemy.com https://lh7-us.googleusercontent.com https://elitecity.io https://images.mirror-media.xyz https://www.datocms-assets.com https://www.apple.com https://assets.coingecko.com https://www.coingecko.com https://dd.dexscreener.com https://images.seeklogo.com https://firebasestorage.googleapis.com https://cdn.dexscreener.com https://scontent-iad4-1.choicecdn.com https://dexscreener.com https://tba-social.mypinata.cloud https://*.tradingview.com https://*.coingecko.com https://*.dexscreener.com https://*.geckoterminal.com;
               style-src 'self' 'unsafe-inline' https://use.typekit.net https://fonts.googleapis.com https://*.tradingview.com;
               font-src 'self' data: https://fonts.gstatic.com https://*.tradingview.com;
               frame-src 'self' https://*.tradingview.com;
@@ -59,6 +59,21 @@ const nextConfig = {
     if (!config.resolve) config.resolve = {};
     if (!config.resolve.alias) config.resolve.alias = {};
     (config.resolve.alias as Record<string, string>)['~'] = 'node_modules';
+
+    // Suppress console warnings for development
+    if (!isServer) {
+      config.ignoreWarnings = [
+        // Suppress React DevTools warnings
+        /Download the React DevTools/,
+        // Suppress Lit dev mode warnings
+        /Lit is in dev mode/,
+        // Suppress other common development warnings
+        /Warning: ReactDOM.render is deprecated/,
+        /Warning: componentWillReceiveProps has been renamed/,
+        /Warning: componentWillMount has been renamed/,
+        /Warning: componentWillUpdate has been renamed/,
+      ];
+    }
 
     if (!isServer) {
       console.log("Applying client-side Webpack fallback for Node.js modules");

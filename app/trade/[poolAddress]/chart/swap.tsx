@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { FaWallet, FaExchangeAlt, FaInfoCircle } from "react-icons/fa";
 import { SiEthereum } from "react-icons/si";
 import { ethers } from "ethers";
-import { toast } from "react-hot-toast";
+
 import debounce from "lodash/debounce";
 
 
@@ -38,13 +38,18 @@ interface TokenMetadata {
 interface SwapProps {
   token: TokenMetadata | null;
   ethPrice: number;
+  onTradeComplete?: () => void; // 🔧 NEW: Callback to refresh orders/positions
 }
 
 interface PnLData {
   totalPnL: number;
+  totalPnLPercentage: number; // Add this to match API response
   totalVolume: number;
   totalTrades: number;
   winRate: number;
+  bought: number;
+  sold: number;
+  holding: number;
   dailyPnL: Array<{ date: string; pnl: number }>;
   recentTrades: Array<{
     id: string;
@@ -60,7 +65,7 @@ interface PnLData {
 // ────────────────────────────────────────────────────────────────────────────────
 // 2) MAIN COMPONENT
 // ────────────────────────────────────────────────────────────────────────────────
-const Swap: React.FC<SwapProps> = ({ token }) => {
+const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
   // State
   const [amountIn, setAmountIn] = useState<string>("");
   const [amountOut, setAmountOut] = useState<string>("");
@@ -77,16 +82,36 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
   
   // Self-custodial wallet state
   const [walletAddress, setWalletAddress] = useState<string>("");
-  const [ethBalance, setEthBalance] = useState<string>("0.0");
-  const [tokenBalance, setTokenBalance] = useState<string>("0.0");
+  const [ethBalance, setEthBalance] = useState<string>("");
+  const [tokenBalance, setTokenBalance] = useState<string>("");
   const [isWalletConnected, setIsWalletConnected] = useState<boolean>(false);
   
   // PnL State
   const [pnlData, setPnlData] = useState<PnLData | null>(null);
+  
+  // Copy address state
+  const [copiedAddress, setCopiedAddress] = useState<boolean>(false);
 
   // ────────────────────────────────────────────────────────────────────────────────
   // 3) HELPER FUNCTIONS
   // ────────────────────────────────────────────────────────────────────────────────
+  
+  // Copy token address to clipboard
+  const copyTokenAddress = useCallback(async () => {
+    if (!token?.baseToken?.address) {
+      return;
+    }
+    
+    try {
+      await navigator.clipboard.writeText(token.baseToken.address);
+      setCopiedAddress(true);
+      
+      // Reset copied state after 2 seconds
+      setTimeout(() => setCopiedAddress(false), 2000);
+    } catch (error) {
+      console.error("Failed to copy address:", error);
+    }
+  }, [token?.baseToken?.address]);
   
   // Helper function to check and approve token spending
   const checkAndApproveToken = useCallback(async (
@@ -152,6 +177,36 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
             gasUsed: approveReceipt.gasUsed.toString()
           });
           
+          // 🔧 CRITICAL: Wait for blockchain state to update and re-check allowance
+          console.log("⏳ Waiting for blockchain state to update after approval...");
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+          
+          // Re-check allowance to ensure it was updated
+          const updatedAllowance = await tokenContract.allowance(connectedWallet.address, spenderAddress);
+          console.log("🔍 Re-checked allowance after approval:", {
+            updated: updatedAllowance.toString(),
+            required: amount,
+            hasEnough: updatedAllowance >= BigInt(amount)
+          });
+          
+          if (updatedAllowance < BigInt(amount)) {
+            console.log("⚠️ Allowance still insufficient after approval, waiting longer...");
+            await new Promise(resolve => setTimeout(resolve, 3000)); // Wait another 3 seconds
+            
+            // Final check
+            const finalAllowance = await tokenContract.allowance(connectedWallet.address, spenderAddress);
+            console.log("🔍 Final allowance check:", {
+              final: finalAllowance.toString(),
+              required: amount,
+              hasEnough: finalAllowance >= BigInt(amount)
+            });
+            
+            if (finalAllowance < BigInt(amount)) {
+              throw new Error("Token approval failed - allowance not updated after approval transaction");
+            }
+          }
+          
+          console.log("✅ Token allowance confirmed after approval");
           return true;
         } catch (approvalError) {
           console.error("❌ Approval transaction failed:", {
@@ -180,18 +235,19 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
   const loadWallet = useCallback(() => {
     if (typeof window !== "undefined") {
       const storedWallet = localStorage.getItem("cypherx_wallet");
+      console.log("🔍 Loading wallet from localStorage:", storedWallet ? "found" : "not found");
       if (storedWallet) {
         try {
           const walletData = JSON.parse(storedWallet);
           const wallet = new ethers.Wallet(walletData.privateKey);
+          console.log("🔍 Wallet loaded successfully:", wallet.address);
           setWalletAddress(wallet.address);
           setIsWalletConnected(true);
-          fetchBalances(wallet.address);
-          fetchPnLData(wallet.address);
         } catch (error) {
           console.error("Error loading wallet:", error);
-          toast.error("Failed to load wallet");
         }
+      } else {
+        console.log("🔍 No wallet found in localStorage");
       }
     }
   }, []);
@@ -208,12 +264,8 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
       localStorage.setItem("cypherx_wallet", JSON.stringify(walletData));
       setWalletAddress(wallet.address);
       setIsWalletConnected(true);
-      fetchBalances(wallet.address);
-      fetchPnLData(wallet.address);
-      toast.success("Wallet created successfully!");
     } catch (error) {
       console.error("Error creating wallet:", error);
-      toast.error("Failed to create wallet");
     }
   }, []);
 
@@ -228,7 +280,7 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
       if (ethResponse.ok) {
         const ethData = await ethResponse.json();
         console.log("✅ ETH balance response:", ethData);
-        setEthBalance(ethData.ethBalance || "0.0");
+        setEthBalance(ethData.ethBalance || "");
       } else {
         console.error("❌ ETH balance response not ok:", ethResponse.status);
       }
@@ -239,7 +291,7 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
         if (tokenResponse.ok) {
           const tokenData = await tokenResponse.json();
           console.log("✅ Token balance response:", tokenData);
-          setTokenBalance(tokenData.tokenBalance || "0.0");
+          setTokenBalance(tokenData.tokenBalance || "");
         } else {
           console.error("❌ Token balance response not ok:", tokenResponse.status);
         }
@@ -247,8 +299,8 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
     } catch (error) {
       console.error("Error fetching balances:", error);
       // Set fallback values
-      setEthBalance("0.0");
-      setTokenBalance("0.0");
+              setEthBalance("");
+        setTokenBalance("");
     }
   }, [token]);
 
@@ -306,12 +358,10 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
           // Warn if quote is from DexScreener (different DEX than execution)
           if (quote.route && quote.route.length > 0 && quote.route[0] !== "Uniswap V3") {
             console.log("⚠️ Quote from different DEX:", quote.route[0]);
-            toast.error(`Quote from ${quote.route[0]} - execution may fail if no Uniswap V3 liquidity`);
           }
         } else {
           console.log("⚠️ Quote outputAmount is invalid:", quote.outputAmount);
           setAmountOut("");
-          toast.error("Unable to get valid quote - try a different amount");
         }
       } else {
         const errorData = await response.json();
@@ -320,17 +370,16 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
         
         // Provide specific error messages based on the error
         if (errorData.error === "No liquidity found for this token pair") {
-          toast.error("No liquidity found for this token pair - try a different token or amount");
+          console.error("No liquidity found for this token pair - try a different token or amount");
         } else if (errorData.error === "Invalid quote received from exchange") {
-          toast.error("Exchange returned invalid quote - try again or use a different amount");
+          console.error("Exchange returned invalid quote - try again or use a different amount");
         } else {
-          toast.error(errorData.error || "Failed to get quote");
+          console.error(errorData.error || "Failed to get quote");
         }
       }
     } catch (error) {
       console.error("Error fetching quote:", error);
       setAmountOut("");
-      toast.error("Network error while fetching quote");
     } finally {
       setQuoteLoading(false);
     }
@@ -350,21 +399,41 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
   
   // Swap status tracking
   const [swapStatus, setSwapStatus] = useState<'idle' | 'preparing' | 'signing' | 'submitting' | 'confirming' | 'success' | 'failed'>('idle');
-  const [swapError, setSwapError] = useState<string>('');
-  const [transactionHash, setTransactionHash] = useState<string>('');
+
   
   const executeSwap = useCallback(async () => {
     console.log("Execute swap called with:", { amountIn, amountOut, activeTab, isWalletConnected, walletAddress });
     
     if (!isWalletConnected || !walletAddress || !amountIn || !token) {
-      toast.error("Please connect wallet and enter amounts");
       return;
+    }
+
+    // 🔧 NEW: Warn about large sells and suggest using smart max
+    if (activeTab === "sell") {
+      const sellAmount = parseFloat(amountIn);
+      const tokenBalanceNum = parseFloat(tokenBalance);
+      
+      if (sellAmount > 0 && tokenBalanceNum > 0) {
+        const sellPercentage = (sellAmount / tokenBalanceNum) * 100;
+        
+        if (sellPercentage > 90) {
+          console.log("⚠️ Large sell detected:", {
+            sellAmount,
+            tokenBalance: tokenBalanceNum,
+            percentage: sellPercentage.toFixed(2) + "%",
+            suggestion: "Consider using 95% instead of 100% for better success rate"
+          });
+          
+          // Log warning for very large sells
+          if (sellPercentage > 95) {
+            console.log("⚠️ Large sell detected! Consider using 95% instead of 100% for better success rate.");
+          }
+        }
+      }
     }
 
     // Reset status
     setSwapStatus('preparing');
-    setSwapError('');
-    setTransactionHash('');
     setIsSwapLoading(true);
     try {
       // Step 1: Prepare transaction data
@@ -383,7 +452,7 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
           slippage: slippage,
           walletAddress: walletAddress,
           tokenAddress: token.baseToken.address,
-          quoteDex: currentQuote?.route?.[0], // 🔧 NEW: Pass the DEX from the quote
+          preferredDex: currentQuote?.dexUsed, // 🔧 FIXED: Pass the DEX from the quote
         }),
       });
 
@@ -398,12 +467,12 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
             const required = parseFloat(match[1]);
             const available = parseFloat(match[2]);
             const needed = required - available;
-            setSwapError(`Insufficient ETH balance. You need ${needed.toFixed(4)} more ETH (${required.toFixed(4)} total needed, ${available.toFixed(4)} available)`);
+            console.error(`Insufficient ETH balance. You need ${needed.toFixed(4)} more ETH (${required.toFixed(4)} total needed, ${available.toFixed(4)} available)`);
           } else {
-            setSwapError(errorData.error);
+            console.error(errorData.error);
           }
         } else {
-          setSwapError(errorData.error || "Failed to prepare transaction");
+          console.error(errorData.error || "Failed to prepare transaction");
         }
         
         throw new Error(errorData.error || "Failed to prepare transaction");
@@ -432,7 +501,7 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
       const storedWallet = localStorage.getItem("cypherx_wallet");
       if (!storedWallet) {
         setSwapStatus('failed');
-        setSwapError("Wallet not found");
+        console.error("Wallet not found");
         throw new Error("Wallet not found");
       }
 
@@ -475,13 +544,14 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
         // Uniswap V2 functions (including fee-on-transfer variants)
         "function swapExactETHForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline) external payable returns (uint[] memory amounts)",
         "function swapExactETHForTokensSupportingFeeOnTransferTokens(uint amountOutMin, address[] calldata path, address to, uint deadline) external payable returns (uint[] memory amounts)",
+        "function swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)",
+        "function swapExactTokensForETHSupportingFeeOnTransferTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)",
         "function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)",
         "function swapExactTokensForTokensSupportingFeeOnTransferTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)",
         // V3-style DEX functions (Aerodrome, Baseswap, etc.)
         "function swap(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin, address to, uint256 deadline) external returns (uint256 amountOut)",
         // Generic swap functions for compatibility
-        "function swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)",
-        "function swapExactTokensForETHSupportingFeeOnTransferTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)"
+        "function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)"
       ]);
       
       console.log("🔍 Router interface functions:", Object.keys(routerInterface.fragments));
@@ -575,7 +645,7 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
             encodedData: transactionData,
             dataLength: transactionData.length
           });
-        } catch (error) {
+        } catch {
           console.log("⚠️ Standard function failed, trying fee-on-transfer version");
           transactionData = routerInterface.encodeFunctionData("swapExactETHForTokensSupportingFeeOnTransferTokens", [
             params.amountOutMin,
@@ -595,7 +665,7 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
             dataLength: transactionData.length
           });
         }
-      } else if (method === "swapExactTokensForETH") {
+      } else if (method === "swapExactTokensForETH" || method === "swapExactTokensForETHSupportingFeeOnTransferTokens") {
         // For Uniswap V2 token to ETH swaps (sell) - EXACT SAME PATTERN AS WORKING BUY + APPROVAL
         console.log("🔍 Creating swapExactTokensForETH params (same pattern as buy):", {
           amountIn: params.amountIn,
@@ -657,13 +727,13 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
               data: transactionData.substring(0, 66) + "...",
               dataLength: transactionData.length
             });
-          } catch (fallbackError) {
-            console.error("❌ Frontend encoding also failed:", fallbackError);
+          } catch {
+            console.error("❌ Frontend encoding also failed");
             throw new Error("Both backend and frontend encoding failed for sell operation");
           }
         }
       } else if (method === "swapExactTokensForTokens") {
-        // For Uniswap V2 token swaps
+        // For Aerodrome's swapExactTokensForTokens method (token->ETH via WETH)
         console.log("🔍 Creating swapExactTokensForTokens params:", {
           amountIn: params.amountIn,
           amountOutMin: params.amountOutMin,
@@ -672,49 +742,25 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
           deadline: params.deadline
         });
         
-        // Try the standard function first, fallback to fee-on-transfer version
-        try {
-          transactionData = routerInterface.encodeFunctionData("swapExactTokensForTokens", [
-            params.amountIn,
-            params.amountOutMin,
-            params.path,
-            params.to,
-            params.deadline
-          ]);
-          console.log("🔍 Encoded transaction data (standard):", {
-            method: "swapExactTokensForTokens",
-            params: {
-              amountIn: params.amountIn,
-              amountOutMin: params.amountOutMin,
-              path: params.path,
-              to: params.to,
-              deadline: params.deadline
-            },
-            encodedData: transactionData,
-            dataLength: transactionData.length
-          });
-        } catch (error) {
-          console.log("⚠️ Standard function failed, trying fee-on-transfer version");
-          transactionData = routerInterface.encodeFunctionData("swapExactTokensForTokensSupportingFeeOnTransferTokens", [
-            params.amountIn,
-            params.amountOutMin,
-            params.path,
-            params.to,
-            params.deadline
-          ]);
-          console.log("🔍 Encoded transaction data (fee-on-transfer):", {
-            method: "swapExactTokensForTokensSupportingFeeOnTransferTokens",
-            params: {
-              amountIn: params.amountIn,
-              amountOutMin: params.amountOutMin,
-              path: params.path,
-              to: params.to,
-              deadline: params.deadline
-            },
-            encodedData: transactionData,
-            dataLength: transactionData.length
-          });
-        }
+        transactionData = routerInterface.encodeFunctionData("swapExactTokensForTokens", [
+          params.amountIn,
+          params.amountOutMin,
+          params.path,
+          params.to,
+          params.deadline
+        ]);
+        console.log("🔍 Encoded transaction data (swapExactTokensForTokens):", {
+          method: "swapExactTokensForTokens",
+          params: {
+            amountIn: params.amountIn,
+            amountOutMin: params.amountOutMin,
+            path: params.path,
+            to: params.to,
+            deadline: params.deadline
+          },
+          encodedData: transactionData,
+          dataLength: transactionData.length
+        });
       } else if (method === "swap") {
         // For V3-style DEXs (Aerodrome, Baseswap, etc.)
         console.log("🔍 Creating swap params:", {
@@ -783,8 +829,8 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
       let nonce = await provider.getTransactionCount(wallet.address);
       
       // 🔧 CRITICAL: Handle token approval for sell operations (after nonce is declared)
-      if (method === "swapExactTokensForETH") {
-        const tokenAddress = params.path[0]; // First token in path is the one being sold
+      if (method === "swapExactTokensForETH" || method === "swapExactTokensForETHSupportingFeeOnTransferTokens" || method === "swapExactTokensForTokens") {
+        const tokenAddress = method === "swapExactTokensForETH" || method === "swapExactTokensForETHSupportingFeeOnTransferTokens" ? params.path[0] : params.path[0]; // First token in path is the one being sold
         
         // Ensure wallet is properly connected with provider
         let connectedWallet = wallet;
@@ -795,12 +841,18 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
         }
         
         try {
-          // 🔧 FIXED: Use current amountIn from user input instead of params.amountIn
-          // This ensures approval matches the actual amount being executed
-          const approvalAmount = ethers.parseUnits(amountIn, 18).toString();
-          console.log("🔍 Approval amount check:", {
+          // 🔧 FIXED: For sell operations, approve the full balance to handle transfer fees
+          // This ensures we have enough allowance even if the token has transfer fees
+          const tokenContract = new ethers.Contract(tokenAddress, [
+            "function balanceOf(address) view returns (uint256)",
+            "function approve(address spender, uint256 amount) external returns (bool)"
+          ], connectedWallet);
+          
+          const balance = await tokenContract.balanceOf(walletAddress);
+          const approvalAmount = balance.toString();
+          console.log("🔍 Full balance approval for sell operation:", {
             userInput: amountIn,
-            paramsAmountIn: params.amountIn,
+            fullBalance: ethers.formatUnits(balance, 18),
             approvalAmount: approvalAmount
           });
           
@@ -856,8 +908,7 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
           
           // Try alternative router addresses for Base chain
           const alternativeRouters = [
-            "0x2626664c2603336E57B271c5C0b26F421741e481", // Uniswap V3 Router
-            "0x420DD381b31aEf6683db6B902084cB0FFECe40Da", // Aerodrome Router
+            "0x2626664c2603336E57B271c5C0b26F421741e481", // Aerodrome Router (primary)
             "0xFDa619b6d20975be80A10332cD39b9a4b0FAa8BB", // Baseswap Router
             "0x66a9893cc07d91d95644aedd05d03f95e1dba8af"  // Universal Router V4
           ];
@@ -877,7 +928,7 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
             }
           }
           
-          if (router === "0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24") {
+          if (router === "0x2626664c2603336E57B271c5C0b26F421741e481") {
             throw new Error(`No working router found. Original router ${router} does not exist.`);
           }
         }
@@ -940,7 +991,7 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
       }
       
       // Additional validation for sell operations
-      if (method === "swapExactTokensForETH") {
+      if (method === "swapExactTokensForETH" || method === "swapExactTokensForETHSupportingFeeOnTransferTokens") {
         console.log("🔍 Validating sell transaction data:", {
           data: txData.data,
           dataLength: txData.data.length,
@@ -1103,6 +1154,7 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
           outputAmount: amountOut,
           walletAddress: walletAddress,
           tokenAddress: token.baseToken.address,
+          preferredDex: currentQuote?.dexUsed, // 🔧 FIXED: Pass the DEX from the quote
           autoConfirm: true, // Auto-confirm the transaction
         }),
       });
@@ -1117,18 +1169,44 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
           errorDetails: errorData.details
         });
         setSwapStatus('failed');
-        setSwapError(errorData.error || "Failed to submit transaction");
+        console.error(errorData.error || "Failed to submit transaction");
         throw new Error(errorData.error || "Failed to submit transaction");
       }
 
       const submitResult = await submitResponse.json();
       setSwapStatus('success');
-      setTransactionHash(submitResult.transactionHash);
-      toast.success(`Swap completed! Hash: ${submitResult.transactionHash.slice(0, 10)}...`);
+      console.log("Transaction hash:", submitResult.transactionHash);
+      
+      // 🔧 FIXED: Auto-hide success message after 2 seconds
+      setTimeout(() => {
+        setSwapStatus('idle');
+        console.log('Clearing success message');
+      }, 2000);
       
       // Refresh balances and PnL
       fetchBalances(walletAddress);
       fetchPnLData(walletAddress);
+      
+      // 🔧 NEW: Refresh orders and positions after successful trade
+      if (onTradeComplete) {
+        console.log("🔄 Trade completed, refreshing orders and positions...");
+        setTimeout(() => {
+          onTradeComplete();
+        }, 1000); // Small delay to ensure transaction is processed
+      }
+      
+      // 🔧 NEW: Reset PnL if position is closed (token balance becomes 0)
+      if (activeTab === "sell" && parseFloat(amountIn) >= parseFloat(tokenBalance) * 0.95) {
+        // This was likely a full position close, reset PnL after a delay
+        setTimeout(() => {
+          console.log("🔄 Position likely closed, resetting PnL data...");
+          setPnlData(null);
+          // Fetch fresh PnL data after reset
+          setTimeout(() => {
+            fetchPnLData(walletAddress);
+          }, 1000);
+        }, 2000);
+      }
       
       // Clear form
       setAmountIn("");
@@ -1136,18 +1214,15 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
     } catch (error) {
       console.error("Swap execution error:", error);
       setSwapStatus('failed');
-      setSwapError(error instanceof Error ? error.message : "Swap failed");
-      toast.error(error instanceof Error ? error.message : "Swap failed");
+      console.error(error instanceof Error ? error.message : "Swap failed");
+      
+      // 🔧 FIXED: Auto-hide failed message after 2 seconds
+      setTimeout(() => {
+        setSwapStatus('idle');
+        console.log('Clearing error message');
+      }, 2000);
     } finally {
       setIsSwapLoading(false);
-      // Reset status after a delay for success/failure display
-      if (swapStatus === 'success' || swapStatus === 'failed') {
-        setTimeout(() => {
-          setSwapStatus('idle');
-          setSwapError('');
-          setTransactionHash('');
-        }, 5000); // Show status for 5 seconds
-      }
     }
   }, [isWalletConnected, walletAddress, amountIn, amountOut, token, activeTab, slippage, fetchBalances]);
 
@@ -1155,18 +1230,37 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
   // 6) PnL TRACKING
   // ────────────────────────────────────────────────────────────────────────────────
   const fetchPnLData = useCallback(async (address: string) => {
-    if (!address) return;
+    if (!address) {
+      console.log("🔍 No address provided for PnL fetch");
+      return;
+    }
 
     try {
-      const response = await fetch(`/api/wallet/pnl?address=${address}&timeframe=30d`);
+      console.log("🔍 Fetching PnL data for address:", address);
+      const tokenAddress = token?.baseToken?.address;
+      const url = tokenAddress 
+        ? `/api/wallet/pnl?address=${address}&tokenAddress=${tokenAddress}&timeframe=30d`
+        : `/api/wallet/pnl?address=${address}&timeframe=30d`;
+      
+      console.log("🔍 PnL URL:", url);
+      const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
+        console.log("🔍 PnL API Response:", data); // Debug log
+        console.log("🔍 totalPnLPercentage:", data.totalPnLPercentage);
+        console.log("🔍 totalTrades:", data.totalTrades);
+        console.log("🔍 bought:", data.bought);
+        console.log("🔍 sold:", data.sold);
+        console.log("🔍 holding:", data.holding);
+        console.log("🔍 winRate:", data.winRate);
         setPnlData(data);
+      } else {
+        console.error("🔍 PnL API response not ok:", response.status);
       }
     } catch (error) {
       console.error("Error fetching PnL data:", error);
     }
-  }, []);
+  }, [token?.baseToken?.address]);
 
   // ────────────────────────────────────────────────────────────────────────────────
   // 7) EVENT HANDLERS
@@ -1184,7 +1278,51 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
 
   const handleQuickAmount = useCallback((percent: number) => {
     const balance = activeTab === "buy" ? parseFloat(ethBalance) : parseFloat(tokenBalance);
-    const amount = (balance * percent) / 100;
+    
+    // Safety check for invalid balance
+    if (isNaN(balance) || balance <= 0) {
+      console.log("🔧 Quick Amount Error: Invalid balance", {
+        percent,
+        activeTab,
+        ethBalance,
+        tokenBalance,
+        balance
+      });
+      return;
+    }
+    
+    let amount = (balance * percent) / 100;
+    
+    // 🔧 FIXED: Smart maximum sell calculation for sell operations
+    if (activeTab === "sell" && percent >= 95) { // For 95%+ sells (including max)
+      // Apply safety buffer for maximum sells to account for:
+      // - Token transfer fees/taxes
+      // - Slippage tolerance
+      // - Gas costs
+      // - Precision rounding
+      const safetyBuffer = 0.98; // 2% buffer for maximum sells
+      amount = balance * safetyBuffer;
+      
+      console.log("🔧 Smart Max Sell Calculation:", {
+        originalBalance: balance,
+        percent,
+        safetyBuffer,
+        adjustedAmount: amount,
+        bufferAmount: balance - amount,
+        reason: "Applied 2% buffer for max sell to account for fees/slippage"
+      });
+    }
+    
+    console.log("🔧 Quick Amount Debug:", {
+      percent,
+      activeTab,
+      ethBalance,
+      tokenBalance,
+      balance,
+      calculatedAmount: amount,
+      formattedAmount: amount.toFixed(4),
+      isMaxSell: activeTab === "sell" && percent >= 95
+    });
     handleAmountChange(amount.toFixed(4));
   }, [ethBalance, tokenBalance, activeTab, handleAmountChange]);
 
@@ -1197,7 +1335,6 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
   const copyAddress = useCallback(() => {
     if (walletAddress) {
       navigator.clipboard.writeText(walletAddress);
-      toast.success("Address copied to clipboard!");
     }
   }, [walletAddress]);
 
@@ -1209,10 +1346,11 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
   }, [loadWallet]);
 
   useEffect(() => {
-    if (token) {
+    if (token && walletAddress) {
       fetchBalances(walletAddress);
+      fetchPnLData(walletAddress);
     }
-  }, [token, walletAddress, fetchBalances]);
+  }, [token, walletAddress, fetchBalances, fetchPnLData]);
 
   // Quote countdown effect
   useEffect(() => {
@@ -1246,15 +1384,14 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
   const isSwapReady = amountIn && parseFloat(amountIn) > 0 && isWalletConnected && walletAddress;
 
   return (
-    <div className="rounded-lg border border-blue-500/20 p-4 h-full flex flex-col bg-gray-950">
-      {/* Clean Token Info Header */}
+    <div className="h-full flex flex-col bg-gray-950">
+      {/* Token Info Header - Cleaner Design */}
       {token && (
-        <div className="flex items-center gap-3 mb-4 p-3 rounded-lg border border-blue-500/20 bg-gray-950">
-          {/* Token Logo - Use DexScreener API response */}
+        <div className="flex items-center gap-3 mb-4 p-3 border-b border-gray-700 bg-gray-950" style={{ height: '70px' }}>
           <img
             src={token.logoUrl || `https://dexscreener.com/base/${token.baseToken.address}/logo.png`}
             alt={`${token.baseToken.name} logo`}
-            className="w-8 h-8 rounded-full border border-blue-500/20"
+            className="w-8 h-8 border border-gray-700"
             onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
               e.currentTarget.src = `https://ui-avatars.com/api/?name=${token.baseToken.symbol}&background=1f2937&color=60a5fa&size=32`;
             }}
@@ -1267,7 +1404,7 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowSlippageModal(true)}
-              className="text-xs bg-gray-700 hover:bg-blue-500/20 text-blue-400 px-2 py-1 rounded transition"
+              className="text-xs bg-gray-800 hover:bg-gray-700 text-blue-400 px-2 py-1 transition"
             >
               {slippage}%
             </button>
@@ -1286,17 +1423,17 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
       {!isWalletConnected ? (
         <div className="flex flex-col items-center justify-center py-8">
           <FaWallet className="w-10 h-10 text-gray-400 mb-3" />
-                          <p className="text-gray-400 mb-3 text-sm">Create or load your wallet to start swapping</p>
+          <p className="text-gray-400 mb-3 text-sm">Create or load your wallet to start swapping</p>
           <div className="flex gap-2">
             <button
               onClick={createWallet}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold transition text-sm"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 font-bold transition text-sm border border-blue-600"
             >
               Create Wallet
             </button>
             <button
               onClick={loadWallet}
-              className="bg-gray-950 hover:bg-gray-900 text-white px-4 py-2 rounded-lg font-bold transition text-sm"
+              className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 font-bold transition text-sm border border-gray-700"
             >
               Load Wallet
             </button>
@@ -1304,55 +1441,101 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
         </div>
       ) : (
         <>
-          {/* Wallet Info */}
-          <div className="rounded-lg p-3 mb-4 border border-blue-500/20 bg-gray-950">
-            <div className="flex items-center justify-start mb-2">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-gray-200">
-                  <span className="text-blue-400 font-bold">Wallet</span>
-                </span>
+          {/* Social Media Icons and Copy Address */}
+          <div className="mb-4 border-b border-gray-700 bg-gray-950" style={{ height: '60px' }}>
+            <div className="flex items-center justify-between h-full px-3">
+              <div className="flex items-center space-x-3">
+                <a
+                  href="#"
+                  className="text-gray-400 hover:text-blue-400 transition-colors flex items-center"
+                  title="Website"
+                >
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clipRule="evenodd" />
+                  </svg>
+                </a>
+                <a
+                  href="#"
+                  className="text-gray-400 hover:text-blue-400 transition-colors flex items-center"
+                  title="Telegram"
+                >
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+                  </svg>
+                </a>
+                <a
+                  href="#"
+                  className="text-gray-400 hover:text-blue-400 transition-colors flex items-center"
+                  title="Twitter"
+                >
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.827 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z"/>
+                  </svg>
+                </a>
               </div>
-              <button
-                onClick={copyAddress}
-                className="text-xs text-blue-400 hover:text-blue-300 ml-auto"
-              >
-                Copy
-              </button>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-mono text-gray-300">
-                {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
-              </span>
-              <span className="text-xs text-gray-400">
-                Balance: {activeTab === "buy" ? `${parseFloat(ethBalance).toFixed(4)} ETH` : `${parseFloat(tokenBalance).toFixed(4)} ${token?.baseToken.symbol}`}
-              </span>
+              
+              {/* Copy Address Button */}
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-mono text-gray-300 flex items-center">
+                  {token?.baseToken?.address 
+                    ? `${token.baseToken.address.slice(0, 6)}...${token.baseToken.address.slice(-3)}`
+                    : '0x000...000'
+                  }
+                </span>
+                <button
+                  onClick={copyTokenAddress}
+                  disabled={!token?.baseToken?.address}
+                  className={`flex items-center space-x-1 px-2 py-1 rounded-lg border transition-all duration-200 text-xs font-medium ${
+                    copiedAddress
+                      ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                      : 'bg-gray-700/50 hover:bg-gray-600/50 text-gray-300 border-gray-600/50 hover:border-blue-500/50 hover:text-blue-400'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  title={token?.baseToken?.address ? "Copy token address" : "Token address not available"}
+                >
+                  {copiedAddress ? (
+                    <>
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
 
           {/* Swap Interface */}
-          <div className="rounded-lg p-4 mb-4 border border-blue-500/20 bg-gray-950">
+          <div className="p-4 mb-4 bg-gray-950" style={{ minHeight: '300px' }}>
             {/* Token Selection Tabs */}
-            <div className="flex rounded-lg p-1 mb-4 bg-gray-950">
+            <div className="flex p-1 mb-4 bg-gray-800">
               <button
                 onClick={() => setActiveTab("buy")}
-                className={`flex-1 py-2 px-3 rounded-md font-bold transition text-sm ${
+                className={`flex-1 py-2 px-3 font-bold transition text-sm ${
                   activeTab === "buy"
-                    ? "bg-green-500/20 text-green-400 border border-green-500/30"
-                    : "text-gray-400 hover:text-gray-200"
+                    ? "bg-green-500/20 text-green-400"
+                    : "text-gray-400 hover:text-gray-200 bg-gray-800"
                 }`}
               >
                 Buy Token
               </button>
-                             <button
-                 onClick={() => setActiveTab("sell")}
-                 className={`flex-1 py-2 px-3 rounded-md font-bold transition text-sm ${
-                   activeTab === "sell"
-                     ? "bg-blue-600/20 text-blue-400 border border-blue-600/30"
-                     : "text-gray-400 hover:text-gray-200"
-                 }`}
-               >
-                 Sell Token
-               </button>
+              <button
+                onClick={() => setActiveTab("sell")}
+                className={`flex-1 py-2 px-3 font-bold transition text-sm ${
+                  activeTab === "sell"
+                    ? "bg-red-500/20 text-red-400"
+                    : "text-gray-400 hover:text-gray-200 bg-gray-800"
+                }`}
+              >
+                Sell Token
+              </button>
             </div>
 
             {/* Input Section */}
@@ -1360,25 +1543,25 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
               <label className="block text-xs text-gray-400 font-bold mb-1 uppercase">
                 YOU PAY
               </label>
-              <div className="rounded-lg p-3 border border-blue-500/20 bg-gray-950">
-                <div className="flex items-center justify-end mb-2">
-                  <div className="flex gap-1">
-                    {[25, 50, 75, 100].map((percent) => (
-                      <button
-                        key={percent}
-                        onClick={() => handleQuickAmount(percent)}
-                        className="text-xs bg-gray-800 hover:bg-blue-500/20 text-blue-400 px-2 py-1 rounded transition border border-gray-700 font-medium"
-                      >
-                        {percent === 100 ? "Max" : `${percent}%`}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                                              <div className="p-3 bg-gray-800">
+                 <div className="flex items-center justify-start mb-2">
+                   <div className="flex gap-1">
+                     {[25, 50, 75, 100].map((percent) => (
+                       <button
+                         key={percent}
+                         onClick={() => handleQuickAmount(percent)}
+                         className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-2 py-1 font-medium transition"
+                       >
+                         {percent === 100 ? "Max" : `${percent}%`}
+                       </button>
+                     ))}
+                   </div>
+                 </div>
                 <div className="flex items-center">
                   <div className="flex items-center gap-2 mr-2">
                     {activeTab === "buy" ? (
                       <>
-                        <SiEthereum className="w-4 h-4 text-blue-400" />
+                        <SiEthereum className="w-4 h-4 text-gray-600" />
                         <span className="font-bold text-gray-200 text-sm">ETH</span>
                       </>
                     ) : (
@@ -1397,7 +1580,7 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
                   </div>
                   <input
                     type="number"
-                    placeholder="0.0"
+                    placeholder=""
                     value={amountIn}
                     onChange={(e) => handleAmountChange(e.target.value)}
                     className="flex-1 bg-transparent text-gray-200 text-base font-mono outline-none border-none min-w-0"
@@ -1411,10 +1594,10 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
             <div className="flex justify-center my-3">
               <button
                 onClick={handleSwapDirection}
-                className="bg-gray-700 border border-blue-500/20 rounded-full p-2 hover:bg-blue-500/10 transition"
+                className="bg-gray-700 p-2 hover:bg-gray-600 transition"
                 disabled={isSwapLoading}
               >
-                <FaExchangeAlt className="w-4 h-4 text-blue-400" />
+                <FaExchangeAlt className="w-4 h-4 text-gray-300" />
               </button>
             </div>
 
@@ -1423,7 +1606,7 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
               <label className="block text-xs text-gray-400 font-bold mb-1 uppercase">
                 YOU RECEIVE
               </label>
-              <div className="rounded-lg p-3 border border-blue-500/20 bg-gray-950">
+                             <div className="p-3 bg-gray-800">
                 <div className="flex items-center justify-start mb-2">
                   <span className="text-xs text-gray-400">
                     {quoteLoading ? "Fetching quote..." : amountOut ? "Estimated" : "Enter amount above"}
@@ -1450,14 +1633,14 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
                       </>
                     ) : (
                       <>
-                        <SiEthereum className="w-4 h-4 text-blue-400" />
+                        <SiEthereum className="w-4 h-4 text-gray-600" />
                         <span className="font-bold text-gray-200 text-sm">ETH</span>
                       </>
                     )}
                   </div>
                   <input
                     type="number"
-                    placeholder="0.0"
+                    placeholder=""
                     value={amountOut || ""}
                     disabled
                     className="flex-1 bg-transparent text-gray-400 text-base font-mono outline-none border-none min-w-0"
@@ -1469,18 +1652,18 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
             {/* Main Action Button */}
             <button
               onClick={executeSwap}
-              className={`w-full py-3 rounded-lg font-bold transition text-sm ${
+              className={`w-full py-3 font-bold transition text-sm ${
                 swapStatus === 'success'
-                  ? "bg-green-500/20 text-green-400 border border-green-500/30 cursor-not-allowed"
+                  ? "bg-green-500/20 text-green-400 cursor-not-allowed"
                   : swapStatus === 'failed'
-                  ? "bg-red-500/20 text-red-400 border border-red-500/30 cursor-not-allowed"
-                                     : isSwapReady && !isQuoteExpired
-                   ? activeTab === "buy"
-                     ? "bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30"
-                     : "bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30"
+                  ? "bg-red-500/20 text-red-400 cursor-not-allowed"
+                  : isSwapReady && !isQuoteExpired
+                  ? activeTab === "buy"
+                    ? "bg-green-500/20 hover:bg-green-500/30 text-green-400"
+                    : "bg-red-500/20 hover:bg-red-500/30 text-red-400"
                   : isQuoteExpired && isSwapReady
-                  ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 cursor-not-allowed"
-                  : "bg-green-500/10 text-green-400/50 border border-green-500/20 cursor-not-allowed"
+                  ? "bg-yellow-500/20 text-yellow-400 cursor-not-allowed"
+                  : "bg-gray-700 text-gray-400 cursor-not-allowed"
               }`}
               disabled={!isSwapReady || isSwapLoading || isQuoteExpired || swapStatus === 'success' || swapStatus === 'failed'}
             >
@@ -1516,101 +1699,155 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
               )}
             </button>
             
-            {/* Status Messages */}
-            {swapStatus === 'success' && transactionHash && (
-              <div className="mt-3 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
-                <div className="flex items-center justify-between">
+            {/* Transaction Status Message */}
+            {swapStatus === 'success' && (
+              <div className="mt-3 p-3 bg-green-500/10 border-b border-gray-700">
+                <div className="flex flex-col">
                   <div className="flex items-center gap-2">
                     <svg className="w-4 h-4 text-green-400" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
-                    <span className="text-sm text-green-400 font-medium">Transaction Successful!</span>
+                    <span className="text-sm text-green-400 font-medium">Transaction Success</span>
                   </div>
-                  <a 
-                    href={`https://basescan.org/tx/${transactionHash}`} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-xs text-blue-400 hover:text-blue-300 underline"
-                  >
-                    View on BaseScan
-                  </a>
-                </div>
-                <div className="text-xs text-gray-400 mt-1">
-                  Hash: {transactionHash.slice(0, 10)}...{transactionHash.slice(-8)}
+                  <div className="text-xs text-gray-400 mt-1 ml-6">Swap again</div>
                 </div>
               </div>
             )}
             
-            {swapStatus === 'failed' && swapError && (
-              <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                  </svg>
-                  <span className="text-sm text-red-400 font-medium">Transaction Failed</span>
-                </div>
-                <div className="text-xs text-gray-400 mt-1">
-                  {swapError}
-                </div>
-                {swapError && swapError.includes("Insufficient ETH balance") && (
-                  <div className="text-xs text-blue-400 mt-2 p-2 bg-blue-500/10 rounded border border-blue-500/20">
-                    💡 Tip: You can reduce the swap amount or add more ETH to your wallet to complete this transaction.
+            {swapStatus === 'failed' && (
+              <div className="mt-3 p-3 bg-red-500/10 border-b border-gray-700">
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-sm text-red-400 font-medium">Transaction Failed</span>
                   </div>
-                )}
+                  <div className="text-xs text-gray-400 mt-1 ml-6">Transaction reverted, try again</div>
+                </div>
               </div>
             )}
-          </div>
 
-          {/* PnL Stats Section - Below Swap Interface */}
-          {pnlData && (
-            <div className="rounded-lg p-3 border border-blue-500/20 bg-gray-950">
-              <div className="grid grid-cols-4 gap-2 text-center justify-items-center">
-                <div className="flex flex-col items-center justify-center relative px-2">
-                  <span className="text-xs text-gray-400 mb-1">Bought</span>
-                  <div className="flex items-center gap-1">
-                    <SiEthereum className="w-4 h-4 text-gray-600" />
-                    <span className="text-sm font-bold text-green-400">0</span>
+                          {/* Wallet Interface and PnL Section */}
+              <div className="flex-1 flex flex-col bg-gray-950">
+                {/* Wallet Interface - Enhanced Layout */}
+                <div className="px-0 py-3 bg-gray-950" style={{ minHeight: '120px' }}>
+                <div className="flex flex-col justify-between h-full">
+                  {/* Wallet Header with Better Spacing */}
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center">
+                      <div className="w-2 h-2 bg-blue-400 rounded-full mr-2"></div>
+                      <span className="text-sm font-bold text-gray-200 mr-3">Wallet</span>
+                      <span className="text-sm font-mono text-gray-300 bg-gray-800 px-2 py-1 rounded">
+                        {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : '0x0000...0000'}
+                      </span>
+                    </div>
+                    <button
+                      onClick={copyAddress}
+                      className="text-xs text-blue-400 hover:text-blue-300 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 transition rounded border border-gray-700"
+                    >
+                      Copy
+                    </button>
                   </div>
-                  <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-700"></div>
+                  
+                                     {/* Balance Display with Enhanced Visual Hierarchy */}
+                   <div className="grid grid-cols-2 gap-4">
+                     {/* ETH Balance */}
+                     <div className="bg-gray-800/50 p-3 border border-gray-700/50 backdrop-blur-sm">
+                       <div className="flex items-center space-x-2 mb-1">
+                         <SiEthereum className="w-4 h-4 text-gray-600" />
+                         <span className="text-xs text-gray-400 font-medium">ETH</span>
+                       </div>
+                       <div className="text-sm font-bold text-gray-200">
+                         {parseFloat(ethBalance).toFixed(4)}
+                       </div>
+                     </div>
+                     
+                     {/* Token Balance */}
+                     <div className="bg-gray-800/50 p-3 border border-gray-700/50 backdrop-blur-sm">
+                       <div className="flex items-center space-x-2 mb-1">
+                         {token?.logoUrl ? (
+                           <img 
+                             src={token.logoUrl} 
+                             alt={token.baseToken.symbol}
+                             className="w-4 h-4 rounded-full"
+                             onError={(e) => {
+                               const target = e.currentTarget;
+                               const fallback = target.nextElementSibling as HTMLElement;
+                               if (fallback) {
+                                 target.style.display = 'none';
+                                 fallback.style.display = 'flex';
+                               }
+                             }}
+                           />
+                         ) : null}
+                         <div className="w-4 h-4 bg-green-400 rounded-full flex items-center justify-center" style={{ display: token?.logoUrl ? 'none' : 'flex' }}>
+                           <span className="text-xs font-bold text-white">00</span>
+                         </div>
+                         <span className="text-xs text-gray-400 font-medium">{token?.baseToken.symbol}</span>
+                       </div>
+                       <div className="text-sm font-bold text-gray-200">
+                         {parseFloat(tokenBalance).toFixed(4)}
+                       </div>
+                     </div>
+                   </div>
                 </div>
-                
-                <div className="flex flex-col items-center justify-center relative px-2">
-                  <span className="text-xs text-gray-400 mb-1">Sold</span>
-                  <div className="flex items-center gap-1">
-                    <SiEthereum className="w-4 h-4 text-gray-600" />
-                    <span className="text-sm font-bold text-red-400">0</span>
-                  </div>
-                  <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-700"></div>
-                </div>
-                
-                <div className="flex flex-col items-center justify-center relative px-2">
-                  <span className="text-xs text-gray-400 mb-1">Holding</span>
-                  <div className="flex items-center gap-1">
-                    <SiEthereum className="w-4 h-4 text-gray-600" />
-                    <span className="text-sm font-bold text-white">0</span>
-                  </div>
-                  <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-700"></div>
-                </div>
-                
-                <div className="flex flex-col items-center justify-center relative px-2">
-                  <span className="text-xs text-gray-400 mb-1">PnL</span>
-                  <div className="flex items-center gap-1">
-                    <SiEthereum className="w-4 h-4 text-gray-600" />
-                    <span className="text-sm font-bold text-green-400">
-                      {pnlData.totalPnL >= 0 ? "+" : ""}{pnlData.totalPnL.toFixed(0)}%
-                    </span>
+              </div>
+              
+              {/* PnL Stats Section - Single Component */}
+              <div className="px-0 py-3 bg-gray-950" style={{ minHeight: '80px' }}>
+                <div className="bg-gray-800/30 backdrop-blur-sm min-h-[60px] w-full border border-gray-700/50">
+                  <div className="grid grid-cols-4 h-full">
+                    {/* Bought */}
+                    <div className="flex flex-col items-center justify-center relative px-2 py-2">
+                      <span className="text-xs text-gray-400 mb-1 font-medium">Bought</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm font-bold text-green-400">${pnlData?.bought || 0}</span>
+                      </div>
+                      <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-700/50"></div>
+                    </div>
+                    
+                    {/* Sold */}
+                    <div className="flex flex-col items-center justify-center relative px-2 py-2">
+                      <span className="text-xs text-gray-400 mb-1 font-medium">Sold</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm font-bold text-red-400">${pnlData?.sold || 0}</span>
+                      </div>
+                      <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-700/50"></div>
+                    </div>
+                    
+                    {/* Holding */}
+                    <div className="flex flex-col items-center justify-center relative px-2 py-2">
+                      <span className="text-xs text-gray-400 mb-1 font-medium">Holding</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm font-bold text-white">${pnlData?.holding || 0}</span>
+                      </div>
+                      <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-700/50"></div>
+                    </div>
+                    
+                    {/* PnL */}
+                    <div className="flex flex-col items-center justify-center relative px-2 py-2">
+                      <span className="text-xs text-gray-400 mb-1 font-medium">PnL</span>
+                      <div className="flex items-center gap-1">
+                        <span className={`text-sm font-bold ${pnlData?.totalPnLPercentage !== undefined ? (pnlData.totalPnLPercentage >= 0 ? 'text-green-400' : 'text-red-400') : 'text-green-400'}`}>
+                          {pnlData?.totalPnLPercentage !== undefined ? `${pnlData.totalPnLPercentage > 0 ? '+' : ''}${pnlData.totalPnLPercentage.toFixed(2)}%` : '0.00%'}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          )}
+          </div>
+
+
         </>
       )}
 
       {/* Modals */}
       {showSlippageModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="rounded-lg p-6 border border-blue-500/20 w-80 bg-gray-950">
+          <div className="p-6 border border-gray-800 w-80 bg-gray-900">
             <h3 className="text-lg font-bold mb-4">Set Slippage</h3>
             <div className="space-y-3">
               {[0.1, 0.5, 1.0, 2.0].map((value) => (
@@ -1620,9 +1857,9 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
                     setSlippage(value);
                     setShowSlippageModal(false);
                   }}
-                  className={`w-full py-2 rounded-lg transition ${
+                  className={`w-full py-2 transition ${
                     slippage === value
-                      ? "bg-blue-600 text-white border border-blue-500/30"
+                      ? "bg-blue-600 text-white"
                       : "bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700"
                   }`}
                 >
@@ -1632,7 +1869,7 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
             </div>
             <button
               onClick={() => setShowSlippageModal(false)}
-              className="w-full mt-4 py-2 bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-700 transition border border-gray-700"
+              className="w-full mt-4 py-2 bg-gray-800 text-gray-300 hover:bg-gray-700 transition border border-gray-700"
             >
               Cancel
             </button>
@@ -1642,7 +1879,7 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
 
       {showInfoModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="rounded-lg p-6 border border-blue-500/20 w-96 max-h-96 overflow-y-auto bg-gray-950">
+          <div className="p-6 border border-gray-800 w-96 max-h-96 overflow-y-auto bg-gray-900">
             <h3 className="text-lg font-bold mb-4">CypherSwap Info</h3>
             <div className="space-y-3 text-sm text-gray-300">
               <p>CypherSwap provides secure, decentralized token swapping on Base chain.</p>
@@ -1657,7 +1894,7 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
             </div>
             <button
               onClick={() => setShowInfoModal(false)}
-              className="w-full mt-4 py-2 bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-700 transition border border-gray-700"
+              className="w-full mt-4 py-2 bg-gray-800 text-gray-300 hover:bg-gray-700 transition border border-gray-700"
             >
               Close
             </button>
@@ -1667,14 +1904,14 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
 
       {showPnLModal && pnlData && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="rounded-lg p-6 border border-blue-500/20 w-96 max-h-96 overflow-y-auto bg-gray-950">
+          <div className="p-6 border border-gray-800 w-96 max-h-96 overflow-y-auto bg-gray-900">
             <h3 className="text-lg font-bold mb-4">PnL Tracking</h3>
             <div className="space-y-4 text-sm">
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-gray-800 p-3 rounded-lg border border-gray-700">
                   <div className="text-gray-400 text-xs">Total PnL</div>
-                  <div className={`font-bold ${pnlData.totalPnL >= 0 ? "text-green-400" : "text-red-400"}`}>
-                    {pnlData.totalPnL >= 0 ? "+" : ""}{pnlData.totalPnL.toFixed(2)}%
+                  <div className={`font-bold ${pnlData.totalPnLPercentage >= 0 ? "text-green-400" : "text-red-400"}`}>
+                    {pnlData.totalPnLPercentage >= 0 ? "+" : ""}{pnlData.totalPnLPercentage.toFixed(2)}%
                   </div>
                 </div>
                 <div className="bg-gray-800 p-3 rounded-lg border border-gray-700">
@@ -1713,7 +1950,7 @@ const Swap: React.FC<SwapProps> = ({ token }) => {
             </div>
             <button
               onClick={() => setShowPnLModal(false)}
-              className="w-full mt-4 py-2 bg-gray-950 text-gray-300 rounded-lg hover:bg-gray-900 transition"
+              className="w-full mt-4 py-2 bg-gray-800 text-gray-300 hover:bg-gray-700 transition border border-gray-700"
             >
               Close
             </button>

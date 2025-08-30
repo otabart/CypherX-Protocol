@@ -39,42 +39,7 @@ interface Transaction {
   status: 'confirmed' | 'pending' | 'failed';
 }
 
-// Helper function to decode hex string to readable text
-function decodeHexString(hex: string): string {
-  try {
-    // Remove '0x' prefix and convert to bytes
-    const hexWithoutPrefix = hex.startsWith('0x') ? hex.slice(2) : hex;
-    
-    // Handle dynamic string encoding (first 32 bytes are offset, next 32 are length)
-    if (hexWithoutPrefix.length >= 128) {
-      const length = parseInt(hexWithoutPrefix.slice(64, 128), 16);
-      const data = hexWithoutPrefix.slice(128, 128 + length * 2);
-      
-      // Convert hex to string
-      let result = '';
-      for (let i = 0; i < data.length; i += 2) {
-        const charCode = parseInt(data.substr(i, 2), 16);
-        if (charCode >= 32 && charCode <= 126) { // Printable ASCII
-          result += String.fromCharCode(charCode);
-        }
-      }
-      return result.trim();
-    } else {
-      // Simple hex to string conversion
-      let result = '';
-      for (let i = 0; i < hexWithoutPrefix.length; i += 2) {
-        const charCode = parseInt(hexWithoutPrefix.substr(i, 2), 16);
-        if (charCode >= 32 && charCode <= 126) { // Printable ASCII
-          result += String.fromCharCode(charCode);
-        }
-      }
-      return result.trim();
-    }
-  } catch (error) {
-    console.error('Error decoding hex string:', error);
-    return 'Unknown';
-  }
-}
+
 
 export async function POST(request: Request) {
   try {
@@ -150,32 +115,70 @@ export async function POST(request: Request) {
               try {
                 // Get token metadata
                 const metadataRequest = {
-          jsonrpc: "2.0",
+                  jsonrpc: "2.0",
                   method: "alchemy_getTokenMetadata",
                   params: [token.contractAddress],
-          id: 2
-        };
+                  id: 2
+                };
 
-            const metadataResp = await fetch(alchemyUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
+                const metadataResp = await fetch(alchemyUrl, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
                   body: JSON.stringify(metadataRequest),
-            });
+                });
 
-            if (metadataResp.ok) {
-              const metadataData = await metadataResp.json();
+                if (metadataResp.ok) {
+                  const metadataData = await metadataResp.json();
                   if (metadataData.result) {
                     const metadata = metadataData.result;
                     const balance = parseInt(token.tokenBalance, 16) / Math.pow(10, metadata.decimals || 18);
                     
-                    tokenBalances.push({
-                      contractAddress: token.contractAddress,
-                      name: metadata.name || 'Unknown Token',
-                      symbol: metadata.symbol || 'UNK',
-                      tokenBalance: balance.toString(),
-                      decimals: (metadata.decimals || 18).toString(),
-                      logo: metadata.logo || null
-                    });
+                    // Get token price and USD value from DexScreener
+                    let priceUsd = 0;
+                    let logo = metadata.logo;
+                    
+                    try {
+                      const dexScreenerResp = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${token.contractAddress}`);
+                      if (dexScreenerResp.ok) {
+                        const dexData = await dexScreenerResp.json();
+                        const pair = dexData.pairs?.[0];
+                        if (pair) {
+                          // Get price from DexScreener
+                          if (pair.priceUsd) {
+                            priceUsd = parseFloat(pair.priceUsd);
+                          }
+                          
+                          // Get logo from DexScreener using the same pattern as other parts of the app
+                          if (!logo) {
+                            logo = pair.info?.imageUrl || 
+                                   pair.mediaContent?.previewImage?.small || 
+                                   pair.baseToken?.image ||
+                                   pair.baseToken?.logoURI ||
+                                   pair.quoteToken?.logoURI;
+                          }
+                        }
+                      }
+                    } catch (error) {
+                      console.log(`Error fetching DexScreener data for ${token.contractAddress}:`, error);
+                    }
+                    
+                    // Calculate USD value
+                    const usdValue = balance * priceUsd;
+                    
+                    // Only include tokens worth more than $0.01
+                    if (usdValue >= 0.01) {
+                      tokenBalances.push({
+                        contractAddress: token.contractAddress,
+                        name: metadata.name || 'Unknown Token',
+                        symbol: metadata.symbol || 'UNK',
+                        tokenBalance: balance.toString(),
+                        decimals: (metadata.decimals || 18).toString(),
+                        logo: logo || `https://dexscreener.com/base/${token.contractAddress}/logo.png`,
+                        priceUsd: priceUsd,
+                        usdValue: usdValue,
+                        priceChange24h: 0 // We can add this later if needed
+                      });
+                    }
                   }
                 }
               } catch (error) {
@@ -185,8 +188,11 @@ export async function POST(request: Request) {
           }
         }
 
+        // Sort by USD value (highest first)
+        tokenBalances.sort((a, b) => b.usdValue - a.usdValue);
+
         result = { tokenBalances };
-        console.log(`Token result:`, result);
+        console.log(`Token result: Found ${tokenBalances.length} tokens with value >= $0.01`);
         break;
 
       case 'transactions':

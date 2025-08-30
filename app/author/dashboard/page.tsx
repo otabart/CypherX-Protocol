@@ -2,22 +2,18 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { useAuth } from "@/hooks/useAuth";
-import { useWalletSystem } from "@/hooks/useWalletSystem";
+import { useWalletSystem } from "@/app/providers";
 import { 
   FiPlus, 
   FiEdit, 
   FiEye, 
   FiTrendingUp, 
-  FiUsers, 
   FiMessageSquare,
   FiCalendar,
-  FiBarChart3,
-  FiSettings,
+
   FiFileText,
   FiDollarSign
 } from "react-icons/fi";
-import { HiOutlineSparkles } from "react-icons/hi";
 
 interface AuthorStats {
   totalPosts: number;
@@ -45,7 +41,7 @@ interface AuthorPost {
 }
 
 const AuthorDashboard = () => {
-  const { user } = useAuth();
+
   const { selfCustodialWallet } = useWalletSystem();
   const walletAddress = selfCustodialWallet?.address;
 

@@ -29,15 +29,14 @@ import toast, { Toaster } from "react-hot-toast";
 // --------------------------------------------------------------------------------------------------
 
 interface MarketplaceItem {
-  id?: number;
+  id?: string;
   name: string;
   price?: string;
   category?:
     | 'Advertisement'
     | 'TokenBoost'
     | 'ExplorerProfile'
-    | 'Bump Bot'
-    | 'Telegram';
+    | 'Bump Bot';
   description: string;
   available?: boolean;
   duration?: string;
@@ -125,7 +124,7 @@ export default function MarketplacePage() {
 
   const marketplaceItems: MarketplaceItem[] = [
     {
-      id: 1,
+      id: "1",
       name: 'Banner Ad Slot',
       price: '50 USDC',
       category: 'Advertisement',
@@ -135,7 +134,7 @@ export default function MarketplacePage() {
       duration: '48HR',
     },
     {
-      id: 2,
+      id: "2",
       name: 'Boost (10)',
       price: '10 USDC',
       category: 'TokenBoost',
@@ -145,7 +144,7 @@ export default function MarketplacePage() {
       available: true,
     },
     {
-      id: 3,
+      id: "3",
       name: 'Boost (20)',
       price: '15 USDC',
       category: 'TokenBoost',
@@ -155,7 +154,7 @@ export default function MarketplacePage() {
       available: true,
     },
     {
-      id: 4,
+      id: "4",
       name: 'Boost (30)',
       price: '20 USDC',
       category: 'TokenBoost',
@@ -165,7 +164,7 @@ export default function MarketplacePage() {
       available: true,
     },
     {
-      id: 5,
+      id: "5",
       name: 'Boost (40)',
       price: '25 USDC',
       category: 'TokenBoost',
@@ -175,7 +174,7 @@ export default function MarketplacePage() {
       available: true,
     },
     {
-      id: 6,
+      id: "6",
       name: 'Boost (50)',
       price: '35 USDC',
       category: 'TokenBoost',
@@ -185,7 +184,7 @@ export default function MarketplacePage() {
       available: true,
     },
     {
-      id: 7,
+      id: "7",
       name: 'Boost (100)',
       price: '50 USDC',
       category: 'TokenBoost',
@@ -195,7 +194,7 @@ export default function MarketplacePage() {
       available: true,
     },
     {
-      id: 8,
+      id: "8",
       name: 'Boost (150)',
       price: '75 USDC',
       category: 'TokenBoost',
@@ -205,7 +204,7 @@ export default function MarketplacePage() {
       available: true,
     },
     {
-      id: 9,
+      id: "9",
       name: 'Boost (200)',
       price: '90 USDC',
       category: 'TokenBoost',
@@ -215,7 +214,7 @@ export default function MarketplacePage() {
       available: true,
     },
     {
-      id: 10,
+      id: "10",
       name: 'Boost (250)',
       price: '100 USDC',
       category: 'TokenBoost',
@@ -225,7 +224,7 @@ export default function MarketplacePage() {
       available: true,
     },
     {
-      id: 11,
+      id: "11",
       name: 'Boost (500)',
       price: '175 USDC',
       category: 'TokenBoost',
@@ -235,24 +234,24 @@ export default function MarketplacePage() {
       available: true,
     },
     {
-      id: 12,
-      name: 'Boost (1000)',
-      price: '300 USDC',
-      category: 'TokenBoost',
-      duration: '48HR',
+      id: "12",
+      name: 'Explorer Profile',
+      price: '25 USDC',
+      category: 'ExplorerProfile',
+      duration: 'Permanent',
       description:
-        "Increase your token's visibility with a score of 1000. Once confirmed, your token will appear boosted in the screener!",
+        'Get a verified explorer profile with enhanced features and priority support.',
       available: true,
     },
     {
-      id: 13,
-      name: 'Custom Explorer Profile',
-      price: '2 CYPH',
-      category: 'ExplorerProfile',
+      id: "13",
+      name: 'Bump Bot',
+      price: '50 USDC',
+      category: 'Bump Bot',
+      duration: 'Monthly',
       description:
-        'Design a unique blockchain explorer profile, exclusive to Base chain. Once confirmed, your profile will be updated!',
+        'Automated bump bot to keep your token trending and visible in the community.',
       available: true,
-      duration: 'Permanent',
     },
   ];
 

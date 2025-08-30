@@ -35,7 +35,7 @@ export async function GET() {
         });
       }
     }
-  } catch (dexError) {
+      } catch {
     console.log('DexScreener failed, trying other sources');
   }
 
