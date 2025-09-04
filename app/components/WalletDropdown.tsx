@@ -1,12 +1,18 @@
 "use client";
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { FaWallet, FaDownload, FaEye, FaEyeSlash, FaArrowLeft } from "react-icons/fa";
+import { FaWallet, FaDownload, FaEye, FaEyeSlash, FaArrowLeft, FaLock } from "react-icons/fa";
 import { Sparklines, SparklinesLine, SparklinesCurve } from "react-sparklines";
 import { ethers } from "ethers";
-import { toast } from "react-hot-toast";
+
 import { motion, AnimatePresence } from "framer-motion";
 import { useWalletSystem } from "@/app/providers";
+import { secureWalletManager } from "@/lib/secure-wallet";
+import { realtimeDataService } from "@/lib/realtime-data";
+import LoadingSpinner from "./LoadingSpinner";
+import ErrorDisplay from "./ErrorDisplay";
+import { getErrorMessage, logError } from "@/app/utils/errorHandling";
+
 
 // Error Boundary Component
 class WalletDropdownErrorBoundary extends React.Component<
@@ -60,6 +66,8 @@ interface WalletData {
   createdAt: number;
 }
 
+// Removed unused interface WalletSecurityState
+
 interface Transaction {
   id?: string;
   hash: string;
@@ -83,9 +91,10 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
   onClose,
   walletSystem
 }) => {
-  const { setSelfCustodialWallet, setWalletLoading } = useWalletSystem();
+  const { setSelfCustodialWallet, setWalletLoading, walletLoading } = useWalletSystem();
   const [isMobile, setIsMobile] = useState(false);
   const [walletData, setWalletData] = useState<WalletData | null>(null);
+
   const [ethBalance, setEthBalance] = useState<string>("0.0");
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -94,10 +103,16 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
   const [ethPrice, setEthPrice] = useState<number>(0);
   const [tokenHoldings, setTokenHoldings] = useState<any[]>([]);
   const [isLoadingHoldings, setIsLoadingHoldings] = useState<boolean>(false);
+  const [holdingsError, setHoldingsError] = useState<string>('');
+  const [transactionsError, setTransactionsError] = useState<string>('');
+  const [balanceError, setBalanceError] = useState<string>('');
   const [hiddenTokens, setHiddenTokens] = useState<Set<string>>(new Set());
   const [showWalletDropdown, setShowWalletDropdown] = useState<boolean>(false);
   const [userAlias, setUserAlias] = useState<string>('');
   const [currentSection, setCurrentSection] = useState<'main' | 'send' | 'receive' | 'swap' | 'buy'>('main');
+  const [walletPassword, setWalletPassword] = useState<string>('');
+  const [showPasswordModal, setShowPasswordModal] = useState<boolean>(false);
+  const [passwordError, setPasswordError] = useState<string>('');
   const [sendAmount, setSendAmount] = useState<string>('');
   const [sendAddress, setSendAddress] = useState<string>('');
   const [selectedToken, setSelectedToken] = useState<string>('ETH');
@@ -154,55 +169,270 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
 
   // Fetch wallet balance
   const fetchBalance = useCallback(async (address: string) => {
+    setBalanceError('');
     try {
       const response = await fetch(`/api/wallet/balance?address=${address}`);
       if (response.ok) {
-      const data = await response.json();
-      if (data.success) {
-        setEthBalance(data.ethBalance);
-        setSelfCustodialWallet({
-          address: address,
-          isConnected: true,
-          ethBalance: data.ethBalance,
-          tokenBalance: data.tokenBalance || "0.0"
-        });
+        const data = await response.json();
+        if (data.success) {
+          setEthBalance(data.ethBalance);
+          setSelfCustodialWallet({
+            address: address,
+            isConnected: true,
+            ethBalance: data.ethBalance,
+            tokenBalance: data.tokenBalance || "0.0"
+          });
+        } else {
+          const errorMessage = getErrorMessage('Balance fetch failed', 'wallet');
+          setBalanceError(errorMessage);
         }
+      } else {
+        const errorMessage = getErrorMessage(`HTTP ${response.status}`, 'wallet');
+        setBalanceError(errorMessage);
+        logError(`Balance response not ok: ${response.status}`, 'wallet');
       }
     } catch (error) {
-      console.error("Error fetching balance:", error);
+      const errorMessage = getErrorMessage(error, 'wallet');
+      setBalanceError(errorMessage);
+      logError(error, 'wallet');
     }
   }, [setSelfCustodialWallet]);
 
-  // Load existing wallet from localStorage
-  const loadWallet = useCallback(() => {
+  // Fetch token holdings
+  const fetchTokenHoldings = useCallback(async () => {
+    if (!walletData?.address) return;
+    
+    console.log('🔍 Fetching token holdings for address:', walletData.address);
+    setIsLoadingHoldings(true);
+    setHoldingsError('');
+    
+    try {
+      const response = await fetch('/api/alchemy/wallet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          address: walletData.address,
+          action: 'tokens'
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('🔍 Token holdings response:', data);
+        if (data.success && data.data && data.data.tokenBalances) {
+          console.log('🔍 Setting token holdings:', data.data.tokenBalances);
+          setTokenHoldings(data.data.tokenBalances);
+        } else {
+          console.log('🔍 No token balances found in response');
+          setTokenHoldings([]);
+        }
+      } else {
+        const errorMessage = getErrorMessage(`HTTP ${response.status}`, 'wallet');
+        setHoldingsError(errorMessage);
+        logError(`Token holdings response not ok: ${response.status}`, 'wallet');
+      }
+    } catch (error) {
+      const errorMessage = getErrorMessage(error, 'wallet');
+      setHoldingsError(errorMessage);
+      logError(error, 'wallet');
+    } finally {
+      setIsLoadingHoldings(false);
+    }
+  }, [walletData?.address]);
+
+  // Fetch transactions
+  const fetchTransactions = useCallback(async () => {
+    if (!walletData?.address) return;
+    
+    console.log('🔍 Fetching transactions for address:', walletData.address);
+    setIsLoadingTransactions(true);
+    setTransactionsError('');
+    
+    try {
+      const response = await fetch('/api/alchemy/wallet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          address: walletData.address,
+          action: 'transactions',
+          page: 1,
+          limit: 20
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('🔍 Transactions response:', data);
+        if (data.success && data.data && data.data.transactions) {
+          console.log('🔍 Found transactions:', data.data.transactions.length);
+          const processedTransactions = data.data.transactions.map((tx: any) => {
+            console.log('🔍 Processing transaction:', tx);
+            
+            // Handle timestamp conversion properly
+            let timestamp = Date.now();
+            if (tx.timestamp) {
+              // If timestamp is a number, it's likely a Unix timestamp
+              if (typeof tx.timestamp === 'number') {
+                // Check if it's in seconds or milliseconds
+                if (tx.timestamp < 10000000000) {
+                  // It's in seconds, convert to milliseconds
+                  timestamp = tx.timestamp * 1000;
+                } else {
+                  // It's already in milliseconds
+                  timestamp = tx.timestamp;
+                }
+              } else if (typeof tx.timestamp === 'string') {
+                // Try to parse as a date string
+                const parsed = new Date(tx.timestamp).getTime();
+                if (!isNaN(parsed)) {
+                  timestamp = parsed;
+                }
+              }
+            }
+            
+            // Handle amount calculation properly
+            let amount = '0';
+            if (tx.amount) {
+              // If amount is already calculated, use it
+              const parsedAmount = parseFloat(tx.amount);
+              if (!isNaN(parsedAmount)) {
+                amount = parsedAmount.toFixed(6);
+              }
+            } else if (tx.value) {
+              // If we have raw value, format it
+              try {
+                amount = ethers.formatEther(tx.value);
+              } catch (error) {
+                console.error('Error formatting value:', error);
+                amount = '0';
+              }
+            }
+            
+            // Calculate USD value based on asset type
+            let usdValue = '0';
+            if (tx.asset === 'ETH') {
+              const amountNum = parseFloat(amount);
+              if (!isNaN(amountNum)) {
+                usdValue = (amountNum * ethPrice).toFixed(2);
+              }
+            } else {
+              // For tokens, we'll need to get price from elsewhere
+              usdValue = '0'; // TODO: Get token price
+            }
+            
+            return {
+              id: tx.hash,
+              hash: tx.hash,
+              from: tx.from,
+              to: tx.to,
+              value: tx.value,
+              gasUsed: tx.gasUsed || '0',
+              gasPrice: tx.gasPrice || '0',
+              timestamp: timestamp,
+              status: tx.status || 'confirmed',
+              type: tx.type || (tx.from.toLowerCase() === walletData.address.toLowerCase() ? 'outgoing' : 'incoming'),
+              amount: amount,
+              token: tx.asset || 'ETH',
+              usdValue: usdValue
+            };
+          });
+          console.log('🔍 Processed transactions:', processedTransactions);
+          setTransactions(processedTransactions);
+        } else {
+          console.log('🔍 No transactions found in response');
+          setTransactions([]);
+        }
+      } else {
+        const errorMessage = getErrorMessage(`HTTP ${response.status}`, 'wallet');
+        setTransactionsError(errorMessage);
+        logError(`Transactions response not ok: ${response.status}`, 'wallet');
+        setTransactions([]);
+      }
+    } catch (error) {
+      const errorMessage = getErrorMessage(error, 'wallet');
+      setTransactionsError(errorMessage);
+      logError(error, 'wallet');
+      setTransactions([]);
+    } finally {
+      setIsLoadingTransactions(false);
+    }
+  }, [walletData?.address, ethPrice]);
+
+  // Load existing wallet from secure storage
+  const loadWallet = useCallback(async () => {
     try {
       if (typeof window !== "undefined") {
-        const storedWallet = localStorage.getItem("cypherx_wallet");
-        if (storedWallet) {
-          try {
-            const data = JSON.parse(storedWallet);
-            setWalletData(data);
+        // Check if secure wallet exists
+        if (secureWalletManager.hasWallet()) {
+          const address = secureWalletManager.getWalletAddress();
+          if (address) {
+            
+            // Set wallet as connected but locked
             setSelfCustodialWallet({
-              address: data.address,
+              address: address,
               isConnected: true,
               ethBalance: "0.0",
               tokenBalance: "0.0"
             });
-            fetchBalance(data.address);
-            fetchTransactions();
-          } catch (error) {
-            console.error("Error loading wallet:", error);
-            toast.error("Failed to load wallet");
+            
+            // Show password modal to unlock
+            setShowPasswordModal(true);
+          }
+        } else {
+          // Fallback to old wallet system
+          const storedWallet = localStorage.getItem("cypherx_wallet");
+          if (storedWallet) {
+            try {
+              const data = JSON.parse(storedWallet);
+              setWalletData(data);
+              setSelfCustodialWallet({
+                address: data.address,
+                isConnected: true,
+                ethBalance: "0.0",
+                tokenBalance: "0.0"
+              });
+              fetchBalance(data.address);
+              fetchTransactions();
+            } catch (error) {
+              console.error("Error loading wallet:", error);
+            }
           }
         }
         setWalletLoading(false);
       }
     } catch (error) {
       console.error("Error in loadWallet:", error);
-      toast.error("Failed to load wallet");
       setWalletLoading(false);
     }
   }, [setSelfCustodialWallet, fetchBalance, setWalletLoading]);
+
+  // Unlock wallet with password
+  const unlockWallet = useCallback(async (password: string) => {
+    try {
+      setPasswordError('');
+      const wallet = await secureWalletManager.unlockWallet(password);
+      
+      if (wallet) {
+        
+        setShowPasswordModal(false);
+        setWalletPassword('');
+        
+        // Fetch wallet data
+        fetchBalance(wallet.address);
+        fetchTransactions();
+        
+        // Subscribe to real-time updates
+        realtimeDataService.subscribeToWallet(wallet.address, (walletUpdate) => {
+          setEthBalance(walletUpdate.ethBalance);
+          setTokenHoldings(walletUpdate.tokenBalances);
+        });
+      }
+    } catch (error) {
+      setPasswordError(error instanceof Error ? error.message : 'Failed to unlock wallet');
+    }
+  }, [fetchBalance, fetchTransactions]);
+
+
 
   // Import wallet from backup file
   const importWallet = useCallback(() => {
@@ -239,7 +469,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
             }
           } catch (error) {
             console.error("Error importing wallet:", error);
-            toast.error("Failed to import wallet");
+            console.error("Failed to import wallet");
           }
         };
         reader.readAsText(file);
@@ -247,134 +477,6 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
     };
     input.click();
   }, [setSelfCustodialWallet, fetchBalance]);
-
-  // Fetch token holdings
-  const fetchTokenHoldings = useCallback(async () => {
-    if (!walletData?.address) return;
-    
-    console.log('🔍 Fetching token holdings for address:', walletData.address);
-    setIsLoadingHoldings(true);
-    try {
-      const response = await fetch('/api/alchemy/wallet', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          address: walletData.address,
-          action: 'tokens'
-        })
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('🔍 Token holdings response:', data);
-        if (data.success && data.data && data.data.tokenBalances) {
-          console.log('🔍 Setting token holdings:', data.data.tokenBalances);
-          setTokenHoldings(data.data.tokenBalances);
-        } else {
-          console.log('🔍 No token balances found in response');
-        }
-      } else {
-        console.error('🔍 Token holdings response not ok:', response.status);
-      }
-    } catch (error) {
-      console.error('Error fetching token holdings:', error);
-    } finally {
-      setIsLoadingHoldings(false);
-    }
-  }, [walletData?.address]);
-
-  // Fetch transactions
-  const fetchTransactions = useCallback(async () => {
-    if (!walletData?.address) return;
-    
-    console.log('🔍 Fetching transactions for address:', walletData.address);
-    setIsLoadingTransactions(true);
-    try {
-      const response = await fetch('/api/alchemy/wallet', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          address: walletData.address,
-          action: 'transactions',
-          page: 1,
-          limit: 20
-        })
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('🔍 Transactions response:', data);
-        if (data.success && data.data && data.data.transactions) {
-          console.log('🔍 Found transactions:', data.data.transactions.length);
-          const processedTransactions = data.data.transactions.map((tx: any) => {
-            console.log('🔍 Processing transaction:', tx);
-            return {
-              id: tx.hash,
-              hash: tx.hash,
-              from: tx.from,
-              to: tx.to,
-              value: tx.value,
-              gasUsed: tx.gasUsed || '0',
-              gasPrice: tx.gasPrice || '0',
-              timestamp: tx.timestamp || Date.now(),
-              status: tx.status || 'confirmed',
-              type: tx.type || (tx.from.toLowerCase() === walletData.address.toLowerCase() ? 'outgoing' : 'incoming'),
-              amount: tx.amount || (tx.value ? ethers.formatEther(tx.value) : '0'),
-              token: tx.asset || 'ETH',
-              usdValue: tx.value ? (parseFloat(ethers.formatEther(tx.value)) * ethPrice).toFixed(2) : '0'
-            };
-          });
-          console.log('🔍 Processed transactions:', processedTransactions);
-          setTransactions(processedTransactions);
-        } else {
-          console.log('🔍 No transactions found in response');
-          
-          // Add mock transactions for testing if no real transactions found
-          const mockTransactions: Transaction[] = [
-            {
-              id: 'mock-1',
-              hash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
-              from: '0x0000000000000000000000000000000000000000',
-              to: walletData.address,
-              value: '1000000000000000000', // 1 ETH
-              gasUsed: '21000',
-              gasPrice: '20000000000',
-              timestamp: Date.now() - 86400000, // 1 day ago
-              status: 'confirmed' as const,
-              type: 'incoming' as const,
-              amount: '1.0',
-              token: 'ETH',
-              usdValue: '2000.00'
-            },
-            {
-              id: 'mock-2',
-              hash: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
-              from: walletData.address,
-              to: '0x1111111111111111111111111111111111111111',
-              value: '500000000000000000', // 0.5 ETH
-              gasUsed: '21000',
-              gasPrice: '20000000000',
-              timestamp: Date.now() - 172800000, // 2 days ago
-              status: 'confirmed' as const,
-              type: 'outgoing' as const,
-              amount: '0.5',
-              token: 'ETH',
-              usdValue: '1000.00'
-            }
-          ];
-          
-          console.log('🔍 Using mock transactions for testing');
-          setTransactions(mockTransactions);
-        }
-      } else {
-        console.error('🔍 Transactions response not ok:', response.status);
-      }
-    } catch (error) {
-      console.error('Error fetching transactions:', error);
-    } finally {
-      setIsLoadingTransactions(false);
-    }
-  }, [walletData?.address, ethPrice]);
 
   // Create new wallet
   const createWallet = useCallback(() => {
@@ -398,10 +500,10 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
       });
       
       walletLoadedRef.current = false; // Reset ref for new wallet
-      toast.success("Wallet created successfully!");
+              console.log("Wallet created successfully!");
     } catch (error) {
       console.error("Error creating wallet:", error);
-      toast.error("Failed to create wallet");
+              console.error("Failed to create wallet");
     }
   }, [setSelfCustodialWallet]);
 
@@ -411,7 +513,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
     
     if (!walletData?.address) {
       console.error("No wallet address available");
-      toast.error("No address available to copy");
+      console.error("Action failed");
       return;
     }
     
@@ -419,7 +521,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
       // Try modern clipboard API first
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(walletData.address);
-        toast.success("Address copied to clipboard");
+        console.log("Action completed");
         console.log("Address copied successfully:", walletData.address);
       } else {
         // Fallback for older browsers
@@ -436,7 +538,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
         document.body.removeChild(textArea);
         
         if (successful) {
-          toast.success("Address copied to clipboard");
+          console.log("Action completed");
           console.log("Address copied successfully (fallback):", walletData.address);
         } else {
           throw new Error("execCommand copy failed");
@@ -445,7 +547,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
     } catch (error) {
       console.error("Failed to copy address:", error);
       console.error("Error details:", error instanceof Error ? error.message : 'Unknown error');
-      toast.error("Failed to copy address");
+      console.error("Action failed");
     }
   }, [walletData]);
 
@@ -453,7 +555,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
   const copyPrivateKey = useCallback(async () => {
     if (!walletData?.privateKey) {
       console.error("No private key available");
-      toast.error("No private key available to copy");
+      console.error("Action failed");
       return;
     }
     
@@ -461,7 +563,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
       // Try modern clipboard API first
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(walletData.privateKey);
-        toast.success("Private key copied to clipboard");
+        console.log("Action completed");
       } else {
         // Fallback for older browsers
         const textArea = document.createElement('textarea');
@@ -477,14 +579,14 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
         document.body.removeChild(textArea);
         
         if (successful) {
-          toast.success("Private key copied to clipboard");
+          console.log("Action completed");
         } else {
           throw new Error("execCommand copy failed");
         }
       }
     } catch (error) {
       console.error("Failed to copy private key:", error);
-      toast.error("Failed to copy private key");
+      console.error("Action failed");
     }
   }, [walletData]);
 
@@ -495,7 +597,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
     
     if (!address || typeof address !== 'string') {
       console.error("Invalid address:", address);
-      toast.error("No valid address to copy");
+      console.error("Action failed");
       return;
     }
     
@@ -504,7 +606,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(address);
         setCopiedAddress(true);
-        toast.success("Address copied to clipboard");
+        console.log("Action completed");
         console.log("Address copied successfully:", address);
         
         // Reset the copied state after 2 seconds
@@ -527,7 +629,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
         
         if (successful) {
           setCopiedAddress(true);
-          toast.success("Address copied to clipboard");
+          console.log("Action completed");
           console.log("Address copied successfully (fallback):", address);
           
           setTimeout(() => {
@@ -540,7 +642,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
     } catch (error) {
       console.error("Failed to copy token address:", error);
       console.error("Error details:", error instanceof Error ? error.message : 'Unknown error');
-      toast.error("Failed to copy token address");
+      console.error("Action failed");
     }
   }, []);
 
@@ -577,12 +679,164 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
     setSelectedTokenForChart(null);
   }, []);
 
-  // Fetch OHLC data using GeckoTerminal API (same as chart page)
-  const fetchChartData = useCallback(async (_tokenAddress: string, _timeframe: string) => {
+  // Fetch OHLC data using DexScreener API
+  const fetchChartData = useCallback(async (tokenAddress: string, timeframe: string) => {
     setIsLoadingChart(true);
     try {
-      // Historical price fetching removed to prevent CORS errors
-      // For now, use mock data for all tokens
+      // For ETH, use CoinGecko API with different timeframes
+      if (tokenAddress === 'ethereum' || tokenAddress === 'ETH') {
+        let days = 1;
+        let interval = 'hourly';
+        
+        // Adjust parameters based on timeframe
+        switch (timeframe) {
+          case '15m':
+            days = 1;
+            interval = 'hourly';
+            break;
+          case '1h':
+            days = 1;
+            interval = 'hourly';
+            break;
+          case '4h':
+            days = 7;
+            interval = 'daily';
+            break;
+          case '1d':
+            days = 30;
+            interval = 'daily';
+            break;
+          default:
+            days = 1;
+            interval = 'hourly';
+        }
+        
+        const response = await fetch(`https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=${days}&interval=${interval}`);
+        if (response.ok) {
+          const data = await response.json();
+          const prices = data.prices || [];
+          const chartData = prices.map((price: [number, number]) => ({
+            time: price[0] / 1000,
+            close: price[1]
+          }));
+          setChartData(chartData);
+        } else {
+          throw new Error('Failed to fetch ETH data');
+        }
+      } else {
+        // For tokens, try to get historical data from DexScreener
+        // First get the pair data to find the pair address
+        const pairResponse = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${tokenAddress}`);
+        if (pairResponse.ok) {
+          const pairData = await pairResponse.json();
+          if (pairData.pairs && pairData.pairs.length > 0) {
+            // Get the most liquid pair on Base
+            const basePairs = pairData.pairs.filter((pair: any) => 
+              pair.chainId === 'base' || pair.dexId === 'uniswap_v3' || pair.dexId === 'aerodrome'
+            );
+            const pair = basePairs.length > 0 ? basePairs[0] : pairData.pairs[0];
+            const pairAddress = pair.pairAddress;
+            
+            // Try to get historical data for this pair
+            const historicalResponse = await fetch(`https://api.dexscreener.com/latest/dex/pairs/base/${pairAddress}`);
+            if (historicalResponse.ok) {
+              const historicalData = await historicalResponse.json();
+              if (historicalData.pair && historicalData.pair.priceHistory) {
+                const chartData = historicalData.pair.priceHistory.map((price: any) => ({
+                  time: new Date(price.timestamp).getTime() / 1000,
+                  close: parseFloat(price.price)
+                }));
+                setChartData(chartData);
+              } else {
+                // Fallback: generate realistic data based on current price and timeframe
+                const currentPrice = parseFloat(pair.priceUsd || '1');
+                const priceChange = pair.priceChange?.h24 || 0;
+                
+                let dataPoints = 24;
+                let timeInterval = 3600; // 1 hour
+                
+                switch (timeframe) {
+                  case '15m':
+                    dataPoints = 96; // 24 hours / 15 minutes
+                    timeInterval = 900; // 15 minutes
+                    break;
+                  case '1h':
+                    dataPoints = 24;
+                    timeInterval = 3600;
+                    break;
+                  case '4h':
+                    dataPoints = 42; // 7 days / 4 hours
+                    timeInterval = 14400; // 4 hours
+                    break;
+                  case '1d':
+                    dataPoints = 30;
+                    timeInterval = 86400; // 1 day
+                    break;
+                }
+                
+                const chartData = Array.from({ length: dataPoints }, (_, i) => {
+                  const time = Date.now() / 1000 - (dataPoints - i) * timeInterval;
+                  const progress = i / dataPoints;
+                  const trend = priceChange > 0 ? 1 : -1;
+                  const variance = Math.sin(progress * Math.PI * 2) * 0.02 + (trend * progress * 0.01);
+                  const price = currentPrice * (1 + variance);
+                  return {
+                    time,
+                    close: price
+                  };
+                });
+                setChartData(chartData);
+              }
+            } else {
+              // Fallback: generate realistic data based on current price
+              const currentPrice = parseFloat(pair.priceUsd || '1');
+              const priceChange = pair.priceChange?.h24 || 0;
+              
+              let dataPoints = 24;
+              let timeInterval = 3600;
+              
+              switch (timeframe) {
+                case '15m':
+                  dataPoints = 96;
+                  timeInterval = 900;
+                  break;
+                case '1h':
+                  dataPoints = 24;
+                  timeInterval = 3600;
+                  break;
+                case '4h':
+                  dataPoints = 42;
+                  timeInterval = 14400;
+                  break;
+                case '1d':
+                  dataPoints = 30;
+                  timeInterval = 86400;
+                  break;
+              }
+              
+              const chartData = Array.from({ length: dataPoints }, (_, i) => {
+                const time = Date.now() / 1000 - (dataPoints - i) * timeInterval;
+                const progress = i / dataPoints;
+                const trend = priceChange > 0 ? 1 : -1;
+                const variance = Math.sin(progress * Math.PI * 2) * 0.02 + (trend * progress * 0.01);
+                const price = currentPrice * (1 + variance);
+                return {
+                  time,
+                  close: price
+                };
+              });
+              setChartData(chartData);
+            }
+          } else {
+            throw new Error('No pairs found for token');
+          }
+        } else {
+          throw new Error('Failed to fetch pair data');
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching chart data:', error);
+      // Fallback to mock data if all else fails
       const mockData = Array.from({ length: 24 }, (_, i) => {
         const time = Date.now() / 1000 - (24 - i) * 3600;
         const basePrice = 1;
@@ -590,16 +844,10 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
         const price = basePrice * (1 + variance);
         return {
           time,
-          open: price * 0.99,
-          high: price * 1.02,
-          low: price * 0.98,
           close: price
         };
       });
       setChartData(mockData);
-    } catch (error) {
-      console.error('Error fetching chart data:', error);
-      setChartData([]);
     } finally {
       setIsLoadingChart(false);
     }
@@ -608,17 +856,41 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
   // Fetch token price from DexScreener
   const fetchTokenPrice = useCallback(async (tokenAddress: string) => {
     try {
+      // For ETH, use CoinGecko API
+      if (tokenAddress === 'ethereum' || tokenAddress === 'ETH') {
+        const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true');
+        if (response.ok) {
+          const data = await response.json();
+          const ethData = data.ethereum;
+          return {
+            price: ethData.usd || 0,
+            priceChange: ethData.usd_24h_change || 0,
+            volume24h: ethData.usd_24h_vol || 0,
+            liquidity: ethData.usd_market_cap || 0
+          };
+        }
+        return null;
+      }
+
+      // For tokens, use DexScreener
       const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${tokenAddress}`);
       const data = await response.json();
       
       if (data.pairs && data.pairs.length > 0) {
-        // Get the first pair (usually the most liquid one)
-        const pair = data.pairs[0];
+        // Get the most liquid pair on Base
+        const basePairs = data.pairs.filter((pair: any) => 
+          pair.chainId === 'base' || pair.dexId === 'uniswap_v3' || pair.dexId === 'aerodrome'
+        );
+        
+        const pair = basePairs.length > 0 ? basePairs[0] : data.pairs[0];
+        
         return {
           price: parseFloat(pair.priceUsd || '0'),
           priceChange: pair.priceChange?.h24 || 0,
           volume24h: pair.volume?.h24 || 0,
-          liquidity: pair.liquidity?.usd || 0
+          liquidity: pair.liquidity?.usd || 0,
+          marketCap: pair.marketCap || 0,
+          fdv: pair.fdv || 0
         };
       }
       return null;
@@ -667,7 +939,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
   // Handle send transaction
   const handleSendTransaction = useCallback(async () => {
     if (!walletData || !sendAmount || !sendAddress) {
-      toast.error("Please fill in all fields");
+      console.error("Action failed");
       return;
     }
 
@@ -677,14 +949,14 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
         const amount = parseFloat(sendAmount);
         const balance = parseFloat(ethBalance);
         if (amount > balance) {
-          toast.error("Insufficient ETH balance");
+          console.error("Action failed");
           return;
         }
       }
 
       // For now, just show a success message
       // In a real implementation, you would sign and send the transaction
-      toast.success(`Sending ${sendAmount} ${selectedToken} to ${sendAddress?.slice(0, 6)}...${sendAddress?.slice(-4)}`);
+      console.log(`Sending ${sendAmount} ${selectedToken} to ${sendAddress?.slice(0, 6)}...${sendAddress?.slice(-4)}`);
       
       // Reset form and go back to main
       setSendAmount('');
@@ -692,14 +964,14 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
       setCurrentSection('main');
     } catch (error) {
       console.error('Error sending transaction:', error);
-      toast.error("Failed to send transaction");
+      console.error("Action failed");
     }
   }, [walletData, sendAmount, sendAddress, selectedToken, ethBalance]);
 
   // Handle Buy/Sell button
   const handleBuySell = useCallback(() => {
     if (!walletData) {
-      toast.error("Please create or load a wallet first");
+      console.error("Action failed");
       return;
     }
     setCurrentSection('buy');
@@ -708,7 +980,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
   // Handle Swap button
   const handleSwap = useCallback(() => {
     if (!walletData) {
-      toast.error("Please create or load a wallet first");
+      console.error("Action failed");
       return;
     }
     setCurrentSection('swap');
@@ -717,7 +989,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
   // Handle Send button
   const handleSend = useCallback(() => {
     if (!walletData) {
-      toast.error("Please create or load a wallet first");
+      console.error("Action failed");
       return;
     }
     setCurrentSection('send');
@@ -726,7 +998,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
   // Handle receive
   const handleReceive = useCallback(() => {
     if (!walletData) {
-      toast.error("Please create or load a wallet first");
+      console.error("Action failed");
       return;
     }
     setCurrentSection('receive');
@@ -755,7 +1027,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       
-      toast.success("Wallet backup downloaded!");
+      console.log("Action completed");
     }
   }, [walletData]);
 
@@ -771,7 +1043,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
       setWalletData(null);
       setEthBalance("0.0");
       setTransactions([]);
-      toast.success('Wallet data cleared');
+      console.log("Action completed");
     }
   }, [setSelfCustodialWallet]);
 
@@ -785,7 +1057,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
         }, 0);
       } catch (error) {
         console.error('Error loading wallet:', error);
-        toast.error('Failed to load wallet');
+        console.error("Action failed");
       }
     }
   }, [isOpen, walletSystem, walletData, loadWallet]);
@@ -799,7 +1071,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
       }
       // Show wallet loaded toast only once when wallet is first loaded
       if (!walletLoadedRef.current) {
-        toast.success("Wallet loaded successfully!");
+        console.log("Action completed");
         walletLoadedRef.current = true;
       }
     }
@@ -889,20 +1161,24 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
   }, [fetchChartData, fetchTokenPrice]);
 
   // Handle clicking on ETH balance
-  const handleEthClick = useCallback(() => {
+  const handleEthClick = useCallback(async () => {
+    // Fetch real-time ETH data
+    const priceData = await fetchTokenPrice('ethereum');
+    
     const ethToken = {
       symbol: 'ETH',
       name: 'Ethereum',
       balance: ethBalance,
-      usdValue: ethPrice > 0 ? (parseFloat(ethBalance) * ethPrice).toFixed(2) : '0.00',
-      price: ethPrice,
+      usdValue: priceData ? (parseFloat(ethBalance) * priceData.price).toFixed(2) : '0.00',
+      price: priceData ? priceData.price : ethPrice,
+      priceChange: priceData ? priceData.priceChange : 0,
       logo: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
       coinGeckoId: 'ethereum'
     };
     setSelectedTokenForChart(ethToken);
     setCurrentView('asset-details');
     fetchChartData('ethereum', '1h');
-  }, [ethBalance, ethPrice, fetchChartData]);
+  }, [ethBalance, ethPrice, fetchChartData, fetchTokenPrice]);
 
 
 
@@ -951,13 +1227,91 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
     <AnimatePresence>
       {isOpen && (
         <>
-          <motion.div
-            className="fixed inset-0 bg-gray-900/60 z-[9999999]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-          />
+          {/* Password Modal */}
+          {showPasswordModal && (
+            <motion.div
+              className="fixed inset-0 bg-gray-900/80 z-[9999999] flex items-center justify-center"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <motion.div
+                className="bg-gray-800 p-6 rounded-lg border border-gray-700 w-96 max-w-md"
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+              >
+                <div className="flex items-center space-x-3 mb-6">
+                  <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+                    <FaLock className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-200">Unlock Wallet</h3>
+                    <p className="text-sm text-gray-400">Enter your password to access your wallet</p>
+                  </div>
+                </div>
+                
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  unlockWallet(walletPassword);
+                }}>
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Password
+                    </label>
+                    <input
+                      type="password"
+                      value={walletPassword}
+                      onChange={(e) => setWalletPassword(e.target.value)}
+                      className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-gray-200 focus:outline-none focus:border-blue-500"
+                      placeholder="Enter your wallet password"
+                      autoFocus
+                    />
+                  </div>
+                  
+                  {passwordError && (
+                    <div className="mb-4 p-3 bg-red-900/20 border border-red-700 rounded-lg">
+                      <p className="text-sm text-red-400">{passwordError}</p>
+                    </div>
+                  )}
+                  
+                  <div className="flex space-x-3">
+                    <button
+                      type="submit"
+                      className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                    >
+                      Unlock
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowPasswordModal(false);
+                        onClose();
+                      }}
+                      className="flex-1 py-3 px-4 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded-lg font-medium transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+                
+                <div className="mt-4 text-center">
+                  <button
+                    onClick={() => {
+                      secureWalletManager.clearWallet();
+                      setShowPasswordModal(false);
+                      onClose();
+                    }}
+                    className="text-sm text-gray-400 hover:text-red-400 transition-colors"
+                  >
+                    Clear Wallet Data
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+          
+
           <motion.div
             data-wallet-dropdown
                     className={isMobile
@@ -1026,6 +1380,21 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
                       </button>
+                      {/* Wallet Explorer Button */}
+                      {walletData?.address && (
+                        <button
+                          onClick={() => {
+                            const explorerUrl = `/explorer/address/${walletData.address}`;
+                            window.open(explorerUrl, '_blank');
+                          }}
+                          className="p-2 text-gray-400 hover:text-gray-300 hover:bg-gray-800 rounded-lg transition-colors"
+                          title="View in Explorer"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </button>
+                      )}
               </div>
                     </div>
 
@@ -1086,7 +1455,14 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
             )}
 
             <div className="flex-1 overflow-y-auto">
-              {walletSystem === "self-custodial" && currentSection === 'main' && currentView === 'main' && (
+              {/* Wallet Loading State */}
+              {walletLoading && (
+                <div className="flex items-center justify-center py-12">
+                  <LoadingSpinner size="lg" text="Loading wallet..." />
+                </div>
+              )}
+
+              {walletSystem === "self-custodial" && currentSection === 'main' && currentView === 'main' && !walletLoading && (
                 <div>
                   {/* Balance Section */}
                   {walletData ? (
@@ -1225,7 +1601,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
 
                   {/* Content Sections */}
                   {activeTab === "overview" && (
-                    <div className="px-4 py-4">
+                    <div className="px-4 py-4 h-96 overflow-y-auto scrollbar-hide">
                       {/* Network Header */}
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center space-x-2">
@@ -1262,18 +1638,24 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
                       
 
                        {/* Token List */}
-                       {isLoadingHoldings ? (
-                         <div className="text-center py-8">
-                           <div className="w-8 h-8 border-2 border-[#0052FF]/20 border-t-[#0052FF] rounded-full animate-spin mx-auto mb-2"></div>
-                           <p className="text-sm text-gray-400">Loading tokens...</p>
+                       {(tokenHoldings.length > 0 || parseFloat(ethBalance) > 0) ? (
+                        <div className="space-y-3">
+                                                    {/* ETH Balance Error State */}
+                          {balanceError && (
+                            <div className="p-4">
+                              <ErrorDisplay 
+                                error={balanceError} 
+                                variant="card" 
+                                onRetry={() => walletData?.address && fetchBalance(walletData.address)}
+                              />
                             </div>
-                       ) : (tokenHoldings.length > 0 || parseFloat(ethBalance) > 0) ? (
-                        <div className="space-y-2">
-                                                    {/* ETH Balance - Always show first if balance > 0 */}
-                          {parseFloat(ethBalance) > 0 && (
+                          )}
+
+                          {/* ETH Balance - Always show first if balance > 0 */}
+                          {parseFloat(ethBalance) > 0 && !balanceError && (
                             <div 
                               onClick={handleEthClick}
-                              className="flex items-center justify-between p-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors group cursor-pointer"
+                              className="flex items-center justify-between p-4 bg-gray-800/50 hover:bg-gray-700/50 rounded-xl border border-gray-700/50 transition-all duration-200 group cursor-pointer"
                               title="Click to view ETH chart"
                             >
                               <div className="flex items-center space-x-3">
@@ -1307,53 +1689,83 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
                             </div>
                           )}
 
+                          {/* Token Holdings Loading State */}
+                          {isLoadingHoldings && (
+                            <div className="flex items-center justify-center py-8">
+                              <LoadingSpinner size="md" text="Loading token holdings..." />
+                            </div>
+                          )}
+
+                          {/* Token Holdings Error State */}
+                          {holdingsError && !isLoadingHoldings && (
+                            <div className="p-4">
+                              <ErrorDisplay 
+                                error={holdingsError} 
+                                variant="card" 
+                                onRetry={fetchTokenHoldings}
+                              />
+                            </div>
+                          )}
+
                           {/* Other Token Holdings */}
-                          {tokenHoldings
+                          {!isLoadingHoldings && !holdingsError && tokenHoldings
                             .filter(token => !hiddenTokens.has(token.contractAddress))
                             .map((token, index) => (
                             <div 
                               key={token.contractAddress || index} 
                               onClick={() => handleTokenClick(token)}
-                              className="flex items-center justify-between p-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors group cursor-pointer"
+                              className="flex items-center justify-between p-4 bg-gray-800/50 hover:bg-gray-700/50 rounded-xl border border-gray-700/50 transition-all duration-200 group cursor-pointer"
                               title={`Click to view ${token.symbol} chart`}
                             >
-                              <div className="flex items-center space-x-3">
-                                <div className="w-8 h-8 rounded-full overflow-hidden">
-                                  <img 
-                                    src={token.logo || `https://dexscreener.com/base/${token.contractAddress}/logo.png`} 
-                                    alt={token.symbol}
-                                    className="w-full h-full object-cover"
-                                    onError={(e) => {
-                                      e.currentTarget.src = `https://dexscreener.com/base/${token.contractAddress}/logo.png`;
-                                    }}
-                              />
-                            </div>
-                            <div>
-                                  <div className="text-sm font-medium text-gray-200">{token.name || token.symbol}</div>
-                                  <div className="text-xs text-gray-400">
-                                    {parseFloat(token.tokenBalance || '0').toFixed(4)} {token.symbol}
-                            </div>
-                                </div>
+                                                             <div className="flex items-center space-x-3">
+                                 <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-700 flex items-center justify-center">
+                                   {token.logo ? (
+                                     <img 
+                                       src={token.logo} 
+                                       alt={token.symbol}
+                                       className="w-full h-full object-cover"
+                                       onError={(e) => {
+                                         e.currentTarget.style.display = 'none';
+                                         const fallback = e.currentTarget.parentElement?.querySelector('.token-fallback');
+                                         if (fallback) {
+                                           fallback.classList.remove('hidden');
+                                         }
+                                       }}
+                                     />
+                                   ) : null}
+                                   <div className={`token-fallback w-full h-full flex items-center justify-center text-white font-medium text-sm ${token.logo ? 'hidden' : ''}`}>
+                                     {(token.name || token.symbol || 'T').charAt(0).toUpperCase()}
+                                   </div>
+                                 </div>
+                                                         <div className="flex items-center space-x-2">
+                               <div>
+                                 <div className="text-sm font-medium text-gray-200">{token.name || token.symbol}</div>
+                                 <div className="text-xs text-gray-400">
+                                   {parseFloat(token.tokenBalance || '0').toFixed(4)} {token.symbol}
+                                 </div>
+                               </div>
+                               <button
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   toggleTokenVisibility(token.contractAddress);
+                                 }}
+                                 className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-gray-300 transition-opacity"
+                                 title="Hide token"
+                               >
+                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                 </svg>
+                               </button>
+                             </div>
                               </div>
-                              <div className="flex items-center space-x-2">
-                                <div className="text-right">
-                              <div className="text-sm font-medium text-gray-200">
-                                    ${token.usdValue ? parseFloat(token.usdValue).toFixed(2) : '0.00'}
-                                  </div>
-                                  <div className={`text-xs ${token.priceChange24h > 0 ? 'text-green-400' : token.priceChange24h < 0 ? 'text-red-400' : 'text-gray-400'}`}>
-                                    {token.priceChange24h ? `${token.priceChange24h > 0 ? '+' : ''}${token.priceChange24h.toFixed(2)}%` : '0.00%'}
-                              </div>
-                            </div>
-                            <button
-                                  onClick={() => toggleTokenVisibility(token.contractAddress)}
-                                  className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-gray-300 transition-opacity"
-                                  title="Hide token"
-                                >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                            </button>
-                          </div>
+                                                             <div className="text-right">
+                                 <div className="text-sm font-medium text-gray-200">
+                                   ${token.usdValue ? parseFloat(token.usdValue).toFixed(2) : '0.00'}
+                                 </div>
+                                 <div className="text-xs text-gray-400">
+                                   ${token.priceUsd ? parseFloat(token.priceUsd).toFixed(2) : '0.00'}
+                                 </div>
+                               </div>
                         </div>
                           ))}
                           
@@ -1376,25 +1788,36 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                             </svg>
                               </div>
-                          <p className="text-sm text-gray-400">No tokens found</p>
-                          <p className="text-xs text-gray-500 mt-1">Your tokens will appear here</p>
+                          <p className="text-sm text-gray-400">
+                            {tokenHoldings.length > 0 ? 'No tokens found' : 'No tokens found'}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {tokenHoldings.length > 0 ? 'All your tokens are shown' : 'Your tokens will appear here'}
+                          </p>
                               </div>
                       )}
                       </div>
                     )}
 
-                        {activeTab === "history" && (
-                    <div className="px-4 py-4">
+                        {activeTab === "history" && !walletLoading && (
+                    <div className="px-4 py-4 h-96 overflow-y-auto scrollbar-hide">
                           <div className="space-y-3">
                             {isLoadingTransactions ? (
-                              <div className="text-center py-8">
-                            <div className="w-8 h-8 border-2 border-[#0052FF]/20 border-t-[#0052FF] rounded-full animate-spin mx-auto mb-2"></div>
-                            <p className="text-sm text-gray-400">Loading transactions...</p>
+                              <div className="flex items-center justify-center py-8">
+                                <LoadingSpinner size="md" text="Loading transactions..." />
                               </div>
-                                                         ) : transactions.length > 0 ? (
-                          <div className="space-y-2">
+                            ) : transactionsError ? (
+                              <div className="p-4">
+                                <ErrorDisplay 
+                                  error={transactionsError} 
+                                  variant="card" 
+                                  onRetry={fetchTransactions}
+                                />
+                              </div>
+                            ) : transactions.length > 0 ? (
+                          <div className="space-y-3">
                                 {transactions.map((tx, index) => (
-                              <div key={tx.hash || tx.id || index} className="flex items-center justify-between p-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
+                              <div key={tx.hash || tx.id || index} className="flex items-center justify-between p-4 bg-gray-800/50 hover:bg-gray-700/50 rounded-xl border border-gray-700/50 transition-all duration-200">
                                 <div className="flex items-center space-x-3">
                                   <div className={`w-2 h-2 rounded-full ${
                                         tx.status === 'confirmed' ? 'bg-green-400' :
@@ -1403,16 +1826,20 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
                                       }`}></div>
                                   <div>
                                     <div className="text-sm font-medium text-gray-200">
-                                            {tx.type === 'incoming' ? 'Received' : tx.type === 'outgoing' ? 'Sent' : 'Transaction'}
+                                            {tx.type === 'incoming' ? 'Received' : tx.type === 'outgoing' ? 'Sent' : tx.type === 'buy' ? 'Buy' : tx.type === 'sell' ? 'Sell' : 'Transaction'}
                                         </div>
                                     <div className="text-xs text-gray-400">
-                                            {tx.timestamp ? new Date(tx.timestamp).toLocaleDateString() + ' ' + new Date(tx.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Unknown'}
+                                            {tx.timestamp ? new Date(tx.timestamp).toLocaleDateString('en-US', {
+                                              month: 'short',
+                                              day: 'numeric',
+                                              year: 'numeric'
+                                            }) + ' ' + new Date(tx.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Unknown'}
                                         </div>
                                       </div>
                                     </div>
                                 <div className="text-right">
-                                  <div className="text-sm font-medium text-gray-200">
-                                    {tx.amount && parseFloat(tx.amount) > 0 ? `${parseFloat(tx.amount).toFixed(4)} ${tx.token || 'ETH'}` : `0 ${tx.token || 'ETH'}`}
+                                  <div className={`text-sm font-medium ${tx.type === 'incoming' ? 'text-green-400' : tx.type === 'outgoing' ? 'text-red-400' : 'text-gray-200'}`}>
+                                    {tx.type === 'incoming' ? '+' : tx.type === 'outgoing' ? '-' : ''}{tx.amount && parseFloat(tx.amount) > 0 ? `${parseFloat(tx.amount) < 0.0001 ? parseFloat(tx.amount).toExponential(2) : parseFloat(tx.amount).toFixed(6)} ${tx.token || 'ETH'}` : `0 ${tx.token || 'ETH'}`}
                                   </div>
                                   {tx.usdValue && parseFloat(tx.usdValue) > 0 && (
                                     <div className="text-xs text-gray-400">
@@ -1437,7 +1864,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
                )}
 
                {/* Settings Tab */}
-               {activeTab === "settings" && (
+               {activeTab === "settings" && !walletLoading && (
                     <div className="px-4 py-4 space-y-4">
                    {/* Security Settings */}
                       <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
@@ -1580,7 +2007,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
                               copyTokenAddress(addressToCopy);
                             } else {
                               console.error("No address found to copy");
-                              toast.error("No address available to copy");
+                              console.error("Action failed");
                             }
                           }}
                           className={`p-2 rounded-lg transition-colors active:bg-gray-700 ${
@@ -1772,9 +2199,9 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
                           <div className="text-sm font-medium text-gray-200">
                             {selectedTokenForChart.name || selectedTokenForChart.symbol}
                           </div>
-                          <div className="flex items-center space-x-1 text-xs text-red-400">
-                            <span>▼</span>
-                            <span>-2.47%</span>
+                          <div className={`flex items-center space-x-1 text-xs ${(selectedTokenForChart.priceChange || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            <span>{(selectedTokenForChart.priceChange || 0) >= 0 ? '▲' : '▼'}</span>
+                            <span>{Math.abs(selectedTokenForChart.priceChange || 0).toFixed(2)}%</span>
                           </div>
                         </div>
                       </div>
@@ -1792,7 +2219,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
               )}
 
               {/* Send Section */}
-              {walletSystem === "self-custodial" && currentSection === 'send' && (
+              {walletSystem === "self-custodial" && currentSection === 'send' && !walletLoading && (
                 <div className="px-4 py-4">
                      <div className="flex items-center space-x-3 mb-4">
                     <button
@@ -1864,7 +2291,7 @@ const WalletDropdown: React.FC<WalletDropdownProps> = ({
                )}
 
               {/* Receive Section */}
-              {walletSystem === "self-custodial" && currentSection === 'receive' && (
+              {walletSystem === "self-custodial" && currentSection === 'receive' && !walletLoading && (
                 <div className="px-4 py-4">
                   <div className="flex items-center space-x-3 mb-4">
                     <button

@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Header from "@/app/components/Header";
 import Footer from "../../../components/Footer";
 import Link from "next/link";
+import Image from "next/image";
 import toast from "react-hot-toast";
 import { SiEthereum } from "react-icons/si";
 
@@ -36,17 +37,37 @@ interface Transaction {
   to: string;
   value: string;
   asset: string;
+  category: string;
+  timestamp: number;
+  blockNumber: string;
+  type: 'incoming' | 'outgoing' | 'internal';
+  description: string;
+  amount: string;
+  status: 'confirmed' | 'pending' | 'failed';
+  // Enhanced fields
   gasUsed?: string;
-  gasFeeUsd?: number;
-  timestamp?: number;
-  type?: string;
   gasPrice?: string;
-  input?: string;
-  blockNumber?: string;
+  gasLimit?: string;
+  gasFeeEth?: string;
+  gasFeeUsd?: number;
   nonce?: string;
   maxFeePerGas?: string;
   maxPriorityFeePerGas?: string;
-  status?: string | number;
+  contractAddress?: string;
+  contractName?: string;
+  methodSignature?: string;
+  inputData?: string;
+  isContractCreation?: boolean;
+  ethValueUsd?: number;
+  tokenTransfers?: Array<{
+    tokenAddress: string;
+    tokenSymbol: string;
+    tokenName: string;
+    value: string;
+    decimals: number;
+    usdValue?: number;
+  }>;
+  // Legacy fields for compatibility
   effectiveGasPrice?: string;
   fromName?: string;
   toName?: string;
@@ -108,7 +129,7 @@ const formatTokenPrice = (price: number) => {
   };
 
 const formatTime = (timestamp: number) => {
-  const date = new Date(timestamp * 1000);
+  const date = new Date(timestamp);
   return date.toLocaleString();
 };
 
@@ -132,7 +153,6 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
   const [showAdvancedFilter, setShowAdvancedFilter] = useState(false);
   const [showNameTagModal, setShowNameTagModal] = useState(false);
   const [nameTagInput, setNameTagInput] = useState('');
-  const ethCalculatedRef = useRef(false);
   
   // Transaction pagination and filtering state
   const [txPage, setTxPage] = useState(1);
@@ -183,7 +203,7 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
     try {
       console.log(`Fetching logo for ${symbol} (${contractAddress})`);
       
-      // Try DexScreener first (better for Base tokens)
+      // Try DexScreener first (better for Base tokens) - using working approach
       const dexScreenerUrl = `https://api.dexscreener.com/latest/dex/tokens/${contractAddress}`;
       console.log('Trying DexScreener:', dexScreenerUrl);
       const dexResponse = await fetch(dexScreenerUrl);
@@ -191,22 +211,64 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
       if (dexResponse.ok) {
         const dexData = await dexResponse.json();
         console.log('DexScreener response:', dexData);
+        
         if (dexData.pairs && dexData.pairs.length > 0) {
-          const logoUrl = dexData.pairs[0].baseToken?.logoURI || dexData.pairs[0].quoteToken?.logoURI;
+          // Get the most liquid pair on Base (same logic as WalletDropdown)
+          const basePairs = dexData.pairs.filter((pair: any) => 
+            pair.chainId === 'base' || pair.dexId === 'uniswap_v3' || pair.dexId === 'aerodrome'
+          );
+          
+          const bestPair = basePairs.length > 0 ? basePairs[0] : dexData.pairs[0];
+          
+          // Get logo from the pair info (same as Indexes component)
+          const logoUrl = bestPair.info?.imageUrl || 
+                         bestPair.baseToken?.logoURI || 
+                         bestPair.quoteToken?.logoURI;
+          
           if (logoUrl) {
-            console.log(`Found logo on DexScreener: ${logoUrl}`);
+            console.log(`Found logo from DexScreener: ${logoUrl}`);
             return logoUrl;
           }
         }
       }
 
-      // CoinGecko API calls removed to prevent CORS errors
+      // Try alternative DexScreener search endpoint
+      try {
+        const searchUrl = `https://api.dexscreener.com/latest/dex/search/?q=${contractAddress}`;
+        console.log('Trying DexScreener search:', searchUrl);
+        const searchResponse = await fetch(searchUrl);
+        
+        if (searchResponse.ok) {
+          const searchData = await searchResponse.json();
+          if (searchData.pairs && searchData.pairs.length > 0) {
+            for (const pair of searchData.pairs) {
+              if (pair.baseToken?.address?.toLowerCase() === contractAddress.toLowerCase()) {
+                if (pair.baseToken?.logoURI) {
+                  console.log(`Found logo via search: ${pair.baseToken.logoURI}`);
+                  return pair.baseToken.logoURI;
+                }
+              }
+              if (pair.quoteToken?.address?.toLowerCase() === contractAddress.toLowerCase()) {
+                if (pair.quoteToken?.logoURI) {
+                  console.log(`Found logo via search: ${pair.quoteToken.logoURI}`);
+                  return pair.quoteToken.logoURI;
+                }
+              }
+            }
+          }
+        }
+      } catch (searchError) {
+        console.log('Search endpoint failed, continuing...');
+      }
 
-      console.log(`No logo found for ${symbol}`);
-      return null;
+      // Fallback to DexScreener logo URL
+      const fallbackLogo = `https://dexscreener.com/base/${contractAddress}/logo.png`;
+      console.log(`Using DexScreener fallback logo for ${symbol}: ${fallbackLogo}`);
+      return fallbackLogo;
     } catch (error) {
       console.error('Error fetching token logo:', error);
-      return null;
+      // Return DexScreener logo URL as fallback
+      return `https://dexscreener.com/base/${contractAddress}/logo.png`;
     }
   };
 
@@ -311,7 +373,7 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
   // Recalculate wallet data when ETH price changes
   useEffect(() => {
     console.log('ETH price useEffect triggered - ethPrice:', ethPrice, 'walletData exists:', !!walletData);
-    if (walletData && ethPrice > 0 && !ethCalculatedRef.current) {
+    if (walletData && ethPrice > 0) {
       console.log('Recalculating wallet data with ETH price:', ethPrice);
       const ethUsdValue = walletData.ethBalance * ethPrice;
       const totalTokenValue = walletData.tokens.reduce((sum, token) => sum + (token.usdValue || 0), 0);
@@ -332,7 +394,6 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
       setWalletData(prev => {
         if (!prev) return null;
         console.log('Updating wallet data with new ETH values');
-        ethCalculatedRef.current = true;
         return {
           ...prev,
           ethUsdValue,
@@ -341,7 +402,7 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
         };
       });
     } else {
-      console.log('Skipping recalculation - ethPrice:', ethPrice, 'walletData exists:', !!walletData, 'already calculated:', ethCalculatedRef.current);
+      console.log('Skipping recalculation - ethPrice:', ethPrice, 'walletData exists:', !!walletData);
     }
   }, [ethPrice, walletData]);
 
@@ -353,8 +414,6 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
         const address = resolvedParams.walletAddress;
         setWalletAddress(address);
         
-        // Reset ETH calculation flag for new wallet
-        ethCalculatedRef.current = false;
 
         // Fetch basic wallet data
         const basicResponse = await fetch('/api/alchemy/wallet', {
@@ -420,81 +479,95 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
           logo: token.logo,
           decimals: parseInt(token.decimals),
           priceUsd: 0, // Will be fetched from DEX Screener
-          tokenImage: null, // Will be fetched from DEX Screener
+          tokenImage: `https://dexscreener.com/base/${token.contractAddress}/logo.png`, // DexScreener logo URL
           liquidity: 0,
           volume24h: 0,
           dexId: '',
           pairAddress: ''
         }));
 
-        // Fetch token prices and images from DEX Screener
-        const tokenPromises = tokens.map(async (token: Token) => {
-          try {
-            // Search for token on DEX Screener
-            const dexResponse = await fetch(`https://api.dexscreener.com/latest/dex/search?q=${token.contractAddress}`);
-            if (dexResponse.ok) {
-              const dexData = await dexResponse.json();
-              const pairs = dexData.pairs || [];
-              
-              if (pairs.length > 0) {
-                const pair = pairs[0]; // Get the first pair
-                const tokenPrice = parseFloat(pair.priceUsd || "0");
-                const usdValue = parseFloat(token.balance) * tokenPrice;
-                totalTokenValue += usdValue;
-                
-                return { 
-                  ...token, 
-                  usdValue,
-                  priceUsd: tokenPrice,
-                  priceChange24h: parseFloat(pair.priceChange24h || "0"),
-                  liquidity: pair.liquidity?.usd || 0,
-                  volume24h: pair.volume?.h24 || 0,
-                  dexId: pair.dexId,
-                  pairAddress: pair.pairAddress,
-                  tokenImage: pair.baseToken?.image || null
-                };
-              }
-            }
-          } catch (error) {
-            console.error(`Error fetching DEX data for ${token.symbol}:`, error);
-          }
-          
-          // Fallback to placeholder price
-          const tokenPrice = Math.random() * 100;
-          const usdValue = parseFloat(token.balance) * tokenPrice;
-          totalTokenValue += usdValue;
-          return { ...token, usdValue, priceUsd: tokenPrice };
-        });
+                 // Fetch token prices and images from DEX Screener - using exact same pattern as WalletDropdown
+         const tokenPromises = tokens.map(async (token: Token) => {
+           try {
+             const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${token.contractAddress}`);
+             const data = await response.json();
+             
+             if (data.pairs && data.pairs.length > 0) {
+               // Get the most liquid pair on Base (exact same logic as WalletDropdown)
+               const basePairs = data.pairs.filter((pair: any) => 
+                 pair.chainId === 'base' || pair.dexId === 'uniswap_v3' || pair.dexId === 'aerodrome'
+               );
+               
+               const pair = basePairs.length > 0 ? basePairs[0] : data.pairs[0];
+               
+               // Get logo using the same pattern as alchemy/wallet/route.ts
+               const tokenLogo = pair.info?.imageUrl || 
+                                pair.mediaContent?.previewImage?.small || 
+                                pair.baseToken?.image ||
+                                pair.baseToken?.logoURI ||
+                                pair.quoteToken?.logoURI ||
+                                `https://dexscreener.com/base/${token.contractAddress}/logo.png`;
+               
+               const tokenPrice = parseFloat(pair.priceUsd || "0");
+               const usdValue = parseFloat(token.balance) * tokenPrice;
+               totalTokenValue += usdValue;
+               
+               return { 
+                 ...token, 
+                 usdValue,
+                 priceUsd: tokenPrice,
+                 priceChange24h: parseFloat(pair.priceChange?.h24 || "0"),
+                 liquidity: pair.liquidity?.usd || 0,
+                 tokenImage: tokenLogo,
+                 volume24h: pair.volume?.h24 || 0,
+                 dexId: pair.dexId,
+                 pairAddress: pair.pairAddress
+               };
+             }
+           } catch (error) {
+             console.error(`Error fetching DEX data for ${token.symbol}:`, error);
+           }
+           
+           // Fallback to placeholder price - but mark as no valid logo
+           const tokenPrice = Math.random() * 100;
+           const usdValue = parseFloat(token.balance) * tokenPrice;
+           totalTokenValue += usdValue;
+           return { ...token, usdValue, priceUsd: tokenPrice, tokenImage: '' };
+         });
         
         // Wait for all token price fetches to complete
         tokens = await Promise.all(tokenPromises);
         
-        // Filter out tokens with ridiculous values and spam
-        tokens = tokens.filter((token: Token) => {
-          const usdValue = token.usdValue || 0;
-          const tokenBalance = parseFloat(token.balance || '0');
-          
-          // Filter out tokens with value less than $1
-          if (usdValue < 1) return false;
-          
-          // Filter out tokens with ridiculous token balances (likely spam/meme tokens)
-          if (tokenBalance > 1000000000) return false; // Over 1 billion tokens
-          
-          // Filter out tokens with very long names/symbols (likely spam)
-          if (token.name && token.name.length > 50) return false;
-          if (token.symbol && token.symbol.length > 20) return false;
-          
-          // Filter out tokens with suspicious names (likely spam)
-          const suspiciousKeywords = ['moon', 'doge', 'shib', 'inu', 'elon', 'safe', 'baby', 'rocket', 'moon', 'safe'];
-          const nameLower = token.name?.toLowerCase() || '';
-          const symbolLower = token.symbol?.toLowerCase() || '';
-          
-          if (suspiciousKeywords.some(keyword => nameLower.includes(keyword) || symbolLower.includes(keyword))) {
-            return false;
-          }
-          
-          return true;
-        });
+                 // Filter out tokens with ridiculous values and spam
+         tokens = tokens.filter((token: Token) => {
+           const tokenBalance = parseFloat(token.balance || '0');
+           
+           // Only show tokens that have a valid logo from DexScreener
+           if (!token.tokenImage || 
+               token.tokenImage === '' || 
+               token.tokenImage.includes('placeholder') ||
+               token.tokenImage.includes('dexscreener.com/base') && !token.tokenImage.includes('logo.png')) {
+             return false;
+           }
+           
+           // Filter out tokens with ridiculous token balances (likely spam/meme tokens)
+           if (tokenBalance > 1000000000) return false; // Over 1 billion tokens
+           
+           // Filter out tokens with very long names/symbols (likely spam)
+           if (token.name && token.name.length > 50) return false;
+           if (token.symbol && token.symbol.length > 20) return false;
+           
+           // Filter out tokens with suspicious names (likely spam)
+           const suspiciousKeywords = ['moon', 'doge', 'shib', 'inu', 'elon', 'safe', 'baby', 'rocket', 'moon', 'safe'];
+           const nameLower = token.name?.toLowerCase() || '';
+           const symbolLower = token.symbol?.toLowerCase() || '';
+           
+           if (suspiciousKeywords.some(keyword => nameLower.includes(keyword) || symbolLower.includes(keyword))) {
+             return false;
+           }
+           
+           return true;
+         });
         console.log('Filtered tokens (removed spam/ridiculous values):', tokens.length);
 
         // Parse basic wallet data from JSON-RPC responses
@@ -631,7 +704,7 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                   }}
                 />
                 <motion.div
-                  className="w-4 h-4 bg-purple-400 rounded-full"
+                  className="w-4 h-4 bg-cyan-400 rounded-full"
                   animate={{ 
                     scale: [1, 1.5, 1],
                     opacity: [0.5, 1, 0.5]
@@ -726,157 +799,154 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
       {/* Separator line between header and main content */}
       <div className="border-b border-gray-800/50"></div>
       
-      <div className="flex-1 w-full overflow-y-auto">
-        <div className="container mx-auto px-3 sm:px-4 py-6 sm:py-8">
-          <div className="max-w-6xl mx-auto">
+      <div className="flex-1 w-full flex flex-col">
+                 <div className="flex-1 w-full px-2 sm:px-3 py-3 sm:py-4 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent max-h-[calc(100vh-120px)]">
+          <div className="w-full">
             {/* Contract Header */}
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="mb-6"
+              className="mb-2"
             >
-              <div className="flex items-center space-x-3 mb-4">
-                <div className="w-8 h-8 bg-pink-500/20 rounded-full flex items-center justify-center">
-                  <svg className="w-4 h-4 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                  </svg>
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold text-white">Contract {formatAddress(walletAddress)}</h1>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => copyToClipboard(walletAddress)}
-                      className="p-1 hover:bg-gray-800/50 rounded transition-colors group"
-                      title="Copy address"
-                    >
-                      {copied ? (
-                        <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : (
-                        <svg className="w-4 h-4 text-gray-400 group-hover:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
-                      )}
-                    </button>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-2">
+                  <div className="w-5 h-5 bg-pink-500/20 rounded-full flex items-center justify-center">
+                    <svg className="w-3 h-3 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
                   </div>
+                  <h1 className="text-base font-bold text-white">Contract {formatAddress(walletAddress)}</h1>
+                  <button
+                    onClick={() => copyToClipboard(walletAddress)}
+                    className="p-1 hover:bg-gray-800/50 rounded transition-colors group"
+                    title="Copy address"
+                  >
+                    {copied ? (
+                      <svg className="w-3 h-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-3 h-3 text-gray-400 group-hover:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                  </button>
                 </div>
-              </div>
-
-              {/* API Announcement Banner */}
-              <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/20 rounded-lg p-3 mb-6">
-                <div className="flex items-center justify-between">
+                
+                {/* API Coming Soon - Inline */}
+                <div className="bg-blue-500/10 border border-blue-500/20 p-1.5">
                   <div className="flex items-center space-x-2">
-                    <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3 h-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                     </svg>
-                    <span className="text-green-400 text-sm font-medium">Coming Soon</span>
+                    <span className="text-blue-400 text-xs font-medium">API Coming Soon</span>
                   </div>
-                  <span className="text-gray-400 text-xs">Our V1 API will be available soon for developers</span>
                 </div>
               </div>
             </motion.div>
 
-            {/* Information Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-              {/* Overview Card */}
-              <div className="bg-gray-900/50 border border-gray-700/50 rounded-lg p-3 sm:p-4">
-                <h3 className="text-lg font-semibold text-white mb-3 flex items-center">
-                  <svg className="w-5 h-5 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                  </svg>
-                  Overview
-                </h3>
-                <div className="space-y-3">
-                                  <div className="flex justify-between items-center">
-                  <span className="text-gray-400 text-xs sm:text-sm">ETH BALANCE</span>
-                  <span className="text-white font-mono text-xs sm:text-sm text-right">{walletData.ethBalance.toFixed(18)} ETH</span>
-                </div>
-                                  <div className="flex justify-between items-center">
-                  <span className="text-gray-400 text-xs sm:text-sm">ETH VALUE</span>
-                  <div className="text-right">
-                    <div className="text-white font-medium text-xs sm:text-sm">
-                      {ethPrice > 0 ? `$${formatNumber(walletData.ethUsdValue)}` : 'Loading...'}
+            {/* Combined Information Card */}
+            <div className="bg-gray-900/50 border border-gray-700/50 p-1.5 sm:p-2 mb-2">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Overview Section */}
+                <div className="md:border-r border-gray-700/50 md:pr-4">
+                  <h3 className="text-sm font-semibold text-white mb-2 flex items-center">
+                    <svg className="w-4 h-4 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                    Overview
+                  </h3>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400 text-xs sm:text-sm">ETH BALANCE</span>
+                      <span className="text-white font-mono text-xs sm:text-sm text-right">{walletData.ethBalance.toFixed(18)} ETH</span>
                     </div>
-                    <div className="text-gray-500 text-xs">
-                      @ ${ethPrice > 0 ? formatNumber(ethPrice) : 'Loading...'}/ETH
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400 text-xs sm:text-sm">ETH VALUE</span>
+                      <div className="text-right">
+                        <div className="text-white font-medium text-xs sm:text-sm">
+                          {ethPrice > 0 ? `$${formatNumber(walletData.ethUsdValue)}` : 'Loading...'}
+                        </div>
+                        <div className="text-gray-500 text-xs">
+                          @ ${ethPrice > 0 ? formatNumber(ethPrice) : 'Loading...'}/ETH
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400 text-xs sm:text-sm">TOKEN HOLDINGS</span>
+                      <div className="text-right">
+                        <div className="text-white font-medium text-xs sm:text-sm">${formatNumber(walletData.tokens.reduce((sum, t) => sum + (t.usdValue || 0), 0))}</div>
+                        <div className="text-gray-500 text-xs">{walletData.tokens.length} Tokens</div>
+                      </div>
                     </div>
                   </div>
                 </div>
-                                  <div className="flex justify-between items-center">
-                  <span className="text-gray-400 text-xs sm:text-sm">TOKEN HOLDINGS</span>
-                  <div className="text-right">
-                    <div className="text-white font-medium text-xs sm:text-sm">${formatNumber(walletData.tokens.reduce((sum, t) => sum + (t.usdValue || 0), 0))}</div>
-                    <div className="text-gray-500 text-xs">{walletData.tokens.length} Tokens</div>
-                  </div>
-                </div>
-                </div>
-              </div>
 
-              {/* Chain Info Card */}
-              <div className="bg-gray-900/50 border border-gray-700/50 rounded-lg p-3 sm:p-4">
-                <h3 className="text-lg font-semibold text-white mb-3 flex items-center">
-                  <svg className="w-5 h-5 mr-2 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Chain Info
-                </h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400 text-sm">PRIVATE NAME TAGS</span>
-                    {isLoggedIn ? (
-                      <button 
-                        onClick={() => setShowNameTagModal(true)}
-                        className="text-blue-400 hover:text-blue-300 text-sm transition-colors"
-                      >
-                        + Add
-                      </button>
-                    ) : (
-                      <button 
-                        onClick={() => toast.error('Please log in to add name tags')}
-                        className="text-gray-500 hover:text-gray-400 text-sm"
-                      >
-                        + Add
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400 text-sm">WALLET AGE</span>
-                    <div className="text-right">
-                      <div className="text-white font-mono text-xs">{formatAddress(walletAddress)}</div>
-                      <div className="text-gray-500 text-xs">{getWalletAge(walletData.firstTxDate)}</div>
+                {/* Chain Info Section */}
+                <div className="md:border-r border-gray-700/50 md:pr-4">
+                  <h3 className="text-sm font-semibold text-white mb-2 flex items-center">
+                    <svg className="w-4 h-4 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Chain Info
+                  </h3>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400 text-xs sm:text-sm">PRIVATE NAME TAGS</span>
+                      {isLoggedIn ? (
+                        <button 
+                          onClick={() => setShowNameTagModal(true)}
+                          className="text-blue-400 hover:text-blue-300 text-xs font-medium transition-colors"
+                        >
+                          + Add
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={() => toast.error('Please log in to add name tags')}
+                          className="text-gray-500 hover:text-gray-400 text-xs"
+                        >
+                          + Add
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400 text-xs sm:text-sm">WALLET AGE</span>
+                      <div className="text-right">
+                        <div className="text-white font-mono text-xs">{formatAddress(walletAddress)}</div>
+                        <div className="text-gray-500 text-xs">{getWalletAge(walletData.firstTxDate)}</div>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Multichain Info Card */}
-              <div className="bg-gray-900/50 border border-gray-700/50 rounded-lg p-3 sm:p-4">
-                <h3 className="text-lg font-semibold text-white mb-3 flex items-center">
-                  <svg className="w-5 h-5 mr-2 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                  Multichain Info
-                </h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400 text-sm">TOTAL VALUE</span>
-                    <span className="text-white font-medium">${formatNumber(walletData.totalUsdValue)}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400 text-sm">ADDRESSES</span>
-                    <span className="text-white text-sm">1 address found</span>
+                {/* Multichain Info Section */}
+                <div>
+                  <h3 className="text-sm font-semibold text-white mb-2 flex items-center">
+                    <svg className="w-4 h-4 mr-2 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Multichain Info
+                  </h3>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400 text-xs sm:text-sm">TOTAL VALUE</span>
+                      <span className="text-white font-medium text-xs sm:text-sm">${formatNumber(walletData.totalUsdValue)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400 text-xs sm:text-sm">ADDRESSES</span>
+                      <span className="text-white text-xs sm:text-sm">1 address found</span>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Main Content */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 sm:gap-3 lg:gap-4">
               {/* Left Column */}
-              <div className="lg:col-span-2 space-y-4 sm:space-y-6 lg:space-y-8">
+              <div className="lg:col-span-2 space-y-2 sm:space-y-3 lg:space-y-4">
                 {/* Tab Navigation */}
-                <div className="flex bg-blue-500/10 border border-blue-500/20 rounded-lg p-1 mb-4 overflow-x-auto">
+                <div className="flex bg-gray-800/50 border border-gray-700/50 p-1 mb-2 overflow-x-auto">
                   {[
                     { 
                       id: 'tokens', 
@@ -897,15 +967,19 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                     <button
                       key={tab.id}
                       onClick={() => setActiveTab(tab.id as 'overview' | 'tokens' | 'transactions')}
-                      className={`flex-1 py-2 px-2 sm:px-3 rounded text-xs font-medium transition-all flex items-center justify-center space-x-1 whitespace-nowrap min-w-0 ${
+                      className={`flex-1 py-2 px-2 sm:px-3 text-sm font-medium transition-all flex items-center justify-center space-x-1 whitespace-nowrap min-w-0 ${
                         activeTab === tab.id
-                          ? 'bg-blue-500/30 text-white shadow-sm'
-                          : 'text-gray-300 hover:text-white hover:bg-blue-500/20'
+                          ? 'bg-gray-700 text-white border-b-2 border-blue-400'
+                          : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
                       }`}
                     >
                       <span>{tab.label}</span>
                       {tab.count > 0 && (
-                        <span className={`text-xs ${activeTab === tab.id ? 'text-blue-200' : 'text-gray-400'}`}>({tab.count})</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                          activeTab === tab.id 
+                            ? 'bg-blue-400/20 text-blue-300' 
+                            : 'bg-gray-600 text-gray-300'
+                        }`}>({tab.count})</span>
                       )}
                     </button>
                   ))}
@@ -938,7 +1012,7 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
-                    className="bg-gray-900/50 border border-gray-700/50 rounded-lg p-4 mb-4"
+                    className="bg-gray-900/50 border border-gray-700/50 p-4 mb-4"
                   >
                     <h4 className="text-white font-medium mb-3">Advanced Filter Options</h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
@@ -998,18 +1072,18 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -20 }}
             transition={{ duration: 0.2 }}
-                    className="bg-gray-900/50 border border-gray-700/50 rounded-xl p-6"
+                    className="bg-gray-900/50 border border-gray-700/50 p-3"
                   >
                     {activeTab === 'overview' && (
-                      <div className="space-y-6">
-                        <h3 className="text-xl font-bold text-white mb-4">Portfolio Overview</h3>
+                      <div className="space-y-3 max-h-[calc(100vh-300px)] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
+                        <h3 className="text-lg font-bold text-white mb-3">Portfolio Overview</h3>
                         
                         {/* Enhanced Portfolio Stats */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           {/* Portfolio Allocation */}
-                          <div className="bg-gray-900/50 border border-gray-700/50 rounded-lg p-3 sm:p-4">
+                          <div className="bg-gray-900/50 border border-gray-700/50 p-1.5 sm:p-2">
                             <h4 className="text-lg font-semibold text-white mb-3 flex items-center">
-                              <svg className="w-5 h-5 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-4 h-4 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                               </svg>
                               Portfolio Allocation
@@ -1025,7 +1099,7 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                               </div>
                               <div className="w-full bg-gray-700 rounded-full h-2">
                                 <div 
-                                  className="bg-gradient-to-r from-blue-500 to-green-500 h-2 rounded-full" 
+                                  className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2 rounded-full" 
                                   style={{ width: `${walletData.portfolioAllocation?.eth || 0}%` }}
                                 ></div>
                               </div>
@@ -1033,9 +1107,9 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                           </div>
 
                           {/* Wallet Stats */}
-                          <div className="bg-gray-900/50 border border-gray-700/50 rounded-lg p-3 sm:p-4">
+                          <div className="bg-gray-900/50 border border-gray-700/50 p-1.5 sm:p-2">
                             <h4 className="text-lg font-semibold text-white mb-3 flex items-center">
-                              <svg className="w-5 h-5 mr-2 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-4 h-4 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                               </svg>
                               Wallet Stats
@@ -1043,7 +1117,7 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                             <div className="space-y-2">
                               <div className="flex justify-between items-center">
                                 <span className="text-gray-300">Total Value</span>
-                                <span className="text-green-400 font-medium">${formatNumber(walletData.totalUsdValue)}</span>
+                                <span className="text-blue-400 font-medium">${formatNumber(walletData.totalUsdValue)}</span>
                               </div>
                               <div className="flex justify-between items-center">
                                 <span className="text-gray-300">ETH Balance</span>
@@ -1062,9 +1136,9 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                         </div>
 
                         {/* Top Tokens by Value */}
-                        <div className="bg-gray-900/50 border border-gray-700/50 rounded-lg p-3 sm:p-4">
+                        <div className="bg-gray-900/50 border border-gray-700/50 p-1.5 sm:p-2">
                           <h4 className="text-lg font-semibold text-white mb-3 flex items-center">
-                            <svg className="w-5 h-5 mr-2 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-5 h-5 mr-2 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                             </svg>
                             Top Tokens by Value
@@ -1076,7 +1150,7 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                                 <span className="text-gray-400 text-sm">#1</span>
                                 <span className="text-white font-medium">ETH</span>
                               </div>
-                              <span className="text-green-400 font-medium">${formatNumber(walletData.ethUsdValue)}</span>
+                              <span className="text-blue-400 font-medium">${formatNumber(walletData.ethUsdValue)}</span>
                             </div>
                             {/* Top tokens */}
                             {walletData.tokens
@@ -1089,16 +1163,16 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                                     <span className="text-gray-400 text-sm">#{index + 2}</span>
                                     <span className="text-white font-medium">{token.symbol}</span>
                                   </div>
-                                  <span className="text-green-400 font-medium">${formatNumber(token.usdValue)}</span>
+                                  <span className="text-blue-400 font-medium">${formatNumber(token.usdValue)}</span>
                                 </div>
                               ))}
                           </div>
                         </div>
 
                         {/* Recent Activity */}
-                        <div className="bg-gray-900/50 border border-gray-700/50 rounded-lg p-3 sm:p-4">
+                        <div className="bg-gray-900/50 border border-gray-700/50 p-1.5 sm:p-2">
                           <h4 className="text-lg font-semibold text-white mb-3 flex items-center">
-                            <svg className="w-5 h-5 mr-2 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-5 h-5 mr-2 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                             </svg>
                             Recent Activity
@@ -1116,6 +1190,8 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                                     <p className="text-white text-sm">{getTransactionType(tx)}</p>
                                     <Link 
                                       href={`/explorer/tx/${tx.hash}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
                                       className="text-blue-400 text-xs hover:underline"
                                     >
                                       {formatAddress(tx.hash)}
@@ -1137,8 +1213,8 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
 
                     {activeTab === 'tokens' && (
                       <div>
-                        <div className="flex items-center justify-between mb-4">
-                          <h3 className="text-xl font-bold text-white">Token Holdings</h3>
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-lg font-bold text-white">Token Holdings</h3>
                           <div className="flex items-center space-x-2 text-sm text-gray-400">
                             <span>Showing {walletData.tokens.filter(token => !isTokenHidden(token.contractAddress)).length} of {walletData.tokens.length} tokens</span>
                             {hiddenTokens.size > 0 && (
@@ -1153,11 +1229,11 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                         </div>
                         
                         {/* ETH Balance Section */}
-                        <div className="mb-6 p-3 sm:p-4 bg-gray-900/50 border border-gray-700/50 rounded-lg">
+                        <div className="mb-4 p-2 sm:p-3 bg-gray-900/50 border border-gray-700/50">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center space-x-2 sm:space-x-3">
-                              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-blue-500/20 flex items-center justify-center">
-                                <SiEthereum className="w-5 h-5 sm:w-6 sm:h-6 text-blue-400" />
+                              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gray-500/20 flex items-center justify-center">
+                                <SiEthereum className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400" />
                               </div>
                               <div>
                                 <p className="text-white font-medium text-sm sm:text-base">Ethereum (ETH)</p>
@@ -1171,7 +1247,7 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                           </div>
                         </div>
                         {walletData.tokens.length > 0 ? (
-                          <div className="space-y-0">
+                          <div className="space-y-0 max-h-[calc(100vh-300px)] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
                             {walletData.tokens
                               .filter(token => !isTokenHidden(token.contractAddress))
                               .map((token, index) => (
@@ -1180,10 +1256,10 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: index * 0.1 }}
-                                className={`flex items-center justify-between p-3 sm:p-4 bg-gray-900/30 ${index === 0 ? 'rounded-t-lg' : ''} ${index === walletData.tokens.filter(token => !isTokenHidden(token.contractAddress)).length - 1 ? 'rounded-b-lg' : ''} ${index > 0 ? 'border-t border-gray-700/50' : ''}`}
+                                className={`flex items-center justify-between p-2 sm:p-3 bg-gray-900/30 ${index > 0 ? 'border-t border-gray-700/50' : ''}`}
                               >
                                                                  <div className="flex items-center space-x-2 sm:space-x-3">
-                                   <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gray-700 flex items-center justify-center">
+                                   <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden">
                                      {logoLoading[token.contractAddress] ? (
                                        <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center animate-pulse">
                                          <svg className="w-4 h-4 text-blue-400 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1191,22 +1267,23 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                                          </svg>
                                        </div>
                                      ) : (token.tokenImage || tokenLogos[token.contractAddress]) ? (
-                                       <img 
-                                         src={tokenLogos[token.contractAddress] || token.tokenImage} 
+                                       <Image 
+                                         src={token.tokenImage || tokenLogos[token.contractAddress]} 
                                          alt={token.symbol}
-                                         className="w-10 h-10 rounded-full object-cover"
-                                         onError={(e) => {
-                                           (e.currentTarget as HTMLImageElement).style.display = 'none';
-                                           (e.currentTarget.nextElementSibling as HTMLElement).style.display = 'flex';
+                                         width={48}
+                                         height={48}
+                                         className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover"
+                                         onError={() => {
+                                           // Fallback handled by the div below
                                          }}
                                        />
-                                     ) : null}
-                                     <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center" style={{ display: (logoLoading[token.contractAddress] || token.tokenImage || tokenLogos[token.contractAddress]) ? 'none' : 'flex' }}>
-                                       {/* Globe icon for all tokens */}
+                                     ) : (
+                                       <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-blue-500/20 flex items-center justify-center">
                                        <svg className="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                                        </svg>
                                      </div>
+                                     )}
                                    </div>
                                    <div className="flex-1 min-w-0">
                                      <p className="text-white font-medium text-sm sm:text-base truncate">{token.symbol}</p>
@@ -1228,11 +1305,11 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                                 <div className="text-right min-w-0">
                                   <p className="text-white font-medium text-sm sm:text-base">{parseFloat(token.balance).toFixed(4)}</p>
                                   <p className="text-gray-400 text-xs sm:text-sm">${formatNumber(token.usdValue)}</p>
-                                  {token.priceUsd && (
-                                    <p className="text-xs text-green-400">
+                                  {token.priceUsd && token.symbol !== 'ETH' && (
+                                    <p className={`text-xs ${token.priceChange24h && token.priceChange24h < 0 ? 'text-red-400' : 'text-green-400'}`}>
                                       {formatTokenPrice(token.priceUsd)}
                                       {token.priceChange24h && (
-                                        <span className="ml-1">
+                                        <span className={`ml-1 ${token.priceChange24h >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                           ({token.priceChange24h > 0 ? '+' : ''}{token.priceChange24h.toFixed(2)}%)
                                         </span>
                                       )}
@@ -1273,27 +1350,26 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                                 Show All
                               </button>
                             </div>
-                            <div className="space-y-0">
+                            <div className="space-y-0 max-h-32 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
                               {walletData.tokens
                                 .filter(token => isTokenHidden(token.contractAddress))
                                 .map((token, index) => (
-                                  <div key={index} className={`flex items-center justify-between p-3 bg-gray-900/20 opacity-60 ${index === 0 ? 'rounded-t-lg' : ''} ${index === walletData.tokens.filter(token => isTokenHidden(token.contractAddress)).length - 1 ? 'rounded-b-lg' : ''} ${index > 0 ? 'border-t border-gray-700/30' : ''}`}>
+                                  <div key={index} className={`flex items-center justify-between p-2 bg-gray-900/20 opacity-60 ${index > 0 ? 'border-t border-gray-700/30' : ''}`}>
                                     <div className="flex items-center space-x-3">
-                                      <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center">
+                                      <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden">
                                         {(token.tokenImage || tokenLogos[token.contractAddress]) ? (
-                                          <img 
-                                            src={tokenLogos[token.contractAddress] || token.tokenImage} 
+                                          <Image 
+                                            src={token.tokenImage || tokenLogos[token.contractAddress]} 
                                             alt={token.symbol}
-                                            className="w-6 h-6 rounded-full object-cover"
-                                            onError={(e) => {
-                                              (e.currentTarget as HTMLImageElement).style.display = 'none';
-                                              (e.currentTarget.nextElementSibling as HTMLElement).style.display = 'flex';
-                                            }}
+                                            width={32}
+                                            height={32}
+                                            className="w-8 h-8 rounded-full object-cover"
                                           />
-                                        ) : null}
-                                        <svg className="w-4 h-4 text-gray-500" style={{ display: (token.tokenImage || tokenLogos[token.contractAddress]) ? 'none' : 'flex' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        ) : (
+                                          <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                                         </svg>
+                                        )}
                                       </div>
                                       <div>
                                         <p className="text-gray-400 font-medium">{token.symbol}</p>
@@ -1323,15 +1399,15 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
 
                     {activeTab === 'transactions' && (
                       <div>
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
-                          <h3 className="text-xl font-bold text-white mb-4 sm:mb-0">Transaction History</h3>
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
+                          <h3 className="text-lg font-bold text-white mb-3 sm:mb-0">Transaction History</h3>
                           
                           {/* Filter Controls */}
                           <div className="flex flex-wrap gap-2">
                             <select
                               value={txFilter}
                               onChange={(e) => setTxFilter(e.target.value as 'all' | 'token_transfers' | 'internal')}
-                              className="px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+                              className="px-3 py-2 bg-gray-800 border border-gray-600 text-white text-sm focus:outline-none focus:border-blue-500"
                             >
                               <option value="all">All Transactions</option>
                               <option value="token_transfers">Token Transfers</option>
@@ -1347,16 +1423,16 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                         </div>
                         
                         {walletData.txList.length > 0 ? (
-                          <div className="space-y-3">
+                          <div className="space-y-2 max-h-[calc(100vh-300px)] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
                             {walletData.txList.map((tx, index) => (
                               <motion.div
                                 key={tx.hash}
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: index * 0.1 }}
-                                className="p-4 bg-gray-900/30 rounded-lg"
+                                className="p-3 bg-gray-900/30"
                               >
-                                <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center justify-between mb-2">
                                   <div className="flex items-center space-x-3">
                                     <div className="w-8 h-8 bg-blue-500/20 rounded-full flex items-center justify-center">
                                       <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1364,26 +1440,47 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                                       </svg>
                                     </div>
                                     <div>
-                                      <p className="text-white font-medium">{getTransactionType(tx)}</p>
+                                      <p className="text-white font-medium">{tx.description || getTransactionType(tx)}</p>
                                       <Link 
                                         href={`/explorer/tx/${tx.hash}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
                                         className="text-blue-400 text-sm hover:underline"
                                       >
                                         {formatAddress(tx.hash)}
                                       </Link>
+                                      {tx.contractAddress && (
+                                        <p className="text-gray-500 text-xs">
+                                          Contract: {formatAddress(tx.contractAddress)}
+                                        </p>
+                                      )}
                                     </div>
                                   </div>
                                   <div className="text-right">
                                     <p className="text-white font-medium">
-                                      {parseFloat(tx.value) > 0 
-                                        ? `${formatEthValue(parseFloat(tx.value) / 1e18)} ETH`
-                                        : '0.0000 ETH'
+                                      {tx.amount ? `${tx.amount} ${tx.asset}` : 
+                                        parseFloat(tx.value) > 0 
+                                          ? `${formatEthValue(parseFloat(tx.value) / 1e18)} ETH`
+                                          : '0.0000 ETH'
                                       }
                                     </p>
+                                    {tx.ethValueUsd && tx.ethValueUsd > 0 && (
+                                      <p className="text-gray-400 text-xs">
+                                        ${formatNumber(tx.ethValueUsd)}
+                                      </p>
+                                    )}
+                                    {tx.gasFeeEth && parseFloat(tx.gasFeeEth) > 0 && (
+                                      <p className="text-gray-500 text-xs">
+                                        Gas: {parseFloat(tx.gasFeeEth).toFixed(6)} ETH
+                                        {tx.gasFeeUsd && tx.gasFeeUsd > 0 && (
+                                          <span className="ml-1">(${formatNumber(tx.gasFeeUsd)})</span>
+                                        )}
+                                      </p>
+                                    )}
                                     <p className="text-gray-400 text-xs">
                                       {tx.timestamp ? formatTime(tx.timestamp) : 'Unknown'}
                                     </p>
-                                    {tx.status === '0x0' || tx.status === 0 ? (
+                                    {tx.status === 'failed' ? (
                                       <span className="text-red-400 text-xs">Failed</span>
                                     ) : null}
                                   </div>
@@ -1450,11 +1547,11 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                                         </span>
                                       </div>
                                     )}
-                                    {tx.input && tx.input !== '0x' && (
+                                    {tx.inputData && tx.inputData !== '0x' && (
                                       <div className="sm:col-span-3">
                                         <span className="text-gray-500">Method:</span>
                                         <span className="text-blue-400 ml-1 font-mono text-xs">
-                                          {tx.input.slice(0, 10)}...
+                                          {tx.inputData.slice(0, 10)}...
                                         </span>
                                       </div>
                                     )}
@@ -1465,7 +1562,7 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                             
                             {/* Pagination Controls at Bottom */}
                             {txPagination.totalPages > 1 && (
-                              <div className="flex justify-between items-center mt-6 p-4 bg-gray-800/30 rounded-lg">
+                              <div className="flex justify-between items-center mt-6 p-4 bg-gray-800/30">
                                 <button
                                   onClick={() => setTxPage(Math.max(1, txPage - 1))}
                                   disabled={!txPagination.hasPrevPage}
@@ -1530,7 +1627,7 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.2 }}
-                  className="bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-blue-500/20 rounded-xl p-4 sm:p-6"
+                  className="bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-blue-500/20 p-4 sm:p-6"
                 >
                   <div className="text-center">
                     <div className="w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -1541,36 +1638,14 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                     </div>
                     <h3 className="text-white font-semibold mb-2">Ad Space Available</h3>
                     <p className="text-gray-400 text-sm mb-4">Perfect placement for your brand</p>
-                    <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
-                      <div className="w-full h-32 bg-gradient-to-br from-gray-700 to-gray-800 rounded-lg flex items-center justify-center">
+                    <div className="bg-gray-800/50 p-3 border border-gray-700/50">
+                      <div className="w-full h-32 bg-gradient-to-br from-gray-700 to-gray-800 flex items-center justify-center">
                         <span className="text-gray-500 text-xs">Your Ad Here</span>
                       </div>
                     </div>
                   </div>
                 </motion.div>
 
-                {/* Additional Ad Banner */}
-                <motion.div
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.3 }}
-                  className="bg-gradient-to-br from-green-500/10 to-blue-500/10 border border-green-500/20 rounded-xl p-4 sm:p-6"
-                >
-                  <div className="text-center">
-                    <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-3">
-                      <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-white font-semibold mb-2">Premium Placement</h3>
-                    <p className="text-gray-400 text-sm mb-4">High visibility area</p>
-                    <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
-                      <div className="w-full h-40 bg-gradient-to-br from-gray-700 to-gray-800 rounded-lg flex items-center justify-center">
-                        <span className="text-gray-500 text-xs">Premium Ad Space</span>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
               </div>
             </div>
           </div>
@@ -1580,7 +1655,7 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
       {/* Name Tag Modal */}
       {showNameTagModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 w-full max-w-md mx-4">
+          <div className="bg-gray-900 border border-gray-700 p-6 w-full max-w-md mx-4">
             <h3 className="text-white text-lg font-semibold mb-4">Add Private Name Tag</h3>
             <div className="space-y-4">
               <div>
@@ -1625,8 +1700,8 @@ export default function WalletPage({ params }: { params: Promise<{ walletAddress
                 </button>
               </div>
             </div>
-          </div>
         </div>
+      </div>
       )}
       
       <Footer />

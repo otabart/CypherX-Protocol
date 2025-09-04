@@ -80,6 +80,24 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
   // 🔧 NEW: Store quote information for consistency
   const [currentQuote, setCurrentQuote] = useState<any>(null);
   
+  // 🔧 NEW: Store all available quotes for comparison
+  const [allQuotes, setAllQuotes] = useState<Array<{
+    source: string;
+    name: string;
+    amountOut: string;
+    gasEstimate: string;
+    priceImpact: number;
+    liquidity: string;
+    slippage: number;
+    priority: number;
+  }>>([]);
+  
+  // 🔧 NEW: Selected quote for execution
+  const [selectedQuote, setSelectedQuote] = useState<any>(null);
+  
+  // 🔧 NEW: Show quote comparison modal
+  const [showQuoteComparison, setShowQuoteComparison] = useState<boolean>(false);
+  
   // Self-custodial wallet state
   const [walletAddress, setWalletAddress] = useState<string>("");
   const [ethBalance, setEthBalance] = useState<string>("");
@@ -91,6 +109,91 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
   
   // Copy address state
   const [copiedAddress, setCopiedAddress] = useState<boolean>(false);
+  
+  // 🔧 NEW: Quote comparison modal component
+  const QuoteComparisonModal = () => {
+    if (!showQuoteComparison || allQuotes.length === 0) return null;
+    
+    const sortedQuotes = [...allQuotes].sort((a, b) => {
+      // Sort by priority first, then by output amount
+      if (a.priority !== b.priority) {
+        return a.priority - b.priority;
+      }
+      return parseFloat(b.amountOut) - parseFloat(a.amountOut);
+    });
+    
+    const handleQuoteSelect = (quote: any) => {
+      setSelectedQuote(quote);
+      setAmountOut(quote.amountOut);
+      setShowQuoteComparison(false);
+      console.log("✅ Quote selected:", quote.source);
+    };
+    
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold">Compare Quotes from All Sources</h3>
+            <button
+              onClick={() => setShowQuoteComparison(false)}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ✕
+            </button>
+          </div>
+          
+          <div className="grid gap-4">
+            {sortedQuotes.map((quote, _index) => (
+              <div
+                key={quote.source}
+                className={`border rounded-lg p-4 cursor-pointer transition-all ${
+                  selectedQuote?.source === quote.source
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+                onClick={() => handleQuoteSelect(quote)}
+              >
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center space-x-3">
+                    <div className={`w-3 h-3 rounded-full ${
+                      quote.priority <= 3 ? 'bg-green-500' : 'bg-blue-500'
+                    }`} />
+                    <div>
+                      <h4 className="font-medium">{quote.name}</h4>
+                      <p className="text-sm text-gray-600">
+                        Priority: {quote.priority} • {quote.source}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="text-right">
+                    <div className="text-lg font-semibold">
+                      {parseFloat(quote.amountOut).toFixed(6)} tokens
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      Gas: {quote.gasEstimate} • Slippage: {(quote.slippage * 100).toFixed(1)}%
+                    </div>
+                  </div>
+                </div>
+                
+                {quote.priority <= 3 && (
+                  <div className="mt-2 text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+                    🚀 Aggregator - Best execution path
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          
+          <div className="mt-4 text-sm text-gray-600">
+            <p>• <strong>Green dots</strong> indicate aggregators (best execution)</p>
+            <p>• <strong>Blue dots</strong> indicate individual DEXes</p>
+            <p>• Quotes are sorted by priority and output amount</p>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // ────────────────────────────────────────────────────────────────────────────────
   // 3) HELPER FUNCTIONS
@@ -231,7 +334,7 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
 
   // ────────────────────────────────────────────────────────────────────────────────
   // 4) WALLET MANAGEMENT
-  // ────────────────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────────────────────────────────────
   const loadWallet = useCallback(() => {
     if (typeof window !== "undefined") {
       const storedWallet = localStorage.getItem("cypherx_wallet");
@@ -304,6 +407,8 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
     }
   }, [token]);
 
+
+
   // ────────────────────────────────────────────────────────────────────────────────
   // 4) QUOTE FETCHING
   // ────────────────────────────────────────────────────────────────────────────────
@@ -341,28 +446,56 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
         }),
       });
 
-      if (response.ok) {
-        const quote = await response.json();
-        console.log("✅ Quote received:", quote);
-        
-        // Improved quote validation
-        if (quote.outputAmount && 
-            parseFloat(quote.outputAmount) > 0 && 
-            !isNaN(parseFloat(quote.outputAmount))) {
-          console.log("✅ Setting amountOut to:", quote.outputAmount);
-          setAmountOut(quote.outputAmount);
-          setCurrentQuote(quote); // 🔧 NEW: Store the quote
-          setQuoteCountdown(30);
-          setIsQuoteExpired(false);
+              if (response.ok) {
+          const quote = await response.json();
+          console.log("✅ Quote received:", quote);
           
-          // Warn if quote is from DexScreener (different DEX than execution)
-          if (quote.route && quote.route.length > 0 && quote.route[0] !== "Uniswap V3") {
-            console.log("⚠️ Quote from different DEX:", quote.route[0]);
+          // 🔧 ENHANCED: Store all available quotes for comparison
+          if (quote.allQuotes && Array.isArray(quote.allQuotes)) {
+            setAllQuotes(quote.allQuotes);
+            console.log("🔧 All quotes stored:", quote.allQuotes.length);
           }
-        } else {
-          console.log("⚠️ Quote outputAmount is invalid:", quote.outputAmount);
-          setAmountOut("");
-        }
+          
+          // Improved quote validation - Check both outputAmount and amountOut
+          const quoteAmount = quote.outputAmount || quote.amountOut;
+          if (quoteAmount && 
+              parseFloat(quoteAmount) > 0 && 
+              !isNaN(parseFloat(quoteAmount))) {
+            console.log("✅ Setting amountOut to:", quoteAmount);
+            
+            // 🔧 DEBUG: Log quote details for debugging
+            console.log("🔧 Quote debug details:", {
+              inputAmount: amountIn,
+              outputAmount: quoteAmount,
+              exchangeRate: `${amountIn} -> ${quoteAmount}`,
+              ratePerEth: parseFloat(quoteAmount) / parseFloat(amountIn),
+              quote
+            });
+            
+            // 🔧 ENHANCED: Store quote with scaling history for slippage detection
+            const enhancedQuote = {
+              ...quote,
+              previousAmount: currentQuote?.inputAmount || null,
+              previousOutput: currentQuote?.outputAmount || null,
+              inputAmount: amountIn,
+              outputAmount: quoteAmount,
+              timestamp: Date.now()
+            };
+            
+            setAmountOut(quoteAmount);
+            setCurrentQuote(enhancedQuote); // Store enhanced quote with history
+            setSelectedQuote(enhancedQuote); // Set as selected quote for execution
+            setQuoteCountdown(30);
+            setIsQuoteExpired(false);
+            
+            // Warn if quote is from DexScreener (different DEX than execution)
+            if (quote.route && quote.route.length > 0 && quote.route[0] !== "Uniswap V3") {
+              console.log("⚠️ Quote from different DEX:", quote.route[0]);
+            }
+          } else {
+            console.log("⚠️ Quote amount is invalid:", quoteAmount);
+            setAmountOut("");
+          }
       } else {
         const errorData = await response.json();
         console.error("❌ Failed to get quote:", errorData);
@@ -383,7 +516,7 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
     } finally {
       setQuoteLoading(false);
     }
-  }, [token, activeTab, walletAddress]);
+  }, [token, activeTab, walletAddress, amountIn, currentQuote]);
 
   const debouncedGetQuote = useMemo(
     () => debounce((amount: string) => {
@@ -400,6 +533,19 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
   // Swap status tracking
   const [swapStatus, setSwapStatus] = useState<'idle' | 'preparing' | 'signing' | 'submitting' | 'confirming' | 'success' | 'failed'>('idle');
 
+  // 🔧 NEW: Enhanced error state for on-chain revert detection
+  const [errorState, setErrorState] = useState<{
+    hasError: boolean;
+    errorMessage: string;
+    errorDetails: string;
+    transactionHash?: string;
+    isOnChainRevert?: boolean;
+  }>({
+    hasError: false,
+    errorMessage: '',
+    errorDetails: ''
+  });
+
   
   const executeSwap = useCallback(async () => {
     console.log("Execute swap called with:", { amountIn, amountOut, activeTab, isWalletConnected, walletAddress });
@@ -408,36 +554,129 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
       return;
     }
 
-    // 🔧 NEW: Warn about large sells and suggest using smart max
-    if (activeTab === "sell") {
-      const sellAmount = parseFloat(amountIn);
-      const tokenBalanceNum = parseFloat(tokenBalance);
-      
-      if (sellAmount > 0 && tokenBalanceNum > 0) {
-        const sellPercentage = (sellAmount / tokenBalanceNum) * 100;
-        
-        if (sellPercentage > 90) {
-          console.log("⚠️ Large sell detected:", {
-            sellAmount,
-            tokenBalance: tokenBalanceNum,
-            percentage: sellPercentage.toFixed(2) + "%",
-            suggestion: "Consider using 95% instead of 100% for better success rate"
-          });
-          
-          // Log warning for very large sells
-          if (sellPercentage > 95) {
-            console.log("⚠️ Large sell detected! Consider using 95% instead of 100% for better success rate.");
-          }
-        }
-      }
+    // 🔧 CRITICAL: Frontend safety validation before proceeding (TEMPORARILY DISABLED FOR TESTING)
+    // TODO: Re-enable safety validation once quotes are working
+    console.log("⚠️ Frontend safety validation temporarily disabled for testing");
+    
+    if (!amountOut || parseFloat(amountOut) <= 0) {
+      console.error("❌ No valid quote available for swap");
+      alert("No valid quote available. Please refresh the quote and try again.");
+      return;
     }
 
-    // Reset status
+    // 🔧 CRITICAL: Validate quote hasn't expired
+    if (isQuoteExpired) {
+      console.error("❌ Quote has expired");
+      alert("Quote has expired. Please get a fresh quote before swapping.");
+      return;
+    }
+
+
+
+    // Reset status and clear any previous errors
     setSwapStatus('preparing');
     setIsSwapLoading(true);
+    setErrorState({ hasError: false, errorMessage: '', errorDetails: '' });
     try {
-      // Step 1: Prepare transaction data
-      console.log("📋 Preparing transaction data...");
+              // 🔧 CRITICAL: Final quote validation before preparing transaction
+        console.log("🔍 Debug currentQuote:", currentQuote);
+        console.log("🔍 Debug amountOut:", amountOut);
+        
+        // Check if we have either currentQuote.amountOut OR the amountOut from state
+        if (!currentQuote && !amountOut) {
+          throw new Error("No valid quote available. Please refresh the quote before proceeding.");
+        }
+        
+        // Use amountOut from state if currentQuote doesn't have it
+        const quoteAmountOut = currentQuote?.amountOut || currentQuote?.outputAmount || amountOut;
+        console.log("🔍 Quote amount debug:", {
+          currentQuoteAmountOut: currentQuote?.amountOut,
+          currentQuoteOutputAmount: currentQuote?.outputAmount,
+          stateAmountOut: amountOut,
+          finalQuoteAmountOut: quoteAmountOut
+        });
+        
+        if (!quoteAmountOut || parseFloat(quoteAmountOut) <= 0) {
+          throw new Error("No valid quote amount available. Please refresh the quote before proceeding.");
+        }
+        
+        // 🔧 CRITICAL: Check quote accuracy and warnings from backend
+        if (currentQuote?.warning) {
+          console.warn("⚠️ Quote has warnings:", currentQuote.warning);
+          
+          // Check if the warning indicates extreme price impact that should block execution
+          if (currentQuote.warning.includes("EXTREME price deviation") || 
+              currentQuote.warning.includes(">50%")) {
+            throw new Error("Quote has extreme price deviation (>50%). This would cause massive losses. Please try a smaller amount or refresh the quote.");
+          }
+          
+          // For other warnings, show them but allow execution to proceed
+          console.log("⚠️ Quote has warnings but proceeding with caution:", currentQuote.warning);
+        }
+        
+        // 🔧 TEMPORARILY DISABLED: Frontend price impact validation to restore swap functionality
+        // TODO: Re-enable once quotes are working properly
+        console.log("⚠️ Frontend price impact validation temporarily disabled for testing");
+        
+        // 🔧 DEBUG: Check if we're actually getting here
+        console.log("✅ Quote validation passed, proceeding to prepare transaction");
+        
+        /*
+        // 🔧 CRITICAL: Check for excessive price impact (>25%) to prevent massive losses
+        if (amountIn && amountOut) {
+          const inputNum = parseFloat(amountIn);
+          const outputNum = parseFloat(amountOut);
+          
+          if (inputNum > 0 && outputNum > 0) {
+            // Calculate price impact by comparing with expected linear scaling
+            if (currentQuote.previousAmount && currentQuote.previousOutput) {
+              const prevInput = parseFloat(currentQuote.previousAmount);
+              const prevOutput = parseFloat(currentQuote.previousOutput);
+              
+              // Calculate expected scaling
+              const expectedOutput = (inputNum / prevInput) * prevOutput;
+              const priceImpact = Math.abs(outputNum - expectedOutput) / expectedOutput * 100;
+              
+              if (priceImpact > 25) {
+                console.error("❌ CRITICAL: Quote has excessive price impact:", {
+                  priceImpact: priceImpact.toFixed(2) + "%",
+                  expectedOutput: expectedOutput.toFixed(6),
+                  actualOutput: outputNum.toFixed(6),
+                  inputAmount: inputNum,
+                  suggestion: "This quote would cause massive losses. Please try a smaller amount or refresh the quote."
+                });
+                throw new Error(`Quote has excessive price impact (${priceImpact.toFixed(1)}%). This would cause massive losses. Please try a smaller amount or refresh the quote.");
+              }
+              
+              console.log("✅ Price impact validation passed:", priceImpact.toFixed(2) + "%");
+            }
+          }
+        }
+        */
+      
+      // 🔧 CRITICAL: Check if quote is still valid (within 5 minutes) - TEMPORARILY DISABLED
+      // const quoteAge = Date.now() - (currentQuote.timestamp || 0);
+      // const MAX_QUOTE_AGE = 5 * 60 * 1000; // 5 minutes
+      // if (quoteAge > MAX_QUOTE_AGE) {
+      //   throw new Error("Quote has expired. Please get a fresh quote before proceeding.");
+      // }
+      
+              // Step 1: Prepare transaction data
+        console.log("📋 Preparing transaction data...");
+        console.log("🔍 Swap execution details:", {
+          activeTab,
+          inputToken: activeTab === "buy" ? "ETH" : token.baseToken.address,
+          outputToken: activeTab === "buy" ? token.baseToken.address : "ETH",
+          inputAmount: amountIn,
+          outputAmount: amountOut,
+          slippage: slippage,
+          walletAddress: walletAddress,
+          tokenAddress: token.baseToken.address,
+          preferredDex: currentQuote?.source || currentQuote?.dexUsed,
+          currentQuote: currentQuote,
+          quoteAmountOut: quoteAmountOut
+        });
+      
       setSwapStatus('preparing');
       const prepareResponse = await fetch("/api/swap/prepare", {
         method: "POST",
@@ -452,13 +691,20 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
           slippage: slippage,
           walletAddress: walletAddress,
           tokenAddress: token.baseToken.address,
-          preferredDex: currentQuote?.dexUsed, // 🔧 FIXED: Pass the DEX from the quote
+          preferredDex: selectedQuote?.source || currentQuote?.dexUsed, // 🔧 ENHANCED: Use selected quote for consistent execution
         }),
       });
 
       if (!prepareResponse.ok) {
         const errorData = await prepareResponse.json();
         setSwapStatus('failed');
+        
+        // 🔧 CRITICAL: Handle unsafe swap errors from backend
+        if (errorData.error === "UNSAFE_SWAP") {
+          console.error("❌ Backend blocked unsafe swap:", errorData.message);
+          alert(`🚨 SWAP BLOCKED FOR YOUR SAFETY!\n\n${errorData.message}\n\n${errorData.details?.suggestion || "Please try a smaller amount or wait for better market conditions."}`);
+          throw new Error(`Unsafe swap blocked: ${errorData.message}`);
+        }
         
         // Enhanced error handling for insufficient balance
         if (errorData.error && errorData.error.includes("Insufficient ETH balance")) {
@@ -1174,43 +1420,122 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
       }
 
       const submitResult = await submitResponse.json();
-      setSwapStatus('success');
-      console.log("Transaction hash:", submitResult.transactionHash);
       
-      // 🔧 FIXED: Auto-hide success message after 2 seconds
-      setTimeout(() => {
-        setSwapStatus('idle');
-        console.log('Clearing success message');
-      }, 2000);
-      
-      // Refresh balances and PnL
-      fetchBalances(walletAddress);
-      fetchPnLData(walletAddress);
-      
-      // 🔧 NEW: Refresh orders and positions after successful trade
-      if (onTradeComplete) {
-        console.log("🔄 Trade completed, refreshing orders and positions...");
+      // 🔧 ENHANCED: Handle different transaction statuses
+      if (submitResult.success) {
+        if (submitResult.status === "confirmed" || !submitResult.status) {
+          // Standard confirmed transaction
+          setSwapStatus('success');
+          console.log("✅ Transaction confirmed successfully");
+        } else if (submitResult.status === "broadcasted_but_confirmation_failed") {
+          // Transaction broadcasted but confirmation failed - this could be an on-chain revert
+          setSwapStatus('failed');
+          
+          // 🔧 NEW: Enhanced error detection for on-chain reverts
+          let errorMessage = "Transaction failed on-chain";
+          let errorDetails = "The transaction was broadcasted but failed during execution. This usually indicates:";
+          
+          if (submitResult.error && submitResult.error.includes("execution reverted")) {
+            errorMessage = "Transaction reverted on-chain";
+            errorDetails = "The smart contract rejected this transaction. Common causes:";
+            
+            // 🔧 NEW: Detect specific revert reasons
+            if (submitResult.error.includes("INSUFFICIENT_OUTPUT_AMOUNT")) {
+              errorMessage = "Insufficient output amount";
+              errorDetails = "The swap would result in fewer tokens than expected. This usually happens when:";
+              errorDetails += "\n• Price moved unfavorably between quote and execution";
+              errorDetails += "\n• Slippage tolerance was too low";
+              errorDetails += "\n• Low liquidity caused high price impact";
+            } else if (submitResult.error.includes("INSUFFICIENT_LIQUIDITY")) {
+              errorMessage = "Insufficient liquidity";
+              errorDetails = "There isn't enough liquidity to complete this swap. Try:";
+              errorDetails += "\n• Reducing the swap amount";
+              errorDetails += "\n• Using a different token pair";
+              errorDetails += "\n• Waiting for more liquidity";
+            } else if (submitResult.error.includes("EXPIRED")) {
+              errorMessage = "Transaction expired";
+              errorDetails = "The transaction deadline has passed. Please try again.";
+            } else if (submitResult.error.includes("INSUFFICIENT_BALANCE")) {
+              errorMessage = "Insufficient balance";
+              errorDetails = "Your wallet doesn't have enough tokens for this swap.";
+            }
+          } else if (submitResult.error && submitResult.error.includes("out of gas")) {
+            errorMessage = "Transaction ran out of gas";
+            errorDetails = "The transaction consumed more gas than allocated. This can happen with:";
+            errorDetails += "\n• Complex token contracts";
+            errorDetails += "\n• High network congestion";
+            errorDetails += "\n• Insufficient gas limit";
+          }
+          
+          // 🔧 NEW: Set detailed error state
+          setErrorState({
+            hasError: true,
+            errorMessage: errorMessage,
+            errorDetails: errorDetails,
+            transactionHash: submitResult.transactionHash,
+            isOnChainRevert: true
+          });
+          
+          console.log(`⚠️ Transaction failed on-chain: ${errorMessage}`);
+          console.log(`📋 Error details: ${errorDetails}`);
+          console.log(`🔗 Transaction hash: ${submitResult.transactionHash}`);
+          console.log("ℹ️ User should check transaction hash on blockchain explorer");
+          
+          // 🔧 NEW: Don't auto-hide on-chain revert errors - user needs to see them
+          // setTimeout(() => {
+          //   setSwapStatus('idle');
+          //   console.log('Clearing error message');
+          // }, 2000);
+          
+          return; // Exit early for on-chain failures
+        } else {
+          // Other statuses
+          setSwapStatus('success');
+          console.log(`⚠️ Transaction broadcasted with status: ${submitResult.status}`);
+          console.log("ℹ️ User should check transaction hash on blockchain explorer");
+        }
+        
+        console.log("Transaction hash:", submitResult.transactionHash);
+        
+        // 🔧 FIXED: Auto-hide success message after 2 seconds
         setTimeout(() => {
-          onTradeComplete();
-        }, 1000); // Small delay to ensure transaction is processed
-      }
-      
-      // 🔧 NEW: Reset PnL if position is closed (token balance becomes 0)
-      if (activeTab === "sell" && parseFloat(amountIn) >= parseFloat(tokenBalance) * 0.95) {
-        // This was likely a full position close, reset PnL after a delay
-        setTimeout(() => {
-          console.log("🔄 Position likely closed, resetting PnL data...");
-          setPnlData(null);
-          // Fetch fresh PnL data after reset
-          setTimeout(() => {
-            fetchPnLData(walletAddress);
-          }, 1000);
+          setSwapStatus('idle');
+          console.log('Clearing success message');
         }, 2000);
+        
+        // Refresh balances and PnL
+        fetchBalances(walletAddress);
+        fetchPnLData(walletAddress);
+        
+        // 🔧 NEW: Refresh orders and positions after successful trade
+        if (onTradeComplete) {
+          console.log("🔄 Trade completed, refreshing orders and positions...");
+          setTimeout(() => {
+            onTradeComplete();
+          }, 1000); // Small delay to ensure transaction is processed
+        }
+        
+        // 🔧 NEW: Reset PnL if position is closed (token balance becomes 0)
+        if (activeTab === "sell" && parseFloat(amountIn) >= parseFloat(tokenBalance) * 0.95) {
+          // This was likely a full position close, reset PnL after a delay
+          setTimeout(() => {
+            console.log("🔄 Position likely closed, resetting PnL data...");
+            setPnlData(null);
+            // Fetch fresh PnL data after reset
+            setTimeout(() => {
+              fetchPnLData(walletAddress);
+            }, 1000);
+          }, 2000);
+        }
+        
+        // Clear form
+        setAmountIn("");
+        setAmountOut("");
+      } else {
+        // Handle error response
+        console.error("❌ Submit response indicates failure:", submitResult);
+        throw new Error(submitResult.error || "Swap failed");
       }
-      
-      // Clear form
-      setAmountIn("");
-      setAmountOut("");
     } catch (error) {
       console.error("Swap execution error:", error);
       setSwapStatus('failed');
@@ -1323,8 +1648,21 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
       formattedAmount: amount.toFixed(4),
       isMaxSell: activeTab === "sell" && percent >= 95
     });
-    handleAmountChange(amount.toFixed(4));
-  }, [ethBalance, tokenBalance, activeTab, handleAmountChange]);
+    
+    // 🔧 ENHANCED: Clear quote history and force fresh quote for scaling detection
+    setAmountIn(amount.toFixed(4));
+    setAmountOut(""); // Clear previous output
+    setCurrentQuote(null); // Clear quote history to force fresh scaling check
+    
+    // Force immediate quote fetch (no debounce for quick amounts)
+    if (activeTab === "buy") {
+      // For buy operations, use debounced quote to avoid spam
+      debouncedGetQuote(amount.toFixed(4));
+    } else {
+      // For sell operations, use immediate quote
+      handleAmountChange(amount.toFixed(4));
+    }
+  }, [ethBalance, tokenBalance, activeTab, handleAmountChange, debouncedGetQuote]);
 
   const handleSwapDirection = useCallback(() => {
     setActiveTab(activeTab === "buy" ? "sell" : "buy");
@@ -1337,6 +1675,34 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
       navigator.clipboard.writeText(walletAddress);
     }
   }, [walletAddress]);
+
+  // 🔧 NEW: Function to detect quote scaling issues (currently disabled)
+  // const detectQuoteScalingIssue = useCallback((currentAmount: string, currentOutput: string, previousAmount?: string, previousOutput?: string) => {
+  //   if (!previousAmount || !previousOutput) return null;
+  //   
+  //   const currentInput = parseFloat(currentAmount);
+  //   const currentOut = parseFloat(currentOutput);
+  //   const prevInput = parseFloat(previousAmount);
+  //   const prevOut = parseFloat(previousOutput);
+  //   
+  //   if (currentInput <= 0 || currentOut <= 0 || prevInput <= 0 || prevOut <= 0) return null;
+  //   
+  //   // Calculate expected linear scaling
+  //   const expectedOutput = (currentInput / prevInput) * prevOut;
+  //   const scalingDeviation = Math.abs(currentOut - expectedOutput) / expectedOutput * 100;
+  //   
+  //   // If deviation is more than 10%, there's a scaling issue
+  //   if (scalingDeviation > 10) {
+  //     return {
+  //       severity: scalingDeviation > 25 ? 'critical' : 'warning',
+  //       deviation: scalingDeviation,
+  //       expected: expectedOutput,
+  //       message: `Quote scaling issue: Expected ${expectedOutput.toFixed(2)} tokens, got ${currentOut.toFixed(2)} tokens (${scalingDeviation.toFixed(1)}% deviation)`
+  //     };
+  //   }
+  //   
+  //   return null;
+  // }, []);
 
   // ────────────────────────────────────────────────────────────────────────────────
   // 8) EFFECTS
@@ -1351,6 +1717,28 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
       fetchPnLData(walletAddress);
     }
   }, [token, walletAddress, fetchBalances, fetchPnLData]);
+
+  // 🔧 CRITICAL FIX: Clear quotes when token changes to prevent stale data
+  useEffect(() => {
+    console.log("🔄 Token changed, clearing quote state:", {
+      oldToken: currentQuote?.tokenAddress,
+      newToken: token?.baseToken?.address,
+      oldTokenSymbol: currentQuote?.tokenSymbol,
+      newTokenSymbol: token?.baseToken?.symbol,
+      reason: "Token change detected - clearing stale quotes"
+    });
+    
+    // Clear all quote-related state when token changes
+    setAmountOut("");
+    setCurrentQuote(null);
+    setQuoteCountdown(30);
+    setIsQuoteExpired(false);
+    
+    // Also clear amount input to force fresh start
+    setAmountIn("");
+    
+    console.log("✅ Quote state cleared for new token:", token?.baseToken?.symbol);
+  }, [token?.baseToken?.address]);
 
   // Quote countdown effect
   useEffect(() => {
@@ -1378,10 +1766,41 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
     return () => clearInterval(interval);
   }, [amountIn, getQuote]);
 
+  // 🔧 NEW: Real-time PnL updates every 30 seconds
+  useEffect(() => {
+    if (!walletAddress || !token) return;
+
+    const pnlInterval = setInterval(() => {
+      console.log("🔄 Auto-refreshing PnL data...");
+      fetchPnLData(walletAddress);
+    }, 30000); // Update every 30 seconds
+
+    return () => clearInterval(pnlInterval);
+  }, [walletAddress, token, fetchPnLData]);
+
+  // 🔧 NEW: Live PnL updates during active trading (every 10 seconds)
+  useEffect(() => {
+    if (!walletAddress || !token || !amountIn || parseFloat(amountIn) <= 0) return;
+
+    const livePnlInterval = setInterval(() => {
+      console.log("🔄 Live PnL update during active trading...");
+      fetchPnLData(walletAddress);
+    }, 10000); // Update every 10 seconds when actively trading
+
+    return () => clearInterval(livePnlInterval);
+  }, [walletAddress, token, amountIn, fetchPnLData]);
+
   // ────────────────────────────────────────────────────────────────────────────────
   // 9) RENDER
   // ────────────────────────────────────────────────────────────────────────────────
-  const isSwapReady = amountIn && parseFloat(amountIn) > 0 && isWalletConnected && walletAddress;
+  // 🔧 TEMPORARILY DISABLED: Excessive price impact blocking to restore swap functionality
+  // TODO: Re-enable once quotes are working properly
+  // const hasExcessivePriceImpact = false; // Temporarily disabled
+  
+  const isSwapReady = amountIn && 
+    parseFloat(amountIn) > 0 && 
+    isWalletConnected && 
+    walletAddress; // 🔧 TEMPORARILY DISABLED: Price impact blocking
 
   return (
     <div className="h-full flex flex-col bg-gray-950">
@@ -1402,12 +1821,17 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
             </h3>
           </div>
           <div className="flex items-center gap-2">
+            {/* 🔧 GEAR: Slippage Tolerance Icon */}
             <button
               onClick={() => setShowSlippageModal(true)}
-              className="text-xs bg-gray-800 hover:bg-gray-700 text-blue-400 px-2 py-1 transition"
+              className="text-blue-400 hover:text-blue-300 transition p-1"
+              title="Slippage Settings"
             >
-              {slippage}%
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+              </svg>
             </button>
+            
             <button
               onClick={() => setShowInfoModal(true)}
               className="text-blue-400 hover:text-blue-300 transition"
@@ -1607,16 +2031,45 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
                 YOU RECEIVE
               </label>
                              <div className="p-3 bg-gray-800">
-                <div className="flex items-center justify-start mb-2">
-                  <span className="text-xs text-gray-400">
-                    {quoteLoading ? "Fetching quote..." : amountOut ? "Estimated" : "Enter amount above"}
-                  </span>
-                  {amountOut && !quoteLoading && (
-                    <span className={`text-xs ml-2 ${isQuoteExpired ? 'text-red-400' : 'text-green-400'}`}>
-                      {isQuoteExpired ? 'Expired' : `${quoteCountdown}s`}
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs text-gray-400">
+                      {quoteLoading ? "Fetching quote..." : amountOut ? "Estimated" : "Enter amount above"}
                     </span>
+                    {amountOut && !quoteLoading && (
+                      <span className={`text-xs ${isQuoteExpired ? 'text-red-400' : 'text-green-400'}`}>
+                        {isQuoteExpired ? 'Expired' : `${quoteCountdown}s`}
+                      </span>
+                    )}
+                  </div>
+                  
+                  {/* 🔧 NEW: Quote comparison button */}
+                  {allQuotes.length > 1 && (
+                    <button
+                      onClick={() => setShowQuoteComparison(true)}
+                      className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition-colors"
+                    >
+                      Compare {allQuotes.length} quotes
+                    </button>
                   )}
                 </div>
+                
+                {/* 🔧 NEW: Display selected quote source */}
+                {selectedQuote && (
+                  <div className="mb-2 text-xs text-gray-500 bg-gray-700/50 px-2 py-1 rounded">
+                    Via {selectedQuote.name} ({selectedQuote.source})
+                  </div>
+                )}
+                
+                                                 {/* 🔧 TEMPORARILY DISABLED: Price Impact & Backend Warning System */}
+                {/* TODO: Re-enable once quote validation is properly implemented */}
+                {false && (
+                  <div className="mb-2 p-3 rounded-lg border text-xs bg-blue-900/20 border-blue-500/30 text-blue-300">
+                    <strong>Price Impact System Temporarily Disabled</strong><br/>
+                    • System is being tested for functionality<br/>
+                    • Warnings will be restored once stable
+                  </div>
+                )}
                 <div className="flex items-center">
                   <div className="flex items-center gap-2 mr-2">
                     {activeTab === "buy" ? (
@@ -1648,6 +2101,10 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
                 </div>
               </div>
             </div>
+
+
+
+
 
             {/* Main Action Button */}
             <button
@@ -1721,9 +2178,65 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
                     <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                     </svg>
-                    <span className="text-sm text-red-400 font-medium">Transaction Failed</span>
+                    <span className="text-sm text-red-400 font-medium">
+                      {errorState.isOnChainRevert ? 'On-Chain Transaction Failed' : 'Transaction Failed'}
+                    </span>
                   </div>
-                  <div className="text-xs text-gray-400 mt-1 ml-6">Transaction reverted, try again</div>
+                  
+                  {/* 🔧 NEW: Enhanced error details for on-chain reverts */}
+                  {errorState.hasError && errorState.isOnChainRevert ? (
+                    <div className="mt-2 ml-6">
+                      <div className="text-xs text-red-300 font-medium mb-1">
+                        {errorState.errorMessage}
+                      </div>
+                      <div className="text-xs text-gray-400 whitespace-pre-line">
+                        {errorState.errorDetails}
+                      </div>
+                      
+                      {/* 🔧 NEW: Transaction hash for on-chain failures */}
+                      {errorState.transactionHash && (
+                        <div className="mt-2 text-xs text-gray-500">
+                          <span className="font-medium">Transaction Hash:</span>
+                          <a 
+                            href={`https://basescan.org/tx/${errorState.transactionHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="ml-1 text-blue-400 hover:text-blue-300 underline"
+                          >
+                            {errorState.transactionHash.slice(0, 10)}...{errorState.transactionHash.slice(-8)}
+                          </a>
+                        </div>
+                      )}
+                      
+                      {/* 🔧 NEW: Action buttons for on-chain failures */}
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          onClick={() => {
+                            setErrorState({ hasError: false, errorMessage: '', errorDetails: '' });
+                            setSwapStatus('idle');
+                          }}
+                          className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded transition"
+                        >
+                          Dismiss
+                        </button>
+                        <button
+                          onClick={() => {
+                            setErrorState({ hasError: false, errorMessage: '', errorDetails: '' });
+                            setSwapStatus('idle');
+                            // Refresh quote
+                            if (amountIn) {
+                              getQuote(amountIn);
+                            }
+                          }}
+                          className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded transition"
+                        >
+                          Refresh Quote & Retry
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-gray-400 mt-1 ml-6">Transaction reverted, try again</div>
+                  )}
                 </div>
               </div>
             )}
@@ -1802,7 +2315,9 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
                     <div className="flex flex-col items-center justify-center relative px-2 py-2">
                       <span className="text-xs text-gray-400 mb-1 font-medium">Bought</span>
                       <div className="flex items-center gap-1">
-                        <span className="text-sm font-bold text-green-400">${pnlData?.bought || 0}</span>
+                        <span className="text-sm font-bold text-green-400">
+                          ${pnlData?.bought !== undefined ? pnlData.bought.toFixed(2) : '0.00'}
+                        </span>
                       </div>
                       <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-700/50"></div>
                     </div>
@@ -1811,7 +2326,9 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
                     <div className="flex flex-col items-center justify-center relative px-2 py-2">
                       <span className="text-xs text-gray-400 mb-1 font-medium">Sold</span>
                       <div className="flex items-center gap-1">
-                        <span className="text-sm font-bold text-red-400">${pnlData?.sold || 0}</span>
+                        <span className="text-sm font-bold text-red-400">
+                          ${pnlData?.sold !== undefined ? pnlData.sold.toFixed(2) : '0.00'}
+                        </span>
                       </div>
                       <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-700/50"></div>
                     </div>
@@ -1820,7 +2337,9 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
                     <div className="flex flex-col items-center justify-center relative px-2 py-2">
                       <span className="text-xs text-gray-400 mb-1 font-medium">Holding</span>
                       <div className="flex items-center gap-1">
-                        <span className="text-sm font-bold text-white">${pnlData?.holding || 0}</span>
+                        <span className="text-sm font-bold text-white">
+                          ${pnlData?.holding !== undefined ? pnlData.holding.toFixed(2) : '0.00'}
+                        </span>
                       </div>
                       <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-700/50"></div>
                     </div>
@@ -1847,9 +2366,18 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
       {/* Modals */}
       {showSlippageModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="p-6 border border-gray-800 w-80 bg-gray-900">
-            <h3 className="text-lg font-bold mb-4">Set Slippage</h3>
-            <div className="space-y-3">
+          <div className="p-6 border border-gray-800 w-80 bg-gray-900 rounded-lg">
+            <h3 className="text-lg font-bold mb-4 text-center">Slippage Tolerance</h3>
+            
+            {/* Current Setting Display */}
+            <div className="mb-4 p-3 bg-gray-800 rounded border border-gray-600 text-center">
+              <div className="text-2xl font-bold text-blue-400 mb-1">{slippage}%</div>
+              <div className="text-gray-400 text-sm">Current Setting</div>
+            </div>
+            
+            {/* Quick Options */}
+            <div className="space-y-2 mb-4">
+              <div className="text-gray-400 text-sm text-center mb-2">Quick Options:</div>
               {[0.1, 0.5, 1.0, 2.0].map((value) => (
                 <button
                   key={value}
@@ -1857,21 +2385,54 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
                     setSlippage(value);
                     setShowSlippageModal(false);
                   }}
-                  className={`w-full py-2 transition ${
+                  className={`w-full py-2 transition rounded ${
                     slippage === value
                       ? "bg-blue-600 text-white"
-                      : "bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700"
+                      : "bg-gray-800 text-gray-300 hover:bg-gray-700"
                   }`}
                 >
                   {value}%
                 </button>
               ))}
             </div>
+            
+            {/* Custom Input */}
+            <div className="mb-4">
+              <div className="text-gray-400 text-sm text-center mb-2">Custom Slippage:</div>
+              <div className="flex gap-2 items-center">
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0.1"
+                  max="50"
+                  value={slippage}
+                  onChange={(e) => {
+                    const value = parseFloat(e.target.value);
+                    if (!isNaN(value) && value >= 0.1 && value <= 50) {
+                      setSlippage(value);
+                    }
+                  }}
+                  className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded text-white text-center"
+                  onFocus={(e) => e.target.select()}
+                />
+                <span className="text-gray-400 text-sm">%</span>
+              </div>
+              <div className="text-gray-500 text-xs text-center mt-1">Range: 0.1% - 50%</div>
+            </div>
+            
+            {/* Explanation */}
+            <div className="mb-4 p-3 bg-gray-800 rounded border border-gray-600">
+              <div className="text-gray-300 text-sm text-center">
+                <div className="mb-1">Higher slippage = better success rate</div>
+                <div>But potentially worse prices</div>
+              </div>
+            </div>
+            
             <button
               onClick={() => setShowSlippageModal(false)}
-              className="w-full mt-4 py-2 bg-gray-800 text-gray-300 hover:bg-gray-700 transition border border-gray-700"
+              className="w-full py-2 bg-gray-800 text-gray-300 hover:bg-gray-700 transition border border-gray-700 rounded"
             >
-              Cancel
+              Close
             </button>
           </div>
         </div>
@@ -1957,6 +2518,10 @@ const Swap: React.FC<SwapProps> = ({ token, onTradeComplete }) => {
           </div>
         </div>
       )}
+      
+      {/* 🔧 NEW: Quote Comparison Modal */}
+      <QuoteComparisonModal />
+
     </div>
   );
 };

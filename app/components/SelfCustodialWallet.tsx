@@ -343,6 +343,18 @@ const SelfCustodialWallet: React.FC = () => {
           >
             <FaCopy className="w-4 h-4 text-gray-400" />
           </button>
+                     <button
+             onClick={() => {
+               const explorerUrl = `/explorer/address/${walletData.address}`;
+               window.open(explorerUrl, '_blank');
+             }}
+             className="p-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+             title="View in Explorer"
+           >
+             <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+             </svg>
+           </button>
           <button
             onClick={backupWallet}
             className="p-2 bg-orange-500/20 hover:bg-orange-500/30 rounded-lg transition-colors border border-orange-500/30"

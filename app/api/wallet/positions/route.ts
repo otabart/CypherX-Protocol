@@ -55,25 +55,33 @@ async function getTokenPrice(tokenAddress: string): Promise<number> {
 
 export async function GET(request: Request) {
   try {
+    console.log("🔧 Positions API called");
     const { searchParams } = new URL(request.url);
     const address = searchParams.get("address");
     const tokenAddress = searchParams.get("tokenAddress");
     const status = searchParams.get("status"); // 'open', 'closed', or 'all'
     
+    console.log("🔧 Positions API params:", { address, tokenAddress, status });
+    
     if (!address) {
+      console.log("🔧 Missing wallet address");
       return NextResponse.json(
         { error: "Missing wallet address" },
         { status: 400 }
       );
     }
     
+    console.log("🔧 Getting admin database...");
     const db = adminDb();
     if (!db) {
+      console.log("🔧 Database connection failed - adminDb() returned null");
       return NextResponse.json(
         { error: "Database connection failed" },
         { status: 500 }
       );
     }
+    
+    console.log("🔧 Database connection successful");
     
     // Build query for wallet transactions
     let transactionsQuery = db.collection("wallet_transactions")
@@ -118,7 +126,9 @@ export async function GET(request: Request) {
      // First, collect all sell transactions
      filteredDocs.forEach(doc => {
        const data = doc.data();
-       const isSell = data.inputToken !== "ETH";
+       // Improved logic: A sell is when someone sends a token (not ETH) to the pool
+       // This works for both ETH pairs and non-ETH pairs (like USDC pairs)
+       const isSell = data.inputToken !== "ETH" && data.inputToken !== "0x0000000000000000000000000000000000000000";
        
        if (isSell) {
          const tokenAddr = data.inputToken;
@@ -137,7 +147,9 @@ export async function GET(request: Request) {
                  // Create individual positions for each buy transaction
       for (const doc of filteredDocs) {
         const data = doc.data();
-        const isBuy = data.inputToken === "ETH";
+        // Improved logic: A buy is when someone sends ETH or another base token to the pool
+        // This works for both ETH pairs and non-ETH pairs (like USDC pairs)
+        const isBuy = data.inputToken === "ETH" || data.inputToken === "0x0000000000000000000000000000000000000000";
         
         if (isBuy) {
           const tokenAddr = data.outputToken;
@@ -239,9 +251,10 @@ export async function GET(request: Request) {
     return NextResponse.json(response);
     
   } catch (error) {
-    console.error("Error fetching positions:", error);
+    console.error("🔧 Error fetching positions:", error);
+    console.error("🔧 Error stack:", error instanceof Error ? error.stack : 'No stack trace');
     return NextResponse.json(
-      { error: "Failed to fetch positions" },
+      { error: "Failed to fetch positions", details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }

@@ -58,8 +58,14 @@ export async function GET(request: Request) {
     }));
 
          // Calculate positions (only buy transactions that haven't been fully sold)
-     const buyTransactions = transactions.filter((tx: any) => tx.inputToken === 'ETH');
-     const sellTransactions = transactions.filter((tx: any) => tx.outputToken === 'ETH');
+     // Improved logic: A buy is when someone sends ETH or another base token to the pool
+     // This works for both ETH pairs and non-ETH pairs (like USDC pairs)
+     const buyTransactions = transactions.filter((tx: any) => 
+       tx.inputToken === 'ETH' || tx.inputToken === '0x0000000000000000000000000000000000000000'
+     );
+     const sellTransactions = transactions.filter((tx: any) => 
+       tx.outputToken === 'ETH' || tx.outputToken === '0x0000000000000000000000000000000000000000'
+     );
      
      // Get unique token addresses to fetch current prices
      const uniqueTokenAddresses = [...new Set(buyTransactions.map(tx => tx.outputToken))];

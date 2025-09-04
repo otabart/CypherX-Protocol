@@ -10,7 +10,7 @@ import { useAuth, useWalletSystem, useVotingModal } from "@/app/providers";
 import { useUserSettings } from "@/app/hooks/useUserSettings";
 import { motion, AnimatePresence } from "framer-motion";
 import { FiUser, FiInfo, FiX, FiCheck, FiAlertCircle } from "react-icons/fi";
-import { toast } from "react-toastify";
+
 import Link from "next/link";
 import Image from "next/image";
 import { createPortal } from "react-dom";
@@ -25,10 +25,7 @@ const UserProfileDropdown: React.FC = () => {
   const { selfCustodialWallet } = useWalletSystem();
   const { setShowVotingModal, setSelectedIndexForVoting } = useVotingModal();
   const { 
-    settings, 
     updateAlias, 
-    generateReferralCode, 
-    applyReferralCode, 
     loading: settingsLoading 
   } = useUserSettings();
   const walletAddress = selfCustodialWallet?.address;
@@ -67,10 +64,7 @@ const UserProfileDropdown: React.FC = () => {
     showBalance: false
   });
   
-  // Referral system states
-  const [showReferralModal, setShowReferralModal] = useState(false);
-  const [showApplyReferralModal, setShowApplyReferralModal] = useState(false);
-  const [referralCodeToApply, setReferralCodeToApply] = useState('');
+
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -565,21 +559,13 @@ const UserProfileDropdown: React.FC = () => {
                   <span className="font-medium text-sm">Set Alias</span>
                 </button>
 
-                <button
-                  onClick={() => setShowReferralModal(true)}
+                <Link
+                  href="/rewards"
                   className="flex items-center w-full p-2 text-gray-300 hover:text-white hover:bg-gray-800/80 rounded-md transition-all duration-200"
+                  onClick={() => setShowAccountModal(false)}
                 >
-                  <span className="font-medium text-sm">Referral Program</span>
-                </button>
-
-                {!settings?.referredBy && (
-                  <button
-                    onClick={() => setShowApplyReferralModal(true)}
-                    className="flex items-center w-full p-2 text-gray-300 hover:text-white hover:bg-gray-800/80 rounded-md transition-all duration-200"
-                  >
-                    <span className="font-medium text-sm">Apply Referral Code</span>
-                  </button>
-                )}
+                  <span className="font-medium text-sm">Rewards & Referrals</span>
+                </Link>
               </div>
 
               {/* Logout Section */}
@@ -1061,161 +1047,9 @@ const UserProfileDropdown: React.FC = () => {
       , document.body
       )}
 
-      {/* Referral Program Modal */}
-      {showReferralModal && createPortal(
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            className="bg-gray-900 rounded-xl p-6 w-[500px] max-h-[80vh] overflow-y-auto border border-gray-700"
-          >
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-white text-xl font-semibold">Referral Program</h3>
-              <button
-                onClick={() => setShowReferralModal(false)}
-                className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
-              >
-                <FiX className="w-5 h-5 text-gray-400" />
-              </button>
-            </div>
 
-            <div className="space-y-6">
-              {/* Your Referral Code */}
-              <div className="bg-gray-800/50 rounded-lg p-4">
-                <h4 className="text-white font-medium mb-3">Your Referral Code</h4>
-                {settings?.referralCode ? (
-                  <div className="flex items-center space-x-3">
-                    <input
-                      type="text"
-                      value={settings.referralCode}
-                      readOnly
-                      className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-center font-mono"
-                    />
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(settings.referralCode);
-                        toast.success('Referral code copied!', { position: 'bottom-left' });
-                      }}
-                      className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                    >
-                      Copy
-                    </button>
-                  </div>
-                ) : (
-                  <div className="text-center">
-                    <p className="text-gray-400 text-sm mb-3">Generate a referral code to start earning rewards</p>
-                    <button
-                      onClick={generateReferralCode}
-                      disabled={settingsLoading}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                    >
-                      {settingsLoading ? 'Generating...' : 'Generate Code'}
-                    </button>
-                  </div>
-                )}
-              </div>
 
-              {/* Referral Stats */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-gray-800/50 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-blue-400">{settings?.totalReferrals || 0}</div>
-                  <div className="text-gray-400 text-sm">Total Referrals</div>
-                </div>
-                <div className="bg-gray-800/50 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-green-400">${(settings?.totalReferralEarnings || 0).toFixed(2)}</div>
-                  <div className="text-gray-400 text-sm">Total Earnings</div>
-                </div>
-              </div>
-
-              {/* Swap Fee Discount */}
-              {settings?.swapFeeDiscount && settings.swapFeeDiscount > 0 && (
-                <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
-                  <h4 className="text-green-400 font-medium mb-2">Active Discount</h4>
-                  <p className="text-green-300 text-sm">
-                    You have a {settings.swapFeeDiscount}% swap fee discount from using a referral code!
-                  </p>
-                </div>
-              )}
-
-              {/* How It Works */}
-              <div className="bg-gray-800/50 rounded-lg p-4">
-                <h4 className="text-white font-medium mb-3">How It Works</h4>
-                <div className="space-y-2 text-sm text-gray-300">
-                  <p>• Share your referral code with friends</p>
-                  <p>• They get 5% off swap fees when they sign up</p>
-                  <p>• You earn rewards when they complete their first swap</p>
-                  <p>• Track your earnings and referral status here</p>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      , document.body
-      )}
-
-      {/* Apply Referral Code Modal */}
-      {showApplyReferralModal && createPortal(
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            className="bg-gray-900 rounded-xl p-6 w-96 border border-gray-700"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-white text-lg font-semibold">Apply Referral Code</h3>
-              <button
-                onClick={() => setShowApplyReferralModal(false)}
-                className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
-              >
-                <FiX className="w-5 h-5 text-gray-400" />
-              </button>
-            </div>
-            
-            <p className="text-gray-400 text-sm mb-4">
-              Enter a referral code to get 5% off swap fees and help your friend earn rewards.
-            </p>
-            
-            <div className="mb-4">
-              <label className="block text-gray-300 text-sm font-medium mb-2">
-                Referral Code
-              </label>
-              <input
-                type="text"
-                value={referralCodeToApply}
-                onChange={(e) => setReferralCodeToApply(e.target.value.toUpperCase())}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-center font-mono"
-                placeholder="Enter 6-character code"
-                maxLength={6}
-              />
-            </div>
-            
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setShowApplyReferralModal(false)}
-                className="flex-1 px-4 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  if (referralCodeToApply.trim()) {
-                    await applyReferralCode(referralCodeToApply.trim());
-                    setShowApplyReferralModal(false);
-                    setReferralCodeToApply('');
-                  }
-                }}
-                disabled={!referralCodeToApply.trim() || settingsLoading}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {settingsLoading ? 'Applying...' : 'Apply Code'}
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      , document.body
-      )}
+      
     </div>
   );
 };

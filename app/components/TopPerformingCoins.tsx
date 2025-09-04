@@ -44,19 +44,36 @@ const TopPerformingCoins = () => {
         const tokens = await fetchAllTokenData();
         const logDate = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
         console.log(`[${logDate}] Fetched tokens:`, tokens);
+        
         if (tokens.length === 0) {
-          throw new Error("No tokens found or data incomplete.");
+          console.warn(`[${logDate}] No tokens found, showing empty state`);
+          setTopCoins([]);
+          setError("No tokens available at the moment.");
+          return;
         }
+        
         const top = getTopPerformingCoins(tokens);
         console.log(`[${logDate}] Top performing coins:`, top);
+        
+        if (top.length === 0) {
+          console.warn(`[${logDate}] No top performing coins found`);
+          setTopCoins([]);
+          setError("No top performing coins available.");
+          return;
+        }
+        
         setTopCoins(top);
         setError(null);
       } catch (err) {
         const logDate = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
         console.error(`[${logDate}] Error loading tokens:`, err);
-        const errMsg = "Failed to load top coins.";
+        const errMsg = "Failed to load top coins. Please try again later.";
         setError(errMsg);
-        toast.error(errMsg);
+        setTopCoins([]);
+        // Don't show toast for every error to avoid spam
+        if (process.env.NODE_ENV === 'development') {
+          toast.error(errMsg);
+        }
       } finally {
         setLoading(false);
       }

@@ -17,6 +17,11 @@ interface AssetTransfer {
   value: string;
   asset: string;
   category: string;
+  rawContract?: {
+    value: string;
+    address: string | null;
+    decimal: string;
+  };
   metadata?: {
     blockTimestamp: string;
     blockNum: string;
@@ -37,6 +42,29 @@ interface Transaction {
   description: string;
   amount: string;
   status: 'confirmed' | 'pending' | 'failed';
+  // Enhanced fields
+  gasUsed?: string;
+  gasPrice?: string;
+  gasLimit?: string;
+  gasFeeEth?: string;
+  gasFeeUsd?: number;
+  nonce?: string;
+  maxFeePerGas?: string;
+  maxPriorityFeePerGas?: string;
+  contractAddress?: string;
+  contractName?: string;
+  methodSignature?: string;
+  inputData?: string;
+  isContractCreation?: boolean;
+  ethValueUsd?: number;
+  tokenTransfers?: Array<{
+    tokenAddress: string;
+    tokenSymbol: string;
+    tokenName: string;
+    value: string;
+    decimals: number;
+    usdValue?: number;
+  }>;
 }
 
 
@@ -165,20 +193,17 @@ export async function POST(request: Request) {
                     // Calculate USD value
                     const usdValue = balance * priceUsd;
                     
-                    // Only include tokens worth more than $0.01
-                    if (usdValue >= 0.01) {
-                      tokenBalances.push({
-                        contractAddress: token.contractAddress,
-                        name: metadata.name || 'Unknown Token',
-                        symbol: metadata.symbol || 'UNK',
-                        tokenBalance: balance.toString(),
-                        decimals: (metadata.decimals || 18).toString(),
-                        logo: logo || `https://dexscreener.com/base/${token.contractAddress}/logo.png`,
-                        priceUsd: priceUsd,
-                        usdValue: usdValue,
-                        priceChange24h: 0 // We can add this later if needed
-                      });
-                    }
+                    tokenBalances.push({
+                      contractAddress: token.contractAddress,
+                      name: metadata.name || 'Unknown Token',
+                      symbol: metadata.symbol || 'UNK',
+                      tokenBalance: balance.toString(),
+                      decimals: (metadata.decimals || 18).toString(),
+                      logo: logo || `https://dexscreener.com/base/${token.contractAddress}/logo.png`,
+                      priceUsd: priceUsd,
+                      usdValue: usdValue,
+                      priceChange24h: 0 // We can add this later if needed
+                    });
                   }
                 }
               } catch (error) {
@@ -192,7 +217,7 @@ export async function POST(request: Request) {
         tokenBalances.sort((a, b) => b.usdValue - a.usdValue);
 
         result = { tokenBalances };
-        console.log(`Token result: Found ${tokenBalances.length} tokens with value >= $0.01`);
+        console.log(`Token result: Found ${tokenBalances.length} tokens (all holdings shown)`);
         break;
 
       case 'transactions':
@@ -283,15 +308,92 @@ export async function POST(request: Request) {
            });
          }
 
-         // Convert to our Transaction format
-         const transactions: Transaction[] = allTransfers.map((transfer: AssetTransfer & { type: string }) => {
-          const timestamp = transfer.metadata?.blockTimestamp ? 
-            parseInt(transfer.metadata.blockTimestamp) : 
-            Date.now();
+                 // Function to get detailed transaction data
+        const getTransactionDetails = async (hash: string) => {
+          try {
+            const txDetailRequest = {
+              jsonrpc: "2.0",
+              method: "eth_getTransactionByHash",
+              params: [hash],
+              id: 1
+            };
+
+            const txDetailResponse = await fetch(alchemyUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(txDetailRequest)
+            });
+
+            if (txDetailResponse.ok) {
+              const txDetailData = await txDetailResponse.json();
+              return txDetailData.result;
+            }
+          } catch (error) {
+            console.error(`Error fetching transaction details for ${hash}:`, error);
+          }
+          return null;
+        };
+
+        // Get detailed transaction data for all transactions
+        const transactionHashes = [...new Set(allTransfers.map(t => t.hash))];
+        const transactionDetails = await Promise.all(
+          transactionHashes.map(hash => getTransactionDetails(hash))
+        );
+        
+        const txDetailsMap = new Map();
+        transactionDetails.forEach((details, index) => {
+          if (details) {
+            txDetailsMap.set(transactionHashes[index], details);
+          }
+        });
+
+        // Convert to our Transaction format
+        const transactions: Transaction[] = allTransfers.map((transfer: AssetTransfer & { type: string }) => {
+          // Handle timestamp properly - Alchemy returns blockTimestamp as an ISO date string
+          let timestamp = Date.now();
+          if (transfer.metadata?.blockTimestamp) {
+            try {
+              // Alchemy returns blockTimestamp as an ISO date string like "2025-08-28T06:46:09.000Z"
+              const date = new Date(transfer.metadata.blockTimestamp);
+              if (!isNaN(date.getTime())) {
+                timestamp = date.getTime(); // Get milliseconds since epoch
+              }
+            } catch (error) {
+              console.error('Error parsing blockTimestamp:', error);
+            }
+          }
           
-          const amount = transfer.value ? 
-            (parseInt(transfer.value, 16) / Math.pow(10, 18)).toString() : 
-            '0';
+                     // Handle amount calculation properly
+           let amount = '0';
+           if (transfer.value) {
+             try {
+               // For ERC20 tokens, value is already a number, for ETH it's a hex string
+               if (transfer.category === 'erc20') {
+                 // ERC20 tokens have value as a number, need to use rawContract.value and decimals
+                 if (transfer.rawContract?.value && transfer.rawContract?.decimal) {
+                   const valueInWei = parseInt(transfer.rawContract.value, 16);
+                   const decimals = parseInt(transfer.rawContract.decimal, 16);
+                   if (!isNaN(valueInWei) && !isNaN(decimals)) {
+                     amount = (valueInWei / Math.pow(10, decimals)).toString();
+                   }
+                 } else {
+                   // Fallback: use the value field directly if it's a number
+                   const value = parseFloat(transfer.value);
+                   if (!isNaN(value)) {
+                     amount = value.toString();
+                   }
+                 }
+               } else {
+                 // For ETH transactions, value is a hex string
+                 const valueInWei = parseInt(transfer.value, 16);
+                 if (!isNaN(valueInWei)) {
+                   amount = (valueInWei / Math.pow(10, 18)).toString();
+                 }
+               }
+             } catch (error) {
+               console.error('Error parsing transfer value:', error);
+             }
+           }
           
           const type = transfer.type || 
             (transfer.to.toLowerCase() === address.toLowerCase() ? 'incoming' : 'outgoing');
@@ -299,6 +401,29 @@ export async function POST(request: Request) {
           const description = type === 'incoming' ? 
             `Received ${amount} ${transfer.asset}` :
             `Sent ${amount} ${transfer.asset}`;
+
+          // Get detailed transaction data
+          const txDetails = txDetailsMap.get(transfer.hash);
+          
+          // Calculate gas fee in ETH and USD
+          let gasFeeEth = '0';
+          let gasFeeUsd = 0;
+          if (txDetails?.gasUsed && txDetails?.gasPrice) {
+            const gasUsed = parseInt(txDetails.gasUsed, 16);
+            const gasPrice = parseInt(txDetails.gasPrice, 16);
+            if (!isNaN(gasUsed) && !isNaN(gasPrice)) {
+              const gasFeeInWei = gasUsed * gasPrice;
+              gasFeeEth = (gasFeeInWei / Math.pow(10, 18)).toString();
+              // TODO: Calculate USD value using ETH price at transaction time
+              gasFeeUsd = parseFloat(gasFeeEth) * 4000; // Placeholder ETH price
+            }
+          }
+
+          // Calculate ETH value in USD
+          let ethValueUsd = 0;
+          if (transfer.category === 'external' && amount !== '0') {
+            ethValueUsd = parseFloat(amount) * 4000; // Placeholder ETH price
+          }
 
           return {
             hash: transfer.hash,
@@ -312,7 +437,20 @@ export async function POST(request: Request) {
             type: type as 'incoming' | 'outgoing' | 'internal',
             description,
             amount,
-            status: 'confirmed'
+            status: 'confirmed',
+            // Enhanced fields
+            gasUsed: txDetails?.gasUsed,
+            gasPrice: txDetails?.gasPrice,
+            gasLimit: txDetails?.gas,
+            gasFeeEth,
+            gasFeeUsd,
+            nonce: txDetails?.nonce,
+            maxFeePerGas: txDetails?.maxFeePerGas,
+            maxPriorityFeePerGas: txDetails?.maxPriorityFeePerGas,
+            contractAddress: transfer.category === 'erc20' ? (transfer.rawContract?.address || undefined) : undefined,
+            inputData: txDetails?.input,
+            isContractCreation: txDetails?.to === null,
+            ethValueUsd
           };
         });
 

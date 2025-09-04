@@ -209,6 +209,259 @@ export default function ChartPage() {
   const [positions, setPositions] = useState<any[]>([]);
   const [positionsLoading, setPositionsLoading] = useState(false);
   const [positionsInitialized, setPositionsInitialized] = useState(false);
+  
+  // 🔧 NEW: Unified PnL state to sync with swap component
+  const [unifiedPnLData, setUnifiedPnLData] = useState<any>(null);
+  
+  // Token logo state
+  const [tokenLogos, setTokenLogos] = useState<Record<string, string>>({});
+
+  // 🔧 NEW: Unified PnL data fetching for consistency
+  const fetchUnifiedPnLData = useCallback(async () => {
+    if (!token?.baseToken?.address) {
+      console.log('No token address available for unified PnL fetch');
+      return;
+    }
+    
+    try {
+      // Get current user's wallet address from localStorage
+      const walletData = localStorage.getItem('cypherx_wallet');
+      if (!walletData) {
+        console.log('No wallet found, cannot fetch PnL data');
+        return;
+      }
+      
+      const wallet = JSON.parse(walletData);
+      const walletAddress = wallet.address;
+      
+      console.log('🔧 Fetching unified PnL data for wallet:', walletAddress, 'token:', token.baseToken.address);
+      const response = await fetch(`/api/wallet/pnl?address=${walletAddress}&tokenAddress=${token.baseToken.address}&timeframe=30d`);
+      if (response.ok) {
+        const data = await response.json();
+        console.log('🔧 Unified PnL API response:', data);
+        setUnifiedPnLData(data);
+        
+        // 🔧 NEW: Also fetch the actual token balance to sync with swap section
+        try {
+          const balanceResponse = await fetch(`/api/wallet/balance?address=${walletAddress}&tokenAddress=${token.baseToken.address}`);
+          if (balanceResponse.ok) {
+            const balanceData = await balanceResponse.json();
+            console.log('🔧 Balance API response for positions sync:', balanceData);
+            
+            // 🔧 NEW: Generate positions data from unified PnL data + real balance
+            if (data && data.totalPnLPercentage !== undefined) {
+              const currentPrice = parseFloat(token.priceUsd || '0');
+              const actualBalance = parseFloat(balanceData.tokenBalance || '0');
+              
+              // Calculate average price from orders (buy transactions)
+              let avgPrice = 0;
+              if (orders && orders.length > 0) {
+                const buyOrders = orders.filter(order => order.type === 'buy');
+                if (buyOrders.length > 0) {
+                  const totalSpent = buyOrders.reduce((sum: number, order: any) => {
+                    const amount = parseFloat(order.amount || '0');
+                    const price = parseFloat(order.price || '0');
+                    return sum + (amount * price);
+                  }, 0);
+                  const totalAmount = buyOrders.reduce((sum: number, order: any) => sum + parseFloat(order.amount || '0'), 0);
+                  avgPrice = totalAmount > 0 ? totalSpent / totalAmount : currentPrice;
+                }
+              }
+              
+              // If we can't calculate avg price from orders, use current price as fallback
+              if (avgPrice === 0) {
+                avgPrice = currentPrice;
+              }
+              
+              // Use the PnL percentage from the API
+              const pnlPercentage = data.totalPnLPercentage;
+              const pnlValue = (pnlPercentage / 100) * (avgPrice * actualBalance);
+              
+              // Only show position if there's actual balance
+              if (actualBalance > 0) {
+                const generatedPositions = [{
+                  id: '1',
+                  tokenAddress: token.baseToken.address,
+                  tokenSymbol: token.baseToken.symbol,
+                  tokenName: token.baseToken.name,
+                  amount: actualBalance,
+                  avgPrice: avgPrice.toFixed(6),
+                  currentPrice: currentPrice.toFixed(6),
+                  pnlPercentage: pnlPercentage,
+                  pnlValue: `$${Math.abs(pnlValue).toFixed(2)}`,
+                  pnl: pnlPercentage >= 0 ? `+${pnlPercentage.toFixed(2)}%` : `${pnlPercentage.toFixed(2)}%`
+                }];
+                setPositions(generatedPositions);
+                // Fetch logos for the new positions
+                fetchPositionLogos(generatedPositions);
+                console.log('🔧 Positions updated with real balance:', actualBalance, 'avgPrice:', avgPrice, 'currentPrice:', currentPrice, 'pnlPercentage:', pnlPercentage);
+              } else {
+                console.log('🔧 No balance available, clearing positions');
+                setPositions([]);
+              }
+            } else {
+              console.log('🔧 No PnL data structure available, clearing positions');
+              setPositions([]);
+            }
+          } else {
+            console.error('Failed to fetch balance for positions sync');
+            // Fallback to using PnL data only
+            if (data && data.totalPnLPercentage !== undefined) {
+              const currentPrice = parseFloat(token.priceUsd || '0');
+              const holding = data.holding || 0;
+              
+              // Calculate average price from orders (buy transactions)
+              let avgPrice = 0;
+              if (orders && orders.length > 0) {
+                const buyOrders = orders.filter(order => order.type === 'buy');
+                if (buyOrders.length > 0) {
+                  const totalSpent = buyOrders.reduce((sum: number, order: any) => {
+                    const amount = parseFloat(order.amount || '0');
+                    const price = parseFloat(order.price || '0');
+                    return sum + (amount * price);
+                  }, 0);
+                  const totalAmount = buyOrders.reduce((sum: number, order: any) => sum + parseFloat(order.amount || '0'), 0);
+                  avgPrice = totalAmount > 0 ? totalSpent / totalAmount : currentPrice;
+                }
+              }
+              
+              if (avgPrice === 0) {
+                avgPrice = currentPrice;
+              }
+              
+              // Use the PnL percentage from the API
+              const pnlPercentage = data.totalPnLPercentage;
+              const pnlValue = (pnlPercentage / 100) * (avgPrice * holding);
+              
+              if (holding > 0) {
+                const generatedPositions = [{
+                  id: '1',
+                  tokenAddress: token.baseToken.address,
+                  tokenSymbol: token.baseToken.symbol,
+                  tokenName: token.baseToken.name,
+                  amount: holding,
+                  avgPrice: avgPrice.toFixed(6),
+                  currentPrice: currentPrice.toFixed(6),
+                  pnlPercentage: pnlPercentage,
+                  pnlValue: `$${Math.abs(pnlValue).toFixed(2)}`,
+                  pnl: pnlPercentage >= 0 ? `+${pnlPercentage.toFixed(2)}%` : `${pnlPercentage.toFixed(2)}%`
+                }];
+                setPositions(generatedPositions);
+                // Fetch logos for the new positions
+                fetchPositionLogos(generatedPositions);
+              } else {
+                setPositions([]);
+              }
+            }
+          }
+        } catch (balanceError) {
+          console.error('Error fetching balance for positions sync:', balanceError);
+                    // Fallback to using PnL data only
+          if (data && data.totalPnLPercentage !== undefined) {
+            const currentPrice = parseFloat(token.priceUsd || '0');
+            const holding = data.holding || 0;
+            
+            // Calculate average price from orders (buy transactions)
+            let avgPrice = 0;
+            if (orders && orders.length > 0) {
+              const buyOrders = orders.filter(order => order.type === 'buy');
+              if (buyOrders.length > 0) {
+                const totalSpent = buyOrders.reduce((sum: number, order: any) => {
+                  const amount = parseFloat(order.amount || '0');
+                  const price = parseFloat(order.price || '0');
+                  return sum + (amount * price);
+                }, 0);
+                const totalAmount = buyOrders.reduce((sum: number, order: any) => sum + parseFloat(order.amount || '0'), 0);
+                avgPrice = totalAmount > 0 ? totalSpent / totalAmount : currentPrice;
+              }
+            }
+            
+            if (avgPrice === 0) {
+              avgPrice = currentPrice;
+            }
+            
+            // Use the PnL percentage from the API
+            const pnlPercentage = data.totalPnLPercentage;
+            const pnlValue = (pnlPercentage / 100) * (avgPrice * holding);
+            
+            if (holding > 0) {
+              const generatedPositions = [{
+                id: '1',
+                tokenAddress: token.baseToken.address,
+                tokenSymbol: token.baseToken.symbol,
+                tokenName: token.baseToken.name,
+                amount: holding,
+                avgPrice: avgPrice.toFixed(6),
+                currentPrice: currentPrice.toFixed(6),
+                pnlPercentage: pnlPercentage,
+                pnlValue: `$${Math.abs(pnlValue).toFixed(2)}`,
+                pnl: pnlPercentage >= 0 ? `+${pnlPercentage.toFixed(2)}%` : `${pnlPercentage.toFixed(2)}%`
+              }];
+              setPositions(generatedPositions);
+              // Fetch logos for the new positions
+              fetchPositionLogos(generatedPositions);
+            } else {
+              setPositions([]);
+            }
+          }
+        }
+      } else {
+        console.error('Failed to fetch unified PnL data');
+      }
+    } catch (error) {
+      console.error('Error fetching unified PnL data:', error);
+    }
+  }, [token?.baseToken?.address]);
+
+  // Token logo fetching function
+  const getTokenLogo = useCallback(async (contractAddress: string, symbol: string): Promise<string | null> => {
+    try {
+      console.log(`Fetching logo for ${symbol} (${contractAddress})`);
+      
+      // Try DexScreener first (better for Base tokens)
+      const dexScreenerUrl = `https://api.dexscreener.com/latest/dex/tokens/${contractAddress}`;
+      console.log('Trying DexScreener:', dexScreenerUrl);
+      const dexResponse = await fetch(dexScreenerUrl);
+      
+      if (dexResponse.ok) {
+        const dexData = await dexResponse.json();
+        console.log('DexScreener response:', dexData);
+        if (dexData.pairs && dexData.pairs.length > 0) {
+          const logoUrl = dexData.pairs[0].baseToken?.logoURI || 
+                         dexData.pairs[0].baseToken?.image ||
+                         dexData.pairs[0].info?.imageUrl;
+          if (logoUrl) {
+            console.log(`Found logo on DexScreener: ${logoUrl}`);
+            return logoUrl;
+          }
+        }
+      }
+
+      console.log(`No logo found for ${symbol}`);
+      return null;
+    } catch (error) {
+      console.error('Error fetching token logo:', error);
+      return null;
+    }
+  }, []);
+
+  // Fetch logos for all positions
+  const fetchPositionLogos = useCallback(async (positionsData: any[]) => {
+    const newLogos: Record<string, string> = {};
+    
+    for (const position of positionsData) {
+      if (position.tokenAddress && !tokenLogos[position.tokenAddress]) {
+        const logo = await getTokenLogo(position.tokenAddress, position.tokenSymbol);
+        if (logo) {
+          newLogos[position.tokenAddress] = logo;
+        }
+      }
+    }
+    
+    if (Object.keys(newLogos).length > 0) {
+      setTokenLogos(prev => ({ ...prev, ...newLogos }));
+    }
+  }, [getTokenLogo, tokenLogos]);
 
   // Data fetching functions
   const fetchHolders = useCallback(async () => {
@@ -365,9 +618,10 @@ export default function ChartPage() {
 
   useEffect(() => {
     if (activeDataTab === "positions" && !positionsLoading && !positionsInitialized) {
-      fetchPositions();
+      // 🔧 NEW: Use unified PnL data instead of separate positions API
+      fetchUnifiedPnLData();
     }
-  }, [activeDataTab, positionsLoading, positionsInitialized, fetchPositions]);
+  }, [activeDataTab, positionsLoading, positionsInitialized, fetchUnifiedPnLData]);
 
   // Reset initialized states when token changes
   useEffect(() => {
@@ -385,10 +639,10 @@ export default function ChartPage() {
 
   useEffect(() => {
     if (token?.baseToken?.address && activeDataTab === "positions" && !positionsLoading && !positionsInitialized) {
-      console.log('Token available, fetching positions');
-      fetchPositions();
+      console.log('Token available, fetching unified PnL data');
+      fetchUnifiedPnLData();
     }
-  }, [token?.baseToken?.address, activeDataTab, positionsLoading, positionsInitialized, fetchPositions]);
+  }, [token?.baseToken?.address, activeDataTab, positionsLoading, positionsInitialized, fetchUnifiedPnLData]);
   
 
 
@@ -402,6 +656,18 @@ export default function ChartPage() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // 🔧 NEW: Real-time PnL updates for positions table synchronization
+  useEffect(() => {
+    if (token?.baseToken?.address && activeDataTab === "positions") {
+      const pnlInterval = setInterval(() => {
+        console.log("🔄 Auto-refreshing unified PnL data for positions...");
+        fetchUnifiedPnLData();
+      }, 15000); // Update every 15 seconds for better sync
+      return () => clearInterval(pnlInterval);
+    }
+  }, [token?.baseToken?.address, activeDataTab, fetchUnifiedPnLData]);
+
 
   // Update current time every second
   useEffect(() => {
@@ -1284,6 +1550,20 @@ export default function ChartPage() {
         animations: { enabled: false },
         sparkline: { enabled: false }, // Ensure sparkline is disabled for full candlestick display
         brush: { enabled: false }, // Disable brush for cleaner interface
+        // Enhanced candlestick display settings
+        redrawOnWindowResize: true,
+        redrawOnParentResize: true,
+        // Chart spacing for better candlestick visibility
+        offsetX: 0,
+        offsetY: 0,
+        // Additional padding for better candlestick display
+        padding: {
+          top: 40,
+          right: 40,
+          bottom: 40,
+          left: 40
+        },
+
       },
       subtitle: {
         text: subtitleText,
@@ -1381,9 +1661,15 @@ export default function ChartPage() {
       },
               plotOptions: {
           candlestick: {
-            colors: { upward: "#10B981", downward: "#EF4444" },
-            wick: { useFillColor: true },
-            columnWidth: width < 768 ? "95%" : "85%", // Much wider candles
+            colors: { 
+              upward: "#22C55E", // Brighter green for up candles
+              downward: "#F43F5E" // Brighter red for down candles
+            },
+            wick: { 
+              useFillColor: true,
+              lineWidth: 2 // Thicker wicks for better visibility
+            },
+            columnWidth: width < 768 ? "99%" : "98%", // Massive candles for maximum visibility
           },
         },
               tooltip: {
@@ -1402,40 +1688,37 @@ export default function ChartPage() {
           const time = new Date(w.globals.seriesX[seriesIndex][dataPointIndex]).toUTCString();
           const formatter = (val: number) => `$${val.toFixed(4)}`;
           return `
-            <div class="p-2 bg-[#1A263F] rounded-lg shadow-lg">
-              <p class="text-sm text-gray-100"><span class="text-gray-400">Time:</span> ${time}</p>
-              <p class="text-sm text-gray-100"><span class="text-gray-400">Open:</span> ${formatter(
-                o
-              )}</p>
-              <p class="text-sm text-gray-100"><span class="text-gray-400">High:</span> ${formatter(
-                h
-              )}</p>
-              <p className="text-sm text-gray-100"><span class="text-gray-400">Low:</span> ${formatter(
-                l
-              )}</p>
-              <p class="text-sm text-gray-100"><span class="text-gray-400">Close:</span> ${formatter(
-                c
-              )}</p>
+            <div class="p-3 bg-[#1A263F] rounded-lg shadow-xl border border-gray-600/30">
+              <div class="mb-2 pb-2 border-b border-gray-600/30">
+                <p class="text-sm font-semibold text-gray-100">${time}</p>
+              </div>
+              <div class="space-y-1">
+                <p class="text-sm text-gray-100"><span class="text-gray-400 font-medium">O:</span> <span class="text-blue-400">${formatter(o)}</span></p>
+                <p class="text-sm text-gray-100"><span class="text-gray-400 font-medium">H:</span> <span class="text-green-400">${formatter(h)}</span></p>
+                <p class="text-sm text-gray-100"><span class="text-gray-400 font-medium">L:</span> <span class="text-[#F43F5E]">${formatter(l)}</span></p>
+                <p class="text-sm text-gray-100"><span class="text-gray-400 font-medium">C:</span> <span class="text-yellow-400">${formatter(c)}</span></p>
+              </div>
             </div>
           `;
         },
       },
       markers: { size: 0 },
+      // CANDLESTICK CHART CROSSHAIR - ENHANCED
       crosshair: {
         show: true,
         x: {
           show: true,
           stroke: {
-            color: "#A1A1AA",
-            width: 1,
+            color: "#F43F5E", // Beautiful red color for consistency
+            width: 2, // Thicker crosshair for better visibility
             dashArray: 5,
           },
         },
         y: {
           show: true,
           stroke: {
-            color: "#A1A1AA",
-            width: 1,
+            color: "#F43F5E", // Beautiful red color for consistency
+            width: 2, // Thicker crosshair for better visibility
             dashArray: 5,
           },
         },
@@ -1829,10 +2112,6 @@ export default function ChartPage() {
     return parseFloat(token.priceUsd).toFixed(6);
   };
 
-  const getPriceColor = () => {
-    if (!token?.priceChange?.h24) return "text-blue-400";
-    return token.priceChange.h24 >= 0 ? "text-green-400" : "text-red-400";
-  };
 
   // JSX Return Statement
   return (
@@ -1965,7 +2244,7 @@ export default function ChartPage() {
                             </h1>
                             <div className="flex items-center space-x-3 mt-1">
                               <div className="flex items-center space-x-2">
-                                <p className={`text-sm font-semibold ${getPriceColor()}`}>${getDisplayPrice()}</p>
+                                <p className="text-sm font-semibold text-white">${getDisplayPrice()}</p>
                               </div>
                               {token?.dexId && (
                                 <>
@@ -1984,7 +2263,7 @@ export default function ChartPage() {
 
                     
                                          {/* Professional Chart Controls */}
-                     <div className={`${width < 768 ? 'p-4' : 'p-3'} bg-gray-950/90 border-b border-gray-700`} style={{ height: '76px' }}>
+                     <div className={`${width < 768 ? 'p-4' : 'p-4'} bg-gray-950/90 border-b border-gray-700`} style={{ height: '80px' }}>
                       <div className="flex items-center justify-between">
                         {/* Left Side - Chart Controls */}
                         <div className="flex items-center space-x-3">
@@ -2040,11 +2319,11 @@ export default function ChartPage() {
                              <div className={`glass-panel sharp-border-hover px-3 py-2 rounded-lg transition-all duration-200 min-w-[60px] ${
                                token.priceChange.m5 >= 0 
                                  ? "border-green-500/30 hover:border-green-500/50" 
-                                 : "border-red-500/30 hover:border-red-500/50"
+                                 : "border-[#F43F5E]/30 hover:border-[#F43F5E]/50"
                              }`}>
                                <div className="text-xs text-gray-400 font-medium">5m</div>
                                <div className={`text-xs font-bold ${
-                                 token.priceChange.m5 >= 0 ? "text-green-400" : "text-red-400"
+                                 token.priceChange.m5 >= 0 ? "text-green-400" : "text-[#F43F5E]"
                                }`}>
                                  {token.priceChange.m5 >= 0 ? "+" : ""}{token.priceChange.m5.toFixed(2)}%
                                </div>
@@ -2060,11 +2339,11 @@ export default function ChartPage() {
                              <div className={`glass-panel sharp-border-hover px-3 py-2 rounded-lg transition-all duration-200 min-w-[60px] ${
                                token.priceChange.h1 >= 0 
                                  ? "border-green-500/30 hover:border-green-500/50" 
-                                 : "border-red-500/30 hover:border-red-500/50"
+                                 : "border-[#F43F5E]/30 hover:border-[#F43F5E]/50"
                              }`}>
                                <div className="text-xs text-gray-400 font-medium">1h</div>
                                <div className={`text-xs font-bold ${
-                                 token.priceChange.h1 >= 0 ? "text-green-400" : "text-red-400"
+                                 token.priceChange.h1 >= 0 ? "text-green-400" : "text-[#F43F5E]"
                                }`}>
                                  {token.priceChange.h1 >= 0 ? "+" : ""}{token.priceChange.h1.toFixed(2)}%
                                </div>
@@ -2080,11 +2359,11 @@ export default function ChartPage() {
                              <div className={`glass-panel sharp-border-hover px-3 py-2 rounded-lg transition-all duration-200 min-w-[60px] ${
                                token.priceChange.h6 >= 0 
                                  ? "border-green-500/30 hover:border-green-500/50" 
-                                 : "border-red-500/30 hover:border-red-500/50"
+                                 : "border-[#F43F5E]/30 hover:border-[#F43F5E]/50"
                              }`}>
                                <div className="text-xs text-gray-400 font-medium">4h</div>
                                <div className={`text-xs font-bold ${
-                                 token.priceChange.h6 >= 0 ? "text-green-400" : "text-red-400"
+                                 token.priceChange.h6 >= 0 ? "text-green-400" : "text-[#F43F5E]"
                                }`}>
                                  {token.priceChange.h6 >= 0 ? "+" : ""}{token.priceChange.h6.toFixed(2)}%
                                </div>
@@ -2100,11 +2379,11 @@ export default function ChartPage() {
                             <div className={`glass-panel sharp-border-hover px-3 py-2 rounded-lg transition-all duration-200 min-w-[60px] ${
                               token.priceChange.h24 >= 0 
                                 ? "border-green-500/30 hover:border-green-500/50" 
-                                : "border-red-500/30 hover:border-red-500/50"
+                                : "border-[#F43F5E]/30 hover:border-[#F43F5E]/50"
                             }`}>
                               <div className="text-xs text-gray-400 font-medium">24h</div>
                               <div className={`text-xs font-bold ${
-                                token.priceChange.h24 >= 0 ? "text-green-400" : "text-red-400"
+                                token.priceChange.h24 >= 0 ? "text-green-400" : "text-[#F43F5E]"
                               }`}>
                                 {token.priceChange.h24 >= 0 ? "+" : ""}{token.priceChange.h24.toFixed(2)}%
                               </div>
@@ -2127,7 +2406,7 @@ export default function ChartPage() {
                     </div>
 
                     {/* Chart Area */}
-                    <div className={`flex-1 ${width < 768 ? 'p-4' : 'p-4'} relative min-h-0 bg-gradient-to-br from-gray-950 to-gray-900`} style={{ maxHeight: width < 768 ? '60%' : '50%' }} onTouchStart={(e) => e.stopPropagation()}>
+                    <div className={`flex-1 ${width < 768 ? 'p-4' : 'p-4'} relative min-h-0 bg-gradient-to-br from-gray-950 to-gray-900`} style={{ maxHeight: width < 768 ? '70%' : '65%' }} onTouchStart={(e) => e.stopPropagation()}>
                       {/* Enhanced CypherX Branding Watermark */}
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
                         <div className="text-gray-800/10 text-8xl font-black tracking-wider transform -rotate-12 select-none filter blur-sm">
@@ -2135,7 +2414,7 @@ export default function ChartPage() {
                         </div>
                       </div>
                       
-                      <div className="w-full h-full relative z-10 glass-panel rounded-xl overflow-hidden">
+                      <div className="w-full h-full relative z-10 glass-panel rounded-xl overflow-hidden shadow-2xl border border-gray-700/30">
                         {candleData.length > 0 ? (
                           <Chart
                             key={`${chartType}-${zoom}-${timeframe}`}
@@ -2163,12 +2442,12 @@ export default function ChartPage() {
 
                     {/* Professional Data Section with Tabs */}
                     <div className={`glass-panel ${width < 768 ? 'p-4' : 'pl-0 pr-3 pt-3 pb-3'} flex-1 flex flex-col min-h-0 bg-gray-950/95`} style={{ height: 'calc(100vh - 300px)' }}>
-                      {/* Tab Navigation */}
-                      <div className="flex items-center justify-between mb-3 flex-shrink-0 border-b border-gray-700">
+                      {/* Clean Tab Navigation */}
+                      <div className="flex items-center mb-4 flex-shrink-0">
                         <div className="flex space-x-6 pl-4">
                           <button
                             onClick={() => setActiveDataTab("transactions")}
-                            className={`pb-3 text-sm font-medium transition-colors duration-200 ${
+                            className={`pb-2 text-sm font-medium ${
                               activeDataTab === "transactions"
                                 ? "text-white border-b-2 border-white"
                                 : "text-gray-400 hover:text-gray-200"
@@ -2178,7 +2457,7 @@ export default function ChartPage() {
                           </button>
                           <button
                             onClick={() => setActiveDataTab("holders")}
-                            className={`pb-3 text-sm font-medium transition-colors duration-200 ${
+                            className={`pb-2 text-sm font-medium ${
                               activeDataTab === "holders"
                                 ? "text-white border-b-2 border-white"
                                 : "text-gray-400 hover:text-gray-200"
@@ -2188,7 +2467,7 @@ export default function ChartPage() {
                           </button>
                           <button
                             onClick={() => setActiveDataTab("orders")}
-                            className={`pb-3 text-sm font-medium transition-colors duration-200 ${
+                            className={`pb-2 text-sm font-medium ${
                               activeDataTab === "orders"
                                 ? "text-white border-b-2 border-white"
                                 : "text-gray-400 hover:text-gray-200"
@@ -2198,7 +2477,7 @@ export default function ChartPage() {
                           </button>
                           <button
                             onClick={() => setActiveDataTab("positions")}
-                            className={`pb-3 text-sm font-medium transition-colors duration-200 ${
+                            className={`pb-2 text-sm font-medium ${
                               activeDataTab === "positions"
                                 ? "text-white border-b-2 border-white"
                                 : "text-gray-400 hover:text-gray-200"
@@ -2206,7 +2485,7 @@ export default function ChartPage() {
                           >
                             Positions
                           </button>
-                      </div>
+                        </div>
                       </div>
                                               <div className="overflow-y-auto flex-1 custom-scrollbar min-h-0 rounded-r-lg" style={{ maxHeight: 'calc(100vh - 350px)' }} onScroll={handleTransactionScroll}>
                           {/* Transactions Tab */}
@@ -2228,17 +2507,21 @@ export default function ChartPage() {
                               </tr>
                             ) : (
                               filteredTransactions.map((tx) => {
-                                // Simple logic: 2 types - BUY and SELL
-                                const isTokenTransaction = tx.tokenSymbol === token?.baseToken.symbol;
-                                const isETHTransaction = !isTokenTransaction;
+                                // Improved logic: Determine buy/sell based on transaction direction and token involved
+                                // BUY: When someone sends ETH/USDC/etc. to the pool and receives the base token
+                                // SELL: When someone sends the base token to the pool and receives ETH/USDC/etc.
                                 
-                                // BUY: ETH transaction to pool
-                                // SELL: Token transaction to pool
-                                const isBuy = isETHTransaction;
-                                const isSell = isTokenTransaction;
+                                // Check if this transaction involves the base token (the token we're viewing)
+                                const involvesBaseToken = tx.tokenSymbol === token?.baseToken.symbol;
+                                
+                                // Determine if this is a buy or sell based on the transaction direction
+                                // For now, we'll use a heuristic: if it's the base token, it's likely a sell
+                                // If it's not the base token (ETH, USDC, etc.), it's likely a buy
+                                const isBuy = !involvesBaseToken;
+                                const isSell = involvesBaseToken;
                                 
                                 const txLabel = isBuy ? "BUY" : isSell ? "SELL" : "UNKNOWN";
-                                const txColor = isBuy ? "text-green-400" : isSell ? "text-red-400" : "text-gray-400";
+                                const txColor = isBuy ? "text-green-400" : isSell ? "text-[#F43F5E]" : "text-gray-400";
                             
                             let usdValue = 0;
                             
@@ -2255,16 +2538,35 @@ export default function ChartPage() {
                               priceAtTime = token?.priceUsd ? parseFloat(token.priceUsd) : 0;
                             }
                             
-                            if (isTokenTransaction) {
-                                  // For SELL transactions (token transactions), calculate based on token amount and historical price
+                            if (isSell) {
+                              // For SELL transactions (base token → pool), calculate based on token amount and historical price
                               const tokenAmount = tx.tokenAmount || 0;
                               usdValue = tokenAmount * priceAtTime;
-                            } else {
-                                  // For BUY transactions (ETH → Token), use symmetrical logic to SELL
-                              // Use the raw value field which contains ETH amount in wei, convert to ETH units
-                              const rawValue = parseFloat(tx.value || "0");
-                              const ethAmount = rawValue / Math.pow(10, 18); // Convert wei to ETH (same as API does)
-                              usdValue = ethAmount * ethPrice; // Multiply by ETH price (symmetrical to SELL logic)
+                            } else if (isBuy) {
+                              // For BUY transactions (ETH/USDC/etc. → pool), calculate based on input value
+                              if (tx.tokenSymbol === 'ETH') {
+                                // ETH transactions: convert wei to ETH, then to USD
+                                const rawValue = parseFloat(tx.value || "0");
+                                const ethAmount = rawValue / Math.pow(10, 18);
+                                usdValue = ethAmount * ethPrice;
+                              } else {
+                                // Non-ETH transactions (USDC, etc.): use tokenAmount if available
+                                const tokenAmount = tx.tokenAmount || 0;
+                                if (tokenAmount > 0) {
+                                  // Try to get price for the input token (USDC, etc.)
+                                  let inputTokenPrice = 1; // Default to $1 for stablecoins
+                                  if (tx.tokenSymbol === 'USDC' || tx.tokenSymbol === 'USDT') {
+                                    inputTokenPrice = 1;
+                                  } else if (tx.tokenSymbol === 'WETH') {
+                                    inputTokenPrice = ethPrice;
+                                  }
+                                  usdValue = tokenAmount * inputTokenPrice;
+                                } else {
+                                  // Fallback: use the raw value if tokenAmount is not available
+                                  const rawValue = parseFloat(tx.value || "0");
+                                  usdValue = rawValue / Math.pow(10, 18); // Assume 18 decimals
+                                }
+                              }
                             }
                             // Calculate row fill percentage based on order size - Enhanced for whale orders
                             let rowFillPercentage = 0;
@@ -2298,7 +2600,7 @@ export default function ChartPage() {
                                       {/* Background fill based on order size - enhanced with glass effect */}
                                       <div 
                                         className={`absolute inset-0 transition-all duration-300 rounded-r-lg ${
-                                          isBuy ? 'bg-gradient-to-r from-green-500/15 via-green-500/8 to-transparent' : 'bg-gradient-to-r from-red-500/15 via-red-500/8 to-transparent'
+                                          isBuy ? 'bg-gradient-to-r from-green-500/15 via-green-500/8 to-transparent' : 'bg-gradient-to-r from-[#F43F5E]/20 via-[#F43F5E]/10 to-transparent'
                                         }`}
                                         style={{ 
                                           width: `${rowFillPercentage}%`,
@@ -2309,7 +2611,7 @@ export default function ChartPage() {
                                       {formatTimeAgo(tx.timestamp)}
                                     </td>
                                         <td className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} font-semibold text-sm ${txColor} relative z-10 align-middle font-inter`}>{txLabel}</td>
-                                        <td className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} text-sm relative z-10 align-middle font-semibold font-inter ${isBuy ? 'text-green-400' : 'text-red-400'}`}>{formatUSD(usdValue)}</td>
+                                        <td className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} text-sm relative z-10 align-middle font-semibold font-inter ${isBuy ? 'text-green-400' : 'text-[#F43F5E]'}`}>{formatUSD(usdValue)}</td>
                                         <td className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} text-sm relative z-10 align-middle font-normal font-inter`}>${priceAtTime.toFixed(4)}</td>
                                         <td className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} text-sm relative z-10 align-middle font-normal font-inter`}>{tx.from?.slice(0, 6)}...{tx.from?.slice(-4)}</td>
                               </tr>
@@ -2392,62 +2694,58 @@ export default function ChartPage() {
                           {activeDataTab === "orders" && (
                             <div className="w-full">
                               {ordersLoading ? (
-                                <div className="p-4 text-center text-gray-400">
-                                  <div className="w-8 h-8 border-2 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mx-auto mb-2"></div>
-                                  <p className="text-sm">Loading orders data...</p>
-                                  <p className="text-xs text-gray-500 mt-1">Your buy/sell orders will appear here</p>
+                                <div className="p-6 text-center text-gray-400">
+                                  <div className="w-6 h-6 border-2 border-gray-400 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                                  <p className="text-sm">Loading orders...</p>
+                                </div>
+                              ) : orders.length === 0 ? (
+                                <div className="p-6 text-center text-gray-400">
+                                  <p className="text-sm">No orders available</p>
                                 </div>
                               ) : (
-                                <table className="w-full text-sm text-left font-inter">
-                                  <thead className="text-xs text-gray-400 uppercase sticky top-0 glass-panel rounded-t-lg font-inter">
+                                <table className="w-full text-sm">
+                                  <thead className="text-xs text-gray-400 border-b border-gray-700">
                                     <tr>
-                                      <th className={`${width < 768 ? 'px-4 py-3' : 'pl-4 pr-3 py-2'} text-left font-semibold tracking-wide`}>Time</th>
-                                      <th className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} text-left font-semibold tracking-wide`}>Type</th>
-                                      <th className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} text-left font-semibold tracking-wide`}>Amount</th>
-                                      <th className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} text-left font-semibold tracking-wide`}>Price</th>
-                                      <th className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} text-left font-semibold tracking-wide`}>Status</th>
+                                      <th className="text-left py-2 pl-4">Time</th>
+                                      <th className="text-left py-2">Type</th>
+                                      <th className="text-left py-2">Amount</th>
+                                      <th className="text-left py-2">Price</th>
+                                      <th className="text-left py-2">Status</th>
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {orders.length === 0 ? (
-                                      <tr>
-                                        <td colSpan={5} className="px-1 py-2 text-center text-gray-400">No orders available.</td>
-                                      </tr>
-                                    ) : (
-                                      orders.map((order) => {
-                                        const orderColor = order.type === 'buy' ? "text-green-400" : "text-red-400";
-                                        const orderLabel = order.type === 'buy' ? "BUY" : "SELL";
-                                        
-                                        return (
-                                          <tr 
-                                            key={order.id} 
-                                            className="glass-panel text-gray-100 relative cursor-pointer transition-all duration-200 hover:bg-gray-800/30 border-b border-gray-700"
-                                          >
-                                            <td className={`${width < 768 ? 'px-4 py-3' : 'pl-4 pr-3 py-2'} text-sm relative z-10 align-middle font-normal font-inter`}>
-                                              {formatTimeAgo(order.timestamp)}
-                                            </td>
-                                            <td className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} font-normal text-sm ${orderColor} relative z-10 align-middle font-inter`}>
+                                    {orders.map((order) => {
+                                      const orderColor = order.type === 'buy' ? "text-green-400" : "text-red-400";
+                                      const orderLabel = order.type === 'buy' ? "BUY" : "SELL";
+                                      
+                                      return (
+                                        <tr key={order.id} className="border-b border-gray-800">
+                                          <td className="py-2 pl-4 text-gray-300">
+                                            {formatTimeAgo(order.timestamp)}
+                                          </td>
+                                          <td className="py-2">
+                                            <span className={`font-medium ${orderColor}`}>
                                               {orderLabel}
-                                            </td>
-                                            <td className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} text-sm relative z-10 align-middle font-normal font-inter`}>
-                                              {parseFloat(order.amount).toLocaleString()}
-                                            </td>
-                                            <td className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} text-sm relative z-10 align-middle font-normal font-inter`}>
-                                              ${parseFloat(order.price).toFixed(6)}
-                                            </td>
-                                            <td className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} text-sm relative z-10 align-middle font-normal font-inter`}>
-                                              <span className={`px-2 py-1 rounded-full text-xs ${
-                                                (order.status === 'completed' || order.status === 'confirmed') ? 'bg-green-500/30 text-green-400' :
-                                                order.status === 'pending' ? 'bg-yellow-500/20 text-yellow-400' :
-                                                'bg-gray-500/20 text-gray-400'
-                                              }`}>
-                                                {(order.status === 'completed' || order.status === 'confirmed') ? 'filled' : order.status}
-                                              </span>
-                                            </td>
-                                          </tr>
-                                        );
-                                      })
-                                    )}
+                                            </span>
+                                          </td>
+                                          <td className="py-2 text-gray-300">
+                                            {parseFloat(order.amount).toLocaleString()}
+                                          </td>
+                                          <td className="py-2 text-gray-300">
+                                            ${parseFloat(order.price).toFixed(6)}
+                                          </td>
+                                          <td className="py-2">
+                                            <span className={`px-2 py-1 text-xs rounded ${
+                                              (order.status === 'completed' || order.status === 'confirmed') ? 'bg-green-500/20 text-green-400' :
+                                              order.status === 'pending' ? 'bg-yellow-500/20 text-yellow-400' :
+                                              'bg-gray-500/20 text-gray-400'
+                                            }`}>
+                                              {(order.status === 'completed' || order.status === 'confirmed') ? 'filled' : order.status}
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
                                   </tbody>
                                 </table>
                               )}
@@ -2458,55 +2756,92 @@ export default function ChartPage() {
                           {activeDataTab === "positions" && (
                             <div className="w-full">
                               {positionsLoading ? (
-                                <div className="p-4 text-center text-gray-400">
-                                  <div className="w-8 h-8 border-2 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mx-auto mb-2"></div>
-                                  <p className="text-sm">Loading positions data...</p>
-                                  <p className="text-xs text-gray-500 mt-1">Your current positions will appear here</p>
+                                <div className="p-6 text-center text-gray-400">
+                                  <div className="w-6 h-6 border-2 border-gray-400 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                                  <p className="text-sm">Loading positions...</p>
+                                </div>
+                              ) : positions.length === 0 ? (
+                                <div className="p-6 text-center text-gray-400">
+                                  <p className="text-sm">
+                                    {unifiedPnLData ? 'No active positions for this token.' : 'Loading PnL data...'}
+                                  </p>
                                 </div>
                               ) : (
-                                <table className="w-full text-sm text-left font-inter">
-                                  <thead className="text-xs text-gray-400 uppercase sticky top-0 glass-panel rounded-t-lg font-inter">
+                                <table className="w-full text-sm">
+                                  <thead className="text-xs text-gray-400 border-b border-gray-700">
                                     <tr>
-                                      <th className={`${width < 768 ? 'px-4 py-3' : 'pl-4 pr-3 py-2'} text-left font-semibold tracking-wide`}>Token</th>
-                                      <th className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} text-left font-semibold tracking-wide`}>Amount</th>
-                                      <th className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} text-left font-semibold tracking-wide`}>Avg Price</th>
-                                      <th className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} text-left font-semibold tracking-wide`}>Current Price</th>
-                                      <th className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} text-left font-semibold tracking-wide`}>P&L</th>
+                                      <th className="text-left py-2 pl-4">Token</th>
+                                      <th className="text-left py-2">Amount</th>
+                                      <th className="text-left py-2">Avg Price</th>
+                                      <th className="text-left py-2">Current</th>
+                                      <th className="text-left py-2">P&L</th>
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {positions.length === 0 ? (
-                                      <tr>
-                                        <td colSpan={5} className="px-1 py-2 text-center text-gray-400">No positions available.</td>
-                                      </tr>
-                                    ) : (
-                                      positions.map((position) => {
-                                        const pnlColor = position.pnl.startsWith('+') ? "text-green-400" : "text-red-400";
-                                        
-                                        return (
-                                          <tr 
-                                            key={position.id} 
-                                            className="glass-panel text-gray-100 relative cursor-pointer transition-all duration-200 hover:bg-gray-800/30 border-b border-gray-700"
-                                          >
-                                            <td className={`${width < 768 ? 'px-4 py-3' : 'pl-4 pr-3 py-2'} text-sm relative z-10 align-middle font-normal font-inter`}>
-                                              {position.tokenSymbol}
-                                            </td>
-                                            <td className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} text-sm relative z-10 align-middle font-normal font-inter`}>
-                                              {parseFloat(position.amount).toLocaleString()}
-                                            </td>
-                                            <td className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} text-sm relative z-10 align-middle font-normal font-inter`}>
-                                              ${parseFloat(position.avgPrice).toFixed(6)}
-                                            </td>
-                                            <td className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} text-sm relative z-10 align-middle font-normal font-inter`}>
-                                              ${parseFloat(position.currentPrice).toFixed(6)}
-                                            </td>
-                                            <td className={`${width < 768 ? 'px-4 py-3' : 'px-3 py-2'} text-sm relative z-10 align-middle font-normal ${pnlColor} font-inter`}>
-                                              {position.pnl} ({position.pnlValue})
-                                            </td>
-                                          </tr>
-                                        );
-                                      })
-                                    )}
+                                    {positions.map((position) => {
+                                      const pnlColor = position.pnlPercentage ? 
+                                        (position.pnlPercentage >= 0 ? "text-green-400" : "text-red-400") :
+                                        (position.pnl.startsWith('+') ? "text-green-400" : "text-red-400");
+                                      
+                                      return (
+                                        <tr key={position.id} className="border-b border-gray-800">
+                                          <td className="py-2 pl-4">
+                                            <div className="flex items-center space-x-3">
+                                              <div className="w-8 h-8 rounded-full flex items-center justify-center border border-gray-600 flex-shrink-0 overflow-hidden">
+                                                {tokenLogos[position.tokenAddress] ? (
+                                                  <img 
+                                                    src={tokenLogos[position.tokenAddress]} 
+                                                    alt={position.tokenSymbol || 'Token'}
+                                                    className="w-full h-full object-cover"
+                                                    onError={(e) => {
+                                                      // Fallback to placeholder if image fails to load
+                                                      const target = e.target as HTMLImageElement;
+                                                      target.style.display = 'none';
+                                                      target.nextElementSibling?.classList.remove('hidden');
+                                                    }}
+                                                  />
+                                                ) : null}
+                                                <div className={`w-8 h-8 bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-full flex items-center justify-center border border-blue-500/30 ${tokenLogos[position.tokenAddress] ? 'hidden' : ''}`}>
+                                                  <span className="text-blue-400 font-bold text-sm">
+                                                    {position.tokenSymbol?.charAt(0) || 'T'}
+                                                  </span>
+                                                </div>
+                                              </div>
+                                              <div>
+                                                <div className="text-gray-300 font-medium">
+                                                  {position.tokenSymbol || position.tokenName || 'Unknown'}
+                                                </div>
+                                                {position.tokenName && position.tokenSymbol && position.tokenName !== position.tokenSymbol && (
+                                                  <div className="text-xs text-gray-500">{position.tokenName}</div>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </td>
+                                          <td className="py-2 text-gray-300">
+                                            {parseFloat(position.amount).toLocaleString()}
+                                          </td>
+                                          <td className="py-2 text-gray-300">
+                                            ${parseFloat(position.avgPrice).toFixed(6)}
+                                          </td>
+                                          <td className="py-2 text-gray-300">
+                                            ${parseFloat(position.currentPrice).toFixed(6)}
+                                          </td>
+                                          <td className="py-2">
+                                            <div className={`font-medium ${pnlColor}`}>
+                                              {position.pnlPercentage !== undefined ? 
+                                                `${position.pnlPercentage >= 0 ? '+' : ''}${position.pnlPercentage.toFixed(2)}%` : 
+                                                (position.pnl || '0.00%')
+                                              }
+                                            </div>
+                                            {position.pnlValue && (
+                                              <div className="text-xs text-gray-500">
+                                                {position.pnlValue}
+                                              </div>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
                                   </tbody>
                                 </table>
                               )}
@@ -2582,6 +2917,8 @@ export default function ChartPage() {
                   console.log("🔄 Trade completed, refreshing data...");
                   setOrdersInitialized(false);
                   setPositionsInitialized(false);
+                  // 🔧 NEW: Also refresh unified PnL data for consistency
+                  fetchUnifiedPnLData();
                   if (activeDataTab === "orders") {
                     fetchOrders();
                   }

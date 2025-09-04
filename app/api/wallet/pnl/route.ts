@@ -223,7 +223,9 @@ export async function GET(request: Request) {
     // Convert to trades format
     const trades: Trade[] = transactionsSnapshot.docs.map(doc => {
       const data = doc.data();
-      const isBuy = data.inputToken === "ETH";
+      // Improved logic: A buy is when someone sends ETH or another base token to the pool
+      // This works for both ETH pairs and non-ETH pairs (like USDC pairs)
+      const isBuy = data.inputToken === "ETH" || data.inputToken === "0x0000000000000000000000000000000000000000";
       return {
         id: doc.id,
         type: isBuy ? "buy" : "sell",

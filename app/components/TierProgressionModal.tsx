@@ -44,8 +44,6 @@ const TierProgressionModal: React.FC<TierProgressionModalProps> = ({
       name: 'Degen',
       icon: FiTrendingUp,
       color: '#CD7F32', // Bronze
-      gradient: 'from-amber-600 via-orange-500 to-yellow-600',
-      shinyGradient: 'from-amber-400 via-orange-300 to-yellow-400',
       minPoints: 2000,
       maxPoints: 7999,
       description: 'Degenerate trader, living on the edge',
@@ -68,9 +66,7 @@ const TierProgressionModal: React.FC<TierProgressionModalProps> = ({
       id: 'alpha',
       name: 'Alpha',
       icon: FiShield,
-      color: '#C0C0C0', // Silver
-      gradient: 'from-gray-300 via-gray-400 to-gray-500',
-      shinyGradient: 'from-gray-200 via-gray-300 to-gray-400',
+      color: '#10B981', // Green
       minPoints: 8000,
       maxPoints: 19999,
       description: 'Got the alpha, making moves',
@@ -79,17 +75,18 @@ const TierProgressionModal: React.FC<TierProgressionModalProps> = ({
       airdropAllocation: '2x',
       benefits: [
         'All Degen benefits',
-        'Exclusive content access',
-        'VIP community access',
-        'Governance voting rights',
-        'Whitelist priority',
-        'Discord: Alpha role + Alpha chat access',
+        'Premium support',
+        'Exclusive alpha calls',
+        'Custom Discord role',
+        'Discord: Alpha role',
         'Premium swap fees (0.04%)',
         'Airdrop eligibility (2x allocation)',
-        'Premium trading features',
-        'Custom NFT rewards',
-        'Direct team access',
-        'Revenue sharing opportunities'
+        'Private alpha channels',
+        'Advanced analytics',
+        'Early feature access',
+        'Custom integrations',
+        'Revenue sharing',
+        'Immortal status in community'
       ]
     },
     {
@@ -97,8 +94,6 @@ const TierProgressionModal: React.FC<TierProgressionModalProps> = ({
       name: 'Mogul',
       icon: FaCrown,
       color: '#FFD700', // Gold
-      gradient: 'from-yellow-400 via-yellow-500 to-yellow-600',
-      shinyGradient: 'from-yellow-300 via-yellow-400 to-yellow-500',
       minPoints: 20000,
       maxPoints: 49999,
       description: 'Crypto mogul, building empire',
@@ -126,8 +121,6 @@ const TierProgressionModal: React.FC<TierProgressionModalProps> = ({
       name: 'Titan',
       icon: FiStar,
       color: '#8B5CF6', // Purple
-      gradient: 'from-purple-400 via-purple-500 to-purple-600',
-      shinyGradient: 'from-purple-300 via-purple-400 to-purple-500',
       minPoints: 50000,
       maxPoints: Infinity,
       description: 'Crypto titan, legendary status',
@@ -181,33 +174,32 @@ const TierProgressionModal: React.FC<TierProgressionModalProps> = ({
     <AnimatePresence>
       {isOpen && (
         <motion.div
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9999999] flex items-center justify-center p-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm z-[9999]"
-          onClick={onClose}
         >
           <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
+            className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden"
+            initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.9, opacity: 0 }}
-            className="bg-gray-900/95 backdrop-blur-sm rounded-2xl border border-gray-700 max-w-5xl w-full max-h-[90vh] overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
+            exit={{ scale: 0.95, opacity: 0 }}
+            transition={{ duration: 0.2 }}
           >
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-gray-700">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                  <FiStar className="w-5 h-5 text-white" />
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-900 to-blue-700 flex items-center justify-center">
+                  <FiAward className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-white">Tier Progression Path</h2>
+                  <h2 className="text-xl font-bold text-white">Level Progression</h2>
                   <p className="text-gray-400 text-sm">Your journey to legendary status</p>
                 </div>
               </div>
               <button
                 onClick={onClose}
-                className="w-8 h-8 rounded-full bg-gray-800 hover:bg-gray-700 flex items-center justify-center transition-colors"
+                className="w-8 h-8 rounded-lg bg-gray-800 hover:bg-gray-700 flex items-center justify-center transition-colors"
               >
                 <FiX className="w-4 h-4 text-gray-400" />
               </button>
@@ -216,41 +208,19 @@ const TierProgressionModal: React.FC<TierProgressionModalProps> = ({
             {/* Content */}
             <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)] scrollbar-hide">
               {/* Current Status */}
-              <div className="mb-8 p-6 bg-gradient-to-r from-blue-900/20 to-purple-900/20 rounded-xl border border-blue-500/30">
-                <div className="flex items-center justify-between mb-4">
+              <div className="mb-6 p-4 bg-gradient-to-r from-gray-800/50 to-gray-700/50 rounded-xl border border-gray-600">
+                <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <div 
-                      className={`relative w-12 h-12 rounded-full flex items-center justify-center overflow-hidden ${
-                        tiers.find(t => t.id === currentTier)?.gradient && currentTier !== 'normie'
-                          ? `bg-gradient-to-br ${tiers.find(t => t.id === currentTier)?.gradient} animate-pulse`
-                          : ''
-                      }`}
-                      style={{ 
-                        backgroundColor: tiers.find(t => t.id === currentTier)?.gradient ? undefined : tiers.find(t => t.id === currentTier)?.color
-                      }}
+                      className={`relative w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-blue-900 to-blue-700`}
                     >
-                      {/* Shine Animation for Current Tier */}
-                      {tiers.find(t => t.id === currentTier)?.gradient && currentTier !== 'normie' && (
-                        <motion.div
-                          className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent"
-                          animate={{
-                            x: ['-100%', '200%']
-                          }}
-                          transition={{
-                            duration: 1.5,
-                            repeat: Infinity,
-                            repeatDelay: 2,
-                            ease: "easeInOut"
-                          }}
-                        />
-                      )}
-                      {tiers.find(t => t.id === currentTier)?.icon && React.createElement(tiers.find(t => t.id === currentTier)!.icon, { className: "w-6 h-6 text-white relative z-10" })}
+                      {tiers.find(t => t.id === currentTier)?.icon && React.createElement(tiers.find(t => t.id === currentTier)!.icon, { className: "w-5 h-5 text-white" })}
                     </div>
                     <div>
                       <h3 className="text-lg font-bold text-white capitalize">
                         {currentTier} Status
                       </h3>
-                      <p className="text-gray-400">
+                      <p className="text-gray-400 text-sm">
                         {currentPoints.toLocaleString()} / {tiers.find(t => t.id === currentTier)?.maxPoints.toLocaleString()} points
                       </p>
                     </div>
@@ -262,25 +232,25 @@ const TierProgressionModal: React.FC<TierProgressionModalProps> = ({
                 </div>
                 
                 {/* Progress Bar */}
-                <div className="mb-3">
-                  <div className="flex justify-between text-sm text-gray-400 mb-2">
+                <div className="mb-2">
+                  <div className="flex justify-between text-sm text-gray-400 mb-1">
                     <span>Progress to next tier</span>
                     <span>{getProgressToNextTier().toFixed(1)}%</span>
                   </div>
-                  <div className="w-full bg-gray-700 rounded-full h-3">
+                  <div className="w-full bg-gray-700 rounded-full h-2">
                     <motion.div
                       initial={{ width: 0 }}
                       animate={{ width: `${getProgressToNextTier()}%` }}
                       transition={{ duration: 1, ease: "easeOut" }}
-                      className="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full"
+                      className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2 rounded-full"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Tier Progression Path */}
-              <div className="space-y-6">
-                <h3 className="text-lg font-semibold text-white mb-4">Your Progression Path</h3>
+              {/* Tier Journey */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-white mb-4">Your Journey</h3>
                 
                 {tiers.map((tier, index) => {
                   const isUnlocked = isTierUnlocked(index);
@@ -294,104 +264,43 @@ const TierProgressionModal: React.FC<TierProgressionModalProps> = ({
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.1 }}
-                      className={`relative p-6 rounded-xl border transition-all duration-300 ${
+                      className={`relative p-4 rounded-xl border transition-all duration-300 ${
                         isCurrent
-                          ? 'bg-gradient-to-r from-blue-900/20 to-purple-900/20 border-blue-500/50'
+                          ? 'bg-gray-800/50 border-yellow-500/50'
                           : isUnlocked
-                          ? 'bg-green-900/20 border-green-500/30'
+                          ? 'bg-gray-800/50 border-green-500/30'
                           : 'bg-gray-800/50 border-gray-600'
                       }`}
                     >
                       {/* Connection Line */}
                       {index < tiers.length - 1 && (
-                        <div className="absolute left-8 top-16 w-0.5 h-8 bg-gray-600"></div>
+                        <div className="absolute left-6 top-16 w-0.5 h-6 bg-gray-600"></div>
                       )}
                       
-                      <div className="flex items-start gap-4">
-                        {/* Tier Icon with Circle */}
+                      <div className="flex items-start gap-3">
+                        {/* Tier Icon */}
                         <div className="relative">
-                          {/* Outer Circle */}
-                          <div className={`absolute inset-0 rounded-full ${
-                            isCurrent ? 'ring-4 ring-blue-500/50 animate-pulse' : ''
-                          } ${
-                            isUnlocked && tier.id !== 'normie' ? 'ring-2 ring-white/20' : ''
-                          }`}></div>
-                          
-                          {/* Shiny Animated Circle */}
-                          {isUnlocked && tier.id !== 'normie' && (
-                            <motion.div
-                              animate={{ 
-                                rotate: 360,
-                                scale: [1, 1.05, 1]
-                              }}
-                              transition={{ 
-                                rotate: { duration: 3, repeat: Infinity, ease: "linear" },
-                                scale: { duration: 2, repeat: Infinity, ease: "easeInOut" }
-                              }}
-                              className={`absolute inset-0 rounded-full bg-gradient-to-br ${tier.shinyGradient} opacity-30 blur-sm`}
-                            />
-                          )}
-                          
-                          {/* Main Icon Circle */}
                           <div 
-                            className={`relative w-16 h-16 rounded-full flex items-center justify-center transition-all duration-300 overflow-hidden ${
-                              tier.gradient && isUnlocked 
-                                ? `bg-gradient-to-br ${tier.gradient}` 
-                                : ''
-                            } ${
-                              isUnlocked && tier.id !== 'normie' ? 'animate-pulse' : ''
-                            }`}
+                            className={`relative w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300 bg-gradient-to-br from-blue-900 to-blue-700`}
                             style={{ 
-                              backgroundColor: tier.gradient && isUnlocked ? undefined : tier.color,
                               opacity: isUnlocked ? 1 : 0.6
                             }}
                           >
-                            {/* Shine Animation */}
-                            {isUnlocked && tier.id !== 'normie' && (
-                              <motion.div
-                                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent"
-                                animate={{
-                                  x: ['-100%', '200%']
-                                }}
-                                transition={{
-                                  duration: 2,
-                                  repeat: Infinity,
-                                  repeatDelay: 3,
-                                  ease: "easeInOut"
-                                }}
-                              />
-                            )}
-                            <IconComponent className="w-8 h-8 text-white relative z-10" />
+                            <IconComponent className="w-6 h-6 text-white" />
                           </div>
-                          
-                          {/* Inner Glow Circle */}
-                          {isUnlocked && tier.id !== 'normie' && (
-                            <motion.div
-                              animate={{ 
-                                scale: [1, 1.1, 1],
-                                opacity: [0.5, 0.8, 0.5]
-                              }}
-                              transition={{ 
-                                duration: 2, 
-                                repeat: Infinity, 
-                                ease: "easeInOut" 
-                              }}
-                              className={`absolute inset-2 rounded-full bg-gradient-to-br ${tier.shinyGradient} opacity-20`}
-                            />
-                          )}
                           
                           {/* Status Indicator */}
                           <div className="absolute -top-1 -right-1">
                             {isCompleted ? (
-                              <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                              <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
                                 <FiCheck className="w-3 h-3 text-white" />
                               </div>
                             ) : isCurrent ? (
-                              <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
+                              <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
                                 <FiTrendingUp className="w-3 h-3 text-white" />
                               </div>
                             ) : (
-                              <div className="w-6 h-6 bg-gray-600 rounded-full flex items-center justify-center">
+                              <div className="w-5 h-5 bg-gray-600 rounded-full flex items-center justify-center">
                                 <FiLock className="w-3 h-3 text-gray-400" />
                               </div>
                             )}
@@ -405,7 +314,7 @@ const TierProgressionModal: React.FC<TierProgressionModalProps> = ({
                               <h4 className={`text-lg font-bold capitalize ${
                                 isCurrent ? 'text-blue-400' : isUnlocked ? 'text-green-400' : 'text-gray-400'
                               }`}>
-                                {tier.name} Tier
+                                {tier.name}
                               </h4>
                               <p className="text-sm text-gray-500">{tier.description}</p>
                             </div>
@@ -423,44 +332,44 @@ const TierProgressionModal: React.FC<TierProgressionModalProps> = ({
                           </div>
 
                           {/* Key Benefits */}
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
                             {/* Discord Role */}
-                            <div className="flex flex-col items-center gap-2 p-2 bg-gray-800/50 rounded-lg">
+                            <div className="flex flex-col items-center gap-1 p-2 bg-gray-800/50 rounded-lg">
                               <div className="text-xs text-gray-400">Discord Role</div>
-                              <div className="flex items-center gap-2">
-                                <FaDiscord className="w-4 h-4 text-[#5865F2]" />
-                                <span className="text-sm font-medium text-white">{tier.discordRole}</span>
+                              <div className="flex items-center gap-1">
+                                <FaDiscord className="w-3 h-3 text-[#5865F2]" />
+                                <span className="text-xs font-medium text-white">{tier.discordRole}</span>
                               </div>
                             </div>
 
                             {/* Swap Fee */}
-                            <div className="flex flex-col items-center gap-2 p-2 bg-gray-800/50 rounded-lg">
+                            <div className="flex flex-col items-center gap-1 p-2 bg-gray-800/50 rounded-lg">
                               <div className="text-xs text-gray-400">Swap Fee</div>
-                              <div className="flex items-center gap-2">
-                                <FiDollarSign className="w-4 h-4 text-green-400" />
-                                <span className="text-sm font-medium text-white">{tier.swapFee}</span>
+                              <div className="flex items-center gap-1">
+                                <FiDollarSign className="w-3 h-3 text-green-400" />
+                                <span className="text-xs font-medium text-white">{tier.swapFee}</span>
                               </div>
                             </div>
 
                             {/* Airdrop Allocation */}
                             {tier.airdropAllocation && (
-                              <div className="flex flex-col items-center gap-2 p-2 bg-gray-800/50 rounded-lg">
-                                <div className="text-xs text-gray-400">Airdrop Allocation</div>
-                                <div className="flex items-center gap-2">
-                                  <FiGift className="w-4 h-4 text-purple-400" />
-                                  <span className="text-sm font-medium text-white">{tier.airdropAllocation}</span>
+                              <div className="flex flex-col items-center gap-1 p-2 bg-gray-800/50 rounded-lg">
+                                <div className="text-xs text-gray-400">Airdrop</div>
+                                <div className="flex items-center gap-1">
+                                  <FiGift className="w-3 h-3 text-cyan-400" />
+                                  <span className="text-xs font-medium text-white">{tier.airdropAllocation}</span>
                                 </div>
                               </div>
                             )}
                           </div>
 
                           {/* All Benefits */}
-                          <div className="mt-4">
+                          <div className="mt-3">
                             <h5 className="text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2">
                               <FiAward className="w-4 h-4" />
-                              All Benefits
+                              Benefits
                             </h5>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
                               {tier.benefits.map((benefit, benefitIndex) => (
                                 <div key={benefitIndex} className="flex items-center gap-2 text-sm">
                                   <div className={`w-2 h-2 rounded-full ${
@@ -476,14 +385,14 @@ const TierProgressionModal: React.FC<TierProgressionModalProps> = ({
 
                           {/* Progress to this tier */}
                           {!isUnlocked && index > getCurrentTierIndex() && (
-                            <div className="mt-4 p-3 bg-gray-800/50 rounded-lg">
-                              <div className="flex justify-between text-sm text-gray-400 mb-1">
+                            <div className="mt-3 p-2 bg-gray-800/50 rounded-lg">
+                              <div className="flex justify-between text-xs text-gray-400 mb-1">
                                 <span>Progress to {tier.name}</span>
                                 <span>{Math.max(0, ((currentPoints - tiers[index - 1]?.minPoints || 0) / (tier.minPoints - (tiers[index - 1]?.minPoints || 0))) * 100).toFixed(1)}%</span>
                               </div>
                               <div className="w-full bg-gray-700 rounded-full h-2">
                                 <div
-                                  className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all duration-300"
+                                  className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2 rounded-full transition-all duration-300"
                                   style={{ 
                                     width: `${Math.max(0, ((currentPoints - (tiers[index - 1]?.minPoints || 0)) / (tier.minPoints - (tiers[index - 1]?.minPoints || 0))) * 100)}%` 
                                   }}
@@ -502,26 +411,26 @@ const TierProgressionModal: React.FC<TierProgressionModalProps> = ({
               </div>
 
               {/* Quick Stats */}
-              <div className="mt-8 p-6 bg-gray-800/50 rounded-xl border border-gray-700">
-                <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                  <FiZap className="w-5 h-5 text-yellow-400" />
-                  Progression Stats
+              <div className="mt-6 p-4 bg-gray-800/50 rounded-xl border border-gray-700">
+                <h3 className="text-base font-semibold text-white mb-3 flex items-center gap-2">
+                  <FiZap className="w-4 h-4 text-yellow-400" />
+                  Journey Stats
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-blue-400">
+                    <div className="text-xl font-bold text-blue-400">
                       {tiers.filter((_, index) => isTierUnlocked(index)).length}
                     </div>
                     <div className="text-gray-400 text-sm">Tiers Unlocked</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-green-400">
+                    <div className="text-xl font-bold text-green-400">
                       {tiers.length - getCurrentTierIndex() - 1}
                     </div>
                     <div className="text-gray-400 text-sm">Tiers Remaining</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-purple-400">
+                    <div className="text-xl font-bold text-cyan-400">
                       {tiers.length}
                     </div>
                     <div className="text-gray-400 text-sm">Total Tiers</div>

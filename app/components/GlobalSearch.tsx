@@ -470,7 +470,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
   return (
     <div ref={searchRef} className={`relative ${className} ${variant === "homepage" ? "z-[9999999]" : ""}`}>
       {/* Search Input */}
-      <div className="relative group">
+      <div className={`relative group ${variant === "header" ? "mr-2" : ""}`}>
         <input
           ref={inputRef}
           type="text"
@@ -486,7 +486,9 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
               setShowResults(true);
             }
           }}
-          className={`w-full pl-12 pr-12 py-2 text-sm text-gray-100 bg-gray-900 border border-gray-700 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300 placeholder-gray-400 shadow-lg group-hover:border-blue-400`}
+          className={`w-full pl-12 pr-12 py-2 text-sm text-gray-100 bg-gray-950 border border-gray-700 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300 placeholder-gray-400 shadow-lg group-hover:border-blue-400 ${
+            variant === "header" ? "max-w-[580px]" : ""
+          }`}
         />
         
         {/* Search Icon */}
@@ -525,15 +527,16 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
       <AnimatePresence>
         {showResults && (query.length >= 2 || totalResults > 0) && (
           <motion.div
-                         className={`absolute top-full left-0 right-0 mt-2 bg-gray-800 border border-blue-500/50 rounded-xl shadow-2xl overflow-hidden flex flex-col ${
-              variant === "homepage" ? "w-full max-h-[300px]" : "w-full max-w-2xl max-h-[60vh]"
+                         className={`absolute top-full left-0 right-0 bg-gray-950 border border-gray-700 rounded-xl shadow-2xl overflow-hidden flex flex-col ${
+              variant === "homepage" ? "w-full max-h-[300px]" : "w-full max-w-xl max-h-[60vh]"
             }`}
             style={{
-              top: variant === "header" ? "calc(100% + 12px)" : "100%",
+              top: variant === "header" ? "calc(100% + 8px)" : "calc(100% + 4px)",
               zIndex: variant === "homepage" ? 9999999 : 9999999,
               maxHeight: variant === "homepage" ? "300px" : "auto",
-              width: variant === "header" ? "600px" : "100%",
-              position: variant === "homepage" ? "absolute" : "absolute"
+              width: variant === "header" ? "min(580px, calc(100vw - 32px))" : "100%",
+              position: variant === "homepage" ? "absolute" : "absolute",
+              right: variant === "header" ? "16px" : "auto"
             }}
             initial={{ opacity: 0, y: -10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -565,7 +568,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
 
             {/* Results Summary */}
             {!isLoading && !error && totalResults > 0 && (
-              <div className="px-4 py-2 bg-gray-700 border-b border-gray-600 sticky top-0 z-20 flex-shrink-0">
+              <div className="px-4 py-2 bg-gray-950 border-b border-gray-700/50 sticky top-0 z-20 flex-shrink-0">
                 <div className="text-xs text-gray-400">
                   Found {totalResults} result{totalResults !== 1 ? 's' : ''} for "{query}"
                 </div>
@@ -575,8 +578,8 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
             {/* Results Container */}
             <div 
               ref={resultsRef}
-              className={`overflow-y-auto pr-2 scrollbar-hide transition-all duration-200 ${
-                variant === "homepage" ? "h-[250px]" : "max-h-[400px]"
+              className={`overflow-y-auto scrollbar-hide transition-all duration-200 ${
+                variant === "homepage" ? "h-[250px] pr-2" : "max-h-[400px] pr-6"
               } ${isMouseInResults ? 'ring-1 ring-blue-400/30' : ''}`}
               style={{
                 scrollBehavior: 'smooth',
@@ -586,11 +589,11 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
             >
               {/* Results */}
               {!isLoading && !error && totalResults > 0 && (
-                <div className="py-2">
+                <div className="pt-0 pb-2">
                  {/* Tokens */}
                  {results.tokens.length > 0 && (
-                   <div className="mb-2">
-                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700 bg-gray-800 z-10">
+                   <div className="mb-0">
+                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 bg-gray-950 z-10">
                        Tokens ({results.tokens.length})
                      </div>
                      <div>
@@ -637,7 +640,9 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
                                  <div className="flex items-center justify-between mb-2">
                                    <div className="flex items-center space-x-2 min-w-0">
                                      <span className="font-bold text-gray-200 truncate">{token.symbol}</span>
-                                     <span className="text-sm text-gray-400 truncate">({token.name})</span>
+                                     <span className="text-sm text-gray-400 truncate max-w-[120px]">
+                                       ({token.name.length > 20 ? token.name.substring(0, 20) + '...' : token.name})
+                                     </span>
                                    </div>
                                    <div className="flex items-center space-x-2">
                                      {token.priceChange?.h24 && (
@@ -670,13 +675,13 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
                                          Buy: {(token.metrics.buyRatio24h * 100).toFixed(0)}%
                                        </span>
                                      )}
-                                     {token.metrics && token.metrics.volumeChange24h !== 0 && (
-                                       <span className={`text-xs px-2 py-1 rounded-md font-medium ${
-                                         token.metrics.volumeChange24h > 0 ? 'bg-blue-500/20 text-blue-400' : 'bg-orange-500/20 text-orange-400'
-                                       }`}>
-                                         Vol: {token.metrics.volumeChange24h > 0 ? '+' : ''}{token.metrics.volumeChange24h.toFixed(1)}%
-                                       </span>
-                                     )}
+                                                                           {token.metrics && token.metrics.volumeChange24h !== 0 && (
+                                        <span className={`text-xs px-2 py-1 rounded-md font-medium ${
+                                          token.metrics.volumeChange24h > 0 ? 'bg-blue-500/20 text-blue-400' : 'bg-orange-500/20 text-orange-400'
+                                        }`}>
+                                          Vol: {token.metrics.volumeChange24h > 0 ? '+' : ''}{token.metrics.volumeChange24h.toFixed(1)}%
+                                        </span>
+                                      )}
                                    </div>
                                  </div>
                                  
@@ -706,15 +711,15 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
 
                  {/* Separator */}
                  {results.tokens.length > 0 && (results.wallets.length > 0 || results.transactions.length > 0 || results.blocks.length > 0 || results.news.length > 0 || results.indexes.length > 0 || results.calendar.length > 0) && (
-                   <div className="py-1">
+                   <div className="py-0">
                      <div className="border-t border-gray-700/50"></div>
                    </div>
                  )}
 
                  {/* Wallets */}
                  {results.wallets.length > 0 && (
-                   <div className="mb-2">
-                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700 bg-gray-800 z-10">
+                   <div className="mb-0">
+                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 bg-gray-950 z-10">
                        Wallets ({results.wallets.length})
                      </div>
                      <div>
@@ -755,15 +760,15 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
 
                  {/* Separator */}
                  {results.wallets.length > 0 && (results.transactions.length > 0 || results.blocks.length > 0 || results.news.length > 0 || results.indexes.length > 0 || results.calendar.length > 0) && (
-                   <div className="py-1">
+                   <div className="py-0">
                      <div className="border-t border-gray-700/50"></div>
                    </div>
                  )}
 
                  {/* Transactions */}
                  {results.transactions.length > 0 && (
-                   <div className="mb-2">
-                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700 bg-gray-800 z-10">
+                   <div className="mb-0">
+                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 bg-gray-950 z-10">
                        Transactions ({results.transactions.length})
                      </div>
                      <div>
@@ -804,15 +809,15 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
 
                  {/* Separator */}
                  {results.transactions.length > 0 && (results.blocks.length > 0 || results.news.length > 0 || results.indexes.length > 0 || results.calendar.length > 0) && (
-                   <div className="py-1">
+                   <div className="py-0">
                      <div className="border-t border-gray-700/50"></div>
                    </div>
                  )}
 
                  {/* Blocks */}
                  {results.blocks.length > 0 && (
-                   <div className="mb-2">
-                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700 bg-gray-800 z-10">
+                   <div className="mb-0">
+                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 bg-gray-950 z-10">
                        Blocks ({results.blocks.length})
                      </div>
                      <div>
@@ -853,15 +858,15 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
 
                  {/* Separator */}
                  {results.blocks.length > 0 && (results.news.length > 0 || results.indexes.length > 0 || results.calendar.length > 0) && (
-                   <div className="py-1">
+                   <div className="py-0">
                      <div className="border-t border-gray-700/50"></div>
                    </div>
                  )}
 
                  {/* News Articles */}
                  {results.news.length > 0 && (
-                   <div className="mb-2">
-                                         <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700 bg-gray-800 z-10">
+                   <div className="mb-0">
+                                         <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 bg-gray-950 z-10">
                        News ({results.news.length})
                      </div>
                      <div>
@@ -885,9 +890,9 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
                                 {getResultIcon("news")}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="font-semibold text-gray-200 truncate">
-                                  {highlightSearchTerm(article.title, query)}
-                                </div>
+                                                                 <div className="font-semibold text-gray-200 truncate max-w-[280px]">
+                                   {highlightSearchTerm(article.title.length > 60 ? article.title.substring(0, 60) + '...' : article.title, query)}
+                                 </div>
                                 <div className="text-xs text-gray-400 mt-1">
                                   {article.author} • {article.source} • {new Date(article.publishedAt).toLocaleDateString()}
                                 </div>
@@ -902,15 +907,15 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
 
                  {/* Separator */}
                  {results.news.length > 0 && (results.indexes.length > 0 || results.calendar.length > 0) && (
-                   <div className="py-1">
+                   <div className="py-0">
                      <div className="border-t border-gray-700/50"></div>
                    </div>
                  )}
 
                  {/* Index Data */}
                  {results.indexes.length > 0 && (
-                   <div className="mb-2">
-                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700 bg-gray-800 z-10">
+                   <div className="mb-0">
+                     <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 bg-gray-950 z-10">
                        Index Tokens ({results.indexes.length})
                      </div>
                      <div>
@@ -961,7 +966,9 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
                                  {/* Second Row: Token Name, Market Cap */}
                                  <div className="flex items-center justify-between">
                                    <div className="flex items-center space-x-4 text-xs text-gray-400">
-                                     <span className="text-gray-300">{index.tokenName}</span>
+                                     <span className="text-gray-300 truncate max-w-[200px]">
+                                       {index.tokenName.length > 25 ? index.tokenName.substring(0, 25) + '...' : index.tokenName}
+                                     </span>
                                      {index.marketCap && (
                                        <span>MC: ${formatNumber(index.marketCap)}</span>
                                      )}
@@ -978,15 +985,15 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
 
                  {/* Separator */}
                  {results.indexes.length > 0 && results.calendar.length > 0 && (
-                   <div className="px-4 py-2">
+                   <div className="px-4 py-0">
                      <div className="border-t border-gray-700/50"></div>
                    </div>
                  )}
 
                  {/* Calendar Events */}
                  {results.calendar.length > 0 && (
-                   <div className="mb-2">
-                                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700 bg-gray-800 z-10">
+                   <div className="mb-0">
+                                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700/50 bg-gray-950 z-10">
                        Events ({results.calendar.length})
                      </div>
                      <div>
@@ -1010,9 +1017,9 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
                                 {getResultIcon("calendar")}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="font-semibold text-gray-200 truncate">
-                                  {event.title}
-                                </div>
+                                                                 <div className="font-semibold text-gray-200 truncate max-w-[280px]">
+                                   {event.title.length > 50 ? event.title.substring(0, 50) + '...' : event.title}
+                                 </div>
                                 <div className="text-xs text-gray-400 mt-1">
                                   {event.projectName} ({event.projectTicker}) • {event.date} • {event.votes} votes
                                 </div>
@@ -1029,7 +1036,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
             
             {/* Scroll Indicator */}
             {!isLoading && !error && totalResults > 0 && (
-              <div className="px-4 py-2 bg-gradient-to-t from-gray-800/50 to-transparent border-t border-gray-700/30 flex-shrink-0">
+              <div className="px-4 py-2 bg-gradient-to-t from-gray-950 to-transparent border-t border-gray-700/50 flex-shrink-0">
                 <div className="text-xs text-gray-400 text-center">
                   {isMouseInResults ? "Scroll to see more results" : "Hover to scroll results"}
                 </div>

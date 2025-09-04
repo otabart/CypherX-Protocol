@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -37,6 +37,7 @@ import type { User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 
 import { useFavorites } from "@/app/hooks/useFavorites";
+import { useLoginModal } from "@/app/providers";
 
 import { useWatchlists } from "@/app/hooks/useWatchlists";
 
@@ -74,6 +75,12 @@ const firebaseAuth = auth;
 type DexScreenerPair = {
   pairAddress: string;
   baseToken?: {
+    address: string;
+    symbol: string;
+    name: string;
+    decimals: number;
+  };
+  quoteToken?: {
     address: string;
     symbol: string;
     name: string;
@@ -247,6 +254,12 @@ export type TokenData = {
   symbol: string;
   name: string;
   decimals?: number;
+  quoteToken?: {
+    address: string;
+    symbol: string;
+    name: string;
+    decimals: number;
+  };
   priceUsd?: string;
   priceChange?: {
     m5?: number;
@@ -589,6 +602,8 @@ type Alert = {
 
 export default function TokenScreener() {
   const router = useRouter();
+  const pathname = usePathname();
+  const { setShowLoginModal, setRedirectTo } = useLoginModal();
   const [tokens, setTokens] = useState<TokenData[]>([]);
   const [loading, setLoading] = useState(true);
   const [initialLoad, setInitialLoad] = useState(true);
@@ -1001,6 +1016,12 @@ export default function TokenScreener() {
                 allResults.push({
                   ...firestoreToken,
                   poolAddress: pair.pairAddress,
+                  quoteToken: pair.quoteToken ? {
+                    address: pair.quoteToken.address,
+                    symbol: pair.quoteToken.symbol,
+                    name: pair.quoteToken.name,
+                    decimals: pair.quoteToken.decimals,
+                  } : undefined,
                   priceUsd: pair.priceUsd || "0",
                   priceChange: pair.priceChange || { m5: 0, h1: 0, h6: 0, h24: 0 },
                   volume: pair.volume || { h1: 0, h24: 0 },
@@ -2001,7 +2022,8 @@ export default function TokenScreener() {
                 whileTap={{ scale: 0.95 }}
                 onClick={() => {
                   setShowFavoritePopup(false);
-                  router.push("/login");
+                  setRedirectTo(pathname);
+                  setShowLoginModal(true);
                 }}
                 className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 px-4 rounded w-full font-sans uppercase border border-blue-500/30"
               >
@@ -3169,7 +3191,7 @@ export default function TokenScreener() {
                                 )}
                                 <div>
                                   <span className="font-bold text-gray-200">{token.symbol}</span> /{" "}
-                                  <span className="text-gray-400">WETH</span>
+                                  <span className="text-gray-400">{token.quoteToken?.symbol || "WETH"}</span>
                                   <br />
                                   <span className="text-xs text-gray-400">{token.name}</span>
                                 </div>

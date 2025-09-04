@@ -1,22 +1,19 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { db, auth } from "../../../../../lib/firebase.ts";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import {
-  FiArrowLeft,
   FiHash,
   FiClock,
   FiActivity,
   FiCopy,
   FiCheck,
   FiExternalLink,
-  FiDatabase,
+  FiBox,
   FiZap,
-  FiSettings,
   FiEye,
 } from "react-icons/fi";
 import Header from "../../../../components/Header";
@@ -53,7 +50,6 @@ export default function BlockDetails() {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
   const router = useRouter();
   const params = useParams();
   const blockNumber = params.blockNumber as string;
@@ -177,7 +173,7 @@ export default function BlockDetails() {
   const gasUsedPercentage = block ? Math.round((parseInt(block.gasUsed) / parseInt(block.gasLimit)) * 100) : 0;
 
   return (
-    <div className="h-screen bg-gray-950 flex flex-col overflow-hidden">
+    <div className="min-h-screen bg-gray-950 flex flex-col">
       <style jsx>{`
         .scrollbar-thin::-webkit-scrollbar {
           width: 6px;
@@ -201,38 +197,20 @@ export default function BlockDetails() {
       {/* Separator line between header and main content */}
       <div className="h-px bg-gray-800"></div>
       
-      <main className="flex-1 container mx-auto px-4 py-8 pb-8 overflow-hidden">
+      <main className="flex-1 container mx-auto px-4 py-6 pb-4">
         {/* Header Section */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
+          className="mb-6"
         >
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-4">
-              <Link
-                href="/explorer/latest/block"
-                className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-700 transition-colors"
-              >
-                <FiArrowLeft className="w-4 h-4" />
-                Back to Blocks
-              </Link>
-              <div>
-                <h1 className="text-3xl font-bold text-white mb-2 flex items-center">
-                  <FiDatabase className="w-6 h-6 mr-3 text-blue-400" />
-                  Block #{blockNumber}
-                </h1>
-                <p className="text-gray-400">Detailed block information from Base network</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowAdvanced(!showAdvanced)}
-                className="p-2 bg-gray-800 rounded-lg text-gray-300 hover:bg-gray-700 transition-colors"
-                title="Toggle Advanced Details"
-              >
-                <FiSettings className="w-5 h-5" />
-              </button>
+            <div>
+              <h1 className="text-2xl font-bold text-white mb-2 flex items-center">
+                <FiBox className="w-5 h-5 mr-3 text-blue-400" />
+                Block #{blockNumber}
+              </h1>
+              <p className="text-gray-400">Detailed block information from Base network</p>
             </div>
           </div>
         </motion.div>
@@ -244,10 +222,10 @@ export default function BlockDetails() {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 mb-6 text-red-400"
+              className="bg-red-900/20 border border-red-500/30 p-4 mb-6 text-red-400"
             >
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></div>
+                <div className="w-2 h-2 bg-red-400 animate-pulse"></div>
                 Error: {error}
               </div>
             </motion.div>
@@ -261,39 +239,42 @@ export default function BlockDetails() {
             animate={{ opacity: 1 }}
             className="flex items-center justify-center py-12"
           >
-            <div className="flex items-center gap-3">
-              <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-              <span className="text-gray-400">Loading block details...</span>
+            <div className="flex flex-col items-center gap-4">
+              <div className="relative">
+                <div className="w-10 h-10 border-3 border-blue-400/20 border-t-blue-400 animate-spin"></div>
+                <div className="absolute inset-0 w-10 h-10 border-3 border-transparent border-r-blue-300/40 animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}></div>
+              </div>
+              <span className="text-gray-400 text-sm">Loading block details...</span>
             </div>
           </motion.div>
         )}
 
         {/* Block Details */}
         {!loading && block && (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {/* Block Overview Card */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-gray-800/30 backdrop-blur-sm rounded-lg border border-gray-700 p-6"
+              className="bg-gray-800/30 backdrop-blur-sm border border-gray-700 p-4"
             >
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-semibold text-white flex items-center gap-2">
                   <FiHash className="w-5 h-5 text-blue-400" />
                   Block Overview
                 </h2>
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-900/30 text-green-400 border border-green-500/30">
-                  <div className="w-2 h-2 bg-green-400 rounded-full mr-2"></div>
+                <span className="inline-flex items-center px-3 py-1 text-sm font-medium bg-green-900/30 text-green-400 border border-green-500/30">
+                  <div className="w-2 h-2 bg-green-400 mr-2"></div>
                   {block.status}
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-gray-400">Block Number</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-white font-mono font-medium">#{block.number.toLocaleString()}</span>
+                      <span className="text-white font-medium">#{block.number.toLocaleString()}</span>
                       <a
                         href={`/explorer/latest/block/${block.number}`}
                         target="_blank"
@@ -322,11 +303,11 @@ export default function BlockDetails() {
                   </div>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-gray-400">Block Hash</span>
                     <div className="flex items-center gap-2 max-w-xs">
-                      <span className="text-white font-mono text-sm truncate">{block.hash}</span>
+                      <span className="text-white text-sm truncate">{block.hash}</span>
                       <button
                         onClick={() => copyToClipboard(block.hash, "hash")}
                         className="text-blue-400 hover:text-blue-300"
@@ -339,7 +320,7 @@ export default function BlockDetails() {
                   <div className="flex items-center justify-between">
                     <span className="text-gray-400">Parent Hash</span>
                     <div className="flex items-center gap-2 max-w-xs">
-                      <span className="text-white font-mono text-sm truncate">{block.parentHash}</span>
+                      <span className="text-white text-sm truncate">{block.parentHash}</span>
                       <button
                         onClick={() => copyToClipboard(block.parentHash, "parentHash")}
                         className="text-blue-400 hover:text-blue-300"
@@ -352,7 +333,7 @@ export default function BlockDetails() {
                   <div className="flex items-center justify-between">
                     <span className="text-gray-400">Miner</span>
                     <div className="flex items-center gap-2 max-w-xs">
-                      <span className="text-white font-mono text-sm truncate">{block.miner}</span>
+                      <span className="text-white text-sm truncate">{block.miner}</span>
                       <a
                         href={`/explorer/address/${block.miner}`}
                         target="_blank"
@@ -372,28 +353,28 @@ export default function BlockDetails() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
-              className="bg-gray-800/30 backdrop-blur-sm rounded-lg border border-gray-700 p-6"
+              className="bg-gray-800/30 backdrop-blur-sm border border-gray-700 p-4"
             >
               <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
-                <FiZap className="w-5 h-5 text-orange-400" />
+                <FiZap className="w-5 h-5 text-blue-400" />
                 Gas Information
               </h2>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <span className="text-gray-400 text-sm">Gas Used</span>
-                  <p className="text-2xl font-bold text-white">{parseInt(block.gasUsed).toLocaleString()}</p>
+                  <p className="text-lg font-bold text-white">{parseInt(block.gasUsed).toLocaleString()}</p>
                 </div>
                 <div className="space-y-2">
                   <span className="text-gray-400 text-sm">Gas Limit</span>
-                  <p className="text-2xl font-bold text-white">{parseInt(block.gasLimit).toLocaleString()}</p>
+                  <p className="text-lg font-bold text-white">{parseInt(block.gasLimit).toLocaleString()}</p>
                 </div>
                 <div className="space-y-2">
                   <span className="text-gray-400 text-sm">Usage</span>
                   <div className="flex items-center gap-2">
-                    <div className="flex-1 bg-gray-700 rounded-full h-2">
+                    <div className="flex-1 bg-gray-700 h-2">
                       <div
-                        className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                        className="bg-blue-500 h-2 transition-all duration-300"
                         style={{ width: `${gasUsedPercentage}%` }}
                       ></div>
                     </div>
@@ -403,61 +384,18 @@ export default function BlockDetails() {
               </div>
             </motion.div>
 
-            {/* Advanced Details */}
-            <AnimatePresence>
-              {showAdvanced && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="bg-gray-800/30 backdrop-blur-sm rounded-lg border border-gray-700 p-6"
-                >
-                  <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
-                    <FiSettings className="w-5 h-5 text-purple-400" />
-                    Advanced Details
-                  </h2>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-400">Difficulty</span>
-                        <span className="text-white font-mono">{block.difficulty}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-400">Total Difficulty</span>
-                        <span className="text-white font-mono">{block.totalDifficulty}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-400">Size</span>
-                        <span className="text-white">{block.size}</span>
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-400">Nonce</span>
-                        <span className="text-white font-mono text-sm">{block.nonce}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-400">Extra Data</span>
-                        <span className="text-white font-mono text-sm">{block.extraData}</span>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
 
             {/* Transactions Card */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className="bg-gray-800/30 backdrop-blur-sm rounded-lg border border-gray-700 overflow-hidden"
+              className="bg-gray-800/30 backdrop-blur-sm border border-gray-700 overflow-hidden"
             >
-              <div className="px-6 py-4 border-b border-gray-700">
+              <div className="px-4 py-2 border-b border-gray-700">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-                    <FiActivity className="w-5 h-5 text-green-400" />
+                  <h2 className="text-base font-semibold text-white flex items-center gap-2">
+                    <FiActivity className="w-5 h-5 text-blue-400" />
                     Transactions ({block.transactions})
                   </h2>
                   <div className="flex items-center gap-2 text-sm text-gray-400">
@@ -468,14 +406,14 @@ export default function BlockDetails() {
               </div>
 
               {block.transactionList && block.transactionList.length > 0 ? (
-                <div className="overflow-x-auto max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
+                <div className="overflow-x-auto max-h-64 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
                   <table className="w-full">
                     <thead>
                       <tr className="bg-gray-800/50 text-gray-300 text-sm">
-                        <th className="px-6 py-4 text-left font-medium">Hash</th>
-                        <th className="px-6 py-4 text-left font-medium">From</th>
-                        <th className="px-6 py-4 text-left font-medium">To</th>
-                        <th className="px-6 py-4 text-left font-medium">Actions</th>
+                        <th className="px-4 py-2 text-left font-medium">Hash</th>
+                        <th className="px-4 py-2 text-left font-medium">From</th>
+                        <th className="px-4 py-2 text-left font-medium">To</th>
+                        <th className="px-4 py-2 text-left font-medium">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -488,44 +426,52 @@ export default function BlockDetails() {
                             transition={{ delay: index * 0.05 }}
                             className="border-b border-gray-700/50 hover:bg-gray-700/30 transition-colors"
                           >
-                            <td className="px-6 py-4">
-                              <Link
+                            <td className="px-4 py-2">
+                              <a
                                 href={`/explorer/tx/${tx.hash}`}
-                                className="text-blue-400 hover:text-blue-300 font-mono text-sm truncate block max-w-xs"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-400 hover:text-blue-300 text-sm truncate block max-w-xs"
                               >
                                 {tx.hash}
-                              </Link>
+                              </a>
                             </td>
-                            <td className="px-6 py-4">
-                              <Link
+                            <td className="px-4 py-2">
+                              <a
                                 href={`/explorer/address/${tx.from}`}
-                                className="text-blue-400 hover:text-blue-300 font-mono text-sm truncate block max-w-xs"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-400 hover:text-blue-300 text-sm truncate block max-w-xs"
                               >
                                 {tx.from}
-                              </Link>
+                              </a>
                             </td>
-                            <td className="px-6 py-4">
-                              <Link
+                            <td className="px-4 py-2">
+                              <a
                                 href={`/explorer/address/${tx.to}`}
-                                className="text-blue-400 hover:text-blue-300 font-mono text-sm truncate block max-w-xs"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-400 hover:text-blue-300 text-sm truncate block max-w-xs"
                               >
                                 {tx.to}
-                              </Link>
+                              </a>
                             </td>
-                            <td className="px-6 py-4">
+                            <td className="px-4 py-2">
                               <div className="flex items-center gap-2">
-                                <Link
-                                  href={`/explorer/tx/${tx.hash}`}
-                                  className="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs text-gray-300 transition-colors"
-                                >
-                                  <FiEye className="w-3 h-3" />
-                                  View
-                                </Link>
                                 <a
                                   href={`/explorer/tx/${tx.hash}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs text-white transition-colors"
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 hover:bg-gray-600 text-xs text-gray-300 transition-colors"
+                                >
+                                  <FiEye className="w-3 h-3" />
+                                  View
+                                </a>
+                                <a
+                                  href={`/explorer/tx/${tx.hash}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-gray-600 hover:bg-gray-500 text-xs text-white transition-colors"
                                 >
                                   <FiExternalLink className="w-3 h-3" />
                                   Explorer
@@ -539,7 +485,7 @@ export default function BlockDetails() {
                   </table>
                 </div>
               ) : (
-                <div className="px-6 py-8 text-center">
+                <div className="px-4 py-4 text-center">
                   <FiActivity className="w-12 h-12 text-gray-500 mx-auto mb-4" />
                   <p className="text-gray-400">No transactions in this block</p>
                 </div>
@@ -555,7 +501,7 @@ export default function BlockDetails() {
             animate={{ opacity: 1 }}
             className="text-center py-12"
           >
-            <FiDatabase className="w-16 h-16 text-gray-500 mx-auto mb-4" />
+            <FiBox className="w-16 h-16 text-gray-500 mx-auto mb-4" />
             <p className="text-gray-400 text-lg">No block data available</p>
             <p className="text-gray-500 text-sm mt-2">Please check the block number or try again later.</p>
           </motion.div>

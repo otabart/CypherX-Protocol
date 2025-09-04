@@ -13,6 +13,7 @@ import { config } from "@/lib/wagmi";
 import "@rainbow-me/rainbowkit/styles.css";
 import { LoadingProvider } from "./components/LoadingProvider";
 import { Toaster } from "react-hot-toast";
+import LoginModal from "./components/LoginModal";
 
 // Create a new query client
 const queryClient = new QueryClient();
@@ -67,6 +68,21 @@ const VotingModalContext = createContext<VotingModalContextType>({
   setSelectedIndexForVoting: () => {},
 });
 
+// Login modal context
+interface LoginModalContextType {
+  showLoginModal: boolean;
+  setShowLoginModal: (show: boolean) => void;
+  redirectTo: string;
+  setRedirectTo: (path: string) => void;
+}
+
+const LoginModalContext = createContext<LoginModalContextType>({
+  showLoginModal: false,
+  setShowLoginModal: () => {},
+  redirectTo: '/',
+  setRedirectTo: () => {},
+});
+
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
@@ -91,6 +107,14 @@ export const useVotingModal = () => {
   return context;
 };
 
+export const useLoginModal = () => {
+  const context = useContext(LoginModalContext);
+  if (!context) {
+    throw new Error("useLoginModal must be used within a LoginModalProvider");
+  }
+  return context;
+};
+
 export function Providers({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -99,6 +123,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [walletLoading, setWalletLoading] = useState(true);
   const [showVotingModal, setShowVotingModal] = useState(false);
   const [selectedIndexForVoting, setSelectedIndexForVoting] = useState('');
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [redirectTo, setRedirectTo] = useState('/');
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -224,15 +250,29 @@ export function Providers({ children }: { children: React.ReactNode }) {
                     setSelectedIndexForVoting
                   }}
                 >
-                  {children}
-                  <Toaster 
-                    position="bottom-left" 
-                    toastOptions={{
-                      style: {
-                        zIndex: 99999999,
-                      },
+                  <LoginModalContext.Provider
+                    value={{
+                      showLoginModal,
+                      setShowLoginModal,
+                      redirectTo,
+                      setRedirectTo
                     }}
-                  />
+                  >
+                    {children}
+                    <LoginModal
+                      isOpen={showLoginModal}
+                      onClose={() => setShowLoginModal(false)}
+                      redirectTo={redirectTo}
+                    />
+                    <Toaster 
+                      position="bottom-left" 
+                      toastOptions={{
+                        style: {
+                          zIndex: 99999999,
+                        },
+                      }}
+                    />
+                  </LoginModalContext.Provider>
                 </VotingModalContext.Provider>
               </WalletSystemContext.Provider>
             </AuthContext.Provider>

@@ -4,24 +4,19 @@ import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { db } from "../../../../lib/firebase.ts";
-import { doc, getDoc, setDoc } from "firebase/firestore";
 import {
-  FiArrowLeft,
   FiHash,
   FiClock,
   FiActivity,
   FiCopy,
   FiCheck,
   FiExternalLink,
-  FiDatabase,
   FiZap,
   FiSettings,
   FiAlertCircle,
   FiCheckCircle,
   FiXCircle,
   FiInfo,
-  FiArrowUpRight,
   FiMinus,
   FiPlus,
 } from "react-icons/fi";
@@ -38,11 +33,26 @@ interface Transaction {
   gas: string;
   gasPrice: string;
   gasUsed: string;
+  gasLimit: string;
+  gasFeeEth: number;
+  gasFeeUsd: number;
   nonce: number;
-  input: string;
+  inputData: string;
   transactionIndex: number;
   status: "success" | "failed" | "pending";
-  timestamp: string;
+  timestamp: number;
+  ethValueUsd: number;
+  contractAddress?: string;
+  contractName?: string;
+  methodSignature?: string;
+  isContractCreation: boolean;
+  tokenTransfers: Array<{
+    from: string;
+    to: string;
+    value: string;
+    asset: string;
+    category: string;
+  }>;
   receipt: {
     status: string;
     gasUsed: string;
@@ -60,7 +70,6 @@ interface Transaction {
   };
 }
 
-const alchemyUrl = process.env.NEXT_PUBLIC_ALCHEMY_API_URL || "";
 
 export default function TransactionDetails() {
   const [transaction, setTransaction] = useState<Transaction | null>(null);
@@ -77,100 +86,21 @@ export default function TransactionDetails() {
     setLoading(true);
     setError(null);
     try {
-      if (!db) {
-        throw new Error("Firestore is not initialized. Check Firebase configuration.");
-      }
-
-      if (!alchemyUrl) {
-        throw new Error("Alchemy API URL is not configured.");
-      }
-
-      // Check Firestore first
-      const txRef = doc(db, "transactions", txHash);
-      const txSnap = await getDoc(txRef);
-
-      if (txSnap.exists()) {
-        const txData = txSnap.data() as Transaction;
-        setTransaction(txData);
-        console.log(`Transaction ${txHash} loaded from Firestore`);
-        return;
-      }
-
-      // Fetch from Alchemy if not in Firestore
-      const response = await fetch(alchemyUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          method: "eth_getTransactionByHash",
-          params: [txHash],
-          id: 1,
-        }),
-      });
-
+      // Use our dedicated transaction API endpoint
+      const response = await fetch(`/api/alchemy/transaction?hash=${txHash}`);
+      
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Alchemy API error: ${response.status} - ${errorText}`);
+        throw new Error(`API error: ${response.status} - ${errorText}`);
       }
 
-      const txData = await response.json();
-      if (!txData?.result) {
-        throw new Error("Transaction not found");
+      const data = await response.json();
+      if (!data.success || !data.transaction) {
+        throw new Error(data.error || "Transaction not found");
       }
 
-      const tx = txData.result;
-      
-      // Get transaction receipt
-      const receiptResponse = await fetch(alchemyUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          method: "eth_getTransactionReceipt",
-          params: [txHash],
-          id: 1,
-        }),
-      });
-
-      const receiptData = await receiptResponse.json();
-      const receipt = receiptData?.result;
-
-      const timestamp = new Date(parseInt(tx.blockNumber, 16) * 1000);
-      const timeAgo = Math.floor((Date.now() - timestamp.getTime()) / 1000);
-
-      const transactionInfo: Transaction = {
-        hash: tx.hash || txHash,
-        blockNumber: parseInt(tx.blockNumber, 16) || 0,
-        blockHash: tx.blockHash || "N/A",
-        from: tx.from || "N/A",
-        to: tx.to || "N/A",
-        value: tx.value ? (parseInt(tx.value, 16) / 1e18).toString() : "0",
-        gas: parseInt(tx.gas, 16).toString() || "0",
-        gasPrice: tx.gasPrice ? (parseInt(tx.gasPrice, 16) / 1e9).toString() : "0",
-        gasUsed: receipt?.gasUsed ? parseInt(receipt.gasUsed, 16).toString() : "0",
-        nonce: parseInt(tx.nonce, 16) || 0,
-        input: tx.input || "0x",
-        transactionIndex: parseInt(tx.transactionIndex, 16) || 0,
-        status: receipt?.status === "0x1" ? "success" : receipt?.status === "0x0" ? "failed" : "pending",
-        timestamp: `${timeAgo} SEC${timeAgo === 1 ? "" : "S"} AGO`,
-        receipt: {
-          status: receipt?.status || "0x0",
-          gasUsed: receipt?.gasUsed ? parseInt(receipt.gasUsed, 16).toString() : "0",
-          logs: receipt?.logs || [],
-          contractAddress: receipt?.contractAddress,
-        },
-      };
-
-      setTransaction(transactionInfo);
-
-      // Store in Firestore
-      try {
-        await setDoc(txRef, transactionInfo);
-        console.log(`Transaction ${txHash} stored in Firestore`);
-      } catch (writeError: unknown) {
-        const errorMessage = writeError instanceof Error ? writeError.message : "Unknown error";
-        console.warn("Failed to write transaction to Firestore:", errorMessage);
-      }
+      setTransaction(data.transaction);
+      console.log(`Transaction ${txHash} loaded from API`);
     } catch (err: unknown) {
       console.error("Fetch transaction error:", err);
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
@@ -208,7 +138,7 @@ export default function TransactionDetails() {
       case "failed":
         return <FiXCircle className="w-5 h-5 text-red-400" />;
       case "pending":
-        return <FiClock className="w-5 h-5 text-yellow-400" />;
+        return <FiClock className="w-5 h-5 text-blue-300" />;
       default:
         return <FiInfo className="w-5 h-5 text-gray-400" />;
     }
@@ -217,13 +147,13 @@ export default function TransactionDetails() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "success":
-        return "bg-green-900/30 text-green-400 border-green-500/30";
+        return "bg-green-900/20 text-green-400 border-green-500/30";
       case "failed":
-        return "bg-red-900/30 text-red-400 border-red-500/30";
+        return "bg-red-900/20 text-red-400 border-red-500/30";
       case "pending":
-        return "bg-yellow-900/30 text-yellow-400 border-yellow-500/30";
+        return "bg-blue-800/30 text-blue-200 border-blue-400/40";
       default:
-        return "bg-gray-900/30 text-gray-400 border-gray-500/30";
+        return "bg-gray-800/50 text-gray-300 border-gray-600/50";
     }
   };
 
@@ -241,49 +171,44 @@ export default function TransactionDetails() {
     return `${numPrice.toFixed(2)} Gwei`;
   };
 
-  const calculateGasCost = () => {
-    if (!transaction) return "0 ETH";
-    const gasUsed = parseInt(transaction.gasUsed);
-    const gasPrice = parseFloat(transaction.gasPrice);
-    const cost = (gasUsed * gasPrice * 1e-9) / 1e18;
-    return `${cost.toFixed(8)} ETH`;
+  const formatTime = (timestamp: number) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (diffInSeconds < 60) return `${diffInSeconds} seconds ago`;
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;
+    return `${Math.floor(diffInSeconds / 86400)} days ago`;
   };
 
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 flex flex-col">
+    <div className="min-h-screen bg-gray-950 flex flex-col">
       <Header />
       
-      <main className="flex-1 container mx-auto px-4 py-8">
+      <main className="flex-1 container mx-auto px-4 py-6 max-w-7xl">
         {/* Header Section */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
+          className="mb-6"
         >
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-4">
-              <Link
-                href="/explorer"
-                className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-700 transition-colors"
-              >
-                <FiArrowLeft className="w-4 h-4" />
-                Back to Explorer
-              </Link>
-              <div>
-                <h1 className="text-3xl font-bold text-white mb-2 flex items-center">
-                  <FiActivity className="w-6 h-6 mr-3 text-blue-400" />
-                  Transaction Details
-                </h1>
-                <p className="text-gray-400">Detailed transaction information from Base network</p>
-              </div>
+            <div>
+              <h1 className="text-2xl font-bold text-white mb-1 flex items-center">
+                <FiActivity className="w-5 h-5 mr-2 text-blue-400" />
+                Transaction Details
+              </h1>
+              <p className="text-gray-400 text-sm">Transaction information from Base network</p>
             </div>
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setShowAdvanced(!showAdvanced)}
-                className="p-2 bg-gray-800 rounded-lg text-gray-300 hover:bg-gray-700 transition-colors"
+                className="p-2 bg-gray-800/50 text-gray-300 hover:bg-gray-700/50 transition-colors border border-gray-700/50"
                 title="Toggle Advanced Details"
               >
-                <FiSettings className="w-5 h-5" />
+                <FiSettings className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -296,7 +221,7 @@ export default function TransactionDetails() {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 mb-6 text-red-400"
+              className="bg-red-900/20 border border-red-500/30 p-4 mb-6 text-red-400"
             >
               <div className="flex items-center gap-2">
                 <FiAlertCircle className="w-5 h-5" />
@@ -311,38 +236,41 @@ export default function TransactionDetails() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="flex items-center justify-center py-12"
+            className="flex items-center justify-center py-16"
           >
-            <div className="flex items-center gap-3">
-              <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-              <span className="text-gray-400">Loading transaction details...</span>
+            <div className="flex flex-col items-center gap-4">
+              <div className="relative">
+                <div className="w-10 h-10 border-3 border-blue-400/20 border-t-blue-400 animate-spin"></div>
+                <div className="absolute inset-0 w-10 h-10 border-3 border-transparent border-r-blue-300/40 animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}></div>
+              </div>
+              <span className="text-gray-400 text-sm">Loading transaction details...</span>
             </div>
           </motion.div>
         )}
 
         {/* Transaction Details */}
         {!loading && transaction && (
-          <div className="space-y-6">
+          <div className="space-y-5">
             {/* Transaction Overview Card */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-gray-800/30 backdrop-blur-sm rounded-lg border border-gray-700 p-6"
+              className="bg-gray-800/30 backdrop-blur-sm border border-gray-700 p-5"
             >
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
                   <FiHash className="w-5 h-5 text-blue-400" />
                   Transaction Overview
                 </h2>
                 <div className="flex items-center gap-3">
                   {getStatusIcon(transaction.status)}
-                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(transaction.status)}`}>
+                  <span className={`inline-flex items-center px-3 py-1 text-sm font-semibold border ${getStatusColor(transaction.status)}`}>
                     {transaction.status.toUpperCase()}
                   </span>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-gray-400">Transaction Hash</span>
@@ -381,14 +309,14 @@ export default function TransactionDetails() {
                     <span className="text-gray-400">Timestamp</span>
                     <div className="flex items-center gap-2">
                       <FiClock className="w-4 h-4 text-gray-400" />
-                      <span className="text-white">{transaction.timestamp}</span>
+                      <span className="text-white">{formatTime(transaction.timestamp)}</span>
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between">
                     <span className="text-gray-400">Value</span>
                     <div className="flex items-center gap-2">
-                      <FiActivity className="w-4 h-4 text-green-400" />
+                      <FiActivity className="w-4 h-4 text-blue-400" />
                       <span className="text-white font-medium">{formatValue(transaction.value)}</span>
                     </div>
                   </div>
@@ -455,45 +383,45 @@ export default function TransactionDetails() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
-              className="bg-gray-800/30 backdrop-blur-sm rounded-lg border border-gray-700 p-6"
+              className="bg-gray-800/30 backdrop-blur-sm border border-gray-700 p-5"
             >
-              <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
-                <FiZap className="w-5 h-5 text-orange-400" />
+              <h2 className="text-lg font-bold text-white mb-5 flex items-center gap-2">
+                <FiZap className="w-5 h-5 text-blue-400" />
                 Gas Information
               </h2>
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
                 <div className="space-y-2">
-                  <span className="text-gray-400 text-sm">Gas Used</span>
-                  <p className="text-2xl font-bold text-white">{parseInt(transaction.gasUsed).toLocaleString()}</p>
+                  <span className="text-gray-400 text-sm font-medium">Gas Used</span>
+                  <p className="text-xl font-bold text-white">{parseInt(transaction.gasUsed).toLocaleString()}</p>
                 </div>
                 <div className="space-y-2">
-                  <span className="text-gray-400 text-sm">Gas Limit</span>
-                  <p className="text-2xl font-bold text-white">{parseInt(transaction.gas).toLocaleString()}</p>
+                  <span className="text-gray-400 text-sm font-medium">Gas Limit</span>
+                  <p className="text-xl font-bold text-white">{parseInt(transaction.gasLimit).toLocaleString()}</p>
                 </div>
                 <div className="space-y-2">
-                  <span className="text-gray-400 text-sm">Gas Price</span>
-                  <p className="text-xl font-bold text-white">{formatGasPrice(transaction.gasPrice)}</p>
+                  <span className="text-gray-400 text-sm font-medium">Gas Price</span>
+                  <p className="text-lg font-bold text-white">{formatGasPrice(transaction.gasPrice)}</p>
                 </div>
                 <div className="space-y-2">
-                  <span className="text-gray-400 text-sm">Total Cost</span>
-                  <p className="text-xl font-bold text-white">{calculateGasCost()}</p>
+                  <span className="text-gray-400 text-sm font-medium">Total Cost</span>
+                  <p className="text-lg font-bold text-white">{transaction.gasFeeEth.toFixed(6)} ETH</p>
                 </div>
               </div>
 
               {/* Gas Usage Progress Bar */}
-              <div className="mt-6">
+              <div className="mt-5">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-gray-400 text-sm">Gas Usage</span>
-                  <span className="text-white text-sm">
-                    {Math.round((parseInt(transaction.gasUsed) / parseInt(transaction.gas)) * 100)}%
+                  <span className="text-gray-400 text-sm font-medium">Gas Usage Efficiency</span>
+                  <span className="text-white text-sm font-semibold">
+                    {Math.round((parseInt(transaction.gasUsed) / parseInt(transaction.gasLimit)) * 100)}%
                   </span>
                 </div>
-                <div className="w-full bg-gray-700 rounded-full h-2">
+                <div className="w-full bg-gray-700/50 h-2">
                   <div
-                    className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                    className="bg-blue-500 h-2 transition-all duration-500"
                     style={{ 
-                      width: `${Math.min((parseInt(transaction.gasUsed) / parseInt(transaction.gas)) * 100, 100)}%` 
+                      width: `${Math.min((parseInt(transaction.gasUsed) / parseInt(transaction.gasLimit)) * 100, 100)}%` 
                     }}
                   ></div>
                 </div>
@@ -501,161 +429,124 @@ export default function TransactionDetails() {
             </motion.div>
 
             {/* Advanced Details */}
-            <AnimatePresence>
-              {showAdvanced && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="bg-gray-800/30 backdrop-blur-sm rounded-lg border border-gray-700 p-6"
-                >
-                  <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
-                    <FiSettings className="w-5 h-5 text-purple-400" />
-                    Advanced Details
-                  </h2>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-400">Block Hash</span>
-                        <div className="flex items-center gap-2 max-w-xs">
-                          <span className="text-white font-mono text-sm truncate">{transaction.blockHash}</span>
-                          <button
-                            onClick={() => copyToClipboard(transaction.blockHash, "blockHash")}
-                            className="text-blue-400 hover:text-blue-300"
-                          >
-                            {copiedField === "blockHash" ? <FiCheck className="w-4 h-4" /> : <FiCopy className="w-4 h-4" />}
-                          </button>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-400">Input Data</span>
-                        <span className="text-white font-mono text-sm">
-                          {transaction.input === "0x" ? "No Data" : `${transaction.input.slice(0, 20)}...`}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-400">Receipt Status</span>
-                        <span className="text-white font-mono text-sm">{transaction.receipt.status}</span>
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      {transaction.receipt.contractAddress && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-gray-400">Contract Created</span>
-                          <div className="flex items-center gap-2 max-w-xs">
-                            <span className="text-white font-mono text-sm truncate">{transaction.receipt.contractAddress}</span>
-                            <button
-                              onClick={() => copyToClipboard(transaction.receipt.contractAddress!, "contract")}
-                              className="text-blue-400 hover:text-blue-300"
-                            >
-                              {copiedField === "contract" ? <FiCheck className="w-4 h-4" /> : <FiCopy className="w-4 h-4" />}
-                            </button>
-                            <a
-                              href={`/explorer/address/${transaction.receipt.contractAddress}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-400 hover:text-blue-300"
-                            >
-                              <FiExternalLink className="w-4 h-4" />
-                            </a>
-                          </div>
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-400">Logs Count</span>
-                        <span className="text-white font-mono">{transaction.receipt.logs.length}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Transaction Logs */}
-                  {transaction.receipt.logs.length > 0 && (
-                    <div className="mt-6">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold text-white">Transaction Logs</h3>
-                        <button
-                          onClick={() => setShowLogs(!showLogs)}
-                          className="flex items-center gap-2 px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm text-gray-300 transition-colors"
-                        >
-                          {showLogs ? <FiMinus className="w-4 h-4" /> : <FiPlus className="w-4 h-4" />}
-                          {showLogs ? "Hide" : "Show"} Logs
-                        </button>
-                      </div>
-                      
-                      <AnimatePresence>
-                        {showLogs && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: "auto" }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="space-y-2"
-                          >
-                            {transaction.receipt.logs.map((log, index) => (
-                              <div key={index} className="bg-gray-700/50 rounded p-3 text-sm">
-                                <div className="flex items-center justify-between mb-2">
-                                  <span className="text-gray-400">Log #{index + 1}</span>
-                                  <span className="text-gray-400">Address: {log.address}</span>
-                                </div>
-                                <div className="text-white font-mono text-xs break-all">
-                                  {log.data}
-                                </div>
-                              </div>
-                            ))}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* External Links */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="bg-gray-800/30 backdrop-blur-sm rounded-lg border border-gray-700 p-6"
+              transition={{ delay: 0.1 }}
+              className="bg-gray-800/30 backdrop-blur-sm border border-gray-700 p-5"
             >
-              <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
-                <FiExternalLink className="w-5 h-5 text-green-400" />
-                External Links
+              <h2 className="text-lg font-bold text-white mb-5 flex items-center gap-2">
+                <FiSettings className="w-5 h-5 text-blue-400" />
+                Advanced Details
               </h2>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <a
-                  href={`/explorer/tx/${transaction.hash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-between p-4 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <FiExternalLink className="w-5 h-5 text-blue-400" />
-                    <div>
-                      <p className="text-white font-medium">View Transaction</p>
-                      <p className="text-gray-400 text-sm">Our blockchain explorer</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-400 text-sm">Block Hash</span>
+                    <div className="flex items-center gap-2 max-w-xs">
+                      <span className="text-white text-xs truncate">{transaction.blockHash}</span>
+                      <button
+                        onClick={() => copyToClipboard(transaction.blockHash, "blockHash")}
+                        className="text-blue-400 hover:text-blue-300"
+                      >
+                        {copiedField === "blockHash" ? <FiCheck className="w-3 h-3" /> : <FiCopy className="w-3 h-3" />}
+                      </button>
                     </div>
                   </div>
-                  <FiArrowUpRight className="w-5 h-5 text-gray-400" />
-                </a>
-
-                <a
-                  href={`/explorer/latest/block/${transaction.blockNumber}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-between p-4 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <FiDatabase className="w-5 h-5 text-purple-400" />
-                    <div>
-                      <p className="text-white font-medium">View Block</p>
-                      <p className="text-gray-400 text-sm">Block #{transaction.blockNumber}</p>
-                    </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-400 text-sm">Input Data</span>
+                    <span className="text-white text-xs">
+                      {transaction.inputData === "0x" ? "No Data" : `${transaction.inputData.slice(0, 20)}...`}
+                    </span>
                   </div>
-                  <FiArrowUpRight className="w-5 h-5 text-gray-400" />
-                </a>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-400 text-sm">Receipt Status</span>
+                    <span className="text-white text-xs">{transaction.receipt.status}</span>
+                  </div>
+                  {transaction.contractAddress && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-400 text-sm">Contract Address</span>
+                      <div className="flex items-center gap-2 max-w-xs">
+                        <span className="text-white text-xs truncate">{transaction.contractAddress}</span>
+                        <button
+                          onClick={() => copyToClipboard(transaction.contractAddress!, "contract")}
+                          className="text-blue-400 hover:text-blue-300"
+                        >
+                          {copiedField === "contract" ? <FiCheck className="w-3 h-3" /> : <FiCopy className="w-3 h-3" />}
+                        </button>
+                        <a
+                          href={`/explorer/address/${transaction.contractAddress}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-400 hover:text-blue-300"
+                        >
+                          <FiExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-4">
+                  {transaction.methodSignature && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-400 text-sm">Method</span>
+                      <span className="text-white text-xs">{transaction.methodSignature}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-400 text-sm">ETH Value (USD)</span>
+                    <span className="text-white text-xs">${transaction.ethValueUsd.toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-400 text-sm">Gas Fee (USD)</span>
+                    <span className="text-white text-xs">${transaction.gasFeeUsd.toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-400 text-sm">Logs Count</span>
+                    <span className="text-white text-xs">{transaction.receipt.logs.length}</span>
+                  </div>
+                </div>
               </div>
+
+              {/* Transaction Logs */}
+              {transaction.receipt.logs.length > 0 && (
+                <div className="mt-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-base font-semibold text-white">Transaction Logs</h3>
+                    <button
+                      onClick={() => setShowLogs(!showLogs)}
+                      className="flex items-center gap-2 px-3 py-1 bg-gray-700 hover:bg-gray-600 text-sm text-gray-300 transition-colors"
+                    >
+                      {showLogs ? <FiMinus className="w-4 h-4" /> : <FiPlus className="w-4 h-4" />}
+                      {showLogs ? "Hide" : "Show"} Logs
+                    </button>
+                  </div>
+                  
+                  <AnimatePresence>
+                    {showLogs && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="space-y-2 max-h-40 overflow-y-auto"
+                      >
+                        {transaction.receipt.logs.map((log, index) => (
+                          <div key={index} className="bg-gray-700/50 p-3 text-sm">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-gray-400">Log #{index + 1}</span>
+                              <span className="text-gray-400">Address: {log.address}</span>
+                            </div>
+                            <div className="text-white text-xs break-all">
+                              {log.data}
+                            </div>
+                          </div>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
             </motion.div>
           </div>
         )}
